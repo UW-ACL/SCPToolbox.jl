@@ -1,9 +1,10 @@
 # LCvx: 3-DoF Fuel-Optimal Rocket Landing
 
 using LinearAlgebra
-using JuMP
+using Convex
 using ECOS
 using PyPlot
+using Printf
 
 ################################################################################
 # ..:: Data structures ::..
@@ -108,7 +109,7 @@ e_z = LCvxVector([0,0,1])
 g = -3.7114*e_z
 θ = 30*π/180 # [rad] Latitude of landing site
 T_sidereal_mars = 24.6229*3600 # [s]
-ω = 0*(2π/T_sidereal_mars)*(e_x*cos(θ)+e_y*0+e_z*sin(θ))
+ω = (2π/T_sidereal_mars)*(e_x*cos(θ)+e_y*0+e_z*sin(θ))
 m_dry = 1505.0
 m_wet = 1905.0
 Isp = 225.0
@@ -120,11 +121,11 @@ T_2 = 0.8*T_max # [N] Max allowed thrust of single engine
 ρ_min = n_eng*T_1*cos(ϕ)
 ρ_max = n_eng*T_2*cos(ϕ)
 γ_gs = 86*π/180
-γ_p = 30*π/180
+γ_p = 40*π/180
 v_max = 800*1e3/3600
-r0 = (0*e_x+0*e_y+1.5*e_z)*1e3
-v0 = (0*e_x+0*e_y+0*e_z)*1e3/3600
-Δt = 1e-1
+r0 = (2*e_x+0*e_y+1.5*e_z)*1e3
+v0 = 80*e_x+0*e_y-75*e_z
+Δt = 1e0
 rocket = Rocket(g,ω,m_dry,m_wet,Isp,ϕ,ρ_min,ρ_max,γ_gs,γ_p,v_max,r0,v0,Δt)
 ################################################################################
 
@@ -184,89 +185,103 @@ function solve_pdg_fft(rocket::Data.Rocket,t_f::LCvxReal)
     Δt = t_f/(N-1)
     t = LCvxVector(0.0:Δt:t_f)
     A,B,p = c2d(rocket,Δt)
-    # >> Initialize optimization model <<
-    mdl = Model(with_optimizer(ECOS.Optimizer))
     # >> (Scaled) variables <<
-    @variable(mdl,r_s[1:3,1:N])
-    @variable(mdl,v_s[1:3,1:N])
-    @variable(mdl,z_s[1:N])
-    @variable(mdl,u_s[1:3,1:N-1])
-    @variable(mdl,ξ_s[1:N-1])
+    X_s = Variable(7,N)
+    U_s = Variable(4,N-1)
     # >> Scaling (for better numerical behaviour) <<
     # @ Scaling matrices @
+    #
+    s_r = zeros(3)
     S_r = Diagonal([max(1.0,abs(rocket.r0[i])) for i=1:3])
+    #
+    s_v = zeros(3)
     S_v = Diagonal([max(1.0,abs(rocket.v0[i])) for i=1:3])
+    #
     s_z = (log(rocket.m_dry)+log(rocket.m_wet))/2
     S_z = log(rocket.m_wet)-s_z
-    s_u = LCvxVector(0.5*(rocket.ρ_min/rocket.m_wet+
-                          rocket.ρ_max/rocket.m_dry)*
-                     [sin(rocket.γ_p),sin(rocket.γ_p),1.0])
-    S_u = Diagonal(rocket.ρ_max/rocket.m_dry*
-                   [sin(rocket.γ_p),sin(rocket.γ_p),1.0]-s_u)
+    #
+    s_u = LCvxVector([0,0,0.5*(rocket.ρ_min/rocket.m_wet*cos(rocket.γ_p)+
+                               rocket.ρ_max/rocket.m_dry)])
+    S_u = Diagonal([rocket.ρ_max/rocket.m_dry*sin(rocket.γ_p),
+                    rocket.ρ_max/rocket.m_dry*sin(rocket.γ_p),
+                    rocket.ρ_max/rocket.m_dry-s_u[3]])
+    #
     s_ξ,S_ξ = s_u[3],S_u[3,3]
     # @ Unscaled variables @
-    r = r_s # S_r*r_s
-    v = v_s # S_v*v_s
-    z = z_s # S_z*z_s.+s_z
-    u = u_s # S_u*u_s.+s_u
-    ξ = ξ_s # S_ξ*ξ_s.+s_ξ
-    # >> Utility functions <<
-    X = (k) -> vcat(r[:,k],v[:,k],z[k]) # State at time index k
-    U = (k) -> vcat(u[:,k],ξ[k]) # Input at time index k
+    #    
+    X = [S_r*X_s[1:3,:]+repeat(s_r,1,N);
+         S_v*X_s[4:6,:]+repeat(s_v,1,N);
+         S_z*X_s[7,:]+repeat([s_z],1,N)]
+    U = [S_u*U_s[1:3,:]+repeat(s_u,1,N-1);
+         S_ξ*U_s[4,:]+repeat([s_ξ],1,N-1)]
+    #
+    r = X[1:3,:]
+    v = X[4:6,:]
+    z = X[7,:]
+    u = U[1:3,:]
+    ξ = U[4,:]
     # >> Cost function <<
-    @objective(mdl, Min, Δt*sum(ξ[k] for k=1:N-1))
+    objective = Δt*sum(ξ[k] for k=1:N-1)
     # >> Constraints <<
     # @ Dynamics @
-    @constraint(mdl, [k=1:N-1], X(k+1).==A*X(k)+B*U(k)+p)
+    constraints = Constraint[X[:,k+1]==A*X[:,k]+B*U[:,k]+p for k=1:N-1]
     # @ Thrust bounds (approximate) @
     z0 = (k) -> log(rocket.m_wet-rocket.α*rocket.ρ_max*t[k])
     μ_min = (k) -> rocket.ρ_min*exp(-z0(k))
     μ_max = (k) -> rocket.ρ_max*exp(-z0(k))
     δz = (k) -> z[k]-z0(k)
-    @constraint(mdl, [k=1:N-1], ξ[k]>=μ_min(k)*(1-δz(k)+0.5*δz(k)^2))
-    @constraint(mdl, [k=1:N-1], ξ[k]<=μ_max(k)*(1-δz(k)))
+    for k = 1:N-1
+        push!(constraints,ξ[k]>=μ_min(k)*(1-δz(k)+0.5*square(δz(k))))
+        push!(constraints,ξ[k]<=μ_max(k)*(1-δz(k)))
+    end
     # @ Mass physical bounds constraint @
-    @constraint(mdl, [k=1:N], z0(k)<=z[k])
-    @constraint(mdl, [k=1:N], z[k]<=log(rocket.m_wet-
-                                        rocket.α*rocket.ρ_min*t[k]))
+    for k = 1:N
+        push!(constraints,z0(k)<=z[k])
+        push!(constraints,z[k]<=log(rocket.m_wet-rocket.α*rocket.ρ_min*t[k]))
+    end
     # @ Thrust bounds LCvx @
-    @constraint(mdl, [k=1:N-1], vcat(ξ[k],u[:,k]) in
-                MOI.SecondOrderCone(4))
+    for k = 1:N-1
+        push!(constraints,norm(u[:,k],2)<=ξ[k])
+    end
     # @ Attitude pointing constraint @
     e_z = LCvxVector([0,0,1])
-    # @constraint(mdl, [k=1:N-1], dot(u[:,k],e_z)>=ξ[k]*cos(rocket.γ_p))
-    # @ Glide slope constraint @
+    for k = 1:N-1
+        push!(constraints,dot(u[:,k],e_z)>=ξ[k]*cos(rocket.γ_p))
+    end
+    # # @ Glide slope constraint @
     _n1 = LCvxVector([cos(rocket.γ_gs),0,-sin(rocket.γ_gs)])
     _n2 = LCvxVector([0,cos(rocket.γ_gs),-sin(rocket.γ_gs)])
     _n3 = LCvxVector([-cos(rocket.γ_gs),0,-sin(rocket.γ_gs)])
     _n4 = LCvxVector([0,-cos(rocket.γ_gs),-sin(rocket.γ_gs)])
     H_gs = transpose(hcat(_n1,_n2,_n3,_n4))
     h_gs = zeros(4)
-    # @constraint(mdl, [k=1:N], H_gs*r[:,k].<=h_gs)
+    for k = 1:N
+        push!(constraints,H_gs*r[:,k]<=h_gs)
+    end
     # @ Velocity upper bound @
-    # @constraint(mdl, [k=1:N], vcat(rocket.v_max,v[:,k]) in
-    #             MOI.SecondOrderCone(4))
+    for k = 1:N
+        push!(constraints,norm(v[:,k],2)<=rocket.v_max)
+    end
     # @ Boundary conditions @
-    @constraint(mdl, r[:,1].==rocket.r0)
-    @constraint(mdl, v[:,1].==rocket.v0)
-    @constraint(mdl, z[1]==log(rocket.m_wet))
-    # @constraint(mdl, r[:,end].==zeros(3))
-    # @constraint(mdl, v[:,end].==zeros(3))
-    @constraint(mdl, r[:,end].==1.1*rocket.r0)
-    @constraint(mdl, v[:,end].==rocket.v0)
-    # @constraint(mdl, log(rocket.m_dry)<=z[end])
+    push!(constraints,r[:,1]==rocket.r0)
+    push!(constraints,v[:,1]==rocket.v0)
+    push!(constraints,z[1]==log(rocket.m_wet))
+    push!(constraints,r[:,N]==zeros(3))
+    push!(constraints,v[:,N]==zeros(3))
+    push!(constraints,z[N]>=log(rocket.m_dry))
     # >> Solve problem <<
-    optimize!(mdl)
+    problem = minimize(objective,constraints)
+    solve!(problem, ECOSSolver())
     # >> Extract solution <<
-    r = value.(r)
-    v = value.(v)
-    z = value.(z)
-    u = value.(u)
-    ξ = value.(ξ)
+    r = evaluate(r)
+    v = evaluate(v)
+    z = evaluate(z)[1,:]
+    u = evaluate(u)
+    ξ = evaluate(ξ)[1,:]
     return (t,r,v,z,u,ξ)
 end
 #
-opti_t,opti_r,opti_v,opti_z,opti_u,opti_ξ = solve_pdg_fft(rocket,10.)
+opti_t,opti_r,opti_v,opti_z,opti_u,opti_ξ = solve_pdg_fft(rocket,85.)
 ################################################################################
 
 ################################################################################
@@ -352,7 +367,7 @@ function optimal_controller(t::LCvxReal,x::LCvxVector,
 end
 #
 optimal_control = (t,x,rocket) -> optimal_controller(t,x,rocket,opti_t,opti_u)
-t_f = t[end] # [s] Simulation time
+t_f = opti_t[end] # [s] Simulation time
 t,r,v,m,T = simulate(rocket,optimal_control,t_f)
 ################################################################################
 
