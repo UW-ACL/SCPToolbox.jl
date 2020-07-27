@@ -1,1 +1,3 @@
 .juliahistory
+/figures/*
+!/figures/.gitkeep
