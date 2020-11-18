@@ -1,3 +1,5 @@
 .juliahistory
 /figures/*
+/.ipynb_checkpoints/*
+/sandbox/*
 !/figures/.gitkeep
