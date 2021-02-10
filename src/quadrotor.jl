@@ -115,8 +115,8 @@ function initial_guess(
     u_traj = straightline_interpolate(u0, uf, N)
     # Set first and last input to offset gravity
     g, = _quadrotor__gravity(pbm.env)
-    u_traj[:,1] = [-g; norm(g)]
-    u_traj[:,N] = [-g; norm(g)]
+    @first(u_traj) = [-g; norm(g)]
+    @last(u_traj) = [-g; norm(g)]
 
     # >> Parameters <<
     p = 0.5*(pbm.bbox.path.p.min+pbm.bbox.path.p.max)
@@ -216,13 +216,11 @@ Args:
 Returns:
     See docstring of generic method in problem.jl. =#
 function add_mdl_cvx_constraints!(
-    k::T_Int,
-    x::T_OptiVarAffTransfMatrix, #nowarn
-    u::T_OptiVarAffTransfMatrix,
+    xk::T_OptiVarAffTransfVector, #nowarn
+    uk::T_OptiVarAffTransfVector,
     p::T_OptiVarAffTransfVector, #nowarn
     mdl::Model,
-    pbm::QuadrotorTrajectoryProblem)::Tuple{T_ConstraintVector,
-                                            T_ConstraintVector}
+    pbm::QuadrotorTrajectoryProblem)::T_ConstraintVector
 
     # Parameters
     nu = pbm.vehicle.generic.nu
@@ -233,56 +231,54 @@ function add_mdl_cvx_constraints!(
     tilt_max = pbm.vehicle.tilt_max
 
     # Variables
-    uk = u[id_u, k]
-    σk = u[id_σ, k]
+    uuk = uk[id_u]
+    σk = uk[id_σ]
 
     # The constraints
     cvx = T_ConstraintVector(undef, pbm.vehicle.generic.n_cvx)
-    fit = T_ConstraintVector(undef, 0)
     cvx[1] = @constraint(mdl, u_nrm_min <= σk)
     cvx[2] = @constraint(mdl, σk <= u_nrm_max)
-    cvx[3] = @constraint(mdl, vcat(σk, uk) in MOI.SecondOrderCone(nu))
-    cvx[4] = @constraint(mdl, σk*cos(tilt_max) <= uk[3])
+    cvx[3] = @constraint(mdl, vcat(σk, uuk) in MOI.SecondOrderCone(nu))
+    cvx[4] = @constraint(mdl, σk*cos(tilt_max) <= uuk[3])
 
-    return cvx, fit
+    return cvx
 end
 
-#= Add nonconvex constraints to the problem at time step k.
+#= Get the value and Jacobians of the nonconvex constraints.
 
 Args:
     See docstring of generic method in problem.jl.
 
 Returns:
     See docstring of generic method in problem.jl. =#
-function add_mdl_ncvx_constraint!(
-    k::T_Int, #nowarn
-    x::T_OptiVarAffTransfMatrix, #nowarn
-    u::T_OptiVarAffTransfMatrix, #nowarn
-    p::T_OptiVarAffTransfVector, #nowarn
-    xb::T_RealMatrix, #nowarn
-    ub::T_RealMatrix, #nowarn
-    pb::T_RealVector, #nowarn
-    vbk::T_OptiVarVector, #nowarn
-    mdl::Model, #nowarn
-    pbm::QuadrotorTrajectoryProblem)::Tuple{T_ConstraintVector,
-                                            T_ConstraintVector}
+function ncvx_constraint(
+    x::T_RealVector,
+    u::T_RealVector, #nowarn
+    p::T_RealVector, #nowarn
+    pbm::QuadrotorTrajectoryProblem)::Tuple{T_RealVector,
+                                            T_RealMatrix,
+                                            T_RealMatrix,
+                                            T_RealMatrix}
 
     # Parameters
+    n_ncvx = pbm.vehicle.generic.n_ncvx
+    nx = pbm.vehicle.generic.nx
+    nu = pbm.vehicle.generic.nu
+    np = pbm.vehicle.generic.np
     obsN = pbm.env.obsN
-    xbk = xb[:, k]
 
-    # Variables
-    xk = x[:, k]
+    # Initialize values
+    s = T_RealVector(undef, n_ncvx)
+    dsdx = T_RealMatrix(undef, n_ncvx, nx)
+    dsdu = zeros(n_ncvx, nu)
+    dsdp = zeros(n_ncvx, np)
 
-    # The constraints
-    ncvx = T_ConstraintVector(undef, pbm.vehicle.generic.n_ncvx)
-    fit = T_ConstraintVector(undef, 0)
+    # Compute values for all obstacles
     for i = 1:obsN
-        _, a, b = _quadrotor__obstacle_constraint(i, xbk, pbm)
-        ncvx[i] = @constraint(mdl, dot(a, xk)+b+vbk[i] <= 0.0)
+        s[i], dsdx[i, :] = _quadrotor__obstacle_constraint(i, x, pbm)
     end
 
-    return ncvx, fit
+    return s, dsdx, dsdu, dsdp
 end
 
 #= Return the running cost expression at time step k.
@@ -293,25 +289,21 @@ Args:
 Returns:
     See docstring of generic method in problem.jl. =#
 function running_cost(
-    k::T_Int,
-    x::T_OptiVarAffTransfMatrix, #nowarn
-    u::T_OptiVarAffTransfMatrix,
+    xk::T_OptiVarAffTransfVector, #nowarn
+    uk::T_OptiVarAffTransfVector,
     p::T_OptiVarAffTransfVector, #nowarn
-    mdl::Model, #nowarn
-    pbm::QuadrotorTrajectoryProblem)::Tuple{T_Objective,
-                                            T_ConstraintVector}
+    pbm::QuadrotorTrajectoryProblem)::T_Objective
 
     # Parameters
     id_σ = pbm.vehicle.id_σ
 
     # Variables
-    σk = u[id_σ, k]
+    σk = uk[id_σ]
 
     # Running cost value
     cost = σk*σk
-    fit = T_ConstraintVector(undef, 0)
 
-    return cost, fit
+    return cost
 end
 
 # ..:: Private methods ::..
@@ -343,14 +335,11 @@ Args:
 
 Returns:
     f: the constraint function f(x) value.
-    a: the Jacobian df/dx.
-    b: the remainder f-a'*xb. =#
+    Df: the Jacobian df/dx. =#
 function _quadrotor__obstacle_constraint(
     i::T_Int,
     xb::T_RealVector,
-    pbm::QuadrotorTrajectoryProblem)::Tuple{T_Real,
-                                            T_RealVector,
-                                            T_Real}
+    pbm::QuadrotorTrajectoryProblem)::Tuple{T_Real, T_RealVector}
     # Parameters
     nx = pbm.vehicle.generic.nx
     id_r = pbm.vehicle.id_r
@@ -363,11 +352,10 @@ function _quadrotor__obstacle_constraint(
     f = 1-norm(tmp)
 
     # Compute the constraint linearization at xb
-    a = zeros(nx)
+    Df = zeros(nx)
     if norm(tmp)>eps()
-        a[id_r] = -(r-c)*dot(iH, iH)/norm(tmp)
+        Df[id_r] = -(r-c)*dot(iH, iH)/norm(tmp)
     end
-    b = f-dot(a, xb)
 
-    return f, a, b
+    return f, Df
 end

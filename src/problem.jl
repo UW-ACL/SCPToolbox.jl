@@ -134,65 +134,99 @@ end
 #= Add convex constraints to the problem at time step k.
 
 Args:
-    k: the current time step.
-    x: the state vectors, where x[:, k] is the state at time k.
-    u: the input vectors, where u[:, k] is the input at time k.
+    xk: the state vector at time k.
+    uk: the input vector at time k.
     p: the parameter vector.
     mdl: the optimization model (JuMP format).
     pbm: the trajectory problem instance.
 
 Returns:
-    cvx: vector of convex constraints.
-    fit: vector of additional constraints used to fit the JuMP format. =#
+    cvx: vector of convex constraints. =#
 function add_mdl_cvx_constraints!(
-    k::T_Int, #nowarn
-    x::T_OptiVarAffTransfMatrix, #nowarn
-    u::T_OptiVarAffTransfMatrix, #nowarn
+    xk::T_OptiVarAffTransfVector, #nowarn
+    uk::T_OptiVarAffTransfVector, #nowarn
     p::T_OptiVarAffTransfVector, #nowarn
     mdl::Model, #nowarn
-    pbm::T)::Tuple{T_ConstraintVector, #nowarn
-                   T_ConstraintVector} where {T<:AbstractTrajectoryProblem}
+    pbm::T)::T_ConstraintVector where {T<:AbstractTrajectoryProblem} #nowarn
 
     cvx = T_ConstraintVector(undef, 0)
-    fit = T_ConstraintVector(undef, 0)
 
-    return cvx, fit
+    return cvx
+end
+
+#= Get the value and Jacobians of the nonconvex constraints.
+
+Assume that the constraint is of the form s(x, u, p)<=0.
+
+Args:
+    x: the state vector.
+    u: the input vector.
+    p: the parameter vector.
+    pbm: the trajectory problem definition.
+
+Returns:
+    s: the constraint left-hand side value.
+    dsdx: Jacobian with respect to x.
+    dsdu: Jacobian with respect to u.
+    dsdp: Jacobian with respect to p. =#
+function ncvx_constraint(
+    x::T_RealVector, #nowarn
+    u::T_RealVector, #nowarn
+    p::T_RealVector, #nowarn
+    pbm::T)::Tuple{T_RealVector,
+                   T_RealMatrix,
+                   T_RealMatrix,
+                   T_RealMatrix} where {T<:AbstractTrajectoryProblem} #nowarn
+
+    n_ncvx = pbm.vehicle.generic.n_ncvx
+    nx = pbm.vehicle.generic.nx
+    nu = pbm.vehicle.generic.nu
+    np = pbm.vehicle.generic.np
+
+    s = T_RealVector(undef, n_ncvx)
+    dsdx = T_RealMatrix(undef, n_ncvx, nx)
+    dsdu = T_RealMatrix(undef, n_ncvx, nu)
+    dsdp = T_RealMatrix(undef, n_ncvx, np)
+
+    return s, dsdx, dsdu, dsdp
 end
 
 #= Add nonconvex constraints to the problem at time step k.
 
 Args:
-    k: the current time step.
-    x: the state vectors, where x[:, k] is the state at time k.
-    u: the input vectors, where u[:, k] is the input at time k.
+    xk: the state vector at time k.
+    uk: the input vector at time k.
     p: the parameter vector.
-    xb: reference trajectory state vectors, where xb[:, k] state at time k.
-    ub: reference trajectory input vectors, where ub[:, k] input at time k.
+    xbk: reference trajectory state vector at time k.
+    ubk: reference trajectory input vector at time k.
     pb: reference trajectory parameter vector.
     vbk: the virtual control for time step k.
     mdl: the optimization model (JuMP format).
     pbm: the trajectory problem instance.
 
 Returns:
-    ncvx: vector of nonconvex constraints.
-    fit: vector of additional constraints used to fit the JuMP format. =#
+    ncvx: vector of nonconvex constraints. =#
 function add_mdl_ncvx_constraint!(
-    k::T_Int, #nowarn
-    x::T_OptiVarAffTransfMatrix, #nowarn
-    u::T_OptiVarAffTransfMatrix, #nowarn
-    p::T_OptiVarAffTransfVector, #nowarn
-    xb::T_RealMatrix, #nowarn
-    ub::T_RealMatrix, #nowarn
-    pb::T_RealVector, #nowarn
-    vbk::T_OptiVarVector, #nowarn
-    mdl::Model, #nowarn
-    pbm::T)::Tuple{T_ConstraintVector, #nowarn
-                   T_ConstraintVector} where {T<:AbstractTrajectoryProblem}
+    xk::T_OptiVarAffTransfVector,
+    uk::T_OptiVarAffTransfVector,
+    p::T_OptiVarAffTransfVector,
+    xbk::T_RealVector,
+    ubk::T_RealVector,
+    pb::T_RealVector,
+    vbk::T_OptiVarVector,
+    mdl::Model,
+    pbm::T)::T_ConstraintVector where {T<:AbstractTrajectoryProblem}
 
-    ncvx = T_ConstraintVector(undef, 0)
-    fit = T_ConstraintVector(undef, 0)
+    # Parameters
+    n_ncvx = pbm.vehicle.generic.n_ncvx
 
-    return ncvx, fit
+    # The constraints
+    ncvx = T_ConstraintVector(undef, n_ncvx)
+    s, Dx, Du, Dp = ncvx_constraint(xbk, ubk, pb, pbm)
+    r = s-Dx*xbk-Du*ubk-Dp*pb
+    ncvx = @constraint(mdl, Dx*xk+Du*uk+Dp*p+r+vbk .<= 0.0)
+
+    return ncvx
 end
 
 #= Return the terminal cost expression.
@@ -200,51 +234,37 @@ end
 Args:
     xf: state vector at the final time.
     p: parameter vector.
-    mdl: the optimization model (JuMP format).
     pbm: the trajectory problem instance.
 
 Returns:
-    cost: the terminal cost expression.
-    fit: vector of additional constraints used to fit the JuMP format. =#
+    cost: the terminal cost expression. =#
 function terminal_cost(
     xf::T_OptiVarAffTransfVector, #nowarn
     p::T_OptiVarAffTransfVector, #nowarn
-    mdl::Model, #nowarn
-    pbm::T)::Tuple{T_Objective, #nowarn
-                   T_ConstraintVector} where {
-                       T<:AbstractTrajectoryProblem} #nowarn
+    pbm::T)::T_Objective where {T<:AbstractTrajectoryProblem} #nowarn
 
     cost = 0.0
-    fit = T_ConstraintVector(undef, 0)
 
-    return cost, fit
+    return cost
 end
 
 #= Return the running cost expression at time step k.
 
 Args:
-    k: the current time step.
-    x: the state vectors, where x[:, k] is the state at time k.
-    u: the input vectors, where u[:, k] is the input at time k.
+    xk: the state vector at time step k.
+    uk: the input vector at time step k.
     p: the parameter vector.
-    mdl: the optimization model (JuMP format).
     pbm: the trajectory problem instance.
 
 Returns:
-    cost: the running cost expression.
-    fit: vector of additional constraints used to fit the JuMP format. =#
+    cost: the running cost expression. =#
 function running_cost(
-    k::T_Int, #nowarn
-    x::T_OptiVarAffTransfMatrix, #nowarn
-    u::T_OptiVarAffTransfMatrix, #nowarn
+    xk::T_OptiVarAffTransfVector, #nowarn
+    uk::T_OptiVarAffTransfVector, #nowarn
     p::T_OptiVarAffTransfVector, #nowarn
-    mdl::Model, #nowarn
-    pbm::T)::Tuple{T_Objective, #nowarn
-                   T_ConstraintVector} where {
-                       T<:AbstractTrajectoryProblem} #nowarn
+    pbm::T)::T_Objective where {T<:AbstractTrajectoryProblem} #nowarn
 
     cost = 0.0
-    fit = T_ConstraintVector(undef, 0)
 
-    return cost, fit
+    return cost
 end

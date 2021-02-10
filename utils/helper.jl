@@ -2,27 +2,65 @@
 
 include("types.jl")
 
-#= Straight-line interpolation between two points.
+#= Get discrete-time trajectory values at time step k or step range {k,...,l}.
 
-Compute a straight-line interpolation between an initial and a final vector, on
-a grid of N points.
+The trajectory can be represented by an array of any dimension. We assume that
+the time axis is contained in the **last** dimension.
+
+The macros below are overloaded to correspond to the following possible inputs.
 
 Args:
-    v0: starting vector.
-    vf: ending vector.
-    N: number of vectors in between (including endpoints).
+    traj: discrete-time trajectory representation of the type Array.
+    k: (optional) the time step at which to get the trajectory value. Defaults
+        to the current value of k in the workspace.
+    l: (optional) the final time step, in case you want to get a rank of values
+        from time step k to time step l.
 
 Returns:
-    v: the resulting interpolation (a matrix, k-th column is the k-th vector,
-       k=1,...,N).=#
-function straightline_interpolate(
-    v0::T_RealVector, vf::T_RealVector, N::T_Int)::T_RealMatrix
-    nv = length(v0)
-    v = zeros(nv,N)
-    for k = 1:nv
-	v[k,:] = range(v0[k],stop=vf[k],length=N)
-    end
-    return v
+    The trajectory value at time step k or range {k,...,l}. =#
+macro k(traj)
+    :( $(esc(traj))[fill(:, ndims($(esc(traj)))-1)..., $(esc(:(k)))] )
+end
+
+macro k(traj, k)
+    :( $(esc(traj))[fill(:, ndims($(esc(traj)))-1)..., $(esc(k))] )
+end
+
+macro k(traj, k, l)
+    :( $(esc(traj))[fill(:, ndims($(esc(traj)))-1)..., $(esc(k)):$(esc(l))] )
+end
+
+#= Convenience method to get trajectory value at time k+1.
+
+Args:
+    traj: discrete-time trajectory representation of the type Array.
+
+Returns:
+    The trajectory value at time step k+1. =#
+macro kp1(traj)
+    :( @k($(esc(traj)), $(esc(:(k)))+1) )
+end
+
+#= Convenience method to get trajectory value at the initial time.
+
+Args:
+    traj: discrete-time trajectory representation of the type Array.
+
+Returns:
+    The trajectory initial value. =#
+macro first(traj)
+    :( @k($(esc(traj)), 1) )
+end
+
+#= Convenience method to get trajectory value at the final time.
+
+Args:
+    traj: discrete-time trajectory representation of the type Array.
+
+Returns:
+    The trajectory final value. =#
+macro last(traj)
+    :( @k($(esc(traj)), size($(esc(traj)))[end]) )
 end
 
 #= Linear interpolation on a grid.
@@ -41,8 +79,8 @@ Returns:
 function linterp(t::Float64, f_cps::T_RealMatrix,
                  t_grid::T_RealVector)::T_RealVector
     k = get_interval(t, t_grid)
-    c = (t_grid[k+1]-t)/(t_grid[k+1]-t_grid[k])
-    f_t = c*f_cps[:,k] + (1-c)*f_cps[:,k+1]
+    c = (@kp1(t_grid)-t)/(@kp1(t_grid)-@k(t_grid))
+    f_t = c*@k(f_cps) + (1-c)*@kp1(f_cps)
     return f_t
 end
 
@@ -64,6 +102,38 @@ function get_interval(x::T_Real, grid::T_RealVector)::T_Int
     return k
 end
 
+#= Straight-line interpolation between two points.
+
+Compute a straight-line interpolation between an initial and a final vector, on
+a grid of N points.
+
+Args:
+    v0: starting vector.
+    vf: ending vector.
+    N: number of vectors in between (including endpoints).
+
+Returns:
+    v: the resulting interpolation (a matrix, k-th column is the k-th vector,
+       k=1,...,N).=#
+function straightline_interpolate(
+    v0::T_RealVector, vf::T_RealVector, N::T_Int)::T_RealMatrix
+
+    # Initialize
+    nv = length(v0)
+    v = zeros(nv,N)
+
+    # Interpolation grid
+    times = LinRange(0.0, 1.0, N)
+    t_endpts = [@first(times), @last(times)]
+    v_endpts = hcat(v0, vf)
+
+    for k = 1:N
+        @k(v) = linterp(@k(times), v_endpts, t_endpts)
+    end
+
+    return v
+end
+
 #= Classic Runge-Kutta integration.
 
 Interate a system of ordinary differential equations over a time interval, and
@@ -81,8 +151,8 @@ function rk4(f, x0::T_RealVector, tspan::T_RealVector)::T_RealVector
     n = length(x)
     N = length(tspan)
     for k = 1:N-1
-	tk = tspan[k]
-  	tkp1 = tspan[k+1]
+	tk = @k(tspan)
+  	tkp1 = @kp1(tspan)
 	h = tkp1-tk
 
 	k1 = f(tk,x)
@@ -107,8 +177,8 @@ function trapz(f, grid::T_RealVector)
     N = length(grid)
     F = 0.0
     for k = 1:N-1
-        δ = grid[k+1]-grid[k]
-        F += 0.5*δ*(f[k+1]+f[k])
+        δ = @kp1(grid)-@k(grid)
+        F += 0.5*δ*(@kp1(f)+@k(f))
     end
     return F
 end

@@ -134,7 +134,7 @@ function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
         # "Emergency exit" the SCvx loop if something bad happened
         # (e.g. numerical problems)
         if unsafe_solution(subpbm)
-            print_info(subpbm)
+            print_info(history, pbm)
             break
         end
 
@@ -147,7 +147,8 @@ function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
         # >> Update trust region <<
         ref, η = update_trust_region!(subpbm)
 
-        println(k, ": ", subpbm.sol.status, ", ", η)
+        # >> Print iteration info <<
+        print_info(history, pbm)
     end
 
     # ..:: Save solution ::..
