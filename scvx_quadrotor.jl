@@ -70,7 +70,7 @@ traj_pbm = QuadrotorTrajectoryProblem(quad, env, traj_bbox)
 # ..:: Define the SCvx algorithm parameters ::..
 N = 30
 Nsub = 10
-iter_max = 15
+iter_max = 30
 wvc = 1e2
 ρ_0 = 0.0
 ρ_1 = 0.1
@@ -145,7 +145,12 @@ function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
         end
 
         # >> Update trust region <<
-        ref, η = update_trust_region!(subpbm)
+        try
+            ref, η = update_trust_region!(subpbm)
+        catch e
+            print_info(history, pbm, e)
+            break
+        end
 
         # >> Print iteration info <<
         print_info(history, pbm)

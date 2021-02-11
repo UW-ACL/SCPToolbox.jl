@@ -28,7 +28,7 @@ struct SCvxParameters
     eps::T_Real       # Convergence tolerance
     feas_tol::T_Real  # Dynamic feasibility tolerance
     solver::Module    # The numerical solver to use for the subproblems
-    solver_opts::Dict{String,Any} # Numerical solver options
+    solver_opts::Dict{T_String, Any} # Numerical solver options
 end
 
 #= Variable scaling parameters.
@@ -80,10 +80,14 @@ mutable struct SCvxSubproblemSolution
     J_tot::T_Real        # Overall cost function of the subproblem
     J_pen_nl::T_Real     # Nonlinear penalty
     # >> Trajectory properties <<
-    status::MOI.TerminationStatusCode # Numerical optimizer exit status
+    status::T_ExitStatus # Numerical optimizer exit status
     feas::T_Bool         # Dynamic feasibility flag
     defect::T_RealMatrix # "Defect" linearization accuracy metric
     deviation::T_Real    # Deviation from reference trajectory
+    unsafe::T_Bool       # Indicator that the solution is unsafe to use
+    ρ::T_Real            # Convexification performance metric
+    tr_update::T_String  # Indicator of growth direction for trust region
+    reject::T_Bool       # Indicator whether SCvx rejected this solution
     # >> Discrete-time dynamics update matrices <<
     # x[:, k+1] = ...
     A::T_RealTensor      # ...  A[:, :, k]*x[:, k]+ ...
@@ -244,10 +248,14 @@ function SCvxSubproblemSolution(
     feas = false
     defect = fill(NaN, nx, N-1)
     deviation = NaN
+    unsafe = false
+    ρ = NaN
+    tr_update = ""
+    reject = false
 
-    vc = T_RealMatrix(undef, nx, N-1)
-    vb = T_RealMatrix(undef, n_ncvx, N)
-    P = T_RealVector(undef, N)
+    vc = zeros(nx, N-1)
+    vb = zeros(n_ncvx, N)
+    P = zeros(N)
 
     J_orig = NaN
     J_pen = NaN
@@ -262,7 +270,8 @@ function SCvxSubproblemSolution(
 
     subsol = SCvxSubproblemSolution(x, u, p, vc, vb, P, J_orig, J_pen, J_tot,
                                     J_pen_nl, status, feas, defect, deviation,
-                                    A, Bm, Bp, S, r)
+                                    unsafe, ρ, tr_update, reject, A, Bm, Bp, S,
+                                    r)
 
     return subsol
 end
@@ -286,8 +295,33 @@ function SCvxProblem(pars::SCvxParameters,
     Δτ = τ_grid[2]-τ_grid[1]
 
     # Define the iteration info table
-    table = Table([(:iter, "k", "%d", 3),
-                   (:tr, "η", "%.2f", 5)])
+    table = Table([
+        # Iteration count
+        (:iter, "k", "%d", 2),
+        # Solver status
+        (:status, "status", "%s", 8),
+        # Maximum dynamics virtual control element
+        (:maxvc, "vc", "%.1e", 8),
+        # Maximum constraints virtual control element
+        (:maxvb, "vb", "%.1e", 8),
+        # Original cost value
+        (:cost, "J", "%.2f", 6),
+        # Maximum deviation in state
+        (:dx, "Δx", "%.1e", 8),
+        # Maximum deviation in input
+        (:du, "Δu", "%.1e", 8),
+        # Maximum deviation in input
+        (:dp, "Δp", "%.1e", 8),
+        # Dynamic feasibility flag (true or false)
+        (:dynfeas, "dyn", "%s", 3),
+        # Trust region size
+        (:tr, "η", "%.2f", 6),
+        # Convexification performance metrix
+        (:ρ, "ρ", "%.2f", 6),
+        # Update direction for trust region radius (grow? shrink?)
+        (:dtr, "Δη", "%s", 3),
+        # Reject solution indicator
+        (:rej, "rej", "%s", 5)])
 
     consts = SCvxCommonConstants(Δτ, τ_grid, scale, table)
 
@@ -426,7 +460,7 @@ function SCvxSolution(history::SCvxHistory)::SCvxSolution
     last_sol = last_spbm.sol
     num_iters = _scvx__scvx_iter_count(history)
 
-    if unsafe_solution(last_spbm)
+    if unsafe_solution(last_sol)
         # SCvx failed :(
         status = @sprintf "%s (%s)" SCVX_FAILED last_sol.status
         xd = T_RealMatrix(undef, size(last_sol.xd))
@@ -461,7 +495,7 @@ function SCvxHistory()::SCvxHistory
     return history
 end
 
-# ..:: Methods ::..
+# ..:: Public methods ::..
 
 #= Compute the initial trajectory guess.
 
@@ -794,15 +828,23 @@ A solution is judged unsafe if the numerical optimizer exit code indicates that
 there were serious problems in solving the subproblem.
 
 Args:
-    sol: the subproblem definition.
+    sol: the subproblem or directly its solution.
 
 Returns:
     unsafe: true if the subproblem solution process "failed". =#
-function unsafe_solution(spbm::SCvxSubproblem)::T_Bool
-    sol = spbm.sol
-    safe = sol.status==MOI.OPTIMAL
-    unsafe = !safe
-    return unsafe
+function unsafe_solution(sol::Union{SCvxSubproblemSolution,
+                                    SCvxSubproblem})::T_Bool
+
+    # If the parent subproblem passed in, then get its solution
+    if typeof(sol)==SCvxSubproblem
+        sol = sol.sol
+    end
+
+    if !sol.unsafe
+        safe = sol.status==MOI.OPTIMAL
+        sol.unsafe = !safe
+    end
+    return sol.unsafe
 end
 
 #= Check if stopping criterion is triggered.
@@ -861,6 +903,7 @@ function update_trust_region!(spbm::SCvxSubproblem)::Tuple{
 
     # Parameters
     pbm = spbm.scvx
+    sol = spbm.sol
 
     # Compute the actual cost improvement
     J_ref = _scvx__solution_cost!(spbm.ref, :nonlinear, pbm)
@@ -872,56 +915,64 @@ function update_trust_region!(spbm::SCvxSubproblem)::Tuple{
     predicted_improvement = J_ref-L_sol
 
     # Convexification performance metric
-    ρ = actual_improvement/predicted_improvement
+    sol.ρ = actual_improvement/predicted_improvement
 
     # Apply update rule
-    next_ref, next_η = _scvx__update_rule(ρ, spbm)
+    next_ref, next_η = _scvx__update_rule(sol.ρ, spbm)
 
     return next_ref, next_η
 end
 
-#= Print command line info message..
+#= Print command line info message.
 
 Args:
     history: the SCvx iteration history.
-    pvm: the SCvx problem definition. =#
-function print_info(history::SCvxHistory, pbm::SCvxProblem)::Nothing
+    pvm: the SCvx problem definition.
+    err: an SCvx-specific error message. =#
+function print_info(history::SCvxHistory,
+                    pbm::SCvxProblem,
+                    err::Union{Nothing, SCvxError}=nothing)::Nothing
+
+    # Convenience variables
     spbm = history.subproblems[end]
     sol = spbm.sol
-    if unsafe_solution(spbm)
-        msg = @sprintf "ERROR: unsafe solution (%s), exiting" (
-            sol.status)
-    else
-        # Table format
-        headings = pbm.consts.table.headings
-        sorting = pbm.consts.table.sorting
-        fmt = pbm.consts.table.fmt
-        row = pbm.consts.table.row
+    table = pbm.consts.table
 
-        # Individual column values
-        iter = _scvx__scvx_iter_count(history)
-        η = spbm.η
+    if !isnothing(err)
+        @printf "ERROR: %s, exiting\n" err.msg
+    elseif unsafe_solution(sol)
+        @printf "ERROR: unsafe solution (%s), exiting\n" sol.status
+    else
+        # Complicated values
+        scale = spbm.scvx.consts.scale
+        xh = scale.iSx*(sol.xd.-scale.cx)
+        uh = scale.iSu*(sol.ud.-scale.cu)
+        ph = scale.iSp*(sol.p-scale.cp)
+        xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
+        uh_ref = scale.iSu*(spbm.ref.ud.-scale.cu)
+        ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
+        max_dxh = norm(xh-xh_ref, Inf)
+        max_duh = norm(uh-uh_ref, Inf)
+        max_dph = norm(ph-ph_ref, Inf)
 
         # Associate values with columns
-        assoc = Dict(:iter => iter,
-                     :tr => η)
+        assoc = Dict(:iter => _scvx__scvx_iter_count(history),
+                     :status => sol.status,
+                     :maxvc => norm(sol.vc, Inf),
+                     :maxvb => norm(sol.vb, Inf),
+                     :cost => sol.J_orig,
+                     :dx => max_dxh,
+                     :du => max_duh,
+                     :dp => max_dph,
+                     :dynfeas => sol.feas ? "T" : "F",
+                     :ρ => sol.ρ,
+                     :dtr => sol.tr_update,
+                     :rej => sol.reject ? "x" : "",
+                     :tr => spbm.η)
 
-        # Assign values to table columns
-        values = Array{T_String}(undef, length(headings))
-        for (k, v) in assoc
-            val_fmt = fmt[k]
-            values[sorting[k]] = @eval @sprintf($val_fmt, $v)
-        end
-
-        if iter==1
-            top = @eval @sprintf($row, $headings...)
-            msg = @eval @sprintf($row, $values...)
-            msg = string(top, "\n", msg)
-        else
-            msg = @eval @sprintf($row, $values...)
-        end
+        print(assoc, table)
     end
-    println(msg)
+
     return nothing
 end
 
@@ -1104,12 +1155,13 @@ function _scvx__actual_cost_penalty!(
     if isnan(sol.J_pen_nl)
         # >> Compute the nonlinear penalty <<
 
+        _scvx__assert_penalty_match!(sol, pbm)
+
         # Parameters
         N = pbm.pars.N
         nx = pbm.traj.vehicle.generic.nx
         n_ncvx = pbm.traj.vehicle.generic.n_ncvx
         τ_grid = pbm.consts.τ_grid
-        P_check_tol = 1.0e-6
 
         # Values from the solution
         δ = sol.defect
@@ -1118,30 +1170,11 @@ function _scvx__actual_cost_penalty!(
             @k(s), _, _, _ = ncvx_constraint(
                 @k(sol.xd), @k(sol.ud), sol.p, pbm.traj)
         end
-        vc = sol.vc
-        vb = sol.vb
-        P_jump = sol.P
 
         # Integrate the nonlinear penalty term
         P = T_RealVector(undef, N)
-        novc = zeros(nx)
         for k = 1:N
-            # JuMP formulation does not allow using _scvx__P directly
-            # We had to use a tight relaxation instead
-            # So do a check that _scvx__P matches what JuMP used, which also
-            # makes sure that there is no formulation discrepancy at this stage
-            Pk_coded = (k<N) ? _scvx__P(@k(vc), @k(vb)) :
-                _scvx__P(novc, @k(vb))
-            Pk_jump = @k(P_jump)
-            if abs(Pk_coded-Pk_jump) > P_check_tol
-                fmt = string("The coded penalty value (%.3e) does not match ",
-                             "the JuMP penalty value (%.3e)\n")
-                msg = @eval @sprintf($fmt, $Pk_coded, $Pk_jump)
-                throw(AssertionError(msg))
-            end
-
-            # We're safe, now compute the penalty integrand
-            δk = (k<N) ? @k(δ) : novc
+            δk = (k<N) ? @k(δ) : zeros(nx)
             @k(P) = _scvx__P(δk, @k(s))
         end
         pen = trapz(P, τ_grid)
@@ -1199,6 +1232,7 @@ function _scvx__update_rule(ρ::T_Real,
                                 T_Real}
     # Extract relevant data
     pars = spbm.scvx.pars
+    sol = spbm.sol
     ρ0 = pars.ρ_0
     ρ1 = pars.ρ_1
     ρ2 = pars.ρ_2
@@ -1215,21 +1249,94 @@ function _scvx__update_rule(ρ::T_Real,
         # Very poor prediction
         next_η = max(η_lb, η/β_sh)
         next_ref = spbm.ref
+        sol.tr_update = "S"
+        sol.reject = true
     elseif ρ0<=ρ && ρ<ρ1
         # OK prediction
         next_η = max(η_lb, η/β_sh)
         next_ref = spbm.sol
+        sol.tr_update = "S"
+        sol.reject = false
     elseif ρ1<=ρ && ρ<ρ2
         # Good prediction
         next_η = η
         next_ref = spbm.sol
+        sol.tr_update = ""
+        sol.reject = false
     else
         # Excellent prediction
         next_η = min(η_ub, β_gr*η)
         next_ref = spbm.sol
+        sol.tr_update = "G"
+        sol.reject = false
     end
 
     return next_ref, next_η
+end
+
+#= Mark a solution as unsafe to use.
+
+Args:
+    sol: subproblem solution.
+    err: the SCvx error that occurred. =#
+function _scvx__mark_unsafe!(sol::SCvxSubproblemSolution,
+                             err::SCvxError)::Nothing
+    sol.status = err.status
+    sol.unsafe = true
+    return nothing
+end
+
+#= Assert that the penalty function computed by JuMP is correct.
+
+The JuMP formulation does not allow using _scvx__P() directly. We had to use a
+tight relaxation instead. This function checks that _scvx__P() matches what
+JuMP used, which makes sure that there is no formulation discrepancy.
+
+Args:
+    sol: the subproblem solution.
+    pbm: the SCvx problem definition.
+
+Returns:
+    match: indicator that everything is correct.
+
+Raises:
+    SCvxError: if the penalty match fails. =#
+function _scvx__assert_penalty_match!(sol::SCvxSubproblemSolution,
+                                      pbm::SCvxProblem)::Nothing
+    # Parameters
+    N = pbm.pars.N
+    nx = pbm.traj.vehicle.generic.nx
+
+    # A small number for the equality tolerance
+    # We don't want to make this a user parameter, because ideally this
+    # assertion is "built-in", abstracted from the user
+    check_tol = 10*sqrt(eps())
+
+    # Variables
+    vc = sol.vc
+    vb = sol.vb
+    P_jump = sol.P
+
+    for k = 1:N
+        vck = (k<N) ? @k(vc) : zeros(nx)
+        Pk_coded = _scvx__P(vck, @k(vb))
+        Pk_jump = @k(P_jump)
+
+        if abs(Pk_coded-Pk_jump) > check_tol
+            # Create an SCvxError
+            fmt = string("The coded penalty value (%.3e) does not match ",
+                         "the JuMP penalty value (%.3e) at time step %d")
+            msg = @eval @sprintf($fmt, $Pk_coded, $Pk_jump, $k)
+            err = SCvxError(k, PENALTY_CHECK_FAILED, msg)
+
+            # Mark the solution as unsafe
+            _scvx__mark_unsafe!(sol, err)
+
+            throw(err)
+        end
+    end
+
+    return nothing
 end
 
 #= Count how many SCvx iterations have happened.
@@ -1242,40 +1349,4 @@ Returns:
 function _scvx__scvx_iter_count(history::SCvxHistory)::T_Int
     num_iter = length(history.subproblems)
     return num_iter
-end
-
-#= Add a new column to the iteration info table.
-
-Args:
-    col_heading: the column heading.
-    col_fmt: the column format (for sprintf to convert from native to string).
-    col_sym: symbol that references this column.
-    col_width: the column's width.
-    headings: the existing array of table column headings.
-    sorting: the column sort order, so that we can re-define column ordering
-        seamlessly.
-    fmt: the existing string of table column format.
-
-Returns:
-    fmt: the updated string of table column format. =#
-function _scvx__add_table_column!(
-    col_heading::T_String,
-    col_fmt::T_String,
-    col_width::T_Int,
-    col_sym::Symbol,
-    headings::Vector{T_String},
-    sorting::Dict{Symbol,T_Int},
-    fmt::Dict{Symbol,T_String},
-    row::T_String)::T_String
-
-    # Column separator
-    separator = (length(row)==0) ? "" : "| "
-
-    push!(headings, col_heading)
-    push!(sorting, col_sym => length(headings))
-    push!(fmt, col_sym => col_fmt)
-
-    row = string(row, separator, "%-", col_width, "s")
-
-    return row
 end
