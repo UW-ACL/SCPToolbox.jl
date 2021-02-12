@@ -32,7 +32,7 @@ quad = QuadrotorParameters(id_r, id_v, id_u, id_σ, id_t, u_nrm_max, u_nrm_min,
                            tilt_max, env)
 
 # >> The trajectory bounding boxes <<
-t0 = 0.0
+t0 = 2.5
 tf = 2.5
 p_bbox = BoundingBox([t0], [tf])
 
@@ -71,7 +71,7 @@ traj_pbm = QuadrotorTrajectoryProblem(quad, env, traj_bbox)
 N = 30
 Nsub = 10
 iter_max = 30
-wvc = 1e2
+wvc = 1e4
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7
@@ -92,8 +92,7 @@ pars = SCvxParameters(N, Nsub, iter_max, wvc, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
 ###############################################################################
 # ..:: Apply SCvx ::..
 
-#=
-Apply the SCvx algorithm to solve the trajectory generation problem.
+#= Apply the SCvx algorithm to solve the trajectory generation problem.
 
 Args:
     pbm: the trajectory problem to be solved.

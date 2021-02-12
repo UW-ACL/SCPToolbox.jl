@@ -773,16 +773,8 @@ function add_cost!(spbm::SCvxSubproblem)::Nothing
 
     # >> The cost function <<
 
-    # Terminal cost
-    xf = @last(x)
-    J_term = terminal_cost(xf, p, traj_pbm)
-
-    # Integrated running cost
-    J_run = Vector{T_Objective}(undef, N)
-    for k = 1:N
-        @k(J_run) = running_cost(@k(x), @k(u), p, traj_pbm)
-    end
-    integ_J_run = trapz(J_run, τ_grid)
+    # Original cost
+    spbm.J_orig = _scvx__original_cost(x, u, p, spbm.scvx)
 
     # Virtual control penalty
     for k = 1:N
@@ -794,11 +786,9 @@ function add_cost!(spbm::SCvxSubproblem)::Nothing
         @k(spbm.fit) = @constraint(
             spbm.mdl, tmp in MOI.NormOneCone(length(tmp)))
     end
-    integ_P = trapz(P, τ_grid)
+    spbm.J_pen = trapz(P, τ_grid)
 
     # Overall cost
-    spbm.J_orig = J_term+integ_J_run
-    spbm.J_pen = integ_P
     spbm.J_tot = _scvx__overall_cost(spbm.J_orig, spbm.J_pen, spbm.scvx)
 
     # Associate cost function with the model
@@ -996,9 +986,10 @@ Args:
 Returns:
     scale: the scaling structure. =#
 function _scvx__compute_scaling(bbox::TrajectoryBoundingBox)::SCvxScaling
-    # Get sizes
+    # Parameters
     nx = length(bbox.path.x.min)
     nu = length(bbox.path.u.min)
+    zero_intvl_tol = sqrt(eps())
 
     # State, control and final time "box" bounds
     x_min = bbox.path.x.min
@@ -1018,18 +1009,21 @@ function _scvx__compute_scaling(bbox::TrajectoryBoundingBox)::SCvxScaling
 
     # State scaling terms
     diag_Sx = (x_max-x_min)/wdth_x
+    diag_Sx[diag_Sx .< zero_intvl_tol] .= 1.0
     Sx = diagm(diag_Sx)
     iSx = diagm(1.0./diag_Sx)
     cx = x_min-diag_Sx*intrvl_x[1]
 
     # Input scaling terms
     diag_Su = (u_max-u_min)/wdth_u
+    diag_Su[diag_Su .< zero_intvl_tol] .= 1.0
     Su = diagm(diag_Su)
     iSu = diagm(1.0./diag_Su)
     cu = u_min-diag_Su*intrvl_u[1]
 
     # Temporal (parameter) scaling terms
     diag_Sp = (p_max-p_min)/wdth_p
+    diag_Sp[diag_Sp .< zero_intvl_tol] .= 1.0
     Sp = diagm(diag_Sp)
     iSp = diagm(1.0./diag_Sp)
     cp = p_min-diag_Sp*intrvl_p[1]
@@ -1093,6 +1087,43 @@ function _scvx__derivs(τ::T_Real,
     return dVdt
 end
 
+#= Compute the original problem cost function.
+
+Args:
+    x: the discrete-time state trajectory.
+    u: the discrete-time input trajectory.
+    p: the parameter vector.
+    pbm: the SCvx problem definition.
+
+Returns:
+    cost: the original cost. =#
+function _scvx__original_cost(
+    x::T_RealOrOptiVarMatrix,
+    u::T_RealOrOptiVarMatrix,
+    p::T_RealOrOptiVarVector,
+    pbm::SCvxProblem)::T_Objective
+
+    # Parameters
+    N = pbm.pars.N
+    τ_grid = pbm.consts.τ_grid
+    traj_pbm = pbm.traj
+
+    # Terminal cost
+    xf = @last(x)
+    J_term = terminal_cost(xf, p, traj_pbm)
+
+    # Integrated running cost
+    J_run = Vector{T_Objective}(undef, N)
+    for k = 1:N
+        @k(J_run) = running_cost(@k(x), @k(u), p, traj_pbm)
+    end
+    integ_J_run = trapz(J_run, τ_grid)
+
+    cost = J_term+integ_J_run
+
+    return cost
+end
+
 #= Combine original cost and penalty term into an overall cost.
 
 Args:
@@ -1103,9 +1134,9 @@ Args:
 Returns:
     cost: the combined cost. =#
 function _scvx__overall_cost(
-    orig::Union{T_Real, T_Objective},
-    pen::Union{T_Real, T_Objective},
-    pbm::SCvxProblem)::Union{T_Real, T_Objective}
+    orig::T_Objective,
+    pen::T_Objective,
+    pbm::SCvxProblem)::T_Objective
 
     # Parameters
     λ = pbm.pars.λ
@@ -1202,11 +1233,16 @@ function _scvx__solution_cost!(
     λ = pbm.pars.λ
 
     # Original cost
+    if isnan(sol.J_orig)
+        x = sol.xd
+        u = sol.ud
+        p = sol.p
+        sol.J_orig = _scvx__original_cost(x, u, p, pbm)
+    end
     orig = sol.J_orig
 
     # Cost penalty term
-    pen = (kind==:linear) ? sol.J_pen :
-        _scvx__actual_cost_penalty!(sol, pbm)
+    pen = (kind==:linear) ? sol.J_pen : _scvx__actual_cost_penalty!(sol, pbm)
 
     # Overall cost
     cost = _scvx__overall_cost(orig, pen, pbm)

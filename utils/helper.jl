@@ -141,8 +141,9 @@ return the final result.
 
 Args:
     x0: the initial condition.
-    f: the ODE.
-    tspan: the time interval over which to integrate.
+    f: the dynamics function, with call signature f(t, x) where t is the
+        current time and x is the current state.
+    tspan: the time grid over which to integrate.
 
 Returns:
     x: the integration result at the end of the time interval.=#

@@ -24,7 +24,7 @@ end
 
 #= Quadrotor flight environment. =#
 struct FlightEnvironmentParameters
-    gnrm::T_Real        # Gravity norm
+    g::T_RealVector     # [m/s^2] Gravity vector
     obsN::T_Int         # Number of obstacles
     obsiH::T_RealTensor # Obstacle shapes (ellipsoids)
     obsc::T_RealMatrix  # Obstacle centers
@@ -57,6 +57,7 @@ function QuadrotorParameters(
     tilt_max::T_Real,
     env::FlightEnvironmentParameters)::QuadrotorParameters
 
+    # Sizes
     nx = length([id_r; id_v])
     nu = length([id_u; id_σ])
     np = length([id_t])
@@ -73,12 +74,14 @@ end
 #= Constructor for the environment.
 
 Args:
-    See the definition of the QuadrotorParameters struct.
+    gnrm: gravity vector norm.
+    obsiH: array of obstacle shapes (ellipsoids).
+    obsc: arrange of obstacle centers.
 
 Returns:
     env: the environment struct. =#
 function FlightEnvironmentParameters(
-    g::T_Real,
+    gnrm::T_Real,
     obsiH::Vector{T_RealMatrix},
     obsc::Vector{T_RealVector})::FlightEnvironmentParameters
 
@@ -86,7 +89,11 @@ function FlightEnvironmentParameters(
     obsiH = cat(obsiH...;dims=3)
     obsc = cat(obsc...;dims=2)
 
-    env = FlightEnvironmentParameters(g,obsN,obsiH,obsc)
+    # Gravity
+    g = zeros(3)
+    g[end] = -gnrm
+
+    env = FlightEnvironmentParameters(g, obsN, obsiH, obsc)
 
     return env
 end
@@ -102,7 +109,9 @@ Returns:
     See docstring of generic method in problem.jl. =#
 function initial_guess(
     pbm::QuadrotorTrajectoryProblem,
-    N::T_Int)::Tuple{T_RealMatrix, T_RealMatrix, T_RealVector}
+    N::T_Int)::Tuple{T_RealMatrix,
+                     T_RealMatrix,
+                     T_RealVector}
 
     # >> State trajectory <<
     x0 = 0.5*(pbm.bbox.init.x.min+pbm.bbox.init.x.max)
@@ -114,7 +123,7 @@ function initial_guess(
     uf = pbm.bbox.path.u.min
     u_traj = straightline_interpolate(u0, uf, N)
     # Set first and last input to offset gravity
-    g, = _quadrotor__gravity(pbm.env)
+    g = pbm.env.g
     @first(u_traj) = [-g; norm(g)]
     @last(u_traj) = [-g; norm(g)]
 
@@ -138,21 +147,24 @@ function dynamics(
     u::T_RealVector,
     p::T_RealVector)::T_RealVector
 
+    # Parameters
+    veh = pbm.vehicle
+    nx = veh.generic.nx
+
     # Extract variables
-    r = x[pbm.vehicle.id_r]
-    v = x[pbm.vehicle.id_v]
-    u = u[pbm.vehicle.id_u]
-    time_dilation = p[pbm.vehicle.id_t]
+    r = x[veh.id_r]
+    v = x[veh.id_v]
+    uu = u[veh.id_u]
+    time_dilation = p[veh.id_t]
 
     # Individual time derivatives
-    g, = _quadrotor__gravity(pbm.env)
     drdt = v
-    dvdt = u+g
+    dvdt = uu+pbm.env.g
 
     # State time derivative
-    dxdt = zeros(pbm.vehicle.generic.nx)
-    dxdt[pbm.vehicle.id_r] = drdt
-    dxdt[pbm.vehicle.id_v] = dvdt
+    dxdt = zeros(nx)
+    dxdt[veh.id_r] = drdt
+    dxdt[veh.id_v] = dvdt
     dxdt *= time_dilation
 
     return dxdt
@@ -167,7 +179,7 @@ Returns:
     See docstring of generic method in problem.jl. =#
 function jacobians(
     pbm::QuadrotorTrajectoryProblem,
-    τ::T_Real, #nowarn
+    τ::T_Real,
     x::T_RealVector,
     u::T_RealVector,
     p::T_RealVector)::Tuple{T_RealMatrix,
@@ -184,16 +196,11 @@ function jacobians(
     id_t = pbm.vehicle.id_t
 
     # Extract variables
-    r = x[id_r]
-    v = x[id_v]
-    u = u[id_u]
     time_dilation = p[id_t]
 
     # Jacobian with respect to the state
-    _, dgdr = _quadrotor__gravity(pbm.env)
     A = zeros(nx, nx)
     A[id_r, id_v] = I(3)
-    A[id_v, id_r] = dgdr
     A *= time_dilation
 
     # Jacobian with respect to the input
@@ -289,9 +296,9 @@ Args:
 Returns:
     See docstring of generic method in problem.jl. =#
 function running_cost(
-    xk::T_OptiVarAffTransfVector, #nowarn
-    uk::T_OptiVarAffTransfVector,
-    p::T_OptiVarAffTransfVector, #nowarn
+    xk::T_RealOrOptiVarVector, #nowarn
+    uk::T_RealOrOptiVarVector,
+    p::T_RealOrOptiVarVector, #nowarn
     pbm::QuadrotorTrajectoryProblem)::T_Objective
 
     # Parameters
@@ -307,22 +314,6 @@ function running_cost(
 end
 
 # ..:: Private methods ::..
-
-#= Get the gravity vector and gravity gradient.
-
-Args:
-    env: the environment parameters.
-
-Returns:
-    g: the gravity at position r.
-    Dg: the gravity gradient at position r. =#
-function _quadrotor__gravity(
-    env::FlightEnvironmentParameters)::Tuple{T_RealVector,
-                                             T_RealMatrix}
-    g = [0.0; 0.0; -env.gnrm]
-    Dg = zeros(3, 3)
-    return g, Dg
-end
 
 #= Compute obstacle avoidance constraint and its linearization.
 

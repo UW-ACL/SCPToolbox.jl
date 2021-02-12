@@ -14,6 +14,8 @@ T_Int = Int
 T_String = String
 T_Real = Float64
 T_Symbol = Symbol
+
+
 T_RealOrNothing = Union{T_Real, Nothing}
 T_IntVector = Vector{T_Int}
 T_RealArrayLike = Array{T_Real}
@@ -28,6 +30,8 @@ T_OptiVarVector = Vector{T_OptiVar}
 T_OptiVarMatrix = Matrix{T_OptiVar}
 T_OptiVarAffTransfVector = Vector{T_OptiVarAffTransf}
 T_OptiVarAffTransfMatrix = Matrix{T_OptiVarAffTransf}
+T_RealOrOptiVarVector = Union{T_RealVector, T_OptiVarAffTransfVector}
+T_RealOrOptiVarMatrix = Union{T_RealMatrix, T_OptiVarAffTransfMatrix}
 T_Constraint = Union{ConstraintRef, Nothing}
 T_ConstraintVector = Vector{T_Constraint}
 T_ConstraintMatrix = Matrix{T_Constraint}

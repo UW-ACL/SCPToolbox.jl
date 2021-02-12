@@ -239,8 +239,8 @@ Args:
 Returns:
     cost: the terminal cost expression. =#
 function terminal_cost(
-    xf::T_OptiVarAffTransfVector, #nowarn
-    p::T_OptiVarAffTransfVector, #nowarn
+    xf::T_RealOrOptiVarVector, #nowarn
+    p::T_RealOrOptiVarVector, #nowarn
     pbm::T)::T_Objective where {T<:AbstractTrajectoryProblem} #nowarn
 
     cost = 0.0
@@ -259,9 +259,9 @@ Args:
 Returns:
     cost: the running cost expression. =#
 function running_cost(
-    xk::T_OptiVarAffTransfVector, #nowarn
-    uk::T_OptiVarAffTransfVector, #nowarn
-    p::T_OptiVarAffTransfVector, #nowarn
+    xk::T_RealOrOptiVarVector, #nowarn
+    uk::T_RealOrOptiVarVector, #nowarn
+    p::T_RealOrOptiVarVector, #nowarn
     pbm::T)::T_Objective where {T<:AbstractTrajectoryProblem} #nowarn
 
     cost = 0.0
