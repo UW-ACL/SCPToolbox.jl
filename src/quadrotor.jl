@@ -113,19 +113,17 @@ function initial_guess(
                      T_RealMatrix,
                      T_RealVector}
 
-    # >> State trajectory <<
+    # Parameters
+    g = pbm.env.g
+
+    # State trajectory
     x0 = 0.5*(pbm.bbox.init.x.min+pbm.bbox.init.x.max)
     xf = 0.5*(pbm.bbox.trgt.x.min+pbm.bbox.trgt.x.max)
     x_traj = straightline_interpolate(x0, xf, N)
 
-    # >> Input trajectory <<
-    u0 = pbm.bbox.path.u.min
-    uf = pbm.bbox.path.u.min
-    u_traj = straightline_interpolate(u0, uf, N)
-    # Set first and last input to offset gravity
-    g = pbm.env.g
-    @first(u_traj) = [-g; norm(g)]
-    @last(u_traj) = [-g; norm(g)]
+    # Input trajectory
+    u_antigravity = [-g; norm(g)]
+    u_traj = straightline_interpolate(u_antigravity, u_antigravity, N)
 
     # >> Parameters <<
     p = 0.5*(pbm.bbox.path.p.min+pbm.bbox.path.p.max)

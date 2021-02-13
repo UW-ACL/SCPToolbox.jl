@@ -58,7 +58,7 @@ trgt_bbox = XUPBoundingBox(x_bbox, u_bbox, p_bbox)
 _x = zeros(quad.generic.nx)
 _x[id_r] .= -10.0
 _x[id_v] .= -8.0
-u_min = [-u_nrm_max; -u_nrm_max; 0.0; 0.0]
+u_min = [-u_nrm_max; -u_nrm_max; 0.0; u_nrm_min]
 u_max = [u_nrm_max; u_nrm_max; u_nrm_max; u_nrm_max]
 x_bbox = BoundingBox(_x, -_x)
 u_bbox = BoundingBox(u_min, u_max)
@@ -85,11 +85,13 @@ iter_max = 15
 η_ub = 10.0
 cvrg_tol = 1e-3
 feas_tol = 1e-2
+q_tr = Inf
+q_exit = Inf
 solver = ECOS
 solver_options = Dict("verbose"=>0)
 pars = SCvxParameters(N, Nsub, iter_max, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
-                      η_init, η_lb, η_ub, cvrg_tol, feas_tol, solver,
-                      solver_options)
+                      η_init, η_lb, η_ub, cvrg_tol, feas_tol, q_tr, q_exit,
+                      solver, solver_options)
 ###############################################################################
 
 ###############################################################################

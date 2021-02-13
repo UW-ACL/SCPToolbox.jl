@@ -27,6 +27,8 @@ struct SCvxParameters
     η_ub::T_Real      # Maximum trust region radius
     eps::T_Real       # Convergence tolerance
     feas_tol::T_Real  # Dynamic feasibility tolerance
+    q_tr::T_Real      # Trust region norm (possible: 1, 2, 4 (2^2), Inf)
+    q_exit::T_Real    # Stopping criterion norm
     solver::Module    # The numerical solver to use for the subproblems
     solver_opts::Dict{T_String, Any} # Numerical solver options
 end
@@ -140,6 +142,7 @@ mutable struct SCvxSubproblem
     vb::T_OptiVarMatrix          # Virtual control for path constraints
     # >> Other variables <<
     P::T_OptiVarVector           # Virtual control penalty function
+    tr_rx::T_OptiVarMatrix       # 2-norm trust region JuMP formulation
     # >> Trust region <<
     η::T_Real                    # Trust region radius
     # >> Discrete-time dynamics update matrices <<
@@ -420,6 +423,7 @@ function SCvxSubproblem(pbm::SCvxProblem,
 
     # Other variables
     P = @variable(mdl, [1:N], base_name="P")
+    tr_rx = @variable(mdl, [1:2, 1:N], base_name="tr_xu")
 
     # Uninitialized parameters
     A = T_RealTensor(undef, nx, nx, N-1)
@@ -441,9 +445,9 @@ function SCvxSubproblem(pbm::SCvxProblem,
     fit = T_ConstraintVector(undef, N)
 
     spbm = SCvxSubproblem(mdl, pbm, sol, ref, J_orig, J_pen, J_tot, xh, uh, ph,
-                          x, u, p, vc, vb, P, η, A, Bm, Bp, S, r, dynamics,
-                          ic_x, tc_x, p_bnds, pc_x, pc_u, pc_cvx, pc_ncvx,
-                          tr_xu, fit)
+                          x, u, p, vc, vb, P, tr_rx, η, A, Bm, Bp, S, r,
+                          dynamics, ic_x, tc_x, p_bnds, pc_x, pc_u, pc_cvx,
+                          pc_ncvx, tr_xu, fit)
 
     return spbm
 end
@@ -729,11 +733,13 @@ function add_trust_region!(spbm::SCvxSubproblem)::Nothing
 
     # Variables and parameters
     N = spbm.scvx.pars.N
+    q = spbm.scvx.pars.q_tr
     scale = spbm.scvx.consts.scale
     vehicle = spbm.scvx.traj.vehicle
     nx = vehicle.generic.nx
     nu = vehicle.generic.nu
-    sqrt_η = sqrt(spbm.η)
+    η = spbm.η
+    sqrt_η = sqrt(η)
     soc_dim = 1+nx+nu
     xh = spbm.xh
     uh = spbm.uh
@@ -746,12 +752,35 @@ function add_trust_region!(spbm::SCvxSubproblem)::Nothing
     dx = xh-xh_ref
     du = uh-uh_ref
     for k = 1:N
-        @k(tr_xu) = @constraint(
-            spbm.mdl, vcat(sqrt_η, @k(dx), @k(du))
-            in MOI.SecondOrderCone(soc_dim))
-        # @k(tr_xu) = @constraint(
-        #     spbm.mdl, vcat(spbm.η, @k(dx), @k(du))
-        #     in MOI.NormInfinityCone(soc_dim))
+        if q==1
+            # 1-norm
+            @k(tr_xu) = @constraint(
+                spbm.mdl, vcat(η, @k(dx), @k(du))
+                in MOI.NormOneCone(soc_dim))
+        elseif q==2
+            # 2-norm
+            cstrt = @constraint(
+                spbm.mdl, vcat(spbm.tr_rx[1, k], @k(dx))
+                in MOI.SecondOrderCone(1+nx))
+            push!(spbm.fit, cstrt)
+
+            cstrt = @constraint(
+                spbm.mdl, vcat(spbm.tr_rx[2, k], @k(du))
+                in MOI.SecondOrderCone(1+nu))
+            push!(spbm.fit, cstrt)
+
+            @k(tr_xu) = @constraint(spbm.mdl, sum(spbm.tr_rx[:, k]) <= η)
+        elseif q==4
+            # 2-norm squared
+            @k(tr_xu) = @constraint(
+                spbm.mdl, vcat(sqrt_η, @k(dx), @k(du))
+                in MOI.SecondOrderCone(soc_dim))
+        else
+            # Infinity-norm
+            @k(tr_xu) = @constraint(
+                spbm.mdl, vcat(η, @k(dx), @k(du))
+                in MOI.NormInfinityCone(soc_dim))
+        end
     end
 
     return nothing
@@ -855,6 +884,7 @@ function check_stopping_criterion!(spbm::SCvxSubproblem)::T_Bool
     # Extract values
     N = spbm.scvx.pars.N
     eps = spbm.scvx.pars.eps
+    q = spbm.scvx.pars.q_exit
     scale = spbm.scvx.consts.scale
     sol = spbm.sol
     xh = scale.iSx*(sol.xd.-scale.cx)
@@ -867,7 +897,6 @@ function check_stopping_criterion!(spbm::SCvxSubproblem)::T_Bool
     dyn_feas = sol.feas
 
     # Check solution deviation from reference
-    q = Inf
     dp = norm(ph-ph_ref, q)
     dx = 0.0
     for k = 1:N
@@ -1353,7 +1382,7 @@ function _scvx__assert_penalty_match!(sol::SCvxSubproblemSolution,
     # A small number for the equality tolerance
     # We don't want to make this a user parameter, because ideally this
     # assertion is "built-in", abstracted from the user
-    check_tol = 1e-5
+    check_tol = 1e-4
 
     # Variables
     vc = sol.vc
