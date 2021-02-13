@@ -1,4 +1,6 @@
-#=Helper functions used throughout the code=#
+#= Helper functions used throughout the code. =#
+
+using LinearAlgebra
 
 include("types.jl")
 
@@ -76,7 +78,8 @@ Args:
 
 Returns:
     f_t: the function value at time t.=#
-function linterp(t::Float64, f_cps::T_RealMatrix,
+function linterp(t::Float64,
+                 f_cps::T_RealMatrix,
                  t_grid::T_RealVector)::T_RealVector
     k = get_interval(t, t_grid)
     c = (@kp1(t_grid)-t)/(@kp1(t_grid)-@k(t_grid))
@@ -116,7 +119,9 @@ Returns:
     v: the resulting interpolation (a matrix, k-th column is the k-th vector,
        k=1,...,N).=#
 function straightline_interpolate(
-    v0::T_RealVector, vf::T_RealVector, N::T_Int)::T_RealMatrix
+    v0::T_RealVector,
+    vf::T_RealVector,
+    N::T_Int)::T_RealMatrix
 
     # Initialize
     nv = length(v0)
@@ -174,7 +179,7 @@ Args:
 
 Returns:
     F: the numerical integral of the f signal. =#
-function trapz(f, grid::T_RealVector)
+function trapz(f::AbstractVector, grid::T_RealVector)
     N = length(grid)
     F = 0.0
     for k = 1:N-1
@@ -182,4 +187,37 @@ function trapz(f, grid::T_RealVector)
         F += 0.5*δ*(@kp1(f)+@k(f))
     end
     return F
+end
+
+#= Project an ellipsoid onto a subset of its axes.
+
+Args:
+    H: ellipsoid shape matrix.
+    c: ellipsoid center.
+    ax: array of the axes onto which to project.
+
+Returns:
+    H_prj: projected ellipsoid shape matrix.
+    c_prj: projected ellipsoid center. =#
+function project(H::T_RealMatrix,
+                 c::T_RealVector,
+                 ax::T_IntVector)::Tuple{T_RealMatrix,
+                                         T_RealVector}
+    # Parameters
+    n = size(H, 1)
+    m = length(ax)
+
+    # Projection matrix onto lower-dimensional space
+    P = zeros(m, n)
+    for i=1:m
+        P[i, ax[i]] = 1.0
+    end
+
+    # Do the projection
+    Hb = P*H
+    F = svd(Hb)
+    H_prj = F.U*diagm(F.S)
+    c_prj = P*c
+
+    return H_prj, c_prj
 end

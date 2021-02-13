@@ -9,38 +9,40 @@ abstract type AbstractTrajectoryProblem end
 @enum(SCvxStatus,
       PENALTY_CHECK_FAILED)
 
-T_Bool = Bool
-T_Int = Int
-T_String = String
-T_Real = Float64
-T_Symbol = Symbol
+const T_Bool = Bool
+const T_Int = Int
+const T_String = String
+const T_Real = Float64
+const T_Symbol = Symbol
 
+const T_IntVector = Vector{T_Int}
+const T_IntRange = UnitRange{T_Int}
 
-T_RealOrNothing = Union{T_Real, Nothing}
-T_IntVector = Vector{T_Int}
-T_RealArrayLike = Array{T_Real}
-T_RealVector = T_RealArrayLike{1}
-T_RealMatrix = T_RealArrayLike{2}
-T_RealTensor = T_RealArrayLike{3}
-T_IntRange = UnitRange{T_Int}
-T_OptiModel = Model
-T_OptiVar = VariableRef
-T_OptiVarAffTransf = GenericAffExpr{T_Real,VariableRef}
-T_OptiVarVector = Vector{T_OptiVar}
-T_OptiVarMatrix = Matrix{T_OptiVar}
-T_OptiVarAffTransfVector = Vector{T_OptiVarAffTransf}
-T_OptiVarAffTransfMatrix = Matrix{T_OptiVarAffTransf}
-T_RealOrOptiVarVector = Union{T_RealVector, T_OptiVarAffTransfVector}
-T_RealOrOptiVarMatrix = Union{T_RealMatrix, T_OptiVarAffTransfMatrix}
-T_Constraint = Union{ConstraintRef, Nothing}
-T_ConstraintVector = Vector{T_Constraint}
-T_ConstraintMatrix = Matrix{T_Constraint}
-T_Objective = Union{Nothing,
-                    Float64,
-                    T_OptiVar,
-                    GenericAffExpr{T_Real,T_OptiVar},
-                    GenericQuadExpr{T_Real,T_OptiVar}}
-T_ExitStatus = Union{SCvxStatus, MOI.TerminationStatusCode}
+__types_f(n) = Array{T_Real, n}
+const T_RealVector = __types_f(1)
+const T_RealMatrix = __types_f(2)
+const T_RealTensor = __types_f(3)
+
+const T_OptiModel = Model
+
+__types_f(n) = Union{
+    Array{T_Real, n},
+    Array{VariableRef, n},
+    Array{GenericAffExpr{T_Real, VariableRef}, n}}
+const T_OptiVarVector = __types_f(1)
+const T_OptiVarMatrix = __types_f(2)
+
+__types_f(n) = Array{ConstraintRef, n}
+const T_ConstraintVector = __types_f(1)
+const T_ConstraintMatrix = __types_f(2)
+
+const T_Objective = Union{Missing,
+                          Float64,
+                          VariableRef,
+                          GenericAffExpr{T_Real, VariableRef},
+                          GenericQuadExpr{T_Real, VariableRef}}
+
+const T_ExitStatus = Union{SCvxStatus, MOI.TerminationStatusCode}
 
 #= Iteration progress information table to be printed in REPL. =#
 mutable struct Table
@@ -73,11 +75,9 @@ Args:
 
 Returns:
     table: the table structure. =#
-function Table(def::Vector{Tuple{T_Symbol,
-                                 T_String,
-                                 T_String,
-                                 T_Int}},
-               separator::T_String="|")::Table
+function Table(
+    def::Vector{Tuple{T_Symbol, T_String, T_String, T_Int}},
+    separator::T_String="|")::Table
 
     # Initialize
     headings = Array{T_String}(undef, 0)

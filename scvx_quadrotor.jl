@@ -5,6 +5,9 @@ Solution via Sequential Convex Programming using the SCvx algorithm. =#
 using LinearAlgebra
 using ECOS
 using Printf
+using Plots
+using LaTeXStrings
+using ColorSchemes
 
 include("src/quadrotor.jl")
 include("src/problem.jl")
@@ -15,7 +18,7 @@ include("src/scvx.jl")
 
 # >> The environment <<
 g = 9.81
-obsiH = [diagm([2.0; 2.0; 0.0]), diagm([2.0; 2.0; 0.0])]
+obsiH = [diagm([1.5; 1.5; 0.0]), diagm([2.0; 2.0; 0.0])]
 obsc = [[1.0; 2.0; 0.0], [2.0; 5.0; 0.0]]
 env = FlightEnvironmentParameters(g, obsiH, obsc)
 
@@ -32,9 +35,9 @@ quad = QuadrotorParameters(id_r, id_v, id_u, id_σ, id_t, u_nrm_max, u_nrm_min,
                            tilt_max, env)
 
 # >> The trajectory bounding boxes <<
-t0 = 2.5
-tf = 2.5
-p_bbox = BoundingBox([t0], [tf])
+tf_min = 2.5
+tf_max = 2.5
+p_bbox = BoundingBox([tf_min], [tf_max])
 
 # Initial
 _x = zeros(quad.generic.nx)
@@ -70,15 +73,15 @@ traj_pbm = QuadrotorTrajectoryProblem(quad, env, traj_bbox)
 # ..:: Define the SCvx algorithm parameters ::..
 N = 30
 Nsub = 10
-iter_max = 30
-wvc = 1e4
+iter_max = 20
+wvc = 1e3
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7
 β_sh = 2.0
 β_gr = 2.0
 tr_init = 0.5
-tr_lb = 0.001
+tr_lb = 1e-4
 tr_ub = 10.0
 cvrg_tol = 1e-3
 feas_tol = 1e-2
@@ -116,36 +119,37 @@ function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
 
     for k = 1:pbm.pars.iter_max
         # >> Construct the subproblem <<
-        subpbm = SCvxSubproblem(pbm, ref, η)
+        spbm = SCvxSubproblem(pbm, ref, η)
 
-        add_dynamics!(subpbm)
-        add_bcs!(subpbm)
-        add_convex_constraints!(subpbm)
-        add_nonconvex_constraints!(subpbm)
-        add_trust_region!(subpbm)
-        add_cost!(subpbm)
+        add_dynamics!(spbm)
+        add_bcs!(spbm)
+        add_convex_constraints!(spbm)
+        add_nonconvex_constraints!(spbm)
+        add_trust_region!(spbm)
+        add_cost!(spbm)
 
-        save!(history, subpbm)
+        save!(history, spbm)
 
         # >> Solve the subproblem <<
-        solve_subproblem!(subpbm)
+        solve_subproblem!(spbm)
 
         # "Emergency exit" the SCvx loop if something bad happened
         # (e.g. numerical problems)
-        if unsafe_solution(subpbm)
+        if unsafe_solution(spbm)
             print_info(history, pbm)
             break
         end
 
         # >> Check stopping criterion <<
-        stop = check_stopping_criterion!(subpbm)
+        stop = check_stopping_criterion!(spbm)
         if stop
+            print_info(history, pbm)
             break
         end
 
         # >> Update trust region <<
         try
-            ref, η = update_trust_region!(subpbm)
+            ref, η = update_trust_region!(spbm)
         catch e
             print_info(history, pbm, e)
             break
@@ -164,4 +168,68 @@ end
 scvx_pbm = SCvxProblem(pars, traj_pbm)
 
 sol, history = scvx_solve(scvx_pbm)
+###############################################################################
+
+###############################################################################
+# ..:: Plot results ::..
+
+pyplot()
+
+# -----------------------------------------------------------------------------
+# >> Trajectory evolution plot through the iterations <<
+
+# Common values
+veh = traj_pbm.vehicle
+env = traj_pbm.env
+num_iter = length(history.subproblems)
+font_sz = 10
+cmap_offset = 0.1
+cmap = cgrad(:thermal; rev = true)
+
+plot(aspect_ratio=:equal,
+     xlabel=L"\mathrm{East~position~[m]}",
+     ylabel=L"\mathrm{North~position~[m]}",
+     tickfontsize=font_sz,
+     labelfontsize=font_sz)
+
+# @ Draw the obstacles @
+θ = LinRange(0.0, 2*pi, 100)
+circle = hcat(cos.(θ), sin.(θ))'
+for i = 1:env.obsN
+    local H, c = project(get_obstacle(i, traj_pbm)..., [1, 2])
+    local vertices = H\circle.+c
+    local obs = Shape(vertices[1, :], vertices[2, :])
+    plot!(obs;
+          reuse=true,
+          legend=false,
+          seriestype=:shape,
+          color="#db6245",
+          fillopacity=0.5,
+          linewidth=1,
+          linecolor="#26415d")
+end
+
+# @ Draw the trajectories @
+for i = 1:num_iter
+
+    # Extract values for the trajectory at iteration i
+    local sol = history.subproblems[i].sol
+    local pos = sol.xd[veh.id_r, :]
+    local clr = cmap[(i-1)/(num_iter-1)*(1-cmap_offset)+cmap_offset]
+
+    plot!(pos[1, :],
+          pos[2, :];
+          reuse=true,
+          legend=false,
+          seriestype=:scatter,
+          markershape=:circle,
+          markersize=6,
+          markerstrokecolor="white",
+          markerstrokewidth=0.3,
+          color=clr)
+end
+
+gui()
+# -----------------------------------------------------------------------------
+
 ###############################################################################

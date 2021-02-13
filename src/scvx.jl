@@ -121,7 +121,7 @@ mutable struct SCvxSubproblem
     # >> Algorithm parameters <<
     scvx::SCvxProblem            # The SCvx problem definition
     # >> Reference and solution trajectories <<
-    sol::Union{SCvxSubproblemSolution, Nothing} # The solution trajectory
+    sol::Union{SCvxSubproblemSolution, Missing} # The solution trajectory
     ref::SCvxSubproblemSolution  # The reference trajectory for linearization
     # >> Cost function <<
     J_orig::T_Objective          # The original convex cost function
@@ -132,9 +132,9 @@ mutable struct SCvxSubproblem
     uh::T_OptiVarMatrix          # Discrete-time inputs
     ph::T_OptiVarVector          # Parameter
     # >> Physical variables <<
-    x::T_OptiVarAffTransfMatrix  # Discrete-time states
-    u::T_OptiVarAffTransfMatrix  # Discrete-time inputs
-    p::T_OptiVarAffTransfVector  # Parameters
+    x::T_OptiVarMatrix           # Discrete-time states
+    u::T_OptiVarMatrix           # Discrete-time inputs
+    p::T_OptiVarVector           # Parameters
     # >> Virtual control (never scaled) <<
     vc::T_OptiVarMatrix          # Virtual control for dynamics
     vb::T_OptiVarMatrix          # Virtual control for path constraints
@@ -312,6 +312,8 @@ function SCvxProblem(pars::SCvxParameters,
         (:du, "Δu", "%.1e", 8),
         # Maximum deviation in input
         (:dp, "Δp", "%.1e", 8),
+        # Stopping criterion deviation measurement
+        (:δ, "δ", "%.1e", 8),
         # Dynamic feasibility flag (true or false)
         (:dynfeas, "dyn", "%s", 3),
         # Trust region size
@@ -397,12 +399,12 @@ function SCvxSubproblem(pbm::SCvxProblem,
         set_optimizer_attribute(mdl, key, val)
     end
 
-    sol = nothing # No solution associated yet with the subproblem
+    sol = missing # No solution associated yet with the subproblem
 
     # Cost (default: feasibility problem)
-    J_orig = nothing
-    J_pen = nothing
-    J_tot = nothing
+    J_orig = missing
+    J_pen = missing
+    J_tot = missing
 
     # Decision variables (scaled)
     xh = @variable(mdl, [1:nx, 1:N], base_name="xh")
@@ -427,16 +429,16 @@ function SCvxSubproblem(pbm::SCvxProblem,
     r = T_RealMatrix(undef, nx, N-1)
 
     # Empty constraints
-    dynamics = T_ConstraintMatrix(nothing, nx, N-1)
-    ic_x = T_ConstraintVector(nothing, nx)
-    tc_x = T_ConstraintVector(nothing, nx)
-    p_bnds = T_ConstraintVector(nothing, np)
-    pc_x = T_ConstraintMatrix(nothing, nx, N)
-    pc_u = T_ConstraintMatrix(nothing, nu, N)
-    pc_cvx = T_ConstraintMatrix(nothing, n_cvx, N)
-    pc_ncvx = T_ConstraintMatrix(nothing, n_ncvx, N)
-    tr_xu = T_ConstraintVector(nothing, N)
-    fit = T_ConstraintVector(nothing, N)
+    dynamics = T_ConstraintMatrix(undef, nx, N-1)
+    ic_x = T_ConstraintVector(undef, nx)
+    tc_x = T_ConstraintVector(undef, nx)
+    p_bnds = T_ConstraintVector(undef, np)
+    pc_x = T_ConstraintMatrix(undef, nx, N)
+    pc_u = T_ConstraintMatrix(undef, nu, N)
+    pc_cvx = T_ConstraintMatrix(undef, n_cvx, N)
+    pc_ncvx = T_ConstraintMatrix(undef, n_ncvx, N)
+    tr_xu = T_ConstraintVector(undef, N)
+    fit = T_ConstraintVector(undef, N)
 
     spbm = SCvxSubproblem(mdl, pbm, sol, ref, J_orig, J_pen, J_tot, xh, uh, ph,
                           x, u, p, vc, vb, P, η, A, Bm, Bp, S, r, dynamics,
@@ -743,9 +745,12 @@ function add_trust_region!(spbm::SCvxSubproblem)::Nothing
     dx = xh-xh_ref
     du = uh-uh_ref
     for k = 1:N
+        # @k(tr_xu) = @constraint(
+        #     spbm.mdl, vcat(sqrt_η, @k(dx), @k(du))
+        #     in MOI.SecondOrderCone(soc_dim))
         @k(tr_xu) = @constraint(
-            spbm.mdl, vcat(sqrt_η, @k(dx), @k(du))
-            in MOI.SecondOrderCone(soc_dim))
+            spbm.mdl, vcat(spbm.η, @k(dx), @k(du))
+            in MOI.NormInfinityCone(soc_dim))
     end
 
     return nothing
@@ -831,7 +836,7 @@ function unsafe_solution(sol::Union{SCvxSubproblemSolution,
     end
 
     if !sol.unsafe
-        safe = sol.status==MOI.OPTIMAL
+        safe = sol.status==MOI.OPTIMAL || sol.status==MOI.ALMOST_OPTIMAL
         sol.unsafe = !safe
     end
     return sol.unsafe
@@ -944,10 +949,12 @@ function print_info(history::SCvxHistory,
         max_dxh = norm(xh-xh_ref, Inf)
         max_duh = norm(uh-uh_ref, Inf)
         max_dph = norm(ph-ph_ref, Inf)
+        status = @sprintf "%s" sol.status
+        status = status[1:min(8, length(status))]
 
         # Associate values with columns
         assoc = Dict(:iter => _scvx__scvx_iter_count(history),
-                     :status => sol.status,
+                     :status => status,
                      :maxvc => norm(sol.vc, Inf),
                      :maxvb => norm(sol.vb, Inf),
                      :cost => sol.J_orig,
@@ -955,6 +962,7 @@ function print_info(history::SCvxHistory,
                      :du => max_duh,
                      :dp => max_dph,
                      :dynfeas => sol.feas ? "T" : "F",
+                     :δ => sol.deviation,
                      :ρ => sol.ρ,
                      :dtr => sol.tr_update,
                      :rej => sol.reject ? "x" : "",
@@ -1010,22 +1018,22 @@ function _scvx__compute_scaling(bbox::TrajectoryBoundingBox)::SCvxScaling
     # State scaling terms
     diag_Sx = (x_max-x_min)/wdth_x
     diag_Sx[diag_Sx .< zero_intvl_tol] .= 1.0
-    Sx = diagm(diag_Sx)
-    iSx = diagm(1.0./diag_Sx)
+    Sx = Diagonal(diag_Sx)
+    iSx = inv(Sx)
     cx = x_min-diag_Sx*intrvl_x[1]
 
     # Input scaling terms
     diag_Su = (u_max-u_min)/wdth_u
     diag_Su[diag_Su .< zero_intvl_tol] .= 1.0
-    Su = diagm(diag_Su)
-    iSu = diagm(1.0./diag_Su)
+    Su = Diagonal(diag_Su)
+    iSu = inv(Su)
     cu = u_min-diag_Su*intrvl_u[1]
 
     # Temporal (parameter) scaling terms
     diag_Sp = (p_max-p_min)/wdth_p
     diag_Sp[diag_Sp .< zero_intvl_tol] .= 1.0
-    Sp = diagm(diag_Sp)
-    iSp = diagm(1.0./diag_Sp)
+    Sp = Diagonal(diag_Sp)
+    iSp = inv(Sp)
     cp = p_min-diag_Sp*intrvl_p[1]
 
     scale = SCvxScaling(Sx, cx, Su, cu, Sp, cp, iSx, iSu, iSp)
@@ -1098,9 +1106,9 @@ Args:
 Returns:
     cost: the original cost. =#
 function _scvx__original_cost(
-    x::T_RealOrOptiVarMatrix,
-    u::T_RealOrOptiVarMatrix,
-    p::T_RealOrOptiVarVector,
+    x::T_OptiVarMatrix,
+    u::T_OptiVarMatrix,
+    p::T_OptiVarVector,
     pbm::SCvxProblem)::T_Objective
 
     # Parameters
@@ -1346,7 +1354,7 @@ function _scvx__assert_penalty_match!(sol::SCvxSubproblemSolution,
     # A small number for the equality tolerance
     # We don't want to make this a user parameter, because ideally this
     # assertion is "built-in", abstracted from the user
-    check_tol = 10*sqrt(eps())
+    check_tol = 1e-5
 
     # Variables
     vc = sol.vc
@@ -1355,7 +1363,7 @@ function _scvx__assert_penalty_match!(sol::SCvxSubproblemSolution,
 
     for k = 1:N
         vck = (k<N) ? @k(vc) : zeros(nx)
-        Pk_coded = _scvx__P(vck, @k(vb))
+        Pk_coded = _scvx__P(abs.(vck), abs.(@k(vb)))
         Pk_jump = @k(P_jump)
 
         if abs(Pk_coded-Pk_jump) > check_tol

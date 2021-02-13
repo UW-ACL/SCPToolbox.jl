@@ -223,9 +223,9 @@ Args:
 Returns:
     See docstring of generic method in problem.jl. =#
 function add_mdl_cvx_constraints!(
-    xk::T_OptiVarAffTransfVector, #nowarn
-    uk::T_OptiVarAffTransfVector,
-    p::T_OptiVarAffTransfVector, #nowarn
+    xk::T_OptiVarVector, #nowarn
+    uk::T_OptiVarVector,
+    p::T_OptiVarVector, #nowarn
     mdl::Model,
     pbm::QuadrotorTrajectoryProblem)::T_ConstraintVector
 
@@ -296,9 +296,9 @@ Args:
 Returns:
     See docstring of generic method in problem.jl. =#
 function running_cost(
-    xk::T_RealOrOptiVarVector, #nowarn
-    uk::T_RealOrOptiVarVector,
-    p::T_RealOrOptiVarVector, #nowarn
+    xk::T_OptiVarVector, #nowarn
+    uk::T_OptiVarVector,
+    p::T_OptiVarVector, #nowarn
     pbm::QuadrotorTrajectoryProblem)::T_Objective
 
     # Parameters
@@ -311,6 +311,24 @@ function running_cost(
     cost = σk*σk
 
     return cost
+end
+
+#= Get the i-th obstacle.
+
+Args:
+    i: the obstacle number.
+    pbm: the trajectory problem definition.
+
+Returns:
+    H: the obstacle shape matrix.
+    c: the obstacle center. =#
+function get_obstacle(i::T_Int,
+                      pbm::QuadrotorTrajectoryProblem)::Tuple{T_RealMatrix,
+                                                              T_RealVector}
+    H = pbm.env.obsiH[:, :, i]
+    c  = pbm.env.obsc[:, i]
+
+    return H, c
 end
 
 # ..:: Private methods ::..
@@ -334,8 +352,7 @@ function _quadrotor__obstacle_constraint(
     # Parameters
     nx = pbm.vehicle.generic.nx
     id_r = pbm.vehicle.id_r
-    iH = pbm.env.obsiH[:, :, i]
-    c  = pbm.env.obsc[:, i]
+    iH, c = get_obstacle(i, pbm)
     r = xb[id_r]
 
     # Compute the constraint value f(x)
