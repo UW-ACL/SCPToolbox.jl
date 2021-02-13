@@ -301,11 +301,11 @@ function SCvxProblem(pars::SCvxParameters,
         # Solver status
         (:status, "status", "%s", 8),
         # Maximum dynamics virtual control element
-        (:maxvc, "vc", "%.1e", 8),
+        (:maxvc, "vc", "%.2e", 9),
         # Maximum constraints virtual control element
         (:maxvb, "vb", "%.1e", 8),
         # Original cost value
-        (:cost, "J", "%.2f", 6),
+        (:cost, "J", "%.2e", 9),
         # Maximum deviation in state
         (:dx, "Δx", "%.1e", 8),
         # Maximum deviation in input
@@ -546,7 +546,7 @@ function discretize!(ref::SCvxSubproblemSolution,
 
         # Integrate
         f(τ::T_Real, V::T_RealVector)::T_RealVector =
-            _scvx__derivs(τ, V, pbm, idcs, ref)
+            _scvx__derivs(τ, V, k, pbm, idcs, ref)
         τ_subgrid = T_RealVector(
             LinRange(pbm.consts.τ_grid[k], pbm.consts.τ_grid[k+1], Nsub))
         V = rk4(f, V0, τ_subgrid)
@@ -580,6 +580,7 @@ function discretize!(ref::SCvxSubproblemSolution,
         if norm(@k(ref.defect)) > pbm.pars.feas_tol
             ref.feas = false
         end
+
     end
 
     return nothing
@@ -716,7 +717,7 @@ function add_nonconvex_constraints!(spbm::SCvxSubproblem)::Nothing
         constraints = add_mdl_ncvx_constraint!(
             @k(x), @k(u), p, @k(x_ref), @k(u_ref), p_ref, @k(vb),
             spbm.mdl, traj_pbm)
-        @k(spbm.pc_ncvx) = constraints
+        # @k(spbm.pc_ncvx) = constraints
     end
 end
 
@@ -745,12 +746,12 @@ function add_trust_region!(spbm::SCvxSubproblem)::Nothing
     dx = xh-xh_ref
     du = uh-uh_ref
     for k = 1:N
-        # @k(tr_xu) = @constraint(
-        #     spbm.mdl, vcat(sqrt_η, @k(dx), @k(du))
-        #     in MOI.SecondOrderCone(soc_dim))
         @k(tr_xu) = @constraint(
-            spbm.mdl, vcat(spbm.η, @k(dx), @k(du))
-            in MOI.NormInfinityCone(soc_dim))
+            spbm.mdl, vcat(sqrt_η, @k(dx), @k(du))
+            in MOI.SecondOrderCone(soc_dim))
+        # @k(tr_xu) = @constraint(
+        #     spbm.mdl, vcat(spbm.η, @k(dx), @k(du))
+        #     in MOI.NormInfinityCone(soc_dim))
     end
 
     return nothing
@@ -899,14 +900,15 @@ function update_trust_region!(spbm::SCvxSubproblem)::Tuple{
     # Parameters
     pbm = spbm.scvx
     sol = spbm.sol
+    ref = spbm.ref
 
     # Compute the actual cost improvement
-    J_ref = _scvx__solution_cost!(spbm.ref, :nonlinear, pbm)
-    J_sol = _scvx__solution_cost!(spbm.sol, :nonlinear, pbm)
+    J_ref = _scvx__solution_cost!(ref, :nonlinear, pbm)
+    J_sol = _scvx__solution_cost!(sol, :nonlinear, pbm)
     actual_improvement = J_ref-J_sol
 
     # Compute the predicted cost improvement
-    L_sol = _scvx__solution_cost!(spbm.sol, :linear, pbm)
+    L_sol = _scvx__solution_cost!(sol, :linear, pbm)
     predicted_improvement = J_ref-L_sol
 
     # Convexification performance metric
@@ -1046,6 +1048,7 @@ end
 Args:
     τ: the time.
     V: the current concatenated vector.
+    k: the discrete time grid interval.
     pbm: the SCvx problem definition.
     idcs: indexing arrays into V.
     ref: the reference trajectory.
@@ -1054,16 +1057,13 @@ Returns:
     dVdt: the time derivative of V. =#
 function _scvx__derivs(τ::T_Real,
                        V::T_RealVector,
+                       k::T_Int,
                        pbm::SCvxProblem,
                        idcs::SCvxDiscretizationIndices,
                        ref::SCvxSubproblemSolution)::T_RealVector
     # Parameters
     nx = pbm.traj.vehicle.generic.nx
     N = pbm.pars.N
-    tf = ref.p
-
-    # Figure out the current time interval
-    k = get_interval(τ, pbm.consts.τ_grid)
     τ_span = @k(pbm.consts.τ_grid, k, k+1)
 
     # Get current values
@@ -1217,6 +1217,8 @@ function _scvx__actual_cost_penalty!(
             @k(P) = _scvx__P(δk, @k(s))
         end
         pen = trapz(P, τ_grid)
+
+        sol.J_pen_nl = pen
     else
         # >> Retrieve existing penalty value <<
         pen = sol.J_pen_nl
@@ -1236,9 +1238,6 @@ function _scvx__solution_cost!(
     sol::SCvxSubproblemSolution,
     kind::Symbol,
     pbm::SCvxProblem)::T_Real
-
-    # Parameters
-    λ = pbm.pars.λ
 
     # Original cost
     if isnan(sol.J_orig)

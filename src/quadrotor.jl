@@ -362,7 +362,7 @@ function _quadrotor__obstacle_constraint(
     # Compute the constraint linearization at xb
     Df = zeros(nx)
     if norm(tmp)>eps()
-        Df[id_r] = -(r-c)*dot(iH, iH)/norm(tmp)
+        Df[id_r] = -(r-c)'*(iH'*iH)/norm(tmp)
     end
 
     return f, Df

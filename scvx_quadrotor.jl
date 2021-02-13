@@ -18,7 +18,7 @@ include("src/scvx.jl")
 
 # >> The environment <<
 g = 9.81
-obsiH = [diagm([1.5; 1.5; 0.0]), diagm([2.0; 2.0; 0.0])]
+obsiH = [diagm([2.0; 2.0; 0.0]), diagm([2.0; 2.0; 0.0])]
 obsc = [[1.0; 2.0; 0.0], [2.0; 5.0; 0.0]]
 env = FlightEnvironmentParameters(g, obsiH, obsc)
 
@@ -73,22 +73,22 @@ traj_pbm = QuadrotorTrajectoryProblem(quad, env, traj_bbox)
 # ..:: Define the SCvx algorithm parameters ::..
 N = 30
 Nsub = 10
-iter_max = 20
-wvc = 1e3
+iter_max = 15
+λ = 1e5
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7
 β_sh = 2.0
 β_gr = 2.0
-tr_init = 0.5
-tr_lb = 1e-4
-tr_ub = 10.0
+η_init = 0.5
+η_lb = 1e-3
+η_ub = 10.0
 cvrg_tol = 1e-3
 feas_tol = 1e-2
 solver = ECOS
 solver_options = Dict("verbose"=>0)
-pars = SCvxParameters(N, Nsub, iter_max, wvc, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
-                      tr_init, tr_lb, tr_ub, cvrg_tol, feas_tol, solver,
+pars = SCvxParameters(N, Nsub, iter_max, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
+                      η_init, η_lb, η_ub, cvrg_tol, feas_tol, solver,
                       solver_options)
 ###############################################################################
 
