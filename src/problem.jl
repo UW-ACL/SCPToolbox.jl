@@ -169,7 +169,7 @@ Returns:
     dsdx: Jacobian with respect to x.
     dsdu: Jacobian with respect to u.
     dsdp: Jacobian with respect to p. =#
-function ncvx_constraint(
+function ncvx_constraints(
     x::T_RealVector, #nowarn
     u::T_RealVector, #nowarn
     p::T_RealVector, #nowarn
@@ -191,7 +191,10 @@ function ncvx_constraint(
     return s, dsdx, dsdu, dsdp
 end
 
-#= Add nonconvex constraints to the problem at time step k.
+#= Compute linearized nonconvex constraints at time step k.
+
+Assume that the constraints are of the form s(x, u, p)<=0. This function
+outputs only the left-hand side, i.e. the linearization of s().
 
 Args:
     xk: the state vector at time k.
@@ -200,33 +203,29 @@ Args:
     xbk: reference trajectory state vector at time k.
     ubk: reference trajectory input vector at time k.
     pb: reference trajectory parameter vector.
-    vbk: the virtual control for time step k.
-    mdl: the optimization model (JuMP format).
     pbm: the trajectory problem instance.
 
 Returns:
-    ncvx: vector of nonconvex constraints. =#
-function add_mdl_ncvx_constraint!(
+    lhs: vector of linearized nonconvex constraints left-hand sides. =#
+function mdl_ncvx_constraints(
     xk::T_OptiVarVector,
     uk::T_OptiVarVector,
     p::T_OptiVarVector,
     xbk::T_RealVector,
     ubk::T_RealVector,
     pb::T_RealVector,
-    vbk::T_OptiVarVector,
-    mdl::Model,
-    pbm::T)::T_ConstraintVector where {T<:AbstractTrajectoryProblem}
+    pbm::T)::T_OptiVarVector where {T<:AbstractTrajectoryProblem}
 
     # Parameters
     n_ncvx = pbm.vehicle.generic.n_ncvx
 
     # The constraints
     ncvx = T_ConstraintVector(undef, n_ncvx)
-    s, Dx, Du, Dp = ncvx_constraint(xbk, ubk, pb, pbm)
-    r = s-Dx*xbk-Du*ubk-Dp*pb
-    ncvx = @constraint(mdl, Dx*xk+Du*uk+Dp*p+r+vbk .<= 0.0)
+    s, C, D, G = ncvx_constraints(xbk, ubk, pb, pbm)
+    rp = s-C*xbk-D*ubk-G*pb
+    lhs = C*xk+D*uk+G*p+rp
 
-    return ncvx
+    return lhs
 end
 
 #= Return the terminal cost expression.

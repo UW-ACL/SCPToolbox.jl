@@ -18,7 +18,7 @@ include("src/scvx.jl")
 
 # >> The environment <<
 g = 9.81
-obsiH = [diagm([2.0; 2.0; 0.0]), diagm([2.0; 2.0; 0.0])]
+obsiH = [diagm([2.0; 2.0; 0.0]), diagm([1.0; 1.0; 0.0])]
 obsc = [[1.0; 2.0; 0.0], [2.0; 5.0; 0.0]]
 env = FlightEnvironmentParameters(g, obsiH, obsc)
 

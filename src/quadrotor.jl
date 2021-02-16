@@ -256,7 +256,7 @@ Args:
 
 Returns:
     See docstring of generic method in problem.jl. =#
-function ncvx_constraint(
+function ncvx_constraints(
     x::T_RealVector,
     u::T_RealVector, #nowarn
     p::T_RealVector, #nowarn

@@ -60,6 +60,7 @@ struct SCvxDiscretizationIndices
     Bp::T_IntRange # Indices for B_{+} matrix
     S::T_IntRange  # Indices for S matrix
     r::T_IntRange  # Indices for r vector
+    Ex::T_IntRange # Indices for Ex matrix
     length::T_Int  # Propagation vector total length
 end
 
@@ -73,8 +74,7 @@ mutable struct SCvxSubproblemSolution
     ud::T_RealMatrix     # Inputs
     p::T_RealVector      # Parameter vector
     # >> Virtual control terms <<
-    vc::T_RealMatrix     # Virtual control for dynamics
-    vb::T_RealMatrix     # Virtual control for path constraints
+    v::T_RealMatrix      # Virtual control
     P::T_RealVector      # Cost function penalty integrand terms
     # >> Cost function value <<
     J_orig::T_Real       # The original convex cost function
@@ -96,14 +96,21 @@ mutable struct SCvxSubproblemSolution
     Bm::T_RealTensor     # ... +Bm[:, :, k]*u[:, k]+ ...
     Bp::T_RealTensor     # ... +Bp[:, :, k]*u[:, k+1]+ ...
     S::T_RealTensor      # ... +S[:, :, k]*p+ ...
-    r::T_RealMatrix      # ... +r[:, k]
+    r::T_RealMatrix      # ... +r[:, k]+ ...
+    Ex::T_RealTensor     # ... +Ex[:, :, k]*v
 end
 
 #= Common constant terms used throughout the algorithm. =#
 struct SCvxCommonConstants
+    # >> Discrete-time grid <<
     Δτ::T_Real           # Discrete time step
     τ_grid::T_RealVector # Grid of scaled timed on the [0,1] interval
+    # >> Virtual control <<
+    Ex::T_RealMatrix     # Continuous-time matrix for dynamics virtual control
+    Ec::T_RealMatrix     # Matrix for dynamics virtual control
+    # >> Scaling <<
     scale::SCvxScaling   # Variable scaling
+    # >> Iteration info <<
     table::Table         # Iteration info table (printout to REPL)
 end
 
@@ -138,8 +145,7 @@ mutable struct SCvxSubproblem
     u::T_OptiVarMatrix           # Discrete-time inputs
     p::T_OptiVarVector           # Parameters
     # >> Virtual control (never scaled) <<
-    vc::T_OptiVarMatrix          # Virtual control for dynamics
-    vb::T_OptiVarMatrix          # Virtual control for path constraints
+    v::T_OptiVarMatrix           # Virtual control
     # >> Other variables <<
     P::T_OptiVarVector           # Virtual control penalty function
     tr_rx::T_OptiVarMatrix       # 2-norm trust region JuMP formulation
@@ -151,7 +157,8 @@ mutable struct SCvxSubproblem
     Bm::T_RealTensor             # ... +Bm[:, :, k]*u[:, k]+ ...
     Bp::T_RealTensor             # ... +Bp[:, :, k]*u[:, k+1]+ ...
     S::T_RealTensor              # ... +S[:, :, k]*p+ ...
-    r::T_RealMatrix              # ... +r[:, k]
+    r::T_RealMatrix              # ... +r[:, k]+ ...
+    Ex::T_RealTensor             # ... +Ex[:, :, k]*v
     # >> Constraint references <<
     dynamics::T_ConstraintMatrix # Dynamics
     ic_x::T_ConstraintVector     # State initial set
@@ -207,15 +214,17 @@ function SCvxDiscretizationIndices(pbm::SCvxProblem)::SCvxDiscretizationIndices
     nx = pbm.traj.vehicle.generic.nx
     nu = pbm.traj.vehicle.generic.nu
     np = pbm.traj.vehicle.generic.np
+    n_ncvx = pbm.traj.vehicle.generic.n_ncvx
     id_x  = (1:nx)
     id_A  = id_x[end].+(1:nx*nx)
     id_Bm = id_A[end].+(1:nx*nu)
     id_Bp = id_Bm[end].+(1:nx*nu)
     id_S  = id_Bp[end].+(1:nx*np)
     id_r  = id_S[end].+(1:nx)
-    id_sz = length([id_x; id_A; id_Bm; id_Bp; id_S; id_r])
+    id_Ex  = id_r[end].+(1:nx*(nx+n_ncvx))
+    id_sz = length([id_x; id_A; id_Bm; id_Bp; id_S; id_r; id_Ex])
     idcs = SCvxDiscretizationIndices(id_x, id_A, id_Bm, id_Bp, id_S,
-                                     id_r, id_sz)
+                                     id_r, id_Ex, id_sz)
     return idcs
 end
 
@@ -256,8 +265,7 @@ function SCvxSubproblemSolution(
     tr_update = ""
     reject = false
 
-    vc = zeros(nx, N-1)
-    vb = zeros(n_ncvx, N)
+    v = zeros(nx+n_ncvx, N)
     P = zeros(N)
 
     J_orig = NaN
@@ -270,11 +278,12 @@ function SCvxSubproblemSolution(
     Bp = T_RealTensor(undef, nx, nu, N-1)
     S = T_RealTensor(undef, nx, np, N-1)
     r = T_RealMatrix(undef, nx, N-1)
+    Ex = T_RealTensor(undef, nx, nx+n_ncvx, N-1)
 
-    subsol = SCvxSubproblemSolution(x, u, p, vc, vb, P, J_orig, J_pen, J_tot,
+    subsol = SCvxSubproblemSolution(x, u, p, v, P, J_orig, J_pen, J_tot,
                                     J_pen_nl, status, feas, defect, deviation,
                                     unsafe, ρ, tr_update, reject, A, Bm, Bp, S,
-                                    r)
+                                    r, Ex)
 
     return subsol
 end
@@ -292,12 +301,17 @@ Returns:
     pbm: the problem structure ready for being solved by SCvx. =#
 function SCvxProblem(pars::SCvxParameters,
                      traj::T)::SCvxProblem where {T<:AbstractTrajectoryProblem}
+
     # Compute the common constant terms
-    scale = _scvx__compute_scaling(traj.bbox)
     τ_grid = LinRange(0.0, 1.0, pars.N)
     Δτ = τ_grid[2]-τ_grid[1]
 
-    # Define the iteration info table
+    dims = traj.vehicle.generic
+    Ex = hcat(I(dims.nx), zeros(dims.nx, dims.n_ncvx))
+    Ec = hcat(zeros(dims.n_ncvx, dims.nx), I(dims.n_ncvx))
+
+    scale = _scvx__compute_scaling(traj.bbox)
+
     table = Table([
         # Iteration count
         (:iter, "k", "%d", 2),
@@ -328,7 +342,7 @@ function SCvxProblem(pars::SCvxParameters,
         # Reject solution indicator
         (:rej, "rej", "%s", 5)])
 
-    consts = SCvxCommonConstants(Δτ, τ_grid, scale, table)
+    consts = SCvxCommonConstants(Δτ, τ_grid, Ex, Ec, scale, table)
 
     pbm = SCvxProblem(pars, traj, consts)
 
@@ -360,8 +374,7 @@ function SCvxSubproblemSolution(spbm::SCvxSubproblem)::SCvxSubproblemSolution
     sol.J_tot = value(spbm.J_tot)
 
     # Save the virtual control values and penalty term
-    sol.vc = value.(spbm.vc)
-    sol.vb = value.(spbm.vb)
+    sol.v = value.(spbm.v)
     sol.P = value.(spbm.P)
 
     # Save the solution status
@@ -418,8 +431,7 @@ function SCvxSubproblem(pbm::SCvxProblem,
     x = pbm.consts.scale.Sx*xh.+pbm.consts.scale.cx
     u = pbm.consts.scale.Su*uh.+pbm.consts.scale.cu
     p = pbm.consts.scale.Sp*ph.+pbm.consts.scale.cp
-    vc = @variable(mdl, [1:nx, 1:N-1], base_name="vc")
-    vb = @variable(mdl, [1:n_ncvx, 1:N], base_name="vb")
+    v = @variable(mdl, [1:(nx+n_ncvx), 1:N], base_name="v")
 
     # Other variables
     P = @variable(mdl, [1:N], base_name="P")
@@ -431,6 +443,7 @@ function SCvxSubproblem(pbm::SCvxProblem,
     Bp = T_RealTensor(undef, nx, nu, N-1)
     S = T_RealTensor(undef, nx, np, N-1)
     r = T_RealMatrix(undef, nx, N-1)
+    Ex = T_RealTensor(undef, nx, nx+n_ncvx, N-1)
 
     # Empty constraints
     dynamics = T_ConstraintMatrix(undef, nx, N-1)
@@ -445,7 +458,7 @@ function SCvxSubproblem(pbm::SCvxProblem,
     fit = T_ConstraintVector(undef, N)
 
     spbm = SCvxSubproblem(mdl, pbm, sol, ref, J_orig, J_pen, J_tot, xh, uh, ph,
-                          x, u, p, vc, vb, P, tr_rx, η, A, Bm, Bp, S, r,
+                          x, u, p, v, P, tr_rx, η, A, Bm, Bp, S, r, Ex,
                           dynamics, ic_x, tc_x, p_bnds, pc_x, pc_u, pc_cvx,
                           pc_ncvx, tr_xu, fit)
 
@@ -534,6 +547,7 @@ function discretize!(ref::SCvxSubproblemSolution,
     nx = pbm.traj.vehicle.generic.nx
     nu = pbm.traj.vehicle.generic.nu
     np = pbm.traj.vehicle.generic.np
+    n_ncvx = pbm.traj.vehicle.generic.n_ncvx
     N = pbm.pars.N
     Nsub = pbm.pars.Nsub
 
@@ -562,6 +576,7 @@ function discretize!(ref::SCvxSubproblemSolution,
         BpV = V[idcs.Bp]
         SV = V[idcs.S]
         rV = V[idcs.r]
+        ExV = V[idcs.Ex]
 
         # Extract the discrete-time update matrices for this time interval
 	A_k = reshape(AV, (nx, nx))
@@ -569,6 +584,7 @@ function discretize!(ref::SCvxSubproblemSolution,
         Bp_k = A_k*reshape(BpV, (nx, nu))
         S_k = A_k*reshape(SV, (nx, np))
         r_k = A_k*rV
+        Ex_k = A_k*reshape(ExV, (nx, nx+n_ncvx))
 
         # Save the discrete-time update matrices
         @k(ref.A) = A_k
@@ -576,6 +592,7 @@ function discretize!(ref::SCvxSubproblemSolution,
         @k(ref.Bp) = Bp_k
         @k(ref.S) = S_k
         @k(ref.r) = r_k
+        @k(ref.Ex) = Ex_k
 
         # Take this opportunity to comput the defect, which will be needed
         # later for the trust region update
@@ -602,7 +619,7 @@ function add_dynamics!(
     x = spbm.x
     u = spbm.u
     p = spbm.p
-    vc = spbm.vc
+    v = spbm.v
 
     for k = 1:N-1
         # Update matrices for this interval
@@ -611,6 +628,7 @@ function add_dynamics!(
         Bp = @k(spbm.ref.Bp)
         S =  @k(spbm.ref.S)
         r =  @k(spbm.ref.r)
+        Ex =  @k(spbm.ref.Ex)
 
         # Associate matrices with subproblem
         @k(spbm.A) = A
@@ -618,6 +636,7 @@ function add_dynamics!(
         @k(spbm.Bp) = Bp
         @k(spbm.S) = S
         @k(spbm.r) = r
+        @k(spbm.Ex) = Ex
     end
 
     # Add dynamics constraint to optimization model
@@ -625,7 +644,7 @@ function add_dynamics!(
         @k(spbm.dynamics) = @constraint(
             spbm.mdl,
             @kp1(x) .== @k(spbm.A)*@k(x)+@k(spbm.Bm)*@k(u)+
-            @k(spbm.Bp)*@kp1(u)+@k(spbm.S)*p+@k(spbm.r)+@k(vc))
+            @k(spbm.Bp)*@kp1(u)+@k(spbm.S)*p+@k(spbm.r)+@k(spbm.Ex)*@k(v))
     end
 
     return nothing
@@ -714,14 +733,14 @@ function add_nonconvex_constraints!(spbm::SCvxSubproblem)::Nothing
     x = spbm.x
     u = spbm.u
     p = spbm.p
-    vb = spbm.vb
+    v = spbm.v
+    Ec = spbm.scvx.consts.Ec
 
     # Problem-specific convex constraints
     for k = 1:N
-        constraints = add_mdl_ncvx_constraint!(
-            @k(x), @k(u), p, @k(x_ref), @k(u_ref), p_ref, @k(vb),
-            spbm.mdl, traj_pbm)
-        # @k(spbm.pc_ncvx) = constraints
+        lhs = mdl_ncvx_constraints(@k(x), @k(u), p, @k(x_ref),
+                                   @k(u_ref), p_ref, traj_pbm)
+        @k(spbm.pc_ncvx) = @constraint(spbm.mdl, lhs+Ec*@k(v) .<= 0.0)
     end
 end
 
@@ -801,10 +820,8 @@ function add_cost!(spbm::SCvxSubproblem)::Nothing
     u = spbm.u
     p = spbm.p
     P = spbm.P
-    vc = spbm.vc
-    vb = spbm.vb
-    vc_sz = length(vc)
-    vb_sz = length(vb)
+    v = spbm.v
+    v_sz = size(v, 1)
 
     # >> The cost function <<
 
@@ -813,13 +830,8 @@ function add_cost!(spbm::SCvxSubproblem)::Nothing
 
     # Virtual control penalty
     for k = 1:N
-        if k < N
-            tmp = vcat(@k(P), vec(@k(vc)), vec(@k(vb)))
-        else
-            tmp = vcat(@k(P), vec(@k(vb)))
-        end
         @k(spbm.fit) = @constraint(
-            spbm.mdl, tmp in MOI.NormOneCone(length(tmp)))
+            spbm.mdl, vcat(@k(P), vec(@k(v))) in MOI.NormOneCone(1+v_sz))
     end
     spbm.J_pen = trapz(P, τ_grid)
 
@@ -980,14 +992,18 @@ function print_info(history::SCvxHistory,
         max_dxh = norm(xh-xh_ref, Inf)
         max_duh = norm(uh-uh_ref, Inf)
         max_dph = norm(ph-ph_ref, Inf)
+        Ex = spbm.scvx.consts.Ex
+        Ec = spbm.scvx.consts.Ec
+        v_dyn = Ex*sol.v
+        v_con = Ec*sol.v
         status = @sprintf "%s" sol.status
         status = status[1:min(8, length(status))]
 
         # Associate values with columns
         assoc = Dict(:iter => _scvx__scvx_iter_count(history),
                      :status => status,
-                     :maxvc => norm(sol.vc, Inf),
-                     :maxvb => norm(sol.vb, Inf),
+                     :maxvc => norm(v_dyn, Inf),
+                     :maxvb => norm(v_con, Inf),
                      :cost => sol.J_orig,
                      :dx => max_dxh,
                      :du => max_duh,
@@ -1100,15 +1116,16 @@ function _scvx__derivs(τ::T_Real,
     u_now = linterp(τ, @k(ref.ud, k, k+1), τ_span)
     p = ref.p
     Phi = reshape(V[idcs.A], (nx, nx))
-    λ_m = (τ_span[2]-τ)/(τ_span[2]-τ_span[1])
-    λ_p = (τ-τ_span[1])/(τ_span[2]-τ_span[1])
+    σ_m = (τ_span[2]-τ)/(τ_span[2]-τ_span[1])
+    σ_p = (τ-τ_span[1])/(τ_span[2]-τ_span[1])
 
     # Compute the state time derivative and local linearization
     f = dynamics(pbm.traj, τ, x_now, u_now, p)
     A, B, S = jacobians(pbm.traj, τ, x_now, u_now, p)
-    B_m = λ_m*B
-    B_p = λ_p*B
+    B_m = σ_m*B
+    B_p = σ_p*B
     r = f-A*x_now-B*u_now-S*p
+    Ex = pbm.consts.Ex
 
     # Compute the running derivatives for the discrete-time state update
     # matrices
@@ -1118,8 +1135,10 @@ function _scvx__derivs(τ::T_Real,
     dBpdt = iPhi*B_p
     dSdt = iPhi*S
     drdt = iPhi*r
+    dExdt = iPhi*Ex
 
-    dVdt = [f; vec(dPhidt); vec(dBmdt); vec(dBpdt); vec(dSdt); drdt]
+    dVdt = [f; vec(dPhidt); vec(dBmdt); vec(dBpdt);
+            vec(dSdt); drdt; vec(dExdt)]
 
     return dVdt
 end
@@ -1235,7 +1254,7 @@ function _scvx__actual_cost_penalty!(
         δ = sol.defect
         s = T_RealMatrix(undef, n_ncvx, N)
         for k = 1:N
-            @k(s), _, _, _ = ncvx_constraint(
+            @k(s), _, _, _ = ncvx_constraints(
                 @k(sol.xd), @k(sol.ud), sol.p, pbm.traj)
         end
 
@@ -1378,6 +1397,8 @@ function _scvx__assert_penalty_match!(sol::SCvxSubproblemSolution,
     # Parameters
     N = pbm.pars.N
     nx = pbm.traj.vehicle.generic.nx
+    Ex = pbm.consts.Ex
+    Ec = pbm.consts.Ec
 
     # A small number for the equality tolerance
     # We don't want to make this a user parameter, because ideally this
@@ -1385,13 +1406,11 @@ function _scvx__assert_penalty_match!(sol::SCvxSubproblemSolution,
     check_tol = 1e-4
 
     # Variables
-    vc = sol.vc
-    vb = sol.vb
+    v = sol.v
     P_jump = sol.P
 
     for k = 1:N
-        vck = (k<N) ? @k(vc) : zeros(nx)
-        Pk_coded = _scvx__P(abs.(vck), abs.(@k(vb)))
+        Pk_coded = _scvx__P(Ex*@k(v), -Ec*@k(v))
         Pk_jump = @k(P_jump)
 
         if abs(Pk_coded-Pk_jump) > check_tol
