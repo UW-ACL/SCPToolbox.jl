@@ -184,10 +184,6 @@ mutable struct SCvxSubproblem
     fit::T_ConstraintVector      # Constraints to fit problem and JuMP template
 end
 
-# Constant strings for solution exit status
-const SCVX_SOLVED = "solved"
-const SCVX_FAILED = "failed"
-
 #= Overall trajectory solution.
 
 Structure which holds the trajectory solution that the SCvx algorithm
@@ -529,7 +525,7 @@ function SCvxSolution(history::SCvxHistory)::SCvxSolution
         J = Inf
     else
         # SCvx solved the problem!
-        status = SCVX_SOLVED
+        status = @sprintf "%s" SCVX_SOLVED
         xd = last_sol.xd
         ud = last_sol.ud
         p = last_sol.p
@@ -1262,15 +1258,13 @@ This is the integrand of the overall cost penalty term for dynamics and
 nonconvex constraint violation.
 
 Args:
-    δ: inconsistency in the dynamics ("defect").
-    s: inconsistency in the nonconvex inequality constraints (value of the
-        constraint left-hand side).
+    vd: inconsistency in the dynamics ("defect").
+    vs: inconsistency in the nonconvex inequality constraints.
 
 Returns:
     P: the penalty value. =#
-function _scvx__P(δ::T_RealVector, s::T_RealVector)::T_Real
-    s_plus = max.(s, 0.0)
-    P = norm(δ, 1)+norm(s_plus, 1)
+function _scvx__P(vd::T_RealVector, vs::T_RealVector)::T_Real
+    P = norm(vd, 1)+norm(vs, 1)
     return P
 end
 
@@ -1329,7 +1323,7 @@ function _scvx__actual_cost_penalty!(
     P = T_RealVector(undef, N)
     for k = 1:N
         δk = (k<N) ? @k(δ) : zeros(nx)
-        @k(P) = _scvx__P(δk, @k(s))
+        @k(P) = _scvx__P(δk, max.(@k(s), 0.0))
     end
     pen = trapz(P, τ_grid)+_scvx__Pf(gic)+_scvx__Pf(gtc)
 

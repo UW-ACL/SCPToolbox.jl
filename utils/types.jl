@@ -7,6 +7,8 @@ abstract type AbstractTrajectoryProblem end
 
 # Possible SCvx-specific solution statuses
 @enum(SCvxStatus,
+      SCVX_SOLVED,
+      SCVX_FAILED,
       PENALTY_CHECK_FAILED)
 
 const T_Bool = Bool
