@@ -357,7 +357,7 @@ function SCvxProblem(pars::SCvxParameters,
         # Trust region size
         (:tr, "η", "%.2f", 5),
         # Convexification performance metric
-        (:ρ, "ρ", "%.2f", 8),
+        (:ρ, "ρ", "%s", 8),
         # Predicted cost improvement (percent)
         (:dL, "dL %", "%.2f", 8),
         # Update direction for trust region radius (grow? shrink?)
@@ -473,7 +473,7 @@ function SCvxSubproblem(pbm::SCvxProblem,
     # Other variables
     P = @variable(mdl, [1:N], base_name="P")
     Pf = @variable(mdl, [1:2], base_name="Pf")
-    tr_rx = @variable(mdl, [1:3, 1:N], base_name="tr_xu")
+    tr_rx = @variable(mdl, [1:2, 1:N], base_name="tr_xu")
 
     # Uninitialized parameters
     A = T_RealTensor(undef, nx, nx, N-1)
@@ -788,28 +788,25 @@ function add_trust_region!(spbm::SCvxSubproblem)::Nothing
     vehicle = spbm.scvx.traj.vehicle
     nx = vehicle.nx
     nu = vehicle.nu
-    np = vehicle.np
     η = spbm.η
     sqrt_η = sqrt(η)
-    soc_dim = 1+nx+nu+np
+    soc_dim = 1+nx+nu
     xh = spbm.xh
     uh = spbm.uh
-    ph = spbm.ph
     xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
     uh_ref = scale.iSu*(spbm.ref.ud.-scale.cu)
-    ph_ref = scale.iSp*(spbm.ref.p.-scale.cp)
     tr_xu = spbm.tr_xu
 
-    # Trust region constraint
-    # Note that we measure the *scaled* state and input deviations
+    # Measure the *scaled* state and input deviations
     dx = xh-xh_ref
     du = uh-uh_ref
-    dp = ph-ph_ref
+
+    # Trust region constraint
     for k = 1:N
         if q==1
             # 1-norm
             @k(tr_xu) = @constraint(
-                spbm.mdl, vcat(η, @k(dx), @k(du), dp)
+                spbm.mdl, vcat(η, @k(dx), @k(du))
                 in MOI.NormOneCone(soc_dim))
         elseif q==2
             # 2-norm
@@ -823,21 +820,16 @@ function add_trust_region!(spbm::SCvxSubproblem)::Nothing
                 in MOI.SecondOrderCone(1+nu))
             push!(spbm.fit, cstrt)
 
-            cstrt = @constraint(
-                spbm.mdl, vcat(spbm.tr_rx[3, k], dp)
-                in MOI.SecondOrderCone(1+np))
-            push!(spbm.fit, cstrt)
-
             @k(tr_xu) = @constraint(spbm.mdl, sum(spbm.tr_rx[:, k]) <= η)
         elseif q==4
             # 2-norm squared
             @k(tr_xu) = @constraint(
-                spbm.mdl, vcat(sqrt_η, @k(dx), @k(du), dp)
+                spbm.mdl, vcat(sqrt_η, @k(dx), @k(du))
                 in MOI.SecondOrderCone(soc_dim))
         else
             # Infinity-norm
             @k(tr_xu) = @constraint(
-                spbm.mdl, vcat(η, @k(dx), @k(du), dp)
+                spbm.mdl, vcat(η, @k(dx), @k(du))
                 in MOI.NormInfinityCone(soc_dim))
         end
     end
@@ -1056,6 +1048,7 @@ function print_info(spbm::SCvxSubproblem,
         E = spbm.scvx.consts.E
         status = @sprintf "%s" sol.status
         status = status[1:min(8, length(status))]
+        ρ = !isnan(sol.ρ) ? @sprintf("%.2f", sol.ρ) : ""
 
         # Associate values with columns
         assoc = Dict(:iter => spbm.iter,
@@ -1069,7 +1062,7 @@ function print_info(spbm::SCvxSubproblem,
                      :dp => max_dph,
                      :dynfeas => sol.feas ? "T" : "F",
                      :δ => sol.deviation,
-                     :ρ => sol.ρ,
+                     :ρ => ρ,
                      :dL => sol.dL/abs(ref.J)*100,
                      :dtr => sol.tr_update,
                      :rej => sol.reject ? "x" : "",

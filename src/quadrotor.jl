@@ -16,9 +16,10 @@ struct QuadrotorParameters
     np::T_Int                       # Number of parameters
     id_r::T_IntRange                # Position indices of the state vector
     id_v::T_IntRange                # Velocity indices of the state vector
+    id_xt::T_Int                    # Index of time dilation state
     id_u::T_IntRange                # Indices of the thrust input vector
     id_σ::T_Int                     # Indices of the slack input
-    id_t::T_Int                     # Time dilation index
+    id_pt::T_Int                    # Index of time dilation
     u_nrm_max::T_Real               # [N] Maximum thrust
     u_nrm_min::T_Real               # [N] Minimum thrust
     tilt_max::T_Real                # [rad] Maximum tilt
@@ -57,20 +58,21 @@ Returns:
 function QuadrotorParameters(
     id_r::T_IntRange,
     id_v::T_IntRange,
+    id_xt::T_Int,
     id_u::T_IntRange,
     id_σ::T_Int,
-    id_t::T_Int,
+    id_pt::T_Int,
     u_nrm_max::T_Real,
     u_nrm_min::T_Real,
     tilt_max::T_Real)::QuadrotorParameters
 
     # Sizes
-    nx = length([id_r; id_v])
+    nx = length([id_r; id_v; id_xt])
     nu = length([id_u; id_σ])
-    np = length([id_t])
+    np = length([id_pt])
 
-    quad = QuadrotorParameters(nx, nu, np, id_r, id_v, id_u, id_σ, id_t,
-                               u_nrm_max, u_nrm_min, tilt_max)
+    quad = QuadrotorParameters(nx, nu, np, id_r, id_v, id_xt, id_u, id_σ,
+                               id_pt, u_nrm_max, u_nrm_min, tilt_max)
 
     return quad
 end
@@ -125,8 +127,8 @@ function QuadrotorTrajectoryProblem(
     tf_max::T_Real)::QuadrotorTrajectoryProblem
 
     # Parameters
-    n_cvx = 4
-    n_ncvx = env.obsN+2
+    n_cvx = 5
+    n_ncvx = env.obsN
     n_ic = veh.nx
     n_tc = veh.nx
 
@@ -154,18 +156,22 @@ function initial_guess(
 
     # Parameters
     g = pbm.env.g
+    id_xt = pbm.vehicle.id_xt
+    id_pt = pbm.vehicle.id_pt
 
-    # State trajectory
+    # >> Parameter vector <<
+    p = [0.5*(pbm.tf_min+pbm.tf_max)]
+
+    # >> State trajectory <<
     x0 = 0.5*(pbm.bbox.init.x.min+pbm.bbox.init.x.max)
     xf = 0.5*(pbm.bbox.trgt.x.min+pbm.bbox.trgt.x.max)
+    x0[id_xt] = p[id_pt]
+    xf[id_xt] = p[id_pt]
     x_traj = straightline_interpolate(x0, xf, N)
 
-    # Input trajectory
+    # >> Input trajectory <<
     u_antigravity = [-g; norm(g)]
     u_traj = straightline_interpolate(u_antigravity, u_antigravity, N)
-
-    # >> Parameters <<
-    p = 0.5*(pbm.bbox.path.p.min+pbm.bbox.path.p.max)
 
     return x_traj, u_traj, p
 end
@@ -192,7 +198,7 @@ function dynamics(
     r = x[veh.id_r]
     v = x[veh.id_v]
     uu = u[veh.id_u]
-    time_dilation = p[veh.id_t]
+    time_dilation = p[veh.id_pt]
 
     # Individual time derivatives
     drdt = v
@@ -229,11 +235,12 @@ function jacobians(
     np = pbm.vehicle.np
     id_r = pbm.vehicle.id_r
     id_v = pbm.vehicle.id_v
+    id_xt = pbm.vehicle.id_xt
     id_u = pbm.vehicle.id_u
-    id_t = pbm.vehicle.id_t
+    id_pt = pbm.vehicle.id_pt
 
     # Extract variables
-    time_dilation = p[id_t]
+    time_dilation = p[id_pt]
 
     # Jacobian with respect to the state
     A = zeros(nx, nx)
@@ -247,7 +254,7 @@ function jacobians(
 
     # Jacobian with respect to the parameter vector
     F = T_RealMatrix(undef, nx, np)
-    F[:, id_t] = dynamics(pbm, τ, x, u, p)/time_dilation
+    F[:, id_pt] = dynamics(pbm, τ, x, u, p)/time_dilation
 
     return A, B, F
 end
@@ -271,11 +278,21 @@ function initial_bcs(x::T_RealVector,
     x0 = pbm.x0
     nx = pbm.vehicle.nx
     np = pbm.vehicle.np
+    id_r = pbm.vehicle.id_r
+    id_v = pbm.vehicle.id_v
+    id_xt = pbm.vehicle.id_xt
+    id_pt = pbm.vehicle.id_pt
+    time_dilation = p[id_pt]
 
     # Compute constraint value and Jacobians
-    g = x-x0
+    rhs = zeros(nx)
+    rhs[id_r] = x0[id_r]
+    rhs[id_v] = x0[id_v]
+    rhs[id_xt] = time_dilation
+    g = x-rhs
     dgdx = I(nx)
     dgdp = zeros(nx, np)
+    dgdp[id_xt, id_pt] = -1.0
 
     return g, dgdx, dgdp
 end
@@ -299,11 +316,17 @@ function terminal_bcs(x::T_RealVector,
     xf = pbm.xf
     nx = pbm.vehicle.nx
     np = pbm.vehicle.np
+    id_r = pbm.vehicle.id_r
+    id_v = pbm.vehicle.id_v
+    id_xt = pbm.vehicle.id_xt
+    id_pt = pbm.vehicle.id_pt
+    time_dilation = p[id_pt]
 
     # Compute constraint value and Jacobians
-    g = x-xf
+    g = x-[xf[id_r]; xf[id_v]; time_dilation]
     dgdx = I(nx)
     dgdp = zeros(nx, np)
+    dgdp[id_xt, id_pt] = -1.0
 
     return g, dgdx, dgdp
 end
@@ -326,6 +349,7 @@ function mdl_cvx_constraints!(
     nu = pbm.vehicle.nu
     id_u = pbm.vehicle.id_u
     id_σ = pbm.vehicle.id_σ
+    id_xt = pbm.vehicle.id_xt
     u_nrm_max = pbm.vehicle.u_nrm_max
     u_nrm_min = pbm.vehicle.u_nrm_min
     tilt_max = pbm.vehicle.tilt_max
@@ -340,6 +364,7 @@ function mdl_cvx_constraints!(
     cvx[2] = @constraint(mdl, σk <= u_nrm_max)
     cvx[3] = @constraint(mdl, vcat(σk, uuk) in MOI.SecondOrderCone(nu))
     cvx[4] = @constraint(mdl, σk*cos(tilt_max) <= uuk[3])
+    cvx[5] = @constraint(mdl, pbm.tf_min <= xk[id_xt] <= pbm.tf_max)
 
     return cvx
 end
@@ -366,8 +391,6 @@ function ncvx_constraints(
     nu = pbm.vehicle.nu
     np = pbm.vehicle.np
     obsN = pbm.env.obsN
-    id_t = pbm.vehicle.id_t
-    time_dilation = p[id_t]
 
     # Initialize values
     s = zeros(n_ncvx)
@@ -379,12 +402,6 @@ function ncvx_constraints(
     for i = 1:obsN
         s[i], dsdx[i, :] = _quadrotor__obstacle_constraint(i, x, pbm)
     end
-
-    # Compute values for time constraint
-    s[obsN+1] = time_dilation-pbm.tf_max
-    s[obsN+2] = -time_dilation+pbm.tf_min
-    dsdp[obsN+1, id_t] = 1.0
-    dsdp[obsN+2, id_t] = -1.0
 
     return s, dsdx, dsdu, dsdp
 end

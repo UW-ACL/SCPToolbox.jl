@@ -25,14 +25,15 @@ env = FlightEnvironmentParameters(g, obsiH, obsc)
 # >> The quadrotor <<
 id_r = 1:3
 id_v = 4:6
+id_xt = 7
 id_u = 1:3
 id_σ = 4
-id_t = 1
+id_pt = 1
 u_nrm_max = 23.2
 u_nrm_min = 0.6
 tilt_max = deg2rad(60)
-quad = QuadrotorParameters(id_r, id_v, id_u, id_σ, id_t,
-                           u_nrm_max, u_nrm_min, tilt_max)
+quad = QuadrotorParameters(id_r, id_v, id_xt, id_u, id_σ,
+                           id_pt, u_nrm_max, u_nrm_min, tilt_max)
 
 # >> Boundary conditions <<
 x0 = zeros(quad.nx)
@@ -60,12 +61,15 @@ u_bbox = BoundingBox(_u, _u)
 trgt_bbox = XUPBoundingBox(x_bbox, u_bbox, p_bbox)
 
 # Path
-_x = zeros(quad.nx)
-_x[id_r] .= -10.0
-_x[id_v] .= -8.0
+x_min = zeros(quad.nx)
+x_min[id_r] .= -10.0
+x_min[id_v] .= -8.0
+x_min[id_xt] = tf_min
+x_max = -copy(x_min)
+x_max[id_xt] = tf_max
 u_min = [-u_nrm_max; -u_nrm_max; 0.0; u_nrm_min]
 u_max = [u_nrm_max; u_nrm_max; u_nrm_max; u_nrm_max]
-x_bbox = BoundingBox(_x, -_x)
+x_bbox = BoundingBox(x_min, x_max)
 u_bbox = BoundingBox(u_min, u_max)
 path_bbox = XUPBoundingBox(x_bbox, u_bbox, p_bbox)
 
@@ -78,7 +82,7 @@ traj_pbm = QuadrotorTrajectoryProblem(quad, env, traj_bbox,
 ###############################################################################
 # ..:: Define the SCvx algorithm parameters ::..
 N = 30
-Nsub = 50
+Nsub = 10
 iter_max = 100
 λ = 1e4
 ρ_0 = 0.0
