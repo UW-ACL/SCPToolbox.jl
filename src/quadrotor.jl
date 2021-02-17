@@ -9,7 +9,7 @@ include("problem.jl")
 
 # ..:: Data structures ::..
 
-#= Quadrotor parameters. =#
+#= Quadrotor vehicle parameters. =#
 struct QuadrotorParameters
     nx::T_Int                       # Number of states
     nu::T_Int                       # Number of inputs
@@ -38,8 +38,11 @@ struct QuadrotorTrajectoryProblem<:AbstractTrajectoryProblem
     vehicle::QuadrotorParameters     # The ego-vehicle
     env::FlightEnvironmentParameters # The environment
     bbox::TrajectoryBoundingBox      # Bounding box for trajectory TODO remove
+    # >> Boundary conditions <<
     x0::T_RealVector                 # Initial state boundary condition
     xf::T_RealVector                 # Final state boundary condition
+    tf_min::T_Real                   # Shortest possible flight time
+    tf_max::T_Real                   # Longest possible flight time
 end
 
 # ..:: Constructors ::..
@@ -107,6 +110,8 @@ Args:
     bbox: the trajectory bounding box. TODO remove
     x0: the initial state vector.
     xf: the terminal state vector.
+    tf_min: the shortest possible flight time.
+    tf_max: the longest possible flight time.
 
 Returns:
     pbm: the overall trajectory problem definition. =#
@@ -115,16 +120,19 @@ function QuadrotorTrajectoryProblem(
     env::FlightEnvironmentParameters,
     bbox::TrajectoryBoundingBox,
     x0::T_RealVector,
-    xf::T_RealVector)::QuadrotorTrajectoryProblem
+    xf::T_RealVector,
+    tf_min::T_Real,
+    tf_max::T_Real)::QuadrotorTrajectoryProblem
 
     # Parameters
     n_cvx = 4
-    n_ncvx = env.obsN
+    n_ncvx = env.obsN+2
     n_ic = veh.nx
     n_tc = veh.nx
 
     gen = GenericParameters(n_cvx, n_ncvx, n_ic, n_tc)
-    pbm = QuadrotorTrajectoryProblem(gen, veh, env, bbox, x0, xf)
+    pbm = QuadrotorTrajectoryProblem(gen, veh, env, bbox,
+                                     x0, xf, tf_min, tf_max)
 
     return pbm
 end
@@ -358,10 +366,12 @@ function ncvx_constraints(
     nu = pbm.vehicle.nu
     np = pbm.vehicle.np
     obsN = pbm.env.obsN
+    id_t = pbm.vehicle.id_t
+    time_dilation = p[id_t]
 
     # Initialize values
-    s = T_RealVector(undef, n_ncvx)
-    dsdx = T_RealMatrix(undef, n_ncvx, nx)
+    s = zeros(n_ncvx)
+    dsdx = zeros(n_ncvx, nx)
     dsdu = zeros(n_ncvx, nu)
     dsdp = zeros(n_ncvx, np)
 
@@ -369,6 +379,12 @@ function ncvx_constraints(
     for i = 1:obsN
         s[i], dsdx[i, :] = _quadrotor__obstacle_constraint(i, x, pbm)
     end
+
+    # Compute values for time constraint
+    s[obsN+1] = time_dilation-pbm.tf_max
+    s[obsN+2] = -time_dilation+pbm.tf_min
+    dsdp[obsN+1, id_t] = 1.0
+    dsdp[obsN+2, id_t] = -1.0
 
     return s, dsdx, dsdu, dsdp
 end

@@ -18,7 +18,7 @@ include("src/scvx.jl")
 
 # >> The environment <<
 g = 9.81
-obsiH = [diagm([2.0; 2.0; 0.0]), diagm([1.0; 1.0; 0.0])]
+obsiH = [diagm([2.0; 2.0; 0.0]), diagm([2.0; 2.0; 0.0])]
 obsc = [[1.0; 2.0; 0.0], [2.0; 5.0; 0.0]]
 env = FlightEnvironmentParameters(g, obsiH, obsc)
 
@@ -38,10 +38,10 @@ quad = QuadrotorParameters(id_r, id_v, id_u, id_σ, id_t,
 x0 = zeros(quad.nx)
 xf = zeros(quad.nx)
 xf[quad.id_r[1:2]] = [2.5; 6.0]
+tf_min = 2.5
+tf_max = 6.0
 
 # >> The trajectory bounding boxes <<
-tf_min = 2.5
-tf_max = 2.5
 p_bbox = BoundingBox([tf_min], [tf_max])
 
 # Initial
@@ -71,32 +71,34 @@ path_bbox = XUPBoundingBox(x_bbox, u_bbox, p_bbox)
 
 traj_bbox = TrajectoryBoundingBox(init_bbox, trgt_bbox, path_bbox)
 
-traj_pbm = QuadrotorTrajectoryProblem(quad, env, traj_bbox, x0, xf)
+traj_pbm = QuadrotorTrajectoryProblem(quad, env, traj_bbox,
+                                      x0, xf, tf_min, tf_max)
 ###############################################################################
 
 ###############################################################################
 # ..:: Define the SCvx algorithm parameters ::..
 N = 30
-Nsub = 10
-iter_max = 15
-λ = 1e5
+Nsub = 50
+iter_max = 100
+λ = 1e4
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7
 β_sh = 2.0
 β_gr = 2.0
-η_init = 0.5
+η_init = 0.2
 η_lb = 1e-3
 η_ub = 10.0
-cvrg_tol = 1e-3
+ε_abs = 1e-3
+ε_rel = 0.1/100
 feas_tol = 1e-2
-q_tr = Inf
+q_tr = 1
 q_exit = Inf
 solver = ECOS
 solver_options = Dict("verbose"=>0)
 pars = SCvxParameters(N, Nsub, iter_max, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
-                      η_init, η_lb, η_ub, cvrg_tol, feas_tol, q_tr, q_exit,
-                      solver, solver_options)
+                      η_init, η_lb, η_ub, ε_abs, ε_rel, feas_tol, q_tr,
+                      q_exit, solver, solver_options)
 ###############################################################################
 
 ###############################################################################
@@ -118,15 +120,13 @@ function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
     init_traj = generate_initial_guess(pbm)
     ref = init_traj
 
-    discretize!(init_traj, pbm)
-
     history = SCvxHistory()
 
     # ..:: Iterate ::..
 
     for k = 1:pbm.pars.iter_max
         # >> Construct the subproblem <<
-        spbm = SCvxSubproblem(pbm, ref, η)
+        spbm = SCvxSubproblem(pbm, ref, η, k)
 
         add_dynamics!(spbm)
         add_bcs!(spbm)
@@ -143,14 +143,14 @@ function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
         # "Emergency exit" the SCvx loop if something bad happened
         # (e.g. numerical problems)
         if unsafe_solution(spbm)
-            print_info(history, pbm)
+            print_info(spbm)
             break
         end
 
         # >> Check stopping criterion <<
         stop = check_stopping_criterion!(spbm)
         if stop
-            print_info(history, pbm)
+            print_info(spbm)
             break
         end
 
@@ -158,12 +158,13 @@ function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
         try
             ref, η = update_trust_region!(spbm)
         catch e
-            print_info(history, pbm, e)
+            isa(e, SCvxError) || rethrow(e)
+            print_info(spbm, e)
             break
         end
 
         # >> Print iteration info <<
-        print_info(history, pbm)
+        print_info(spbm)
     end
 
     # ..:: Save solution ::..
