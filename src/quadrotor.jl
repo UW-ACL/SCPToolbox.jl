@@ -207,10 +207,10 @@ function jacobians(
     B *= time_dilation
 
     # Jacobian with respect to the parameter vector
-    S = T_RealMatrix(undef, nx, np)
-    S[:, id_t] = dynamics(pbm, τ, x, u, p)/time_dilation
+    F = T_RealMatrix(undef, nx, np)
+    F[:, id_t] = dynamics(pbm, τ, x, u, p)/time_dilation
 
-    return A, B, S
+    return A, B, F
 end
 
 #= Add convex constraints to the problem at time step k.

@@ -110,7 +110,7 @@ Args:
 Returns:
     A: the current Jacobian with respect to the state.
     B: the current Jacobian with respect to the input.
-    S: the current Jacobian with respect to the parameters. =#
+    F: the current Jacobian with respect to the parameters. =#
 function jacobians(
     pbm::T,
     τ::T_Real, #nowarn
@@ -126,9 +126,9 @@ function jacobians(
 
     A = fill(NaN, (nx, nx))
     B = fill(NaN, (nx, nu))
-    S = fill(NaN, (nx, np))
+    F = fill(NaN, (nx, np))
 
-    return A, B, S
+    return A, B, F
 end
 
 #= Add convex constraints to the problem at time step k.

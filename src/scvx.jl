@@ -58,9 +58,9 @@ struct SCvxDiscretizationIndices
     A::T_IntRange  # Indices for A matrix
     Bm::T_IntRange # Indices for B_{-} matrix
     Bp::T_IntRange # Indices for B_{+} matrix
-    S::T_IntRange  # Indices for S matrix
+    F::T_IntRange  # Indices for S matrix
     r::T_IntRange  # Indices for r vector
-    Ex::T_IntRange # Indices for Ex matrix
+    Ed::T_IntRange # Indices for Ed matrix
     length::T_Int  # Propagation vector total length
 end
 
@@ -95,9 +95,9 @@ mutable struct SCvxSubproblemSolution
     A::T_RealTensor      # ...  A[:, :, k]*x[:, k]+ ...
     Bm::T_RealTensor     # ... +Bm[:, :, k]*u[:, k]+ ...
     Bp::T_RealTensor     # ... +Bp[:, :, k]*u[:, k+1]+ ...
-    S::T_RealTensor      # ... +S[:, :, k]*p+ ...
+    F::T_RealTensor      # ... +F[:, :, k]*p+ ...
     r::T_RealMatrix      # ... +r[:, k]+ ...
-    Ex::T_RealTensor     # ... +Ex[:, :, k]*v
+    Ed::T_RealTensor     # ... +Ed[:, :, k]*v
 end
 
 #= Common constant terms used throughout the algorithm. =#
@@ -106,7 +106,7 @@ struct SCvxCommonConstants
     Δτ::T_Real           # Discrete time step
     τ_grid::T_RealVector # Grid of scaled timed on the [0,1] interval
     # >> Virtual control <<
-    Ex::T_RealMatrix     # Continuous-time matrix for dynamics virtual control
+    Ed::T_RealMatrix     # Continuous-time matrix for dynamics virtual control
     Ec::T_RealMatrix     # Matrix for dynamics virtual control
     # >> Scaling <<
     scale::SCvxScaling   # Variable scaling
@@ -156,9 +156,9 @@ mutable struct SCvxSubproblem
     A::T_RealTensor              # ...  A[:, :, k]*x[:, k]+ ...
     Bm::T_RealTensor             # ... +Bm[:, :, k]*u[:, k]+ ...
     Bp::T_RealTensor             # ... +Bp[:, :, k]*u[:, k+1]+ ...
-    S::T_RealTensor              # ... +S[:, :, k]*p+ ...
+    F::T_RealTensor              # ... +F[:, :, k]*p+ ...
     r::T_RealMatrix              # ... +r[:, k]+ ...
-    Ex::T_RealTensor             # ... +Ex[:, :, k]*v
+    Ed::T_RealTensor             # ... +Ed[:, :, k]*v
     # >> Constraint references <<
     dynamics::T_ConstraintMatrix # Dynamics
     ic_x::T_ConstraintVector     # State initial set
@@ -221,10 +221,10 @@ function SCvxDiscretizationIndices(pbm::SCvxProblem)::SCvxDiscretizationIndices
     id_Bp = id_Bm[end].+(1:nx*nu)
     id_S  = id_Bp[end].+(1:nx*np)
     id_r  = id_S[end].+(1:nx)
-    id_Ex  = id_r[end].+(1:nx*(nx+n_ncvx))
-    id_sz = length([id_x; id_A; id_Bm; id_Bp; id_S; id_r; id_Ex])
+    id_Ed  = id_r[end].+(1:nx*(nx+n_ncvx))
+    id_sz = length([id_x; id_A; id_Bm; id_Bp; id_S; id_r; id_Ed])
     idcs = SCvxDiscretizationIndices(id_x, id_A, id_Bm, id_Bp, id_S,
-                                     id_r, id_Ex, id_sz)
+                                     id_r, id_Ed, id_sz)
     return idcs
 end
 
@@ -278,12 +278,12 @@ function SCvxSubproblemSolution(
     Bp = T_RealTensor(undef, nx, nu, N-1)
     S = T_RealTensor(undef, nx, np, N-1)
     r = T_RealMatrix(undef, nx, N-1)
-    Ex = T_RealTensor(undef, nx, nx+n_ncvx, N-1)
+    Ed = T_RealTensor(undef, nx, nx+n_ncvx, N-1)
 
     subsol = SCvxSubproblemSolution(x, u, p, v, P, J_orig, J_pen, J_tot,
                                     J_pen_nl, status, feas, defect, deviation,
                                     unsafe, ρ, tr_update, reject, A, Bm, Bp, S,
-                                    r, Ex)
+                                    r, Ed)
 
     return subsol
 end
@@ -307,7 +307,7 @@ function SCvxProblem(pars::SCvxParameters,
     Δτ = τ_grid[2]-τ_grid[1]
 
     dims = traj.vehicle.generic
-    Ex = hcat(I(dims.nx), zeros(dims.nx, dims.n_ncvx))
+    Ed = hcat(I(dims.nx), zeros(dims.nx, dims.n_ncvx))
     Ec = hcat(zeros(dims.n_ncvx, dims.nx), I(dims.n_ncvx))
 
     scale = _scvx__compute_scaling(traj.bbox)
@@ -342,7 +342,7 @@ function SCvxProblem(pars::SCvxParameters,
         # Reject solution indicator
         (:rej, "rej", "%s", 5)])
 
-    consts = SCvxCommonConstants(Δτ, τ_grid, Ex, Ec, scale, table)
+    consts = SCvxCommonConstants(Δτ, τ_grid, Ed, Ec, scale, table)
 
     pbm = SCvxProblem(pars, traj, consts)
 
@@ -443,7 +443,7 @@ function SCvxSubproblem(pbm::SCvxProblem,
     Bp = T_RealTensor(undef, nx, nu, N-1)
     S = T_RealTensor(undef, nx, np, N-1)
     r = T_RealMatrix(undef, nx, N-1)
-    Ex = T_RealTensor(undef, nx, nx+n_ncvx, N-1)
+    Ed = T_RealTensor(undef, nx, nx+n_ncvx, N-1)
 
     # Empty constraints
     dynamics = T_ConstraintMatrix(undef, nx, N-1)
@@ -458,7 +458,7 @@ function SCvxSubproblem(pbm::SCvxProblem,
     fit = T_ConstraintVector(undef, N)
 
     spbm = SCvxSubproblem(mdl, pbm, sol, ref, J_orig, J_pen, J_tot, xh, uh, ph,
-                          x, u, p, v, P, tr_rx, η, A, Bm, Bp, S, r, Ex,
+                          x, u, p, v, P, tr_rx, η, A, Bm, Bp, S, r, Ed,
                           dynamics, ic_x, tc_x, p_bnds, pc_x, pc_u, pc_cvx,
                           pc_ncvx, tr_xu, fit)
 
@@ -574,25 +574,25 @@ function discretize!(ref::SCvxSubproblemSolution,
         AV = V[idcs.A]
         BmV = V[idcs.Bm]
         BpV = V[idcs.Bp]
-        SV = V[idcs.S]
+        FV = V[idcs.F]
         rV = V[idcs.r]
-        ExV = V[idcs.Ex]
+        EdV = V[idcs.Ed]
 
         # Extract the discrete-time update matrices for this time interval
 	A_k = reshape(AV, (nx, nx))
         Bm_k = A_k*reshape(BmV, (nx, nu))
         Bp_k = A_k*reshape(BpV, (nx, nu))
-        S_k = A_k*reshape(SV, (nx, np))
+        F_k = A_k*reshape(FV, (nx, np))
         r_k = A_k*rV
-        Ex_k = A_k*reshape(ExV, (nx, nx+n_ncvx))
+        Ed_k = A_k*reshape(EdV, (nx, nx+n_ncvx))
 
         # Save the discrete-time update matrices
         @k(ref.A) = A_k
         @k(ref.Bm) = Bm_k
         @k(ref.Bp) = Bp_k
-        @k(ref.S) = S_k
+        @k(ref.F) = F_k
         @k(ref.r) = r_k
-        @k(ref.Ex) = Ex_k
+        @k(ref.Ed) = Ed_k
 
         # Take this opportunity to comput the defect, which will be needed
         # later for the trust region update
@@ -626,17 +626,17 @@ function add_dynamics!(
         A =  @k(spbm.ref.A)
         Bm = @k(spbm.ref.Bm)
         Bp = @k(spbm.ref.Bp)
-        S =  @k(spbm.ref.S)
+        F =  @k(spbm.ref.F)
         r =  @k(spbm.ref.r)
-        Ex =  @k(spbm.ref.Ex)
+        Ed =  @k(spbm.ref.Ed)
 
         # Associate matrices with subproblem
         @k(spbm.A) = A
         @k(spbm.Bm) = Bm
         @k(spbm.Bp) = Bp
-        @k(spbm.S) = S
+        @k(spbm.F) = F
         @k(spbm.r) = r
-        @k(spbm.Ex) = Ex
+        @k(spbm.Ed) = Ed
     end
 
     # Add dynamics constraint to optimization model
@@ -644,7 +644,7 @@ function add_dynamics!(
         @k(spbm.dynamics) = @constraint(
             spbm.mdl,
             @kp1(x) .== @k(spbm.A)*@k(x)+@k(spbm.Bm)*@k(u)+
-            @k(spbm.Bp)*@kp1(u)+@k(spbm.S)*p+@k(spbm.r)+@k(spbm.Ex)*@k(v))
+            @k(spbm.Bp)*@kp1(u)+@k(spbm.F)*p+@k(spbm.r)+@k(spbm.Ed)*@k(v))
     end
 
     return nothing
@@ -992,9 +992,9 @@ function print_info(history::SCvxHistory,
         max_dxh = norm(xh-xh_ref, Inf)
         max_duh = norm(uh-uh_ref, Inf)
         max_dph = norm(ph-ph_ref, Inf)
-        Ex = spbm.scvx.consts.Ex
+        Ed = spbm.scvx.consts.Ed
         Ec = spbm.scvx.consts.Ec
-        v_dyn = Ex*sol.v
+        v_dyn = Ed*sol.v
         v_con = Ec*sol.v
         status = @sprintf "%s" sol.status
         status = status[1:min(8, length(status))]
@@ -1125,7 +1125,7 @@ function _scvx__derivs(τ::T_Real,
     B_m = σ_m*B
     B_p = σ_p*B
     r = f-A*x_now-B*u_now-S*p
-    Ex = pbm.consts.Ex
+    Ed = pbm.consts.Ed
 
     # Compute the running derivatives for the discrete-time state update
     # matrices
@@ -1135,10 +1135,10 @@ function _scvx__derivs(τ::T_Real,
     dBpdt = iPhi*B_p
     dSdt = iPhi*S
     drdt = iPhi*r
-    dExdt = iPhi*Ex
+    dEddt = iPhi*Ed
 
     dVdt = [f; vec(dPhidt); vec(dBmdt); vec(dBpdt);
-            vec(dSdt); drdt; vec(dExdt)]
+            vec(dSdt); drdt; vec(dEddt)]
 
     return dVdt
 end
@@ -1397,7 +1397,7 @@ function _scvx__assert_penalty_match!(sol::SCvxSubproblemSolution,
     # Parameters
     N = pbm.pars.N
     nx = pbm.traj.vehicle.generic.nx
-    Ex = pbm.consts.Ex
+    Ed = pbm.consts.Ed
     Ec = pbm.consts.Ec
 
     # A small number for the equality tolerance
@@ -1410,7 +1410,7 @@ function _scvx__assert_penalty_match!(sol::SCvxSubproblemSolution,
     P_jump = sol.P
 
     for k = 1:N
-        Pk_coded = _scvx__P(Ex*@k(v), -Ec*@k(v))
+        Pk_coded = _scvx__P(Ed*@k(v), -Ec*@k(v))
         Pk_jump = @k(P_jump)
 
         if abs(Pk_coded-Pk_jump) > check_tol
