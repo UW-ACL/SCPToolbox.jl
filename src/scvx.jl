@@ -211,10 +211,10 @@ Args:
 Returns:
     idcs: the indexing array structure. =#
 function SCvxDiscretizationIndices(pbm::SCvxProblem)::SCvxDiscretizationIndices
-    nx = pbm.traj.vehicle.generic.nx
-    nu = pbm.traj.vehicle.generic.nu
-    np = pbm.traj.vehicle.generic.np
-    n_ncvx = pbm.traj.vehicle.generic.n_ncvx
+    nx = pbm.traj.vehicle.nx
+    nu = pbm.traj.vehicle.nu
+    np = pbm.traj.vehicle.np
+    n_ncvx = pbm.traj.generic.n_ncvx
     id_x  = (1:nx)
     id_A  = id_x[end].+(1:nx*nx)
     id_Bm = id_A[end].+(1:nx*nu)
@@ -249,11 +249,10 @@ function SCvxSubproblemSolution(
 
     # Parameters
     N = pbm.pars.N
-    veh_props = pbm.traj.vehicle.generic
-    nx = veh_props.nx
-    nu = veh_props.nu
-    np = veh_props.np
-    n_ncvx = veh_props.n_ncvx
+    nx = pbm.traj.vehicle.nx
+    nu = pbm.traj.vehicle.nu
+    np = pbm.traj.vehicle.np
+    n_ncvx = pbm.traj.generic.n_ncvx
 
     # Uninitialized parts
     status = MOI.OPTIMIZE_NOT_CALLED
@@ -306,9 +305,10 @@ function SCvxProblem(pars::SCvxParameters,
     τ_grid = LinRange(0.0, 1.0, pars.N)
     Δτ = τ_grid[2]-τ_grid[1]
 
-    dims = traj.vehicle.generic
-    Ed = hcat(I(dims.nx), zeros(dims.nx, dims.n_ncvx))
-    Ec = hcat(zeros(dims.n_ncvx, dims.nx), I(dims.n_ncvx))
+    veh = traj.vehicle
+    gen = traj.generic
+    Ed = hcat(I(veh.nx), zeros(veh.nx, gen.n_ncvx))
+    Ec = hcat(zeros(gen.n_ncvx, veh.nx), I(gen.n_ncvx))
 
     scale = _scvx__compute_scaling(traj.bbox)
 
@@ -399,11 +399,11 @@ function SCvxSubproblem(pbm::SCvxProblem,
                         ref::SCvxSubproblemSolution,
                         η::T_Real)::SCvxSubproblem
     # Sizes
-    nx = pbm.traj.vehicle.generic.nx
-    nu = pbm.traj.vehicle.generic.nu
-    np = pbm.traj.vehicle.generic.np
-    n_cvx = pbm.traj.vehicle.generic.n_cvx
-    n_ncvx = pbm.traj.vehicle.generic.n_ncvx
+    nx = pbm.traj.vehicle.nx
+    nu = pbm.traj.vehicle.nu
+    np = pbm.traj.vehicle.np
+    n_cvx = pbm.traj.generic.n_cvx
+    n_ncvx = pbm.traj.generic.n_ncvx
     N = pbm.pars.N
 
     # Optimization problem handle
@@ -544,10 +544,10 @@ Args:
 function discretize!(ref::SCvxSubproblemSolution,
                      pbm::SCvxProblem)::Nothing
     # Parameters
-    nx = pbm.traj.vehicle.generic.nx
-    nu = pbm.traj.vehicle.generic.nu
-    np = pbm.traj.vehicle.generic.np
-    n_ncvx = pbm.traj.vehicle.generic.n_ncvx
+    nx = pbm.traj.vehicle.nx
+    nu = pbm.traj.vehicle.nu
+    np = pbm.traj.vehicle.np
+    n_ncvx = pbm.traj.generic.n_ncvx
     N = pbm.pars.N
     Nsub = pbm.pars.Nsub
 
@@ -657,19 +657,23 @@ Args:
 function add_bcs!(spbm::SCvxSubproblem)::Nothing
     # Variables and parameters
     x0 = @first(spbm.x)
+    xb0 = @first(spbm.ref.xd)
     xf = @last(spbm.x)
+    xbf = @last(spbm.ref.xd)
     p = spbm.p
-    bbox = spbm.scvx.traj.bbox
+    pb = spbm.ref.p
+    traj_pbm = spbm.scvx.traj
+    bbox = traj_pbm.bbox
 
     # Initial condition
-    spbm.ic_x = @constraint(
-        spbm.mdl,
-        bbox.init.x.min .<= x0 .<= bbox.init.x.max)
+    gic, H0, K0 = initial_bcs(xb0, pb, traj_pbm)
+    l0 = gic-H0*xb0-K0*pb
+    spbm.ic_x = @constraint(spbm.mdl, H0*x0+K0*p+l0 .== 0.0)
 
     # Terminal condition
-    spbm.tc_x = @constraint(
-        spbm.mdl,
-        bbox.trgt.x.min .<= xf .<= bbox.trgt.x.max)
+    gtc, Hf, Kf = terminal_bcs(xbf, pb, traj_pbm)
+    lf = gtc-Hf*xbf-Kf*pb
+    spbm.tc_x = @constraint(spbm.mdl, Hf*xf+Kf*p+lf .== 0.0)
 
     # Parameter value constraints
     spbm.p_bnds = @constraint(
@@ -687,29 +691,14 @@ function add_convex_constraints!(spbm::SCvxSubproblem)::Nothing
     # Variables and parameters
     N = spbm.scvx.pars.N
     traj_pbm = spbm.scvx.traj
-    nu = traj_pbm.vehicle.generic.nu
-    bbox = traj_pbm.bbox
+    nu = traj_pbm.vehicle.nu
     x = spbm.x
     u = spbm.u
     p = spbm.p
 
-    # Path box constrains on the state
-    for k = 1:N
-        @k(spbm.pc_x) = @constraint(
-            spbm.mdl,
-            bbox.path.x.min .<= @k(x) .<= bbox.path.x.max)
-    end
-
-    # Path box constrains on the input
-    for k = 1:N
-        @k(spbm.pc_u) = @constraint(
-            spbm.mdl,
-            bbox.path.u.min .<= @k(u) .<= bbox.path.u.max)
-    end
-
     # Problem-specific convex constraints
     for k = 1:N
-        constraints = add_mdl_cvx_constraints!(
+        constraints = mdl_cvx_constraints!(
             @k(x), @k(u), p, spbm.mdl, traj_pbm)
         @k(spbm.pc_cvx) = constraints
     end
@@ -725,7 +714,7 @@ function add_nonconvex_constraints!(spbm::SCvxSubproblem)::Nothing
     # Variables and parameters
     N = spbm.scvx.pars.N
     traj_pbm = spbm.scvx.traj
-    nu = traj_pbm.vehicle.generic.nu
+    nu = traj_pbm.vehicle.nu
     bbox = traj_pbm.bbox
     x_ref = spbm.ref.xd
     u_ref = spbm.ref.ud
@@ -755,8 +744,8 @@ function add_trust_region!(spbm::SCvxSubproblem)::Nothing
     q = spbm.scvx.pars.q_tr
     scale = spbm.scvx.consts.scale
     vehicle = spbm.scvx.traj.vehicle
-    nx = vehicle.generic.nx
-    nu = vehicle.generic.nu
+    nx = vehicle.nx
+    nu = vehicle.nu
     η = spbm.η
     sqrt_η = sqrt(η)
     soc_dim = 1+nx+nu
@@ -1107,7 +1096,7 @@ function _scvx__derivs(τ::T_Real,
                        idcs::SCvxDiscretizationIndices,
                        ref::SCvxSubproblemSolution)::T_RealVector
     # Parameters
-    nx = pbm.traj.vehicle.generic.nx
+    nx = pbm.traj.vehicle.nx
     N = pbm.pars.N
     τ_span = @k(pbm.consts.τ_grid, k, k+1)
 
@@ -1246,8 +1235,8 @@ function _scvx__actual_cost_penalty!(
 
         # Parameters
         N = pbm.pars.N
-        nx = pbm.traj.vehicle.generic.nx
-        n_ncvx = pbm.traj.vehicle.generic.n_ncvx
+        nx = pbm.traj.vehicle.nx
+        n_ncvx = pbm.traj.generic.n_ncvx
         τ_grid = pbm.consts.τ_grid
 
         # Values from the solution
@@ -1396,7 +1385,7 @@ function _scvx__assert_penalty_match!(sol::SCvxSubproblemSolution,
                                       pbm::SCvxProblem)::Nothing
     # Parameters
     N = pbm.pars.N
-    nx = pbm.traj.vehicle.generic.nx
+    nx = pbm.traj.vehicle.nx
     Ed = pbm.consts.Ed
     Ec = pbm.consts.Ec
 

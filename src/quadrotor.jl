@@ -11,7 +11,9 @@ include("problem.jl")
 
 #= Quadrotor parameters. =#
 struct QuadrotorParameters
-    generic::GenericDynamicalSystem # Generic parameters
+    nx::T_Int                       # Number of states
+    nu::T_Int                       # Number of inputs
+    np::T_Int                       # Number of parameters
     id_r::T_IntRange                # Position indices of the state vector
     id_v::T_IntRange                # Velocity indices of the state vector
     id_u::T_IntRange                # Indices of the thrust input vector
@@ -32,9 +34,12 @@ end
 
 #= Quadrotor trajectory optimization problem parameters all in one. =#
 struct QuadrotorTrajectoryProblem<:AbstractTrajectoryProblem
+    generic::GenericParameters       # Generic trajectory problem parameters
     vehicle::QuadrotorParameters     # The ego-vehicle
     env::FlightEnvironmentParameters # The environment
-    bbox::TrajectoryBoundingBox      # Bounding box for trajectory
+    bbox::TrajectoryBoundingBox      # Bounding box for trajectory TODO remove
+    x0::T_RealVector                 # Initial state boundary condition
+    xf::T_RealVector                 # Final state boundary condition
 end
 
 # ..:: Constructors ::..
@@ -54,19 +59,15 @@ function QuadrotorParameters(
     id_t::T_Int,
     u_nrm_max::T_Real,
     u_nrm_min::T_Real,
-    tilt_max::T_Real,
-    env::FlightEnvironmentParameters)::QuadrotorParameters
+    tilt_max::T_Real)::QuadrotorParameters
 
     # Sizes
     nx = length([id_r; id_v])
     nu = length([id_u; id_σ])
     np = length([id_t])
-    n_cvx = 4
-    n_ncvx = env.obsN
 
-    gen = GenericDynamicalSystem(nx, nu, np, n_cvx, n_ncvx)
-    quad = QuadrotorParameters(gen, id_r, id_v, id_u, id_σ, id_t, u_nrm_max,
-                               u_nrm_min, tilt_max)
+    quad = QuadrotorParameters(nx, nu, np, id_r, id_v, id_u, id_σ, id_t,
+                               u_nrm_max, u_nrm_min, tilt_max)
 
     return quad
 end
@@ -96,6 +97,36 @@ function FlightEnvironmentParameters(
     env = FlightEnvironmentParameters(g, obsN, obsiH, obsc)
 
     return env
+end
+
+#= Constructor for the overall trajectory problem.
+
+Args:
+    quad: the quadrotor vehicle definition.
+    env: the environment definition.
+    bbox: the trajectory bounding box. TODO remove
+    x0: the initial state vector.
+    xf: the terminal state vector.
+
+Returns:
+    pbm: the overall trajectory problem definition. =#
+function QuadrotorTrajectoryProblem(
+    veh::QuadrotorParameters,
+    env::FlightEnvironmentParameters,
+    bbox::TrajectoryBoundingBox,
+    x0::T_RealVector,
+    xf::T_RealVector)::QuadrotorTrajectoryProblem
+
+    # Parameters
+    n_cvx = 4
+    n_ncvx = env.obsN
+    n_ic = veh.nx
+    n_tc = veh.nx
+
+    gen = GenericParameters(n_cvx, n_ncvx, n_ic, n_tc)
+    pbm = QuadrotorTrajectoryProblem(gen, veh, env, bbox, x0, xf)
+
+    return pbm
 end
 
 # ..:: Public methods ::..
@@ -147,7 +178,7 @@ function dynamics(
 
     # Parameters
     veh = pbm.vehicle
-    nx = veh.generic.nx
+    nx = veh.nx
 
     # Extract variables
     r = x[veh.id_r]
@@ -185,9 +216,9 @@ function jacobians(
                             T_RealMatrix}
 
     # Parameters
-    nx = pbm.vehicle.generic.nx
-    nu = pbm.vehicle.generic.nu
-    np = pbm.vehicle.generic.np
+    nx = pbm.vehicle.nx
+    nu = pbm.vehicle.nu
+    np = pbm.vehicle.np
     id_r = pbm.vehicle.id_r
     id_v = pbm.vehicle.id_v
     id_u = pbm.vehicle.id_u
@@ -213,6 +244,62 @@ function jacobians(
     return A, B, F
 end
 
+#= Compute Jacobians of the initial boundary condition constraint.
+
+The initial constraint is assumed to be of the form g(x, p)=0.
+
+Args:
+    See docstring of generic method in problem.jl.
+
+Returns:
+    See docstring of generic method in problem.jl. =#
+function initial_bcs(x::T_RealVector,
+                     p::T_RealVector, #nowarn
+                     pbm::QuadrotorTrajectoryProblem)::Tuple{T_RealVector,
+                                                             T_RealMatrix,
+                                                             T_RealMatrix}
+
+    # Parameters
+    x0 = pbm.x0
+    nx = pbm.vehicle.nx
+    np = pbm.vehicle.np
+
+    # Compute constraint value and Jacobians
+    g = x-x0
+    dgdx = I(nx)
+    dgdp = zeros(nx, np)
+
+    return g, dgdx, dgdp
+end
+
+#= Compute Jacobians of the terminal boundary condition constraint.
+
+The terminal constraint is assumed to be of the form g(x, p)=0.
+
+Args:
+    See docstring of generic method in problem.jl.
+
+Returns:
+    See docstring of generic method in problem.jl. =#
+function terminal_bcs(x::T_RealVector,
+                      p::T_RealVector, #nowarn
+                      pbm::QuadrotorTrajectoryProblem)::Tuple{T_RealVector,
+                                                              T_RealMatrix,
+                                                              T_RealMatrix}
+
+    # Parameters
+    xf = pbm.xf
+    nx = pbm.vehicle.nx
+    np = pbm.vehicle.np
+
+    # Compute constraint value and Jacobians
+    g = x-xf
+    dgdx = I(nx)
+    dgdp = zeros(nx, np)
+
+    return g, dgdx, dgdp
+end
+
 #= Add convex constraints to the problem at time step k.
 
 Args:
@@ -220,7 +307,7 @@ Args:
 
 Returns:
     See docstring of generic method in problem.jl. =#
-function add_mdl_cvx_constraints!(
+function mdl_cvx_constraints!(
     xk::T_OptiVarVector, #nowarn
     uk::T_OptiVarVector,
     p::T_OptiVarVector, #nowarn
@@ -228,7 +315,7 @@ function add_mdl_cvx_constraints!(
     pbm::QuadrotorTrajectoryProblem)::T_ConstraintVector
 
     # Parameters
-    nu = pbm.vehicle.generic.nu
+    nu = pbm.vehicle.nu
     id_u = pbm.vehicle.id_u
     id_σ = pbm.vehicle.id_σ
     u_nrm_max = pbm.vehicle.u_nrm_max
@@ -240,7 +327,7 @@ function add_mdl_cvx_constraints!(
     σk = uk[id_σ]
 
     # The constraints
-    cvx = T_ConstraintVector(undef, pbm.vehicle.generic.n_cvx)
+    cvx = T_ConstraintVector(undef, pbm.generic.n_cvx)
     cvx[1] = @constraint(mdl, u_nrm_min <= σk)
     cvx[2] = @constraint(mdl, σk <= u_nrm_max)
     cvx[3] = @constraint(mdl, vcat(σk, uuk) in MOI.SecondOrderCone(nu))
@@ -266,10 +353,10 @@ function ncvx_constraints(
                                             T_RealMatrix}
 
     # Parameters
-    n_ncvx = pbm.vehicle.generic.n_ncvx
-    nx = pbm.vehicle.generic.nx
-    nu = pbm.vehicle.generic.nu
-    np = pbm.vehicle.generic.np
+    n_ncvx = pbm.generic.n_ncvx
+    nx = pbm.vehicle.nx
+    nu = pbm.vehicle.nu
+    np = pbm.vehicle.np
     obsN = pbm.env.obsN
 
     # Initialize values
@@ -348,7 +435,7 @@ function _quadrotor__obstacle_constraint(
     xb::T_RealVector,
     pbm::QuadrotorTrajectoryProblem)::Tuple{T_Real, T_RealVector}
     # Parameters
-    nx = pbm.vehicle.generic.nx
+    nx = pbm.vehicle.nx
     id_r = pbm.vehicle.id_r
     iH, c = get_obstacle(i, pbm)
     r = xb[id_r]

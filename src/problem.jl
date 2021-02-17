@@ -7,13 +7,12 @@ include("../utils/types.jl")
 
 # ..:: Data structures ::..
 
-#= Generic properties of the dynamical system. =#
-struct GenericDynamicalSystem
-    nx::T_Int     # Number of states
-    nu::T_Int     # Number of inputs
-    np::T_Int     # Number of parameters
+#= Generic trajectory problem parameters. =#
+struct GenericParameters
     n_cvx::T_Int  # Number of convex inequalities at each time step
     n_ncvx::T_Int # Number of non-convex inequalities at each time step
+    n_ic::T_Int   # Number of initial conditions
+    n_tc::T_Int   # Number of terminal conditions
 end
 
 #= Generic bounding box geometric object.
@@ -62,9 +61,9 @@ function initial_guess(
                      T_RealMatrix,
                      T_RealVector} where {T<:AbstractTrajectoryProblem}
 
-    x_traj = T_RealMatrix(undef, pbm.vehicle.generic.nx, N)
-    u_traj = T_RealMatrix(undef, pbm.vehicle.generic.nu, N)
-    p = T_RealVector(undef, pbm.vehicle.generic.np)
+    x_traj = T_RealMatrix(undef, pbm.vehicle.nx, N)
+    u_traj = T_RealMatrix(undef, pbm.vehicle.nu, N)
+    p = T_RealVector(undef, pbm.vehicle.np)
 
     return x_traj, u_traj, p
 end
@@ -89,7 +88,7 @@ function dynamics(
     u::T_RealVector, #nowarn
     p::T_RealVector)::T_RealVector where {T<:AbstractTrajectoryProblem} #nowarn
 
-    nx = pbm.vehicle.generic.nx
+    nx = pbm.vehicle.nx
     dxdt = T_RealVector(undef, nx)
 
     return dxdt
@@ -120,15 +119,79 @@ function jacobians(
                             T_RealMatrix,
                             T_RealMatrix} where {T<:AbstractTrajectoryProblem}
 
-    nx = pbm.vehicle.generic.nx
-    nu = pbm.vehicle.generic.nu
-    np = pbm.vehicle.generic.np
+    nx = pbm.vehicle.nx
+    nu = pbm.vehicle.nu
+    np = pbm.vehicle.np
 
     A = fill(NaN, (nx, nx))
     B = fill(NaN, (nx, nu))
     F = fill(NaN, (nx, np))
 
     return A, B, F
+end
+
+#= Compute Jacobians of the initial boundary condition constraint.
+
+The initial constraint is assumed to be of the form g(x, p)=0.
+
+Args:
+    x: the state vector at the start time.
+    p: the parameter vector.
+    pbm: the trajectory problem definition.
+
+Returns:
+    g: the initial condition constraint function value.
+    dgdx: Jacobian with respect to the state vector.
+    dgdp: Jacobian with respect to the parameter vector. =#
+function initial_bcs(x::T_RealVector, #nowarn
+                     p::T_RealVector, #nowarn
+                     pbm::T)::Tuple{T_RealVector, #nowarn
+                                    T_RealMatrix,
+                                    T_RealMatrix} where {
+                                        T<:AbstractTrajectoryProblem}
+
+    # Parameters
+    nx = pbm.vehicle.nx
+    np = pbm.vehicle.np
+
+    # Jacobians
+    g = T_RealVector(undef, 0)
+    dgdx = T_RealMatrix(undef, 0, nx)
+    dgdp = T_RealMatrix(undef, 0, np)
+
+    return g, dgdx, dgdp
+end
+
+#= Compute Jacobians of the terminal boundary condition constraint.
+
+The terminal constraint is assumed to be of the form g(x, p)=0.
+
+Args:
+    x: the state vector at the final time.
+    p: the parameter vector.
+    pbm: the trajectory problem definition.
+
+Returns:
+    g: the terminal condition constraint function value.
+    dgdx: Jacobian with respect to the state vector.
+    dgdp: Jacobian with respect to the parameter vector. =#
+function terminal_bcs(x::T_RealVector, #nowarn
+                      p::T_RealVector, #nowarn
+                      pbm::T)::Tuple{T_RealVector, #nowarn
+                                     T_RealMatrix,
+                                     T_RealMatrix} where {
+                                         T<:AbstractTrajectoryProblem}
+
+    # Parameters
+    nx = pbm.vehicle.nx
+    np = pbm.vehicle.np
+
+    # Jacobians
+    g = T_RealVector(undef, 0)
+    dgdx = T_RealMatrix(undef, 0, nx)
+    dgdp = T_RealMatrix(undef, 0, np)
+
+    return g, dgdx, dgdp
 end
 
 #= Add convex constraints to the problem at time step k.
@@ -142,7 +205,7 @@ Args:
 
 Returns:
     cvx: vector of convex constraints. =#
-function add_mdl_cvx_constraints!(
+function mdl_cvx_constraints!(
     xk::T_OptiVarVector, #nowarn
     uk::T_OptiVarVector, #nowarn
     p::T_OptiVarVector, #nowarn
@@ -178,10 +241,10 @@ function ncvx_constraints(
                    T_RealMatrix,
                    T_RealMatrix} where {T<:AbstractTrajectoryProblem} #nowarn
 
-    n_ncvx = pbm.vehicle.generic.n_ncvx
-    nx = pbm.vehicle.generic.nx
-    nu = pbm.vehicle.generic.nu
-    np = pbm.vehicle.generic.np
+    n_ncvx = pbm.generic.n_ncvx
+    nx = pbm.vehicle.nx
+    nu = pbm.vehicle.nu
+    np = pbm.vehicle.np
 
     s = T_RealVector(undef, n_ncvx)
     dsdx = T_RealMatrix(undef, n_ncvx, nx)
@@ -217,7 +280,7 @@ function mdl_ncvx_constraints(
     pbm::T)::T_OptiVarVector where {T<:AbstractTrajectoryProblem}
 
     # Parameters
-    n_ncvx = pbm.vehicle.generic.n_ncvx
+    n_ncvx = pbm.generic.n_ncvx
 
     # The constraints
     ncvx = T_ConstraintVector(undef, n_ncvx)

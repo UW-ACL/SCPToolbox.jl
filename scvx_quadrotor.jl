@@ -31,8 +31,13 @@ id_t = 1
 u_nrm_max = 23.2
 u_nrm_min = 0.6
 tilt_max = deg2rad(60)
-quad = QuadrotorParameters(id_r, id_v, id_u, id_σ, id_t, u_nrm_max, u_nrm_min,
-                           tilt_max, env)
+quad = QuadrotorParameters(id_r, id_v, id_u, id_σ, id_t,
+                           u_nrm_max, u_nrm_min, tilt_max)
+
+# >> Boundary conditions <<
+x0 = zeros(quad.nx)
+xf = zeros(quad.nx)
+xf[quad.id_r[1:2]] = [2.5; 6.0]
 
 # >> The trajectory bounding boxes <<
 tf_min = 2.5
@@ -40,22 +45,22 @@ tf_max = 2.5
 p_bbox = BoundingBox([tf_min], [tf_max])
 
 # Initial
-_x = zeros(quad.generic.nx)
-_u = fill(NaN, quad.generic.nu)
+_x = zeros(quad.nx)
+_u = fill(NaN, quad.nu)
 x_bbox = BoundingBox(_x, _x)
 u_bbox = BoundingBox(_u, _u)
 init_bbox = XUPBoundingBox(x_bbox, u_bbox, p_bbox)
 
 # Final
-_x = zeros(quad.generic.nx)
+_x = zeros(quad.nx)
 _x[id_r[1]], _x[id_r[2]] = 2.5, 6.0
-_u = fill(NaN, quad.generic.nu)
+_u = fill(NaN, quad.nu)
 x_bbox = BoundingBox(_x, _x)
 u_bbox = BoundingBox(_u, _u)
 trgt_bbox = XUPBoundingBox(x_bbox, u_bbox, p_bbox)
 
 # Path
-_x = zeros(quad.generic.nx)
+_x = zeros(quad.nx)
 _x[id_r] .= -10.0
 _x[id_v] .= -8.0
 u_min = [-u_nrm_max; -u_nrm_max; 0.0; u_nrm_min]
@@ -66,7 +71,7 @@ path_bbox = XUPBoundingBox(x_bbox, u_bbox, p_bbox)
 
 traj_bbox = TrajectoryBoundingBox(init_bbox, trgt_bbox, path_bbox)
 
-traj_pbm = QuadrotorTrajectoryProblem(quad, env, traj_bbox)
+traj_pbm = QuadrotorTrajectoryProblem(quad, env, traj_bbox, x0, xf)
 ###############################################################################
 
 ###############################################################################
