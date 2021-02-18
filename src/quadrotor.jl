@@ -35,7 +35,6 @@ end
 
 #= Quadrotor trajectory optimization problem parameters all in one. =#
 struct QuadrotorTrajectoryProblem<:AbstractTrajectoryProblem
-    generic::GenericParameters       # Generic trajectory problem parameters
     vehicle::QuadrotorParameters     # The ego-vehicle
     env::FlightEnvironmentParameters # The environment
     bbox::TrajectoryBoundingBox      # Bounding box for trajectory TODO remove
@@ -102,41 +101,6 @@ function FlightEnvironmentParameters(
     env = FlightEnvironmentParameters(g, obsN, obsiH, obsc)
 
     return env
-end
-
-#= Constructor for the overall trajectory problem.
-
-Args:
-    quad: the quadrotor vehicle definition.
-    env: the environment definition.
-    bbox: the trajectory bounding box. TODO remove
-    x0: the initial state vector.
-    xf: the terminal state vector.
-    tf_min: the shortest possible flight time.
-    tf_max: the longest possible flight time.
-
-Returns:
-    pbm: the overall trajectory problem definition. =#
-function QuadrotorTrajectoryProblem(
-    veh::QuadrotorParameters,
-    env::FlightEnvironmentParameters,
-    bbox::TrajectoryBoundingBox,
-    x0::T_RealVector,
-    xf::T_RealVector,
-    tf_min::T_Real,
-    tf_max::T_Real)::QuadrotorTrajectoryProblem
-
-    # Parameters
-    n_cvx = 5
-    n_ncvx = env.obsN
-    n_ic = veh.nx
-    n_tc = veh.nx
-
-    gen = GenericParameters(n_cvx, n_ncvx, n_ic, n_tc)
-    pbm = QuadrotorTrajectoryProblem(gen, veh, env, bbox,
-                                     x0, xf, tf_min, tf_max)
-
-    return pbm
 end
 
 # ..:: Public methods ::..
@@ -331,17 +295,37 @@ function terminal_bcs(x::T_RealVector,
     return g, dgdx, dgdp
 end
 
-#= Add convex constraints to the problem at time step k.
+#= Add convex state constraints to the problem at time step k.
 
 Args:
     See docstring of generic method in problem.jl.
 
 Returns:
     See docstring of generic method in problem.jl. =#
-function mdl_cvx_constraints!(
-    xk::T_OptiVarVector, #nowarn
+function mdl_X!(
+    xk::T_OptiVarVector,
+    mdl::Model,
+    pbm::QuadrotorTrajectoryProblem)::T_ConstraintVector
+
+    # Parameters
+    id_xt = pbm.vehicle.id_xt
+
+    # The constraints
+    X = T_ConstraintVector(undef, 0)
+    push!(X, @constraint(mdl, pbm.tf_min <= xk[id_xt] <= pbm.tf_max))
+
+    return X
+end
+
+#= Add convex input constraints to the problem at time step k.
+
+Args:
+    See docstring of generic method in problem.jl.
+
+Returns:
+    See docstring of generic method in problem.jl. =#
+function mdl_U!(
     uk::T_OptiVarVector,
-    p::T_OptiVarVector, #nowarn
     mdl::Model,
     pbm::QuadrotorTrajectoryProblem)::T_ConstraintVector
 
@@ -349,7 +333,6 @@ function mdl_cvx_constraints!(
     nu = pbm.vehicle.nu
     id_u = pbm.vehicle.id_u
     id_σ = pbm.vehicle.id_σ
-    id_xt = pbm.vehicle.id_xt
     u_nrm_max = pbm.vehicle.u_nrm_max
     u_nrm_min = pbm.vehicle.u_nrm_min
     tilt_max = pbm.vehicle.tilt_max
@@ -359,14 +342,13 @@ function mdl_cvx_constraints!(
     σk = uk[id_σ]
 
     # The constraints
-    cvx = T_ConstraintVector(undef, pbm.generic.n_cvx)
-    cvx[1] = @constraint(mdl, u_nrm_min <= σk)
-    cvx[2] = @constraint(mdl, σk <= u_nrm_max)
-    cvx[3] = @constraint(mdl, vcat(σk, uuk) in MOI.SecondOrderCone(nu))
-    cvx[4] = @constraint(mdl, σk*cos(tilt_max) <= uuk[3])
-    cvx[5] = @constraint(mdl, pbm.tf_min <= xk[id_xt] <= pbm.tf_max)
+    U = T_ConstraintVector(undef, 0)
+    push!(U, @constraint(mdl, u_nrm_min <= σk))
+    push!(U, @constraint(mdl, σk <= u_nrm_max))
+    push!(U, @constraint(mdl, vcat(σk, uuk) in MOI.SecondOrderCone(nu)))
+    push!(U, @constraint(mdl, σk*cos(tilt_max) <= uuk[3]))
 
-    return cvx
+    return U
 end
 
 #= Get the value and Jacobians of the nonconvex constraints.
@@ -386,17 +368,16 @@ function ncvx_constraints(
                                             T_RealMatrix}
 
     # Parameters
-    n_ncvx = pbm.generic.n_ncvx
     nx = pbm.vehicle.nx
     nu = pbm.vehicle.nu
     np = pbm.vehicle.np
     obsN = pbm.env.obsN
 
     # Initialize values
-    s = zeros(n_ncvx)
-    dsdx = zeros(n_ncvx, nx)
-    dsdu = zeros(n_ncvx, nu)
-    dsdp = zeros(n_ncvx, np)
+    s = zeros(obsN)
+    dsdx = zeros(obsN, nx)
+    dsdu = zeros(obsN, nu)
+    dsdp = zeros(obsN, np)
 
     # Compute values for all obstacles
     for i = 1:obsN

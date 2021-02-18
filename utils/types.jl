@@ -9,7 +9,8 @@ abstract type AbstractTrajectoryProblem end
 @enum(SCvxStatus,
       SCVX_SOLVED,
       SCVX_FAILED,
-      PENALTY_CHECK_FAILED)
+      SCVX_EMPTY_VARIABLE,
+      SCVX_PENALTY_CHECK_FAILED)
 
 const T_Bool = Bool
 const T_Int = Int

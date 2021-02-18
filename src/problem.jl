@@ -7,14 +7,6 @@ include("../utils/types.jl")
 
 # ..:: Data structures ::..
 
-#= Generic trajectory problem parameters. =#
-struct GenericParameters
-    n_cvx::T_Int  # Number of convex inequalities at each time step
-    n_ncvx::T_Int # Number of non-convex inequalities at each time step
-    n_ic::T_Int   # Number of initial conditions
-    n_tc::T_Int   # Number of terminal conditions
-end
-
 #= Generic bounding box geometric object.
 
 Defines a bounding box, in other words the set:
@@ -194,27 +186,42 @@ function terminal_bcs(x::T_RealVector, #nowarn
     return g, dgdx, dgdp
 end
 
-#= Add convex constraints to the problem at time step k.
+#= Add convex state constraints to the problem at time step k.
 
 Args:
     xk: the state vector at time k.
-    uk: the input vector at time k.
-    p: the parameter vector.
     mdl: the optimization model (JuMP format).
     pbm: the trajectory problem instance.
 
 Returns:
-    cvx: vector of convex constraints. =#
-function mdl_cvx_constraints!(
+    X: vector of convex state constraints. =#
+function mdl_X!(
     xk::T_OptiVarVector, #nowarn
-    uk::T_OptiVarVector, #nowarn
-    p::T_OptiVarVector, #nowarn
     mdl::Model, #nowarn
     pbm::T)::T_ConstraintVector where {T<:AbstractTrajectoryProblem} #nowarn
 
-    cvx = T_ConstraintVector(undef, 0)
+    X = T_ConstraintVector(undef, 0)
 
-    return cvx
+    return X
+end
+
+#= Add convex input constraints to the problem at time step k.
+
+Args:
+    uk: the input vector at time k.
+    mdl: the optimization model (JuMP format).
+    pbm: the trajectory problem instance.
+
+Returns:
+    U: vector of convex state constraints. =#
+function mdl_U!(
+    uk::T_OptiVarVector, #nowarn
+    mdl::Model, #nowarn
+    pbm::T)::T_ConstraintVector where {T<:AbstractTrajectoryProblem} #nowarn
+
+    U = T_ConstraintVector(undef, 0)
+
+    return U
 end
 
 #= Get the value and Jacobians of the nonconvex constraints.
@@ -241,15 +248,14 @@ function ncvx_constraints(
                    T_RealMatrix,
                    T_RealMatrix} where {T<:AbstractTrajectoryProblem} #nowarn
 
-    n_ncvx = pbm.generic.n_ncvx
     nx = pbm.vehicle.nx
     nu = pbm.vehicle.nu
     np = pbm.vehicle.np
 
-    s = T_RealVector(undef, n_ncvx)
-    dsdx = T_RealMatrix(undef, n_ncvx, nx)
-    dsdu = T_RealMatrix(undef, n_ncvx, nu)
-    dsdp = T_RealMatrix(undef, n_ncvx, np)
+    s = T_RealVector(undef, 0)
+    dsdx = T_RealMatrix(undef, 0, nx)
+    dsdu = T_RealMatrix(undef, 0, nu)
+    dsdp = T_RealMatrix(undef, 0, np)
 
     return s, dsdx, dsdu, dsdp
 end
@@ -279,14 +285,9 @@ function mdl_ncvx_constraints(
     pb::T_RealVector,
     pbm::T)::T_OptiVarVector where {T<:AbstractTrajectoryProblem}
 
-    # Parameters
-    n_ncvx = pbm.generic.n_ncvx
-
-    # The constraints
-    ncvx = T_ConstraintVector(undef, n_ncvx)
     s, C, D, G = ncvx_constraints(xbk, ubk, pb, pbm)
-    rp = s-C*xbk-D*ubk-G*pb
-    lhs = C*xk+D*uk+G*p+rp
+    r = s-C*xbk-D*ubk-G*pb
+    lhs = C*xk+D*uk+G*p+r
 
     return lhs
 end
