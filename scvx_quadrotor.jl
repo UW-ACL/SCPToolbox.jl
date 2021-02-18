@@ -42,41 +42,7 @@ xf[quad.id_r[1:2]] = [2.5; 6.0]
 tf_min = 0.0
 tf_max = 10.0
 
-# >> The trajectory bounding boxes <<
-p_bbox = BoundingBox([tf_min], [tf_max])
-
-# Initial
-_x = zeros(quad.nx)
-_u = fill(NaN, quad.nu)
-x_bbox = BoundingBox(_x, _x)
-u_bbox = BoundingBox(_u, _u)
-init_bbox = XUPBoundingBox(x_bbox, u_bbox, p_bbox)
-
-# Final
-_x = zeros(quad.nx)
-_x[id_r[1]], _x[id_r[2]] = 2.5, 6.0
-_u = fill(NaN, quad.nu)
-x_bbox = BoundingBox(_x, _x)
-u_bbox = BoundingBox(_u, _u)
-trgt_bbox = XUPBoundingBox(x_bbox, u_bbox, p_bbox)
-
-# Path
-x_min = zeros(quad.nx)
-x_min[id_r] .= -10.0
-x_min[id_v] .= -8.0
-x_min[id_xt] = tf_min
-x_max = -copy(x_min)
-x_max[id_xt] = tf_max
-u_min = [-u_nrm_max; -u_nrm_max; 0.0; u_nrm_min]
-u_max = [u_nrm_max; u_nrm_max; u_nrm_max; u_nrm_max]
-x_bbox = BoundingBox(x_min, x_max)
-u_bbox = BoundingBox(u_min, u_max)
-path_bbox = XUPBoundingBox(x_bbox, u_bbox, p_bbox)
-
-traj_bbox = TrajectoryBoundingBox(init_bbox, trgt_bbox, path_bbox)
-
-traj_pbm = QuadrotorTrajectoryProblem(quad, env, traj_bbox,
-                                      x0, xf, tf_min, tf_max)
+traj_pbm = QuadrotorTrajectoryProblem(quad, env, x0, xf, tf_min, tf_max)
 ###############################################################################
 
 ###############################################################################
@@ -90,13 +56,13 @@ iter_max = 100
 ρ_2 = 0.7
 β_sh = 2.0
 β_gr = 2.0
-η_init = 0.5
+η_init = 1.0
 η_lb = 1e-3
 η_ub = 10.0
 ε_abs = 1e-3
 ε_rel = 1/100
 feas_tol = 1e-2
-q_tr = 1
+q_tr = Inf
 q_exit = Inf
 solver = ECOS
 solver_options = Dict("verbose"=>0)
@@ -130,7 +96,7 @@ function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
 
     for k = 1:pbm.pars.iter_max
         # >> Construct the subproblem <<
-        spbm = SCvxSubproblem(pbm, ref, η, k)
+        spbm = SCvxSubproblem(pbm, k, η, ref)
 
         add_dynamics!(spbm)
         add_bcs!(spbm)

@@ -10,6 +10,7 @@ abstract type AbstractTrajectoryProblem end
       SCVX_SOLVED,
       SCVX_FAILED,
       SCVX_EMPTY_VARIABLE,
+      SCVX_SCALING_FAILED,
       SCVX_PENALTY_CHECK_FAILED)
 
 const T_Bool = Bool

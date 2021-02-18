@@ -37,7 +37,6 @@ end
 struct QuadrotorTrajectoryProblem<:AbstractTrajectoryProblem
     vehicle::QuadrotorParameters     # The ego-vehicle
     env::FlightEnvironmentParameters # The environment
-    bbox::TrajectoryBoundingBox      # Bounding box for trajectory TODO remove
     # >> Boundary conditions <<
     x0::T_RealVector                 # Initial state boundary condition
     xf::T_RealVector                 # Final state boundary condition
@@ -127,8 +126,8 @@ function initial_guess(
     p = [0.5*(pbm.tf_min+pbm.tf_max)]
 
     # >> State trajectory <<
-    x0 = 0.5*(pbm.bbox.init.x.min+pbm.bbox.init.x.max)
-    xf = 0.5*(pbm.bbox.trgt.x.min+pbm.bbox.trgt.x.max)
+    x0 = copy(pbm.x0)
+    xf = copy(pbm.xf)
     x0[id_xt] = p[id_pt]
     xf[id_xt] = p[id_pt]
     x_traj = straightline_interpolate(x0, xf, N)

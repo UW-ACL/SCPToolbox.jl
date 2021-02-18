@@ -138,8 +138,8 @@ mutable struct SCvxSubproblem
     # >> Algorithm parameters <<
     scvx::SCvxProblem            # The SCvx problem definition
     # >> Reference and solution trajectories <<
-    sol::Union{SCvxSubproblemSolution, Missing} # The solution trajectory
-    ref::SCvxSubproblemSolution  # The reference trajectory for linearization
+    sol::Union{SCvxSubproblemSolution, Missing} # Solution trajectory
+    ref::Union{SCvxSubproblemSolution, Missing} # Reference trajectory
     # >> Cost function <<
     L_orig::T_Objective          # The original convex cost function
     L_pen::T_Objective           # The virtual control penalty
@@ -316,13 +316,14 @@ Args:
 Returns:
     pbm: the problem structure ready for being solved by SCvx. =#
 function SCvxProblem(pars::SCvxParameters,
-                     traj::T)::SCvxProblem where {T<:AbstractTrajectoryProblem}
+                     traj::T)::SCvxProblem where {
+                         T<:AbstractTrajectoryProblem}
 
     # Compute the common constant terms
     τ_grid = LinRange(0.0, 1.0, pars.N)
     Δτ = τ_grid[2]-τ_grid[1]
     E = I(traj.vehicle.nx)
-    scale = _scvx__compute_scaling(traj.bbox)
+    scale = _scvx__compute_scaling(pars, traj)
 
     table = Table([
         # Iteration count
@@ -412,16 +413,17 @@ parameters.
 
 Args:
     pbm: the SCvx problem being solved.
-    ref: the reference trajectory.
-    η: the trust region radius.
     iter: SCvx iteration number.
+    η: the trust region radius.
+    ref: (optional) the reference trajectory.
 
 Returns:
     spbm: the subproblem structure. =#
 function SCvxSubproblem(pbm::SCvxProblem,
-                        ref::SCvxSubproblemSolution,
+                        iter::T_Int,
                         η::T_Real,
-                        iter::T_Int)::SCvxSubproblem
+                        ref::Union{SCvxSubproblemSolution,
+                                   Missing}=missing)::SCvxSubproblem
     # Sizes
     nx = pbm.traj.vehicle.nx
     nu = pbm.traj.vehicle.nu
@@ -698,7 +700,6 @@ function add_bcs!(spbm::SCvxSubproblem)::Nothing
     xbf = @last(spbm.ref.xd)
     p = spbm.p
     pb = spbm.ref.p
-    bbox = traj_pbm.bbox
 
     #
     # @variable(mdl, [1:n_tc], base_name="vtc")
@@ -769,7 +770,6 @@ function add_nonconvex_constraints!(spbm::SCvxSubproblem)::Nothing
     N = spbm.scvx.pars.N
     traj_pbm = spbm.scvx.traj
     nu = traj_pbm.vehicle.nu
-    bbox = traj_pbm.bbox
     x_ref = spbm.ref.xd
     u_ref = spbm.ref.ud
     p_ref = spbm.ref.p
@@ -1111,33 +1111,78 @@ end
 #= Compute the scaling matrices given the problem definition.
 
 Args:
-    bbox: the trajectory bounding box.
+    pars: the SCvx algorithm parameters.
+    traj: the trajectory problem defintion.
 
 Returns:
     scale: the scaling structure. =#
-function _scvx__compute_scaling(bbox::TrajectoryBoundingBox)::SCvxScaling
+function _scvx__compute_scaling(
+    pars::SCvxParameters,
+    traj::T)::SCvxScaling where {T<:AbstractTrajectoryProblem}
+
     # Parameters
-    nx = length(bbox.path.x.min)
-    nu = length(bbox.path.u.min)
+    nx = traj.vehicle.nx
+    nu = traj.vehicle.nu
+    np = traj.vehicle.np
+    solver = pars.solver
+    solver_opts = pars.solver_opts
     zero_intvl_tol = sqrt(eps())
 
-    # State, control and final time "box" bounds
-    x_min = bbox.path.x.min
-    x_max = bbox.path.x.max
-    u_min = bbox.path.u.min
-    u_max = bbox.path.u.max
-    p_min = bbox.path.p.min
-    p_max = bbox.path.p.max
+    # Map varaibles to these scaled intervals
+    intrvl_x = [0.0; 1.0]
+    intrvl_u = [0.0; 1.0]
 
-    # Choose [0, 1] box for scaled variable intervals
-    intrvl_x = [0; 1]
-    intrvl_u = [0; 1]
-    intrvl_p = [0; 1]
-    wdth_x   = intrvl_x[2]-intrvl_x[1]
-    wdth_u   = intrvl_u[2]-intrvl_u[1]
-    wdth_p   = intrvl_p[2]-intrvl_p[1]
+    # >> Compute bounding boxes for state and input <<
+
+    x_bbox = fill(1.0, nx, 2)
+    u_bbox = fill(1.0, nu, 2)
+    x_bbox[:, 1] .= 0.0
+    u_bbox[:, 1] .= 0.0
+
+    defs = [Dict(:dim => nx, :set => mdl_X!, :bbox => x_bbox),
+            Dict(:dim => nu, :set => mdl_U!, :bbox => u_bbox)]
+
+    for def in defs
+        for j = 1:2 # 1:min, 2:max
+            for i = 1:def[:dim]
+                # Initialize JuMP model
+                mdl = Model()
+                set_optimizer(mdl, solver.Optimizer)
+                for (key,val) in solver_opts
+                    set_optimizer_attribute(mdl, key, val)
+                end
+                # Variables
+                var = @variable(mdl, [1:def[:dim]])
+                # Constraints
+                def[:set](var, mdl, traj)
+                # Cost
+                set_objective_function(mdl, var[i])
+                set_objective_sense(mdl, (j==1) ? MOI.MIN_SENSE :
+                                    MOI.MAX_SENSE)
+                # Solve
+                optimize!(mdl)
+                # Record the solution
+                status = termination_status(mdl)
+                if status != MOI.DUAL_INFEASIBLE
+                    if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
+                        def[:bbox][i, j] = objective_value(mdl)
+                    else
+                        msg = "Solver failed during variable scaling (%s)"
+                        err = SCvxError(
+                            0, SCVX_SCALING_FAILED,
+                            @eval @sprintf($msg, $status))
+                    end
+                end
+            end
+        end
+    end
+
+    # >> Compute scaling matrices and offset vectors <<
+    wdth_x = intrvl_x[2]-intrvl_x[1]
+    wdth_u = intrvl_u[2]-intrvl_u[1]
 
     # State scaling terms
+    x_max, x_min = x_bbox[:, 1], x_bbox[:, 2]
     diag_Sx = (x_max-x_min)/wdth_x
     diag_Sx[diag_Sx .< zero_intvl_tol] .= 1.0
     Sx = Diagonal(diag_Sx)
@@ -1145,18 +1190,18 @@ function _scvx__compute_scaling(bbox::TrajectoryBoundingBox)::SCvxScaling
     cx = x_min-diag_Sx*intrvl_x[1]
 
     # Input scaling terms
+    u_max, u_min = u_bbox[:, 1], u_bbox[:, 2]
     diag_Su = (u_max-u_min)/wdth_u
     diag_Su[diag_Su .< zero_intvl_tol] .= 1.0
     Su = Diagonal(diag_Su)
     iSu = inv(Su)
     cu = u_min-diag_Su*intrvl_u[1]
 
-    # Temporal (parameter) scaling terms
-    diag_Sp = (p_max-p_min)/wdth_p
-    diag_Sp[diag_Sp .< zero_intvl_tol] .= 1.0
+    # Parameter scaling terms (no scaling applied)
+    diag_Sp = ones(np)
     Sp = Diagonal(diag_Sp)
     iSp = inv(Sp)
-    cp = p_min-diag_Sp*intrvl_p[1]
+    cp = zeros(np)
 
     scale = SCvxScaling(Sx, cx, Su, cu, Sp, cp, iSx, iSu, iSp)
 

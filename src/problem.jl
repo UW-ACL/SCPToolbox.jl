@@ -5,34 +5,6 @@ particular instance of the trajectory generation problem. =#
 
 include("../utils/types.jl")
 
-# ..:: Data structures ::..
-
-#= Generic bounding box geometric object.
-
-Defines a bounding box, in other words the set:
-  {x : min <= x <= max}. =#
-struct BoundingBox
-    min::T_RealVector # Lower-left vertex
-    max::T_RealVector # Upper-right vertex
-end
-
-#= Bounding box bounds on the state, input, and time variables. =#
-struct XUPBoundingBox
-    x::BoundingBox # State bounding box.
-    u::BoundingBox # Input bounding box.
-    p::BoundingBox # Parameter bounding box.
-end
-
-#= Bounding box on the space where the trajectory may lie.
-
-Box bound on the overall trajectory. Composed of a box on the trajectoryy
-start, trajectory end, and trajectory middle (i.e., everything in between). =#
-struct TrajectoryBoundingBox
-    init::XUPBoundingBox # Bounds on the trajectory start.
-    trgt::XUPBoundingBox # Bounds on the trajectory end.
-    path::XUPBoundingBox # Bounds on everything in between.
-end
-
 # ..:: Methods ::..
 
 #= Discrete initial trajectory guess.
