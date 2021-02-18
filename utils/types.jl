@@ -11,7 +11,7 @@ abstract type AbstractTrajectoryProblem end
       SCVX_FAILED,
       SCVX_EMPTY_VARIABLE,
       SCVX_SCALING_FAILED,
-      SCVX_PENALTY_CHECK_FAILED)
+      SCVX_GUESS_PROJECTION_FAILED)
 
 const T_Bool = Bool
 const T_Int = Int

@@ -87,8 +87,7 @@ function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
     # ..:: Initialize ::..
 
     η = pbm.pars.η_init
-    init_traj = generate_initial_guess(pbm)
-    ref = init_traj
+    ref = generate_initial_guess(pbm)
 
     history = SCvxHistory()
 
@@ -107,25 +106,25 @@ function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
 
         save!(history, spbm)
 
-        # >> Solve the subproblem <<
-        solve_subproblem!(spbm)
-
-        # "Emergency exit" the SCvx loop if something bad happened
-        # (e.g. numerical problems)
-        if unsafe_solution(spbm)
-            print_info(spbm)
-            break
-        end
-
-        # >> Check stopping criterion <<
-        stop = check_stopping_criterion!(spbm)
-        if stop
-            print_info(spbm)
-            break
-        end
-
-        # >> Update trust region <<
         try
+            # >> Solve the subproblem <<
+            solve_subproblem!(spbm)
+
+            # "Emergency exit" the SCvx loop if something bad happened
+            # (e.g. numerical problems)
+            if unsafe_solution(spbm)
+                print_info(spbm)
+                break
+            end
+
+            # >> Check stopping criterion <<
+            stop = check_stopping_criterion!(spbm)
+            if stop
+                print_info(spbm)
+                break
+            end
+
+            # >> Update trust region <<
             ref, η = update_trust_region!(spbm)
         catch e
             isa(e, SCvxError) || rethrow(e)
