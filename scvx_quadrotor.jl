@@ -3,26 +3,20 @@
 Solution via Sequential Convex Programming using the SCvx algorithm. =#
 
 using LinearAlgebra
-using ECOS
-using Printf
 using Plots
 using LaTeXStrings
 using ColorSchemes
 
-include("src/quadrotor.jl")
-include("src/problem.jl")
-include("src/scvx.jl")
+include("utils/types.jl")
+include("utils/helper.jl")
+include("core/problem.jl")
+include("core/scvx.jl")
+include("models/quadrotor.jl")
 
 ###############################################################################
-# ..:: Define the trajectory generation problem instance ::..
+# ..:: Define the trajectory problem data ::..
 
-# >> The environment <<
-g = 9.81
-obsiH = [diagm([2.0; 2.0; 0.0]), diagm([2.0; 2.0; 0.0])]
-obsc = [[1.0; 2.0; 0.0], [2.0; 5.0; 0.0]]
-env = FlightEnvironmentParameters(g, obsiH, obsc)
-
-# >> The quadrotor <<
+# >> Quadrotor <<
 id_r = 1:3
 id_v = 4:6
 id_xt = 7
@@ -35,21 +29,236 @@ tilt_max = deg2rad(60)
 quad = QuadrotorParameters(id_r, id_v, id_xt, id_u, id_σ,
                            id_pt, u_nrm_max, u_nrm_min, tilt_max)
 
-# >> Boundary conditions <<
-x0 = zeros(quad.nx)
-xf = zeros(quad.nx)
-xf[quad.id_r[1:2]] = [2.5; 6.0]
+# >> Environment <<
+g = 9.81
+obsiH = [diagm([2.0; 2.0; 0.0]),
+         diagm([1.5; 1.5; 0.0])]
+obsc = [[1.0; 2.0; 0.0],
+        [2.0; 5.0; 0.0]]
+env = EnvironmentParameters(g, obsiH, obsc)
+
+# >> Trajectory <<
+r0 = zeros(3)
+rf = zeros(3)
+rf[1:2] = [2.5; 6.0]
+v0 = zeros(3)
+vf = zeros(3)
 tf_min = 0.0
 tf_max = 10.0
+traj = TrajectoryParameters(r0, rf, v0, vf, tf_min, tf_max)
 
-traj_pbm = QuadrotorTrajectoryProblem(quad, env, x0, xf, tf_min, tf_max)
+mdl = QuadrotorProblem(quad, env, traj)
+
+###############################################################################
+
+###############################################################################
+# ..:: Define the trajectory optimization problem ::..
+
+pbm = TrajectoryProblem(mdl)
+
+# Variable dimensions
+problem_set_dims!(pbm, 7, 4, 1)
+
+# Initial trajectory guess
+problem_set_guess!(pbm,
+                   (N, pbm) -> begin
+                   veh = pbm.mdl.vehicle
+                   traj = pbm.mdl.traj
+                   g = pbm.mdl.env.g
+                   # Parameter guess
+                   p = zeros(pbm.np)
+                   p[veh.id_pt] = 0.5*(traj.tf_min+traj.tf_max)
+                   # State guess
+                   x0 = zeros(pbm.nx)
+                   xf = zeros(pbm.nx)
+                   x0[veh.id_r] = traj.r0
+                   xf[veh.id_r] = traj.rf
+                   x0[veh.id_v] = traj.v0
+                   xf[veh.id_v] = traj.vf
+                   x0[veh.id_xt] = p[veh.id_pt]
+                   xf[veh.id_xt] = p[veh.id_pt]
+                   x = straightline_interpolate(x0, xf, N)
+                   # Input guess
+                   u_hover = [-g; norm(g)]
+                   u = straightline_interpolate(u_hover, u_hover, N)
+                   return x, u, p
+                   end)
+
+# Cost to be minimized
+problem_set_cost!(pbm,
+                  # Terminal cost
+                  nothing,
+                  # Running cost
+                  (x, u, p, pbm) -> begin
+                  σ = u[pbm.mdl.vehicle.id_σ]
+                  return σ*σ
+                  end)
+
+# Dynamics constraint
+problem_set_dynamics!(pbm,
+                      # Dynamics f
+                      (τ, x, u, p, pbm) -> begin
+                      g = pbm.mdl.env.g
+                      veh = pbm.mdl.vehicle
+                      v = x[veh.id_v]
+                      uu = u[veh.id_u]
+                      tdil = p[veh.id_pt] # Time dilation
+                      f = zeros(pbm.nx)
+                      f[veh.id_r] = v
+                      f[veh.id_v] = uu+g
+                      f *= tdil
+                      return f
+                      end,
+                      # Jacobian df/dx
+                      (τ, x, u, p, pbm) -> begin
+                      veh = pbm.mdl.vehicle
+                      tdil = p[veh.id_pt]
+                      A = zeros(pbm.nx, pbm.nx)
+                      A[veh.id_r, veh.id_v] = I(3)
+                      A *= tdil
+                      return A
+                      end,
+                      # Jacobian df/du
+                      (τ, x, u, p, pbm) -> begin
+                      veh = pbm.mdl.vehicle
+                      tdil = p[veh.id_pt]
+                      B = zeros(pbm.nx, pbm.nu)
+                      B[veh.id_v, veh.id_u] = I(3)
+                      B *= tdil
+                      return B
+                      end,
+                      # Jacobian df/dp
+                      (τ, x, u, p, pbm) -> begin
+                      veh = pbm.mdl.vehicle
+                      tdil = p[veh.id_pt]
+                      F = T_RealMatrix(undef, pbm.nx, pbm.np)
+                      F[:, veh.id_pt] = pbm.f(τ, x, u, p)/tdil
+                      return F
+                      end)
+
+# Convex path constraints on the state
+problem_set_X!(pbm, (x, mdl, pbm) -> begin
+               traj = pbm.mdl.traj
+               veh = pbm.mdl.vehicle
+               X = [@constraint(mdl,
+                                traj.tf_min <= x[veh.id_xt] <= traj.tf_max)]
+               return X
+               end)
+
+# Convex path constraints on the input
+problem_set_U!(pbm, (u, mdl, pbm) -> begin
+               veh = pbm.mdl.vehicle
+               uu = u[veh.id_u]
+               σ = u[veh.id_σ]
+               U = [@constraint(mdl, veh.u_nrm_min <= σ);
+                    @constraint(mdl, σ <= veh.u_nrm_max);
+                    @constraint(mdl, vcat(σ, uu) in
+                                MOI.SecondOrderCone(pbm.nu));
+                    @constraint(mdl, σ*cos(veh.tilt_max) <= uu[3])]
+               return U
+               end)
+
+# Nonconvex path inequality constraints
+problem_set_s!(pbm,
+               # Constraint s
+               (x, u, p, pbm) -> begin
+               env = pbm.mdl.env
+               veh = pbm.mdl.vehicle
+               s = zeros(env.obsN)
+               for i = 1:env.obsN
+               H, c = get_obstacle(i, pbm.mdl)
+               r = x[veh.id_r]
+               s[i] = 1-norm(H*(r-c))
+               end
+               return s
+               end,
+               # Jacobian ds/dx
+               (x, u, p, pbm) -> begin
+               env = pbm.mdl.env
+               veh = pbm.mdl.vehicle
+               C = zeros(env.obsN, pbm.nx)
+               for i = 1:env.obsN
+               H, c = get_obstacle(i, pbm.mdl)
+               r = x[veh.id_r]
+               C[i, veh.id_r] = -(r-c)'*(H'*H)/norm(H*(r-c))
+               end
+               return C
+               end,
+               # Jacobian ds/du
+               (x, u, p, pbm) -> begin
+               env = pbm.mdl.env
+               D = zeros(env.obsN, pbm.nu)
+               return D
+               end,
+               # Jacobian ds/dp
+               (x, u, p, pbm) -> begin
+               env = pbm.mdl.env
+               G = zeros(env.obsN, pbm.np)
+               return G
+               end)
+
+# Initial boundary conditions
+problem_set_bc!(pbm, :ic,
+                # Constraint g
+                (x, p, pbm) -> begin
+                veh = pbm.mdl.vehicle
+                traj = pbm.mdl.traj
+                tdil = p[veh.id_pt]
+                rhs = zeros(pbm.nx)
+                rhs[veh.id_r] = traj.r0
+                rhs[veh.id_v] = traj.v0
+                rhs[veh.id_xt] = tdil
+                g = x-rhs
+                return g
+                end,
+                # Jacobian dg/dx
+                (x, p, pbm) -> begin
+                H = I(pbm.nx)
+                return H
+                end,
+                # Jacobian dg/dp
+                (x, p, pbm) -> begin
+                veh = pbm.mdl.vehicle
+                K = zeros(pbm.nx, pbm.np)
+                K[veh.id_xt, veh.id_pt] = -1.0
+                return K
+                end)
+
+# Terminal boundary conditions
+problem_set_bc!(pbm, :tc,
+                # Constraint g
+                (x, p, pbm) -> begin
+                veh = pbm.mdl.vehicle
+                traj = pbm.mdl.traj
+                tdil = p[veh.id_pt]
+                rhs = zeros(pbm.nx)
+                rhs[veh.id_r] = traj.rf
+                rhs[veh.id_v] = traj.vf
+                rhs[veh.id_xt] = tdil
+                g = x-rhs
+                return g
+                end,
+                # Jacobian dg/dx
+                (x, p, pbm) -> begin
+                H = I(pbm.nx)
+                return H
+                end,
+                # Jacobian dg/dp
+                (x, p, pbm) -> begin
+                veh = pbm.mdl.vehicle
+                K = zeros(pbm.nx, pbm.np)
+                K[veh.id_xt, veh.id_pt] = -1.0
+                return K
+                end)
+
 ###############################################################################
 
 ###############################################################################
 # ..:: Define the SCvx algorithm parameters ::..
+
 N = 30
 Nsub = 15
-iter_max = 100
+iter_max = 50
 λ = 1e3
 ρ_0 = 0.0
 ρ_1 = 0.1
@@ -69,82 +278,15 @@ solver_options = Dict("verbose"=>0)
 pars = SCvxParameters(N, Nsub, iter_max, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
                       η_init, η_lb, η_ub, ε_abs, ε_rel, feas_tol, q_tr,
                       q_exit, solver, solver_options)
-###############################################################################
 
 ###############################################################################
-# ..:: Apply SCvx ::..
 
-#= Apply the SCvx algorithm to solve the trajectory generation problem.
+###############################################################################
+# ..:: Solve trajectory generation problem using SCvx ::..
 
-Args:
-    pbm: the trajectory problem to be solved.
-
-Returns:
-    sol: the SCvx solution structure.
-    history: SCvx iteration data history. =#
-function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
-                                             SCvxHistory}
-    # ..:: Initialize ::..
-
-    η = pbm.pars.η_init
-    ref = generate_initial_guess(pbm)
-
-    history = SCvxHistory()
-
-    # ..:: Iterate ::..
-
-    for k = 1:pbm.pars.iter_max
-        # >> Construct the subproblem <<
-        spbm = SCvxSubproblem(pbm, k, η, ref)
-
-        add_dynamics!(spbm)
-        add_bcs!(spbm)
-        add_convex_constraints!(spbm)
-        add_nonconvex_constraints!(spbm)
-        add_trust_region!(spbm)
-        add_cost!(spbm)
-
-        save!(history, spbm)
-
-        try
-            # >> Solve the subproblem <<
-            solve_subproblem!(spbm)
-
-            # "Emergency exit" the SCvx loop if something bad happened
-            # (e.g. numerical problems)
-            if unsafe_solution(spbm)
-                print_info(spbm)
-                break
-            end
-
-            # >> Check stopping criterion <<
-            stop = check_stopping_criterion!(spbm)
-            if stop
-                print_info(spbm)
-                break
-            end
-
-            # >> Update trust region <<
-            ref, η = update_trust_region!(spbm)
-        catch e
-            isa(e, SCvxError) || rethrow(e)
-            print_info(spbm, e)
-            break
-        end
-
-        # >> Print iteration info <<
-        print_info(spbm)
-    end
-
-    # ..:: Save solution ::..
-    sol = SCvxSolution(history)
-
-    return sol, history
-end
-
-scvx_pbm = SCvxProblem(pars, traj_pbm)
-
+scvx_pbm = SCvxProblem(pars, pbm)
 sol, history = scvx_solve(scvx_pbm)
+
 ###############################################################################
 
 ###############################################################################
@@ -156,8 +298,8 @@ pyplot()
 # >> Trajectory evolution plot through the iterations <<
 
 # Common values
-veh = traj_pbm.vehicle
-env = traj_pbm.env
+veh = pbm.mdl.vehicle
+env = pbm.mdl.env
 num_iter = length(history.subproblems)
 font_sz = 10
 cmap_offset = 0.1
@@ -173,7 +315,7 @@ plot(aspect_ratio=:equal,
 θ = LinRange(0.0, 2*pi, 100)
 circle = hcat(cos.(θ), sin.(θ))'
 for i = 1:env.obsN
-    local H, c = project(get_obstacle(i, traj_pbm)..., [1, 2])
+    local H, c = project(get_obstacle(i, pbm.mdl)..., [1, 2])
     local vertices = H\circle.+c
     local obs = Shape(vertices[1, :], vertices[2, :])
     plot!(obs;

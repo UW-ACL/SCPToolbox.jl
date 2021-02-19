@@ -123,9 +123,9 @@ end
 
 #=Structure which contains all the necessary information to run SCvx.=#
 struct SCvxProblem
-    pars::SCvxParameters            # Algorithm parameters
-    traj::AbstractTrajectoryProblem # The underlying trajectory problem
-    common::SCvxCommon              # Common precomputed terms
+    pars::SCvxParameters    # Algorithm parameters
+    traj::TrajectoryProblem # The underlying trajectory problem
+    common::SCvxCommon      # Common precomputed terms
 end
 
 #= Subproblem data in JuMP format for the convex numerical optimizer.
@@ -221,9 +221,9 @@ Args:
 Returns:
     idcs: the indexing array structure. =#
 function SCvxDiscretizationIndices(pbm::SCvxProblem)::SCvxDiscretizationIndices
-    nx = pbm.traj.vehicle.nx
-    nu = pbm.traj.vehicle.nu
-    np = pbm.traj.vehicle.np
+    nx = pbm.traj.nx
+    nu = pbm.traj.nu
+    np = pbm.traj.np
     id_x  = (1:nx)
     id_A  = id_x[end].+(1:nx*nx)
     id_Bm = id_A[end].+(1:nx*nu)
@@ -260,9 +260,9 @@ function SCvxSubproblemSolution(
 
     # Parameters
     N = pbm.pars.N
-    nx = pbm.traj.vehicle.nx
-    nu = pbm.traj.vehicle.nu
-    np = pbm.traj.vehicle.np
+    nx = pbm.traj.nx
+    nu = pbm.traj.nu
+    np = pbm.traj.np
     _E = pbm.common.E
 
     # Uninitialized parts
@@ -316,13 +316,12 @@ Args:
 Returns:
     pbm: the problem structure ready for being solved by SCvx. =#
 function SCvxProblem(pars::SCvxParameters,
-                     traj::T)::SCvxProblem where {
-                         T<:AbstractTrajectoryProblem}
+                     traj::TrajectoryProblem)::SCvxProblem
 
     # Compute the common constant terms
     τ_grid = LinRange(0.0, 1.0, pars.N)
     Δτ = τ_grid[2]-τ_grid[1]
-    E = I(traj.vehicle.nx)
+    E = I(traj.nx)
     scale = _scvx__compute_scaling(pars, traj)
 
     table = Table([
@@ -397,7 +396,7 @@ function SCvxSubproblemSolution(spbm::SCvxSubproblem)::SCvxSubproblemSolution
     sol.L_orig = value(spbm.L_orig)
     sol.L_pen = value(spbm.L_pen)
     sol.L = value(spbm.L)
-    discretize!(sol, spbm.scvx)
+    _scvx__discretize!(sol, spbm.scvx)
     _scvx__solution_cost!(sol, :nonlinear, spbm.scvx)
 
     # Save the solution status
@@ -425,9 +424,9 @@ function SCvxSubproblem(pbm::SCvxProblem,
                         ref::Union{SCvxSubproblemSolution,
                                    Missing}=missing)::SCvxSubproblem
     # Sizes
-    nx = pbm.traj.vehicle.nx
-    nu = pbm.traj.vehicle.nu
-    np = pbm.traj.vehicle.np
+    nx = pbm.traj.nx
+    nu = pbm.traj.nu
+    np = pbm.traj.np
     N = pbm.pars.N
     _E = pbm.common.E
 
@@ -509,7 +508,7 @@ function SCvxSolution(history::SCvxHistory)::SCvxSolution
     last_sol = last_spbm.sol
     num_iters = last_spbm.iter
 
-    if unsafe_solution(last_sol)
+    if _scvx__unsafe_solution(last_sol)
         # SCvx failed :(
         status = @sprintf "%s (%s)" SCVX_FAILED last_sol.status
         xd = T_RealMatrix(undef, size(last_sol.xd))
@@ -548,6 +547,76 @@ end
 
 # ..:: Public methods ::..
 
+#= Apply the SCvx algorithm to solve the trajectory generation problem.
+
+Args:
+    pbm: the trajectory problem to be solved.
+
+Returns:
+    sol: the SCvx solution structure.
+    history: SCvx iteration data history. =#
+function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
+                                             SCvxHistory}
+    # ..:: Initialize ::..
+
+    η = pbm.pars.η_init
+    ref = _scvx__generate_initial_guess(pbm)
+
+    history = SCvxHistory()
+
+    # ..:: Iterate ::..
+
+    for k = 1:pbm.pars.iter_max
+        # >> Construct the subproblem <<
+        spbm = SCvxSubproblem(pbm, k, η, ref)
+
+        _scvx__add_dynamics!(spbm)
+        _scvx__add_bcs!(spbm)
+        _scvx__add_convex_constraints!(spbm)
+        _scvx__add_nonconvex_constraints!(spbm)
+        _scvx__add_trust_region!(spbm)
+        _scvx__add_cost!(spbm)
+
+        _scvx__save!(history, spbm)
+
+        try
+            # >> Solve the subproblem <<
+            _scvx__solve_subproblem!(spbm)
+
+            # "Emergency exit" the SCvx loop if something bad happened
+            # (e.g. numerical problems)
+            if _scvx__unsafe_solution(spbm)
+                _scvx__print_info(spbm)
+                break
+            end
+
+            # >> Check stopping criterion <<
+            stop = _scvx__check_stopping_criterion!(spbm)
+            if stop
+                _scvx__print_info(spbm)
+                break
+            end
+
+            # >> Update trust region <<
+            ref, η = _scvx__update_trust_region!(spbm)
+        catch e
+            isa(e, SCvxError) || rethrow(e)
+            _scvx__print_info(spbm, e)
+            break
+        end
+
+        # >> Print iteration info <<
+        _scvx__print_info(spbm)
+    end
+
+    # ..:: Save solution ::..
+    sol = SCvxSolution(history)
+
+    return sol, history
+end
+
+# ..:: Private methods ::..
+
 #= Compute the initial trajectory guess.
 
 Construct the initial trajectory guess. Calls problem-specific initial guess
@@ -558,15 +627,16 @@ Args:
 
 Returns:
     guess: the initial guess. =#
-function generate_initial_guess(pbm::SCvxProblem)::SCvxSubproblemSolution
+function _scvx__generate_initial_guess(
+    pbm::SCvxProblem)::SCvxSubproblemSolution
 
     # Construct the raw trajectory
-    x, u, p = initial_guess(pbm.traj, pbm.pars.N)
+    x, u, p = pbm.traj.guess(pbm.pars.N)
     _scvx__correct_convex!(x, u, pbm)
     guess = SCvxSubproblemSolution(x, u, p, 0, pbm)
 
     # Compute the nonlinear cost
-    discretize!(guess, pbm)
+    _scvx__discretize!(guess, pbm)
     _scvx__solution_cost!(guess, :nonlinear, pbm)
 
     return guess
@@ -581,12 +651,12 @@ the trust region update.
 Args:
     ref: the reference trajectory for which the propagation is done.
     pbm: the SCvx problem definition. =#
-function discretize!(ref::SCvxSubproblemSolution,
-                     pbm::SCvxProblem)::Nothing
+function _scvx__discretize!(ref::SCvxSubproblemSolution,
+                            pbm::SCvxProblem)::Nothing
     # Parameters
-    nx = pbm.traj.vehicle.nx
-    nu = pbm.traj.vehicle.nu
-    np = pbm.traj.vehicle.np
+    nx = pbm.traj.nx
+    nu = pbm.traj.nu
+    np = pbm.traj.np
     N = pbm.pars.N
     Nsub = pbm.pars.Nsub
     _E = pbm.common.E
@@ -651,7 +721,7 @@ end
 
 Args:
     spbm: the subproblem definition. =#
-function add_dynamics!(
+function _scvx__add_dynamics!(
     spbm::SCvxSubproblem)::Nothing
 
     # Variables and parameters
@@ -694,7 +764,7 @@ end
 
 Args:
     spbm: the subproblem definition. =#
-function add_bcs!(spbm::SCvxSubproblem)::Nothing
+function _scvx__add_bcs!(spbm::SCvxSubproblem)::Nothing
     # Variables and parameters
     traj_pbm = spbm.scvx.traj
     x0 = @first(spbm.x)
@@ -704,17 +774,18 @@ function add_bcs!(spbm::SCvxSubproblem)::Nothing
     p = spbm.p
     pb = spbm.ref.p
 
-    #
-    # @variable(mdl, [1:n_tc], base_name="vtc")
-
     # Initial condition
-    gic, H0, K0 = initial_bcs(xb0, pb, traj_pbm)
+    gic = traj_pbm.gic(xb0, pb)
+    H0 = traj_pbm.H0(xb0, pb)
+    K0 = traj_pbm.K0(xb0, pb)
     l0 = gic-H0*xb0-K0*pb
     spbm.vic = @variable(spbm.mdl, [1:length(gic)], base_name="vic")
     spbm.ic = @constraint(spbm.mdl, H0*x0+K0*p+l0+spbm.vic .== 0.0)
 
     # Terminal condition
-    gtc, Hf, Kf = terminal_bcs(xbf, pb, traj_pbm)
+    gtc = traj_pbm.gtc(xbf, pb)
+    Hf = traj_pbm.Hf(xbf, pb)
+    Kf = traj_pbm.Kf(xbf, pb)
     lf = gtc-Hf*xbf-Kf*pb
     spbm.vtc = @variable(spbm.mdl, [1:length(gtc)], base_name="vtc")
     spbm.tc = @constraint(spbm.mdl, Hf*xf+Kf*p+lf+spbm.vtc .== 0.0)
@@ -726,18 +797,18 @@ end
 
 Args:
     spbm: the subproblem definition. =#
-function add_convex_constraints!(spbm::SCvxSubproblem)::Nothing
+function _scvx__add_convex_constraints!(spbm::SCvxSubproblem)::Nothing
     # Variables and parameters
     N = spbm.scvx.pars.N
     traj_pbm = spbm.scvx.traj
-    nu = traj_pbm.vehicle.nu
+    nu = traj_pbm.nu
     x = spbm.x
     u = spbm.u
     p = spbm.p
 
     # Convex state constraints
     for k = 1:N
-        X = mdl_X!(@k(x), spbm.mdl, traj_pbm)
+        X = traj_pbm.X!(@k(x), spbm.mdl)
 
         if k==1
             # Initialize associated variables
@@ -750,7 +821,7 @@ function add_convex_constraints!(spbm::SCvxSubproblem)::Nothing
 
     # Convex input constraints
     for k = 1:N
-        U = mdl_U!(@k(u), spbm.mdl, traj_pbm)
+        U = traj_pbm.U!(@k(u), spbm.mdl)
 
         if k==1
             # Initialize associated variables
@@ -768,22 +839,26 @@ end
 
 Args:
     spbm: the subproblem definition. =#
-function add_nonconvex_constraints!(spbm::SCvxSubproblem)::Nothing
+function _scvx__add_nonconvex_constraints!(spbm::SCvxSubproblem)::Nothing
     # Variables and parameters
     N = spbm.scvx.pars.N
     traj_pbm = spbm.scvx.traj
-    nu = traj_pbm.vehicle.nu
-    x_ref = spbm.ref.xd
-    u_ref = spbm.ref.ud
-    p_ref = spbm.ref.p
+    nu = traj_pbm.nu
+    xb = spbm.ref.xd
+    ub = spbm.ref.ud
+    pb = spbm.ref.p
     x = spbm.x
     u = spbm.u
     p = spbm.p
 
     # Problem-specific convex constraints
     for k = 1:N
-        lhs = mdl_ncvx_constraints(@k(x), @k(u), p, @k(x_ref),
-                                   @k(u_ref), p_ref, traj_pbm)
+        s = traj_pbm.s(@k(xb), @k(ub), pb)
+        C = traj_pbm.C(@k(xb), @k(ub), pb)
+        D = traj_pbm.D(@k(xb), @k(ub), pb)
+        G = traj_pbm.G(@k(xb), @k(ub), pb)
+        r = s-C*@k(xb)-D*@k(ub)-G*pb
+        lhs = C*@k(x)+D*@k(u)+G*p+r
 
         if k==1
             # Initialize associated variables
@@ -794,21 +869,23 @@ function add_nonconvex_constraints!(spbm::SCvxSubproblem)::Nothing
 
         @k(spbm.pc_s) = @constraint(spbm.mdl, lhs+@k(spbm.vs) .<= 0.0)
     end
+
+    return nothing
 end
 
 #= Add trust region constraint to the subproblem.
 
 Args:
     spbm: the subproblem definition. =#
-function add_trust_region!(spbm::SCvxSubproblem)::Nothing
+function _scvx__add_trust_region!(spbm::SCvxSubproblem)::Nothing
 
     # Variables and parameters
     N = spbm.scvx.pars.N
     q = spbm.scvx.pars.q_tr
     scale = spbm.scvx.common.scale
-    vehicle = spbm.scvx.traj.vehicle
-    nx = vehicle.nx
-    nu = vehicle.nu
+    traj_pbm = spbm.scvx.traj
+    nx = traj_pbm.nx
+    nu = traj_pbm.nu
     η = spbm.η
     sqrt_η = sqrt(η)
     soc_dim = 1+nx+nu
@@ -862,13 +939,12 @@ end
 
 Args:
     spbm: the subproblem definition. =#
-function add_cost!(spbm::SCvxSubproblem)::Nothing
+function _scvx__add_cost!(spbm::SCvxSubproblem)::Nothing
 
     # Variables and parameters
     N = spbm.scvx.pars.N
     Δτ = spbm.scvx.common.Δτ
     τ_grid = spbm.scvx.common.τ_grid
-    traj_pbm = spbm.scvx.traj
     x = spbm.x
     u = spbm.u
     p = spbm.p
@@ -925,7 +1001,7 @@ end
 
 Args:
     spbm: the subproblem structure. =#
-function solve_subproblem!(spbm::SCvxSubproblem)::Nothing
+function _scvx__solve_subproblem!(spbm::SCvxSubproblem)::Nothing
     # Optimize
     optimize!(spbm.mdl)
 
@@ -945,8 +1021,8 @@ Args:
 
 Returns:
     unsafe: true if the subproblem solution process "failed". =#
-function unsafe_solution(sol::Union{SCvxSubproblemSolution,
-                                    SCvxSubproblem})::T_Bool
+function _scvx__unsafe_solution(sol::Union{SCvxSubproblemSolution,
+                                           SCvxSubproblem})::T_Bool
 
     # If the parent subproblem passed in, then get its solution
     if typeof(sol)==SCvxSubproblem
@@ -967,7 +1043,7 @@ Args:
 
 Returns:
     stop: true if stopping criterion holds. =#
-function check_stopping_criterion!(spbm::SCvxSubproblem)::T_Bool
+function _scvx__check_stopping_criterion!(spbm::SCvxSubproblem)::T_Bool
 
     # Extract values
     pbm = spbm.scvx
@@ -1016,9 +1092,9 @@ Args:
 Returns:
     next_ref: reference trajectory for the next iteration.
     next_η: trust region radius for the next iteration. =#
-function update_trust_region!(spbm::SCvxSubproblem)::Tuple{
-    SCvxSubproblemSolution,
-    T_Real}
+function _scvx__update_trust_region!(
+    spbm::SCvxSubproblem)::Tuple{SCvxSubproblemSolution,
+                                 T_Real}
 
     # Parameters
     pbm = spbm.scvx
@@ -1046,8 +1122,8 @@ end
 Args:
     spbm: the subproblem that was solved.
     err: an SCvx-specific error message. =#
-function print_info(spbm::SCvxSubproblem,
-                    err::Union{Nothing, SCvxError}=nothing)::Nothing
+function _scvx__print_info(spbm::SCvxSubproblem,
+                           err::Union{Nothing, SCvxError}=nothing)::Nothing
 
     # Convenience variables
     sol = spbm.sol
@@ -1056,7 +1132,7 @@ function print_info(spbm::SCvxSubproblem,
 
     if !isnothing(err)
         @printf "ERROR: %s, exiting\n" err.msg
-    elseif unsafe_solution(sol)
+    elseif _scvx__unsafe_solution(sol)
         @printf "ERROR: unsafe solution (%s), exiting\n" sol.status
     else
         # Complicated values
@@ -1104,12 +1180,10 @@ end
 Args:
     hist: the history.
     spbm: a subproblem structure. =#
-function save!(hist::SCvxHistory, spbm::SCvxSubproblem)::Nothing
+function _scvx__save!(hist::SCvxHistory, spbm::SCvxSubproblem)::Nothing
     push!(hist.subproblems, spbm)
     return nothing
 end
-
-# ..:: Private methods ::..
 
 #= Compute the scaling matrices given the problem definition.
 
@@ -1121,12 +1195,12 @@ Returns:
     scale: the scaling structure. =#
 function _scvx__compute_scaling(
     pars::SCvxParameters,
-    traj::T)::SCvxScaling where {T<:AbstractTrajectoryProblem}
+    traj::TrajectoryProblem)::SCvxScaling
 
     # Parameters
-    nx = traj.vehicle.nx
-    nu = traj.vehicle.nu
-    np = traj.vehicle.np
+    nx = traj.nx
+    nu = traj.nu
+    np = traj.np
     solver = pars.solver
     solver_opts = pars.solver_opts
     zero_intvl_tol = sqrt(eps())
@@ -1142,8 +1216,8 @@ function _scvx__compute_scaling(
     x_bbox[:, 1] .= 0.0
     u_bbox[:, 1] .= 0.0
 
-    defs = [Dict(:dim => nx, :set => mdl_X!, :bbox => x_bbox),
-            Dict(:dim => nu, :set => mdl_U!, :bbox => u_bbox)]
+    defs = [Dict(:dim => nx, :set => traj.X!, :bbox => x_bbox),
+            Dict(:dim => nu, :set => traj.U!, :bbox => u_bbox)]
 
     for def in defs
         for j = 1:2 # 1:min, 2:max
@@ -1157,7 +1231,7 @@ function _scvx__compute_scaling(
                 # Variables
                 var = @variable(mdl, [1:def[:dim]])
                 # Constraints
-                def[:set](var, mdl, traj)
+                def[:set](var, mdl)
                 # Cost
                 set_objective_function(mdl, var[i])
                 set_objective_sense(mdl, (j==1) ? MOI.MIN_SENSE :
@@ -1185,7 +1259,7 @@ function _scvx__compute_scaling(
     wdth_u = intrvl_u[2]-intrvl_u[1]
 
     # State scaling terms
-    x_max, x_min = x_bbox[:, 1], x_bbox[:, 2]
+    x_min, x_max = x_bbox[:, 1], x_bbox[:, 2]
     diag_Sx = (x_max-x_min)/wdth_x
     diag_Sx[diag_Sx .< zero_intvl_tol] .= 1.0
     Sx = Diagonal(diag_Sx)
@@ -1193,7 +1267,7 @@ function _scvx__compute_scaling(
     cx = x_min-diag_Sx*intrvl_x[1]
 
     # Input scaling terms
-    u_max, u_min = u_bbox[:, 1], u_bbox[:, 2]
+    u_min, u_max = u_bbox[:, 1], u_bbox[:, 2]
     diag_Su = (u_max-u_min)/wdth_u
     diag_Su[diag_Su .< zero_intvl_tol] .= 1.0
     Su = Diagonal(diag_Su)
@@ -1230,24 +1304,26 @@ function _scvx__derivs(τ::T_Real,
                        idcs::SCvxDiscretizationIndices,
                        ref::SCvxSubproblemSolution)::T_RealVector
     # Parameters
-    nx = pbm.traj.vehicle.nx
+    nx = pbm.traj.nx
     N = pbm.pars.N
     τ_span = @k(pbm.common.τ_grid, k, k+1)
 
     # Get current values
-    x_now = V[idcs.x]
-    u_now = linterp(τ, @k(ref.ud, k, k+1), τ_span)
+    x = V[idcs.x]
+    u = linterp(τ, @k(ref.ud, k, k+1), τ_span)
     p = ref.p
     Phi = reshape(V[idcs.A], (nx, nx))
     σ_m = (τ_span[2]-τ)/(τ_span[2]-τ_span[1])
     σ_p = (τ-τ_span[1])/(τ_span[2]-τ_span[1])
 
     # Compute the state time derivative and local linearization
-    f = dynamics(pbm.traj, τ, x_now, u_now, p)
-    A, B, S = jacobians(pbm.traj, τ, x_now, u_now, p)
+    f = pbm.traj.f(τ, x, u, p)
+    A = pbm.traj.A(τ, x, u, p)
+    B = pbm.traj.B(τ, x, u, p)
+    F = pbm.traj.F(τ, x, u, p)
     B_m = σ_m*B
     B_p = σ_p*B
-    r = f-A*x_now-B*u_now-S*p
+    r = f-A*x-B*u-F*p
     E = pbm.common.E
 
     # Compute the running derivatives for the discrete-time state update
@@ -1256,12 +1332,12 @@ function _scvx__derivs(τ::T_Real,
     dPhidt = A*Phi
     dBmdt = iPhi*B_m
     dBpdt = iPhi*B_p
-    dSdt = iPhi*S
+    dFdt = iPhi*F
     drdt = iPhi*r
     dEdt = iPhi*E
 
     dVdt = [f; vec(dPhidt); vec(dBmdt); vec(dBpdt);
-            vec(dSdt); drdt; vec(dEdt)]
+            vec(dFdt); drdt; vec(dEdt)]
 
     return dVdt
 end
@@ -1289,12 +1365,12 @@ function _scvx__original_cost(
 
     # Terminal cost
     xf = @last(x)
-    J_term = terminal_cost(xf, p, traj_pbm)
+    J_term = pbm.traj.φ(xf, p)
 
     # Integrated running cost
     J_run = Vector{T_Objective}(undef, N)
     for k = 1:N
-        @k(J_run) = running_cost(@k(x), @k(u), p, traj_pbm)
+        @k(J_run) = pbm.traj.Γ(@k(x), @k(u), p)
     end
     integ_J_run = trapz(J_run, τ_grid)
 
@@ -1331,7 +1407,8 @@ end
 This is the integrand of the overall cost penalty term for dynamics and
 nonconvex constraint violation.
 
-Note: **this function must match the penalty implemented in add_cost!()**.
+Note: **this function must match the penalty implemented in
+_scvx__add_cost!()**.
 
 Args:
     vd: inconsistency in the dynamics ("defect").
@@ -1348,7 +1425,8 @@ end
 
 This is the cost penalty term for violating a boundary condition.
 
-Note: **this function must match the penalty implemented in add_cost!()**.
+Note: **this function must match the penalty implemented in
+_scvx__add_cost!()**.
 
 Args:
     g: boundary condition value (zero if satisfied).
@@ -1383,7 +1461,7 @@ function _scvx__actual_cost_penalty!(
 
     # Values and parameters from the solution
     N = pbm.pars.N
-    nx = pbm.traj.vehicle.nx
+    nx = pbm.traj.nx
     τ_grid = pbm.common.τ_grid
     x = sol.xd
     u = sol.ud
@@ -1391,14 +1469,14 @@ function _scvx__actual_cost_penalty!(
 
     # Values from the solution
     δ = sol.defect
-    gic, _, _ = initial_bcs(@first(sol.xd), sol.p, pbm.traj)
-    gtc, _, _ = terminal_bcs(@last(sol.xd), sol.p, pbm.traj)
+    gic = pbm.traj.gic(@first(sol.xd), sol.p)
+    gtc = pbm.traj.gtc(@last(sol.xd), sol.p)
 
     # Integrate the nonlinear penalty term
     P = T_RealVector(undef, N)
     for k = 1:N
         δk = (k<N) ? @k(δ) : zeros(nx)
-        sk, _, _, _ = ncvx_constraints(@k(x), @k(u), sol.p, pbm.traj)
+        sk = pbm.traj.s(@k(x), @k(u), sol.p)
         @k(P) = _scvx__P(δk, max.(sk, 0.0))
     end
     pen = trapz(P, τ_grid)+_scvx__Pf(gic)+_scvx__Pf(gtc)
@@ -1513,7 +1591,7 @@ end
 
 #= Find closest trajectory that satisfies the convex path constraints.
 
-Closeness is measured in the least-squares sense.
+Closeness is measured in an L1-norm set.
 
 Args:
     x_ref: the discrete-time state trajectory to be projected.
@@ -1526,31 +1604,34 @@ function _scvx__correct_convex!(
 
     # Parameters
     N = pbm.pars.N
-    nx = pbm.traj.vehicle.nx
-    nu = pbm.traj.vehicle.nu
+    nx = pbm.traj.nx
+    nu = pbm.traj.nu
     scale = pbm.common.scale
-    soc_dim = 1+nx+nu
+    cone_dim_x = 1+nx
+    cone_dim_u = 1+nu
 
     # Initialize the problem
     opti = SCvxSubproblem(pbm, 0, 0.0)
 
     # Add the convex path constraints
-    add_convex_constraints!(opti)
+    _scvx__add_convex_constraints!(opti)
 
     # Add epigraph constraints to make a convex cost for JuMP
     xh_ref = scale.iSx*(x_ref.-scale.cx)
     uh_ref = scale.iSu*(u_ref.-scale.cu)
     dx = opti.xh-xh_ref
     du = opti.uh-uh_ref
+    epi_x = @variable(opti.mdl, [1:N], base_name="τx")
+    epi_u = @variable(opti.mdl, [1:N], base_name="τu")
     for k = 1:N
-        push!(opti.fit, @constraint(
-            opti.mdl,
-            vcat(@k(opti.P), @k(dx), @k(du)) in
-            MOI.SecondOrderCone(soc_dim)))
+        @constraint(opti.mdl, vcat(@k(epi_x), @k(dx))
+                    in MOI.NormOneCone(cone_dim_x))
+        @constraint(opti.mdl, vcat(@k(epi_u), @k(du))
+                    in MOI.NormOneCone(cone_dim_u))
     end
 
     # Define the cost
-    cost = sum(opti.P.^2)
+    cost = sum(epi_x)+sum(epi_u)
     set_objective_function(opti.mdl, cost)
     set_objective_sense(opti.mdl, MOI.MIN_SENSE)
 

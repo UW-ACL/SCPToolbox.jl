@@ -3,8 +3,6 @@
 using JuMP
 using Printf
 
-abstract type AbstractTrajectoryProblem end
-
 # Possible SCvx-specific solution statuses
 @enum(SCvxStatus,
       SCVX_SOLVED,
@@ -47,6 +45,9 @@ const T_Objective = Union{Missing,
                           GenericQuadExpr{T_Real, VariableRef}}
 
 const T_ExitStatus = Union{SCvxStatus, MOI.TerminationStatusCode}
+
+const T_Function = Union{Nothing, Function}
+const T_FunctionVector = Vector{T_Function}
 
 #= Iteration progress information table to be printed in REPL. =#
 mutable struct Table
