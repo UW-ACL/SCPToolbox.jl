@@ -194,9 +194,13 @@ struct SCvxSolution
     status::T_String  # Solution status (success? failure?)
     iterations::T_Int # Number of SCvx iterations that occurred
     # >> Discrete-time trajectory <<
+    τd::T_RealVector   # Discrete times
     xd::T_RealMatrix  # States
     ud::T_RealMatrix  # Inputs
     p::T_RealVector   # Parameter vector
+    # >> Continuous-time trajectory <<
+    xc::Union{ContinuousTimeTrajectory, Missing} # States
+    uc::Union{ContinuousTimeTrajectory, Missing} # Inputs
     # >> Cost function value <<
     L_orig::T_Real    # The original convex cost function
     L_pen::T_Real     # The virtual control penalty
@@ -504,9 +508,20 @@ Args:
 Returns:
     sol: the trajectory solution. =#
 function SCvxSolution(history::SCvxHistory)::SCvxSolution
+
+    # Get the solution
     last_spbm = history.subproblems[end]
     last_sol = last_spbm.sol
+
+    # Extract relevant parameters
     num_iters = last_spbm.iter
+    pbm = last_spbm.scvx
+    N = pbm.pars.N
+    Nsub = pbm.pars.Nsub
+    nx = pbm.traj.nx
+    nu = pbm.traj.nu
+    np = pbm.traj.np
+    τd = pbm.common.τ_grid
 
     if _scvx__unsafe_solution(last_sol)
         # SCvx failed :(
@@ -514,6 +529,8 @@ function SCvxSolution(history::SCvxHistory)::SCvxSolution
         xd = T_RealMatrix(undef, size(last_sol.xd))
         ud = T_RealMatrix(undef, size(last_sol.ud))
         p = T_RealVector(undef, size(last_sol.p))
+        xc = missing
+        uc = missing
         L_orig = Inf
         L_pen = Inf
         L = Inf
@@ -521,16 +538,29 @@ function SCvxSolution(history::SCvxHistory)::SCvxSolution
     else
         # SCvx solved the problem!
         status = @sprintf "%s" SCVX_SOLVED
+
         xd = last_sol.xd
         ud = last_sol.ud
         p = last_sol.p
+
+        # >> Continuos-time trajectory <<
+        # Since within-interval integration using Nsub points worked, using
+        # twice as many this time around seems like a good heuristic
+        Nc = 2*Nsub*(N-1)
+        τc = T_RealVector(LinRange(0.0, 1.0, Nc))
+        uc = ContinuousTimeTrajectory(τd, ud, :linear)
+        F = (τ, x) -> pbm.traj.f(τ, x, sample(uc, τ), p)
+        xc_vals = rk4(F, @first(last_sol.xd), τc; full=true)
+        xc = ContinuousTimeTrajectory(τc, xc_vals, :linear)
+
         L_orig = last_sol.L_orig
         L_pen = last_sol.L_pen
         L = last_sol.L
         J = last_sol.J
     end
 
-    sol = SCvxSolution(status, num_iters, xd, ud, p, L_orig, L_pen, L, J)
+    sol = SCvxSolution(status, num_iters, τd, xd, ud, p, xc, uc,
+                       L_orig, L_pen, L, J)
 
     return sol
 end
@@ -673,7 +703,7 @@ function _scvx__discretize!(ref::SCvxSubproblemSolution,
         V0[idcs.x] = @k(ref.xd)
 
         # Integrate
-        f(τ::T_Real, V::T_RealVector)::T_RealVector =
+        f = (τ::T_Real, V::T_RealVector) ->
             _scvx__derivs(τ, V, k, pbm, idcs, ref)
         τ_subgrid = T_RealVector(
             LinRange(pbm.common.τ_grid[k], pbm.common.τ_grid[k+1], Nsub))

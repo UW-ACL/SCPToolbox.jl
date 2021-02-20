@@ -4,6 +4,8 @@ using LinearAlgebra
 
 include("types.jl")
 
+# ..:: Public macros ::..
+
 #= Get discrete-time trajectory values at time step k or step range {k,...,l}.
 
 The trajectory can be represented by an array of any dimension. We assume that
@@ -43,6 +45,17 @@ macro kp1(traj)
     :( @k($(esc(traj)), $(esc(:(k)))+1) )
 end
 
+#= Convenience method to get trajectory value at time k-1.
+
+Args:
+    traj: discrete-time trajectory representation of the type Array.
+
+Returns:
+    The trajectory value at time step k-1. =#
+macro km1(traj)
+    :( @k($(esc(traj)), $(esc(:(k)))-1) )
+end
+
 #= Convenience method to get trajectory value at the initial time.
 
 Args:
@@ -65,6 +78,8 @@ macro last(traj)
     :( @k($(esc(traj)), size($(esc(traj)))[end]) )
 end
 
+# ..:: Public methods ::..
+
 #= Linear interpolation on a grid.
 
 Linearly interpolate a discrete function on a time grid. In other words, get
@@ -78,31 +93,14 @@ Args:
 
 Returns:
     f_t: the function value at time t.=#
-function linterp(t::Float64,
-                 f_cps::T_RealMatrix,
-                 t_grid::T_RealVector)::T_RealVector
-    k = get_interval(t, t_grid)
+function linterp(t::T_Real,
+                 f_cps::T_RealArray,
+                 t_grid::T_RealVector)::T_RealArray
+    t = max(t_grid[1], min(t_grid[end], t)) # Saturate to time grid
+    k = _helper__get_interval(t, t_grid)
     c = (@kp1(t_grid)-t)/(@kp1(t_grid)-@k(t_grid))
     f_t = c*@k(f_cps) + (1-c)*@kp1(f_cps)
     return f_t
-end
-
-#= Compute grid bin.
-
-Get which grid interval a real number belongs to.
-
-Args:
-    x: the real number.
-    grid: the discrete grid on the real line.
-
-Returns:
-    k: the interval of the grid the the real number is in.=#
-function get_interval(x::T_Real, grid::T_RealVector)::T_Int
-    k = sum(x.>grid)
-    if k==0
-	k = 1
-    end
-    return k
 end
 
 #= Straight-line interpolation between two points.
@@ -139,36 +137,70 @@ function straightline_interpolate(
     return v
 end
 
-#= Classic Runge-Kutta integration.
-
-Interate a system of ordinary differential equations over a time interval, and
-return the final result.
+#= Get the value of a continuous-time trajectory at time t.
 
 Args:
-    x0: the initial condition.
-    f: the dynamics function, with call signature f(t, x) where t is the
-        current time and x is the current state.
-    tspan: the time grid over which to integrate.
+    traj: the trajectory.
+    t: the evaluation time.
 
 Returns:
-    x: the integration result at the end of the time interval.=#
-function rk4(f, x0::T_RealVector, tspan::T_RealVector)::T_RealVector
-    x = copy(x0)
-    n = length(x)
-    N = length(tspan)
-    for k = 1:N-1
-	tk = @k(tspan)
-  	tkp1 = @kp1(tspan)
-	h = tkp1-tk
+    x: the trajectory value at time t. =#
+function sample(traj::ContinuousTimeTrajectory,
+                t::T_Real)::T_RealArray
 
-	k1 = f(tk,x)
-	k2 = f(tk+h/2,x+h/2*k1)
-	k3 = f(tk+h/2,x+h/2*k2)
-	k4 = f(tk+h,x+h*k3)
-
-	x += h/6*(k1+2*k2+2*k3+k4)
+    if traj.interp==:linear
+        x = linterp(t, traj.x, traj.t)
     end
+
     return x
+end
+
+#= Classic Runge-Kutta integration over a provided time grid.
+
+Args:
+    f: the dynamics function.
+    x0: the initial condition.
+    tspan: the discrete time grid over which to integrate.
+    full: (optional) whether to return the full trajectory, or just
+        the final point.
+
+Returns:
+    X: the integrated trajectory (final point, or full). =#
+function rk4(f::Function,
+             x0::T_RealVector,
+             tspan::T_RealVector;
+             full::T_Bool=false)::Union{T_RealVector,
+                                        T_RealMatrix}
+    X = _helper__rk4_generic(f, x0; tspan=tspan, full=full)
+    return X
+end
+
+#= Classic Runge-Kutta integration given a final time and time step.
+
+Args:
+    f: the dynamics function.
+    x0: the initial condition.
+    tf: the final time.
+    h: the discrete time step.
+    full: (optional) whether to return the full trajectory, or just
+        the final point.
+
+Returns:
+    X: the integrated trajectory (final point, or full). =#
+function rk4(f::Function,
+             x0::T_RealVector,
+             tf::T_Real,
+             h::T_Real;
+             full::T_Bool=false)::Union{T_RealVector,
+                                        T_RealMatrix}
+    # Define the scaled dynamics and time step
+    F = (τ::T_Real, x::T_RealVector) -> tf*f(tf*τ, x)
+    h /= tf
+
+    # Integrate
+    X = _helper__rk4_generic(F, x0; h=h, full=full)
+
+    return X
 end
 
 #= Integrate a discrete signal using trapezoid rule.
@@ -220,4 +252,118 @@ function project(H::T_RealMatrix,
     c_prj = P*c
 
     return H_prj, c_prj
+end
+
+# ..:: Private methods ::..
+
+#= Compute grid bin.
+
+Get which grid interval a real number belongs to.
+
+Args:
+    x: the real number.
+    grid: the discrete grid on the real line.
+
+Returns:
+    k: the interval of the grid the the real number is in.=#
+function _helper__get_interval(x::T_Real, grid::T_RealVector)::T_Int
+    k = sum(x.>grid)
+    if k==0
+	k = 1
+    end
+    return k
+end
+
+#= Update the state using a single Runge-Kutta integration update.
+
+Args:
+    f: the dynamics function.
+    x: the current state.
+    t: the current time.
+    tp: the next time.
+
+Returns:
+    xp: the next state. =#
+function _helper__rk4_core_step(f::Function,
+                                x::T_RealVector,
+                                t::T_Real,
+                                tp::T_Real)::T_RealVector
+
+    # Time step length
+    h = tp-t
+
+    # The Runge-Kutta update
+    k1 = f(t,x)
+    k2 = f(t+h/2,x+h/2*k1)
+    k3 = f(t+h/2,x+h/2*k2)
+    k4 = f(t+h,x+h*k3)
+    xp = x+h/6*(k1+2*k2+2*k3+k4)
+
+    return xp
+end
+
+#= Classic Runge-Kutta integration.
+
+Interate a system of ordinary differential equations over a time interval. The
+`tspan` and `h` arguments are mutually exclusive: one and exactly one of them
+must be provided.
+
+Args:
+    f: the dynamics function, with call signature f(t, x) where t is the
+        current time and x is the current state.
+    x0: the initial condition.
+    tspan: (optional) the time grid over which to integrate.
+    h: (optional) the time step of a uniform time grid over which to integrate.
+        If provided, a [0, 1] integration interval is assumed. If the time step
+        does not split the [0, 1] interval into an integral number of temporal
+        nodes, then the largest time step <=h is used.
+    full: (optional) whether to return the complete trajectory (if false, return
+        just the endpoint).
+
+Returns:
+    X: the integration result (final point, or full trajectory, depending on the
+        argument `full`).=#
+function _helper__rk4_generic(f::Function,
+                              x0::T_RealVector;
+                              tspan::Union{T_RealVector, Nothing}=nothing,
+                              h::Union{T_Real, Nothing}=nothing,
+                              full::T_Bool=false)::Union{T_RealVector,
+                                                         T_RealMatrix}
+
+    # Check that one and only one of the arguments tspan and h is passed
+    if !xor(isnothing(tspan), isnothing(h))
+        err = ArgumentError(string("ERROR: rk4 accepts one and only one",
+                                   " of tspan or h."))
+        throw(err)
+    end
+
+    if isnothing(tspan)
+        # Construct a uniform tspan such that the time step is the largest
+        # possible value <=h
+        N = ceil(T_Int, 1.0+1.0/h)
+        tspan = LinRange(0.0, 1.0, N)
+    end
+
+    # Initialize the data
+    n = length(x0)
+    N = length(tspan)
+    if full
+        X = T_RealMatrix(undef, n, N)
+        @first(X) = copy(x0)
+    else
+        X = copy(x0)
+    end
+
+    # Integrate the function
+    for k = 2:N
+        if full
+            @k(X) = _helper__rk4_core_step(
+                f, @km1(X), @km1(tspan), @k(tspan))
+        else
+            X = _helper__rk4_core_step(
+                f, X, @km1(tspan), @k(tspan))
+        end
+    end
+
+    return X
 end

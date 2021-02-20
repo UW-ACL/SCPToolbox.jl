@@ -20,7 +20,8 @@ const T_Symbol = Symbol
 const T_IntVector = Vector{T_Int}
 const T_IntRange = UnitRange{T_Int}
 
-__types_f(n) = Array{T_Real, n}
+const T_RealArray = Array{T_Real}
+__types_f(n) = T_RealArray{n}
 const T_RealVector = __types_f(1)
 const T_RealMatrix = __types_f(2)
 const T_RealTensor = __types_f(3)
@@ -48,6 +49,39 @@ const T_ExitStatus = Union{SCvxStatus, MOI.TerminationStatusCode}
 
 const T_Function = Union{Nothing, Function}
 const T_FunctionVector = Vector{T_Function}
+
+#= Continuous-time trajectory data structure. =#
+struct ContinuousTimeTrajectory
+    t::T_RealVector  # The trajectory time nodes
+    x::T_RealArray   # The trajectory values at the corresponding times
+    # Interpolation type between time nodes, possible values are:
+    #   :linear (linear interpolation)
+    interp::T_Symbol
+
+    #= Constructor.
+
+    Args:
+        t: the trajectory time nodes.
+        x: the trajectory values at the corresponding times.
+        interp: the interpolation method.
+
+    Returns:
+        traj: the continuous-time trajectory. =#
+    function ContinuousTimeTrajectory(
+        t::T_RealVector,
+        x::T_RealArray,
+        interp::T_Symbol)
+
+        if !(interp in [:linear])
+            err = ArgumentError("ERROR: unknown trajectory interpolation type.")
+            throw(err)
+        end
+
+        traj = new(t, x, interp)
+
+        return traj
+    end
+end
 
 #= Iteration progress information table to be printed in REPL. =#
 mutable struct Table

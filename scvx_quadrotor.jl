@@ -44,7 +44,7 @@ rf[1:2] = [2.5; 6.0]
 v0 = zeros(3)
 vf = zeros(3)
 tf_min = 0.0
-tf_max = 10.0
+tf_max = 2.5
 traj = TrajectoryParameters(r0, rf, v0, vf, tf_min, tf_max)
 
 mdl = QuadrotorProblem(quad, env, traj)
@@ -258,7 +258,7 @@ problem_set_bc!(pbm, :tc,
 
 N = 30
 Nsub = 15
-iter_max = 50
+iter_max = 20
 λ = 1e3
 ρ_0 = 0.0
 ρ_1 = 0.1
@@ -268,8 +268,8 @@ iter_max = 50
 η_init = 1.0
 η_lb = 1e-3
 η_ub = 10.0
-ε_abs = 1e-3
-ε_rel = 1/100
+ε_abs = 1e-4
+ε_rel = -Inf#1/100
 feas_tol = 1e-2
 q_tr = Inf
 q_exit = Inf
@@ -292,63 +292,10 @@ sol, history = scvx_solve(scvx_pbm)
 ###############################################################################
 # ..:: Plot results ::..
 
-pyplot()
-
-# -----------------------------------------------------------------------------
-# >> Trajectory evolution plot through the iterations <<
-
-# Common values
-veh = pbm.mdl.vehicle
-env = pbm.mdl.env
-num_iter = length(history.subproblems)
-font_sz = 10
-cmap_offset = 0.1
-cmap = cgrad(:thermal; rev = true)
-
-plot(aspect_ratio=:equal,
-     xlabel=L"\mathrm{East~position~[m]}",
-     ylabel=L"\mathrm{North~position~[m]}",
-     tickfontsize=font_sz,
-     labelfontsize=font_sz)
-
-# @ Draw the obstacles @
-θ = LinRange(0.0, 2*pi, 100)
-circle = hcat(cos.(θ), sin.(θ))'
-for i = 1:env.obsN
-    local H, c = project(get_obstacle(i, pbm.mdl)..., [1, 2])
-    local vertices = H\circle.+c
-    local obs = Shape(vertices[1, :], vertices[2, :])
-    plot!(obs;
-          reuse=true,
-          legend=false,
-          seriestype=:shape,
-          color="#db6245",
-          fillopacity=0.5,
-          linewidth=1,
-          linecolor="#26415d")
-end
-
-# @ Draw the trajectories @
-for i = 1:num_iter
-
-    # Extract values for the trajectory at iteration i
-    local sol = history.subproblems[i].sol
-    local pos = sol.xd[veh.id_r, :]
-    local clr = cmap[(i-1)/(num_iter-1)*(1-cmap_offset)+cmap_offset]
-
-    plot!(pos[1, :],
-          pos[2, :];
-          reuse=true,
-          legend=false,
-          seriestype=:scatter,
-          markershape=:circle,
-          markersize=6,
-          markerstrokecolor="white",
-          markerstrokewidth=0.3,
-          color=clr)
-end
-
-gui()
-# -----------------------------------------------------------------------------
+plot_trajectory_history(mdl, history)
+plot_final_trajectory(mdl, sol)
+plot_input_norm(mdl, sol)
+plot_tilt_angle(mdl, sol)
+plot_convergence(mdl, history)
 
 ###############################################################################
