@@ -22,7 +22,22 @@ struct FreeFlyerParameters
     R::T_Real        # [m] Vehicle radius (spherical representation)
 end
 
+#= Trajectory parameters. =#
+struct TrajectoryParameters
+    r0::T_RealVector # Initial position
+    rf::T_RealVector # Terminal position
+    v0::T_RealVector # Initial velocity
+    vf::T_RealVector # Terminal velocity
+    q0::T_Quaternion # Initial attitude
+    qf::T_Quaternion # Terminal attitude
+    ω0::T_RealVector # Initial angular velocity
+    ωf::T_RealVector # Terminal angular velocity
+    tf_min::T_Real   # Minimum flight time
+    tf_max::T_Real   # Maximum flight time
+end
+
 #= Free-flyer trajectory optimization problem parameters all in one. =#
 struct FreeFlyerProblem
     vehicle::FreeFlyerParameters # The ego-vehicle
+    traj::TrajectoryParameters   # The trajectory
 end

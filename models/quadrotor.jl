@@ -12,15 +12,15 @@ include("../core/scvx.jl")
 
 #= Quadrotor vehicle parameters. =#
 struct QuadrotorParameters
-    id_r::T_IntRange  # Position indices of the state vector
-    id_v::T_IntRange  # Velocity indices of the state vector
-    id_xt::T_Int      # Index of time dilation state
-    id_u::T_IntRange  # Indices of the thrust input vector
-    id_σ::T_Int       # Indices of the slack input
-    id_pt::T_Int      # Index of time dilation
-    u_nrm_max::T_Real # [N] Maximum thrust
-    u_nrm_min::T_Real # [N] Minimum thrust
-    tilt_max::T_Real  # [rad] Maximum tilt
+    id_r::T_IntRange # Position indices of the state vector
+    id_v::T_IntRange # Velocity indices of the state vector
+    id_xt::T_Int     # Index of time dilation state
+    id_u::T_IntRange # Indices of the thrust input vector
+    id_σ::T_Int      # Indices of the slack input
+    id_pt::T_Int     # Index of time dilation
+    u_max::T_Real    # [N] Maximum thrust
+    u_min::T_Real    # [N] Minimum thrust
+    tilt_max::T_Real # [rad] Maximum tilt
 end
 
 #= Quadrotor flight environment. =#
@@ -275,11 +275,11 @@ function plot_input_norm(mdl::QuadrotorProblem,
          size=(500, 250))
 
     # @ Acceleration upper bound @
-    bnd = mdl.vehicle.u_nrm_max
+    bnd = mdl.vehicle.u_max
     _quadrotor__plot_bound(0.0, tf, bnd, y_top-bnd)
 
     # @ Acceleration lower bound @
-    bnd = mdl.vehicle.u_nrm_min
+    bnd = mdl.vehicle.u_min
     _quadrotor__plot_bound(0.0, tf, bnd, y_bot-bnd)
 
     # @ Norm of acceleration vector (continuous-time) @

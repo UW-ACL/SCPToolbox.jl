@@ -1621,7 +1621,7 @@ end
 
 #= Find closest trajectory that satisfies the convex path constraints.
 
-Closeness is measured in an L1-norm set.
+Closeness is measured in an L1-norm sense.
 
 Args:
     x_ref: the discrete-time state trajectory to be projected.

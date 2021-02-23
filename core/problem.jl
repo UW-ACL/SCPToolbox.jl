@@ -55,25 +55,25 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     nx = 0
     nu = 0
     np = 0
-    guess = nothing
+    guess = (N) -> (T_RealMatrix[], T_RealMatrix[], T_RealVector[])
     φ = (x, p) -> 0.0
     Γ = (x, u, p) -> 0.0
-    f = nothing
-    A = nothing
-    B = nothing
-    F = nothing
-    X! = nothing
-    U! = nothing
-    s = nothing
-    C = nothing
-    D = nothing
-    G = nothing
-    gic = nothing
-    H0 = nothing
-    K0 = nothing
-    gtc = nothing
-    Hf = nothing
-    Kf = nothing
+    f = (τ, x, u, p) -> T_RealVector[]
+    A = (τ, x, u, p) -> T_RealMatrix[]
+    B = (τ, x, u, p) -> T_RealMatrix[]
+    F = (τ, x, u, p) -> T_RealMatrix[]
+    X! = (x, mdl) -> T_ConstraintVector[]
+    U! = (x, mdl) -> T_ConstraintVector[]
+    s = (x, u, p) -> T_RealVector[]
+    C = (x, u, p) -> T_RealMatrix[]
+    D = (x, u, p) -> T_RealMatrix[]
+    G = (x, u, p) -> T_RealMatrix[]
+    gic = (x, p) -> T_RealVector[]
+    H0 = (x, p) -> T_RealMatrix[]
+    K0 = (x, p) -> T_RealMatrix[]
+    gtc = (x, p) -> T_RealVector[]
+    Hf = (x, p) -> T_RealMatrix[]
+    Kf = (x, p) -> T_RealMatrix[]
 
     pbm = TrajectoryProblem(nx, nu, np, guess, φ, Γ, f, A, B, F, X!, U!,
                             s, C, D, G, gic, H0, K0, gtc, Hf, Kf, mdl)
@@ -191,7 +191,7 @@ Function signature: X!(x, mdl, pbm), where:
   - mdl (Model): the JuMP optimization model object.
   - pbm (TrajectoryProblem): the trajectory problem structure.
 
-The function must return a T_ContraintVector.
+The function must return a T_ConstraintVector.
 
 Args:
     pbm: the trajectory problem structure.

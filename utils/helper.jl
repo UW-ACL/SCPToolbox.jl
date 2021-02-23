@@ -1,8 +1,11 @@
 #= Helper functions used throughout the code. =#
 
 using LinearAlgebra
+using Printf
 
 include("types.jl")
+
+import Base.getindex, Base.*, Base.adjoint
 
 # ..:: Public macros ::..
 
@@ -137,6 +140,39 @@ function straightline_interpolate(
     return v
 end
 
+#= Spherical linear interpolation between two quaternions.
+
+See Section 2.7 of [Sola2017].
+
+References:
+
+@article{Sola2017,
+  author    = {Joan Sola},
+  title     = {Quaternion kinematics for the error-state Kalman filter},
+  journal   = {CoRR},
+  year      = {2017},
+  url       = {http://arxiv.org/abs/1711.02508}
+}
+
+Args:
+    q0: the starting quaternion.
+    q1: the final quaternion.
+    τ: interpolation mixing factor, in [0, 1]. When τ=0, q0 is returned; when
+        τ=1, q1 is returned.
+
+Returns:
+    qt: the interpolated quaternion between q0 and q1. =#
+function slerp_interpolate(q0::T_Quaternion,
+                           q1::T_Quaternion,
+                           τ::T_Real)::T_Quaternion
+    τ = max(0.0, max(1.0, τ))
+    Δq = q1*q0' # Error quaternion correcting q0 to q1
+    Δα, Δa = Log(Δq)
+    Δq_t = T_Quaternion(τ*Δα, Δa)
+    qt = Δq_t*q0
+    return qt
+end
+
 #= Get the value of a continuous-time trajectory at time t.
 
 Args:
@@ -254,6 +290,143 @@ function project(H::T_RealMatrix,
     return H_prj, c_prj
 end
 
+#= Quaternion indexing.
+
+Args:
+    q: the quaternion.
+    i1: the index.
+
+Returns:
+    v: the value. =#
+function getindex(q::T_Quaternion, i1::T_Int)::T_Real
+    if i1<0 || i1>4
+        err = ArgumentError("ERROR: quaternion index out of bounds.")
+        throw(err)
+    end
+
+    if i1<=3
+        v = q.v[i1]
+    else
+        v = q.w
+    end
+
+    return v
+end
+
+#= Skew-symmetric matrix from a 3-element vector.
+
+Args:
+    v: the vector.
+
+Returns:
+    S: the skew-symmetric matrix. =#
+function skew(v::T_RealVector)::T_RealMatrix
+    S = zeros(3, 3)
+    S[1,2], S[1,3], S[2,3] = -v[3], v[2], -v[1]
+    S[2,1], S[3,1], S[3,2] = -S[1,2], -S[1,3], -S[2,3]
+    return S
+end
+
+#= Skew-symmetric matrix from a quaternion.
+
+Args:
+    q: the quaternion.
+
+Returns:
+    S: the skew-symmetric matrix. =#
+function skew(q::T_Quaternion)::T_RealMatrix
+    S = T_RealMatrix(undef, 4, 4)
+    S[1:3, 1:3] = q.w*I(3)+skew(q.v)
+    S[1:3, 4] = q.v
+    S[4, 1:3] = -q.v
+    S[4, 4] = q.w
+    return S
+end
+
+#= Quaternion multiplication.
+
+Args:
+    q: the first quaternion.
+    p: the second quaternion.
+
+Returns:
+    r: the resultant quaternion, r=q*p. =#
+function *(q::T_Quaternion, p::T_Quaternion)::T_Quaternion
+    r = T_Quaternion(skew(q)*vec(p))
+    return r
+end
+
+#= Quaternion conjugate.
+
+Args:
+    q: the original quaternion.
+
+Returns:
+    p: the conjugate of the quaternion. =#
+function adjoint(q::T_Quaternion)::T_Quaternion
+    p = T_Quaternion(-q.v, q.w)
+    return p
+end
+
+#= Logarithmic map of a unit quaternion.
+
+It returns the axis and angle associated with the quaternion operator.
+We assume that a unit quaternion is passed in (no checks are run to verify
+this).
+
+Args:
+    q: the unit quaternion.
+
+Returns:
+    α: the rotation angle (in radiancs).
+    a: the rotation axis. =#
+function Log(q::T_Quaternion)::Tuple{T_Real, T_RealVector}
+    nrm_qv = norm(q.v)
+    α = 2*atan(nrm_qv, q.w)
+    a = q.v/nrm_qv
+    return α, a
+end
+
+#= Convert quaternion to vector form.
+
+Args:
+    q: the quaternion.
+
+Returns:
+    q_vec: the quaternion in vector form, scalar last. =#
+function vec(q::T_Quaternion)::T_RealVector
+    q_vec = [q.v; q.w]
+    return q_vec
+end
+
+#= Print row of table.
+
+Args:
+    row: table row specification.
+    table: the table specification. =#
+function print(row::Dict{T_Symbol, T}, table::Table)::Nothing where {T}
+    # Assign values to table columns
+    values = fill("", length(table.headings))
+    for (k, v) in row
+        val_fmt = table.fmt[k]
+        values[table.sorting[k]] = @eval @sprintf($val_fmt, $v)
+    end
+
+    if table.__head_print==true
+        table.__head_print = false
+        # Print the columnd headers
+        top = @eval @printf($(table.row), $(table.headings)...)
+        println()
+
+        _helper__table_print_hrule(table)
+    end
+
+    msg = @eval @printf($(table.row), $values...)
+    println()
+
+    return nothing
+end
+
 # ..:: Private methods ::..
 
 #= Compute grid bin.
@@ -366,4 +539,22 @@ function _helper__rk4_generic(f::Function,
     end
 
     return X
+end
+
+#= Print table row horizontal separator line.
+
+Args:
+    table: the table specification. =#
+function _helper__table_print_hrule(table::Table)::Nothing
+    hrule = ""
+    num_cols = length(table.__colw)
+    for i = 1:num_cols
+        hrule = string(hrule, repeat("-", table.__colw[i]))
+        if i < num_cols
+            hrule = string(hrule, "-+-")
+        end
+    end
+    println(hrule)
+
+    return nothing
 end

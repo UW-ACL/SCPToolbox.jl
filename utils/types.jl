@@ -1,7 +1,7 @@
 # Variable types used in the code
 
+using LinearAlgebra
 using JuMP
-using Printf
 
 # Possible SCvx-specific solution statuses
 @enum(SCvxStatus,
@@ -10,6 +10,8 @@ using Printf
       SCVX_EMPTY_VARIABLE,
       SCVX_SCALING_FAILED,
       SCVX_GUESS_PROJECTION_FAILED)
+
+# ..:: Basic types ::..
 
 const T_Bool = Bool
 const T_Int = Int
@@ -49,6 +51,84 @@ const T_ExitStatus = Union{SCvxStatus, MOI.TerminationStatusCode}
 
 const T_Function = Union{Nothing, Function}
 const T_FunctionVector = Vector{T_Function}
+
+# ..:: Composite types ::..
+
+#= Quaternion using Hamiltonian convention.
+
+In vectorized form/indexing, use the scalar last convention. =#
+struct T_Quaternion
+    v::T_RealVector # Vector part
+    w::T_Real       # Scalar part
+
+    #= Basic constructor.
+
+    Args:
+        w: the scalar part.
+        v: the vector part.
+
+    Returns:
+        q: the quaternion. =#
+    function T_Quaternion(v::T_RealVector, w::T_Real)::T_Quaternion
+        if length(v)!=3
+            err = ArgumentError("ERROR: quaternion is a 4-element object.")
+            throw(err)
+        end
+
+        q = new(v, w)
+
+        return q
+    end
+
+    #= (Pure) quaternion constructor from a vector.
+
+    Args:
+        v: the vector part or the full quaternion in vector form.
+
+    Returns:
+        q: the pure quaternion. =#
+    function T_Quaternion(v::T_RealVector)::T_Quaternion
+        if length(v)!=3 && length(v)!=4
+            msg = string("ERROR: cannot construct a quaternion from ",
+                         "fewer than 3 or more than 4 elements.")
+            err = ArgumentError(msg)
+            throw(err)
+        end
+
+        if length(v)==3
+            q = new(v, 0.0)
+        else
+            q = new(v[1:3], v[4])
+        end
+
+        return q
+    end
+
+    #= Unit quaternion from an angle-axis attitude parametrization.
+
+    Args:
+        α: the angle (in radians).
+        a: the axis (internally normalized to a unit norm).
+
+    Returns:
+        q: the unit quaternion. =#
+    function T_Quaternion(α::T_Real, a::T_RealVector)::T_Quaternion
+        if length(a)!=3
+            msg = string("ERROR: axis must be in R^3.")
+            err = ArgumentError(msg)
+            throw(err)
+        end
+
+        a /= norm(a)
+        v = a*sin(α/2)
+        w = cos(α/2)
+        q = new(v, w)
+
+        return q
+    end
+end
+
+# ..:: Data structures ::..
 
 #= Continuous-time trajectory data structure. =#
 struct ContinuousTimeTrajectory
@@ -140,36 +220,6 @@ function Table(
     return table
 end
 
-# ..:: Public methods ::..
-
-#= Print row of table.
-
-Args:
-    row: table row specification.
-    table: the table specification. =#
-function print(row::Dict{T_Symbol, T}, table::Table)::Nothing where {T}
-    # Assign values to table columns
-    values = fill("", length(table.headings))
-    for (k, v) in row
-        val_fmt = table.fmt[k]
-        values[table.sorting[k]] = @eval @sprintf($val_fmt, $v)
-    end
-
-    if table.__head_print==true
-        table.__head_print = false
-        # Print the columnd headers
-        top = @eval @printf($(table.row), $(table.headings)...)
-        println()
-
-        _types__table_print_hrule(table)
-    end
-
-    msg = @eval @printf($(table.row), $values...)
-    println()
-
-    return nothing
-end
-
 # ..:: Private methods ::..
 
 #= Add a new column to the iteration info table.
@@ -212,22 +262,4 @@ function _types__add_table_column!(
     row = string(row, separator, "%-", col_width, "s")
 
     return row
-end
-
-#= Print table row horizontal separator line.
-
-Args:
-    table: the table specification. =#
-function _types__table_print_hrule(table::Table)::Nothing
-    hrule = ""
-    num_cols = length(table.__colw)
-    for i = 1:num_cols
-        hrule = string(hrule, repeat("-", table.__colw[i]))
-        if i < num_cols
-            hrule = string(hrule, "-+-")
-        end
-    end
-    println(hrule)
-
-    return nothing
 end

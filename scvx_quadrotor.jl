@@ -3,11 +3,11 @@
 Solution via Sequential Convex Programming using the SCvx algorithm. =#
 
 using LinearAlgebra
+using JuMP
 using Plots
 using LaTeXStrings
 using ColorSchemes
 
-include("utils/types.jl")
 include("utils/helper.jl")
 include("core/problem.jl")
 include("core/scvx.jl")
@@ -23,11 +23,11 @@ id_xt = 7
 id_u = 1:3
 id_σ = 4
 id_pt = 1
-u_nrm_max = 23.2
-u_nrm_min = 0.6
+u_max = 23.2
+u_min = 0.6
 tilt_max = deg2rad(60)
 quad = QuadrotorParameters(id_r, id_v, id_xt, id_u, id_σ,
-                           id_pt, u_nrm_max, u_nrm_min, tilt_max)
+                           id_pt, u_max, u_min, tilt_max)
 
 # >> Environment <<
 g = 9.81
@@ -79,8 +79,8 @@ problem_set_guess!(pbm,
                    xf[veh.id_xt] = p[veh.id_pt]
                    x = straightline_interpolate(x0, xf, N)
                    # Input guess
-                   u_hover = [-g; norm(g)]
-                   u = straightline_interpolate(u_hover, u_hover, N)
+                   hover = [-g; norm(g)]
+                   u = straightline_interpolate(hover, hover, N)
                    return x, u, p
                    end)
 
@@ -91,7 +91,7 @@ problem_set_cost!(pbm,
                   # Running cost
                   (x, u, p, pbm) -> begin
                   σ = u[pbm.mdl.vehicle.id_σ]
-                  return σ*σ
+                  return σ^2
                   end)
 
 # Dynamics constraint
@@ -131,7 +131,7 @@ problem_set_dynamics!(pbm,
                       (τ, x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
                       tdil = p[veh.id_pt]
-                      F = T_RealMatrix(undef, pbm.nx, pbm.np)
+                      F = zeros(pbm.nx, pbm.np)
                       F[:, veh.id_pt] = pbm.f(τ, x, u, p)/tdil
                       return F
                       end)
@@ -150,8 +150,8 @@ problem_set_U!(pbm, (u, mdl, pbm) -> begin
                veh = pbm.mdl.vehicle
                uu = u[veh.id_u]
                σ = u[veh.id_σ]
-               U = [@constraint(mdl, veh.u_nrm_min <= σ);
-                    @constraint(mdl, σ <= veh.u_nrm_max);
+               U = [@constraint(mdl, veh.u_min <= σ);
+                    @constraint(mdl, σ <= veh.u_max);
                     @constraint(mdl, vcat(σ, uu) in
                                 MOI.SecondOrderCone(pbm.nu));
                     @constraint(mdl, σ*cos(veh.tilt_max) <= uu[3])]
@@ -269,7 +269,7 @@ iter_max = 20
 η_lb = 1e-3
 η_ub = 10.0
 ε_abs = 1e-4
-ε_rel = -Inf#1/100
+ε_rel = 0.1/100
 feas_tol = 1e-2
 q_tr = Inf
 q_exit = Inf
