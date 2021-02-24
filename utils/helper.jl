@@ -332,12 +332,15 @@ end
 
 Args:
     q: the quaternion.
+    side: (optional) either :L or :R. In which case:
+      :L : q*p and let [q]*p, return the 4x4 matrix [q]
+      :R : q*p and let [p]*q, return the 4x4 matrix [p]
 
 Returns:
     S: the skew-symmetric matrix. =#
-function skew(q::T_Quaternion)::T_RealMatrix
+function skew(q::T_Quaternion, side::T_Symbol=:L)::T_RealMatrix
     S = T_RealMatrix(undef, 4, 4)
-    S[1:3, 1:3] = q.w*I(3)+skew(q.v)
+    S[1:3, 1:3] = q.w*I(3)+((side==:L) ? 1 : -1)*skew(q.v)
     S[1:3, 4] = q.v
     S[4, 1:3] = -q.v
     S[4, 4] = q.w
@@ -354,6 +357,33 @@ Returns:
     r: the resultant quaternion, r=q*p. =#
 function *(q::T_Quaternion, p::T_Quaternion)::T_Quaternion
     r = T_Quaternion(skew(q)*vec(p))
+    return r
+end
+
+#= Quaternion multiplication by a pure quaternion (a vector).
+
+Args:
+    q: the first quaternion.
+    p: the second quaternion, as a 3-element vector.
+
+Returns:
+    r: the resultant quaternion, r=q*p. =#
+function *(q::T_Quaternion, p::T_RealVector)::T_Quaternion
+    if length(p)!=3
+        err = ArgumentError("ERROR: p must be a vector in R^3.")
+        throw(err)
+    end
+    r = q*T_Quaternion(p)
+    return r
+end
+
+#= Same as above function, but reverse order =#
+function *(q::T_RealVector, p::T_Quaternion)::T_RealVector
+    if length(q)!=3
+        err = ArgumentError("ERROR: q must be a vector in R^3.")
+        throw(err)
+    end
+    r = T_Quaternion(q)*p
     return r
 end
 
@@ -386,6 +416,49 @@ function Log(q::T_Quaternion)::Tuple{T_Real, T_RealVector}
     α = 2*atan(nrm_qv, q.w)
     a = q.v/nrm_qv
     return α, a
+end
+
+#= Compute the direction cosine matrix associated with a quaternion.
+
+Args:
+    q: the quaternion.
+
+Returns:
+    R: the 3x3 direction cosine matrix. =#
+function dcm(q::T_Quaternion)::T_RealMatrix
+    R = (skew(q', :R)*skew(q))[1:3, 1:3]
+    return R
+end
+
+#= Compute Euler angle sequence associated with a quaternion.
+
+Use the Z-Y'-X'' convention (Tait-Bryan angles [1]):
+  0. Begin with the world coordinate system {X,Y,Z};
+  1. First, rotate ("yaw") about Z. Obtain {X',Y',Z'};
+  2. Next, rotate ("pitch") about Y'. Obtain {X'',Y'',Z''};
+  2. Finally, rotate ("roll") about X''. Obtain the body coordinate system.
+
+This returns an **active** rotation matrix R. Specifically, given a vector x in
+the world coordinate system, R*x=x' which is the vector rotated by R, still
+expressed in the world coordinate system. In particular, R*(e_i) gives the
+principal axes of the rotated coordinate system, expressed in the world
+coordinate system. If you want a passive rotation, use transpose(R).
+
+References:
+
+[1] https://en.wikipedia.org/wiki/Euler_angles#Tait%E2%80%93Bryan_angles
+
+Args:
+    q: the quaternion.
+
+Returns:
+    v: a 3-tuple of the angles (yaw, pitch, roll) (in radians). =#
+function rpy(q::T_Quaternion)::Tuple{T_Real, T_Real, T_Real}
+    R = dcm(q)
+    pitch = asin(R[1, 3])
+    roll = atan(-R[2, 3], R[3, 3])
+    yaw = atan(-R[1, 2], R[1, 1])
+    return yaw, pitch, roll
 end
 
 #= Convert quaternion to vector form.

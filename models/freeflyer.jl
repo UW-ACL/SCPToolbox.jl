@@ -229,28 +229,28 @@ function plot_timeseries(mdl::FreeFlyerProblem,
     data = [Dict(:y_top=>80,
                  :bnd_max=>veh.T_max,
                  :ylabel=>L"\mathrm{Thrust~[mN]}",
-                 :scale=>(x)->x*1e3,
+                 :scale=>(T)->T*1e3,
                  :dt_y=>sol.ud,
                  :ct_y=>sol.uc,
                  :id=>veh.id_T),
             Dict(:y_top=>2.2,
                  :bnd_max=>veh.M_max,
                  :ylabel=>L"Torque [mN$\cdot$m]",
-                 :scale=>(x)->x*1e3,
+                 :scale=>(M)->M*1e3,
                  :dt_y=>sol.ud,
                  :ct_y=>sol.uc,
                  :id=>veh.id_M),
             Dict(:y_top=>nothing,
                  :bnd_max=>nothing,
                  :ylabel=>L"Attitude [$^\circ$]",
-                 :scale=>(x)->x,
+                 :scale=>(q)->rad2deg.(collect(rpy(T_Quaternion(q)))),
                  :dt_y=>sol.xd,
                  :ct_y=>sol.xc,
                  :id=>veh.id_q),
             Dict(:y_top=>12,
                  :bnd_max=>veh.ω_max,
                  :ylabel=>L"Angular velocity [$^\circ$/s]",
-                 :scale=>(x)->rad2deg.(x),
+                 :scale=>(ω)->rad2deg.(ω),
                  :dt_y=>sol.xd,
                  :ct_y=>sol.xc,
                  :id=>veh.id_ω)]
@@ -268,8 +268,8 @@ function plot_timeseries(mdl::FreeFlyerProblem,
             plot_timeseries_bound(0.0, tf, y_max, y_top-y_max; subplot=i)
         end
         # @ Continuous-time components @
-        yc = data[i][:scale](hcat([sample(data[i][:ct_y], τ)[data[i][:id]]
-                                   for τ in ct_τ]...))
+        yc = hcat([data[i][:scale](sample(data[i][:ct_y], τ)[data[i][:id]])
+                   for τ in ct_τ]...)
         for j = 1:3
             plot!(ct_time, yc[j, :];
                   subplot=i,
@@ -280,10 +280,12 @@ function plot_timeseries(mdl::FreeFlyerProblem,
                   color=xyz_clrs[j])
         end
         # @ Discrete-time components @
-        yd = data[i][:scale](data[i][:dt_y][data[i][:id], :])
+        yd = data[i][:dt_y][data[i][:id], :]
+        yd = hcat([data[i][:scale](yd[:, k]) for k=1:size(yd,2)]...)
         for j = 1:3
             clr = weighted_color_mean(1-marker_darken_factor,
-                                      parse(RGB, xyz_clrs[j]), colorant"black")
+                                      parse(RGB, xyz_clrs[j]),
+                                      colorant"black")
             plot!(dt_time, yd[j, :];
                   subplot=i,
                   reuse=true,
@@ -291,8 +293,7 @@ function plot_timeseries(mdl::FreeFlyerProblem,
                   seriestype=:scatter,
                   markershape=:circle,
                   markersize=4,
-                  markerstrokecolor="white",
-                  markerstrokewidth=0.3,
+                  markerstrokewidth=0.0,
                   color=clr,
                   markeralpha=1.0)
         end

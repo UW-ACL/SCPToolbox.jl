@@ -35,7 +35,7 @@ fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_xt, id_T, id_M, id_pt,
 # >> Trajectory <<
 r0 = [7.2; -0.4; 5.0]
 v0 = [0.035; 0.035; 0.0]
-q0 = T_Quaternion(deg2rad(110), [0.0; 1.0; 1.0]./sqrt(2))
+q0 = T_Quaternion(deg2rad(80), [0.0; 1.0; 1.0])
 ω0 = zeros(3)
 rf = [11.3; 6.0; 4.5]
 vf = zeros(3)
@@ -152,7 +152,7 @@ problem_set_dynamics!(pbm,
                       f = zeros(pbm.nx)
                       f[veh.id_r] = v
                       f[veh.id_v] = T/veh.m
-                      f[veh.id_q] = 0.5*vec(q*T_Quaternion(ω))
+                      f[veh.id_q] = 0.5*vec(q*ω)
                       f[veh.id_ω] = veh.J\(M-cross(ω, veh.J*ω))
                       f *= tdil
                       return f
@@ -164,7 +164,7 @@ problem_set_dynamics!(pbm,
                       v = x[veh.id_v]
 	              q = T_Quaternion(x[veh.id_q])
 	              ω = x[veh.id_ω]
-                      dfqdq = 0.5*skew(q*T_Quaternion(ω)*q')
+                      dfqdq = 0.5*skew(T_Quaternion(ω), :R)
 	              dfqdω = 0.5*skew(q)
 	              dfωdω = -veh.J\(skew(ω)*J-skew(veh.J*ω))
                       A = zeros(pbm.nx, pbm.nx)
