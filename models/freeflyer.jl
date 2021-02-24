@@ -41,6 +41,7 @@ struct TrajectoryParameters
     ωf::T_RealVector # Terminal angular velocity
     tf_min::T_Real   # Minimum flight time
     tf_max::T_Real   # Maximum flight time
+    wt::T_Real       # Tradeoff weight terminal vs. running cost
 end
 
 #= Free-flyer trajectory optimization problem parameters all in one. =#

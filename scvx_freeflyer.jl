@@ -43,7 +43,8 @@ qf = T_Quaternion(deg2rad(0), [0.0; 0.0; 1.0])
 ωf = zeros(3)
 tf_min = 90.0
 tf_max = 100.0
-traj = TrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min, tf_max)
+wt = 0.0
+traj = TrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min, tf_max, wt)
 
 mdl = FreeFlyerProblem(fflyer, traj)
 
@@ -130,15 +131,18 @@ problem_set_guess!(pbm,
 problem_set_cost!(pbm,
                   # Terminal cost
                   (x, p, pbm) -> begin
+                  traj = pbm.mdl.traj
                   veh = pbm.mdl.vehicle
-                  return 0.0#p[veh.id_pt]
+                  return traj.wt*p[veh.id_pt]/traj.tf_max
                   end,
                   # Running cost
                   (x, u, p, pbm) -> begin
                   veh = pbm.mdl.vehicle
+                  T_max_sq = veh.T_max^2
+                  M_max_sq = veh.M_max^2
                   T = u[veh.id_T]
                   M = u[veh.id_M]
-                  return T'*T+M'*M
+                  return (T'*T)/T_max_sq+(M'*M)/M_max_sq
                   end)
 
 # Dynamics constraint
