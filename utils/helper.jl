@@ -455,7 +455,7 @@ Returns:
     v: a 3-tuple of the angles (yaw, pitch, roll) (in radians). =#
 function rpy(q::T_Quaternion)::Tuple{T_Real, T_Real, T_Real}
     R = dcm(q)
-    pitch = asin(R[1, 3])
+    pitch = acos(max(0.0, min(1.0, sqrt(R[1, 1]^2+R[1, 2]^2))))
     roll = atan(-R[2, 3], R[3, 3])
     yaw = atan(-R[1, 2], R[1, 1])
     return yaw, pitch, roll

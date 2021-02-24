@@ -23,9 +23,9 @@ id_T = 1:3
 id_M = 4:6
 id_pt = 1
 v_max = 0.4
-ω_max = deg2rad(10)
-T_max = 72e-3
-M_max = 2e-3
+ω_max = deg2rad(1)
+T_max = 20e-3
+M_max = 1e-4
 mass = 7.2
 J = diagm([0.1083, 0.1083, 0.1083])
 R = sqrt(3)*(0.05/2)
@@ -35,13 +35,13 @@ fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_xt, id_T, id_M, id_pt,
 # >> Trajectory <<
 r0 = [7.2; -0.4; 5.0]
 v0 = [0.035; 0.035; 0.0]
-q0 = T_Quaternion(deg2rad(80), [0.0; 1.0; 1.0])
+q0 = T_Quaternion(deg2rad(-40), [0.0; 1.0; 1.0])
 ω0 = zeros(3)
 rf = [11.3; 6.0; 4.5]
 vf = zeros(3)
 qf = T_Quaternion(deg2rad(0), [0.0; 0.0; 1.0])
 ωf = zeros(3)
-tf_min = 100.0
+tf_min = 90.0
 tf_max = 100.0
 traj = TrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min, tf_max)
 
@@ -129,7 +129,10 @@ problem_set_guess!(pbm,
 # Cost to be minimized
 problem_set_cost!(pbm,
                   # Terminal cost
-                  nothing,
+                  (x, p, pbm) -> begin
+                  veh = pbm.mdl.vehicle
+                  return 0.0#p[veh.id_pt]
+                  end,
                   # Running cost
                   (x, u, p, pbm) -> begin
                   veh = pbm.mdl.vehicle
@@ -199,12 +202,23 @@ problem_set_X!(pbm, (x, mdl, pbm) -> begin
                traj = pbm.mdl.traj
                veh = pbm.mdl.vehicle
                X = [@constraint(mdl,
-                                traj.tf_min <= x[veh.id_xt] <= traj.tf_max)]
+                                traj.tf_min <= x[veh.id_xt] <= traj.tf_max),
+                    @constraint(mdl, vcat(veh.v_max, x[veh.id_v])
+                                in MOI.SecondOrderCone(4)),
+                    @constraint(mdl, vcat(veh.ω_max, x[veh.id_ω])
+                                in MOI.SecondOrderCone(4))]
                return X
                end)
 
 # Convex path constraints on the input
-# TODO
+problem_set_U!(pbm, (u, mdl, pbm) -> begin
+               veh = pbm.mdl.vehicle
+               U = [@constraint(mdl, vcat(veh.T_max, u[veh.id_T])
+                                in MOI.SecondOrderCone(4)),
+                    @constraint(mdl, vcat(veh.M_max, u[veh.id_M])
+                                in MOI.SecondOrderCone(4))]
+               return U
+               end)
 
 # Nonconvex path inequality constraints
 # TODO

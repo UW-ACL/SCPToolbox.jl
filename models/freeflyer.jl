@@ -218,6 +218,7 @@ function plot_timeseries(mdl::FreeFlyerProblem,
     cmap = cgrad(:thermal; rev = true)
     xyz_clrs = ["#db6245", "#5da9a1", "#356397"]
     marker_darken_factor = 0.2
+    top_scale = 1.1
 
     plot(show=false,
          tickfontsize=10,
@@ -226,14 +227,14 @@ function plot_timeseries(mdl::FreeFlyerProblem,
          layout = (2, 2))
 
     # Plot data
-    data = [Dict(:y_top=>80,
+    data = [Dict(:y_top=>top_scale*veh.T_max*1e3,
                  :bnd_max=>veh.T_max,
                  :ylabel=>L"\mathrm{Thrust~[mN]}",
                  :scale=>(T)->T*1e3,
                  :dt_y=>sol.ud,
                  :ct_y=>sol.uc,
                  :id=>veh.id_T),
-            Dict(:y_top=>2.2,
+            Dict(:y_top=>top_scale*veh.M_max*1e3,
                  :bnd_max=>veh.M_max,
                  :ylabel=>L"Torque [mN$\cdot$m]",
                  :scale=>(M)->M*1e3,
@@ -247,7 +248,7 @@ function plot_timeseries(mdl::FreeFlyerProblem,
                  :dt_y=>sol.xd,
                  :ct_y=>sol.xc,
                  :id=>veh.id_q),
-            Dict(:y_top=>12,
+            Dict(:y_top=>top_scale*rad2deg(veh.ω_max),
                  :bnd_max=>veh.ω_max,
                  :ylabel=>L"Angular velocity [$^\circ$/s]",
                  :scale=>(ω)->rad2deg.(ω),
