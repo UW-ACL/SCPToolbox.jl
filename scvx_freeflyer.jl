@@ -68,45 +68,50 @@ problem_set_guess!(pbm,
                    p[veh.id_pt] = flight_time
                    # >> State guess <<
                    x = T_RealMatrix(undef, pbm.nx, N)
-                   x[veh.id_pt, :] = straightline_interpolate(
-                       flight_time, flight_time, N)
+                   x[veh.id_xt, :] = straightline_interpolate(
+                       [flight_time], [flight_time], N)
                    # @ Position/velocity L-shape trajectory @
                    Δτ = flight_time/(N-1)
                    speed = norm(traj.rf-traj.r0, 1)/flight_time
-                   r0 = copy(traj.r0)
-                   flight_time_leg = abs(traj.rf[1]-r0[1])/speed
-                   k0 = 1
+                   times = straightline_interpolate([0.0], [flight_time], N)
+                   flight_time_leg = abs.(traj.rf-traj.r0)/speed
+                   flight_time_leg_cumul = cumsum(flight_time_leg)
+                   r = view(x, veh.id_r, :)
+                   v = view(x, veh.id_v, :)
+                   for k = 1:N
+                   # --- for k
+                   tk = @k(times)[1]
                    for i = 1:3
-                   # ------ Compute nodes for i-th leg
-                   Ni = floor(T_Int, flight_time_leg/Δτ)+1
-                   flight_time_leg_clipped = (Ni-1)*Δτ
+                   # -- for i
+                   if tk <= flight_time_leg_cumul[i]
+                   # - if tk
+                   # Current node is in i-th leg of the trajectory
+                   # Endpoint times
+                   t0 = (i>1) ? flight_time_leg_cumul[i-1] : 0.0
+                   tf = flight_time_leg_cumul[i]
+                   # Endpoint positions
+                   r0 = copy(traj.r0)
+                   r0[1:i-1] = traj.rf[1:i-1]
                    rf = copy(r0)
-                   rf[i] += flight_time_leg_clipped*speed
-                   @k(x[veh.id_r, :], k0, k0+Ni-1) = straightline_interpolate(
-                       r0, rf, Ni)
+                   rf[i] = traj.rf[i]
+                   @k(r) = linterp(tk, hcat(r0, rf), [t0, tf])
+                   # Velocity
                    dir_vec = rf-r0
                    dir_vec /= norm(dir_vec)
                    v_leg = speed*dir_vec
-                   @k(x[veh.id_v, :], k0, k0+Ni-1) = straightline_interpolate(
-                       v_leg, v_leg, Ni)
-                   # Prepare for next leg
-                   if i<3
-                   # --
-                   k0 += Ni
-                   Δτ_tail = flight_time_leg-flight_time_leg_clipped
-                   Δτ_offset = Δτ-Δτ_tail
-                   r0[i] = traj.rf[i]
-                   r0[i+1] += Δτ_offset*speed
-                   flight_time_leg = abs(traj.rf[i+1]-r0[i+1])/speed-Δτ_offset
-                   # --
+                   @k(v) = v_leg
+                   break
+                   # - if tk
                    end
-                   # ------
+                   # -- for i
+                   end
+                   # --- for k
                    end
                    # @ Quaternion SLERP interpolation @
                    x[veh.id_q, :] = T_RealMatrix(undef, 4, N)
                    for k = 1:N
                    mix = (k-1)/(N-1)
-                   @k(x[veh.id_q, :]) = vec(slerp_interpolate(
+                   @k(view(x, veh.id_q, :)) = vec(slerp_interpolate(
                        traj.q0, traj.qf, mix))
                    end
                    # @ Constant angular velocity @
@@ -290,7 +295,7 @@ pars = SCvxParameters(N, Nsub, iter_max, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
 # ..:: Solve trajectory generation problem using SCvx ::..
 
 scvx_pbm = SCvxProblem(pars, pbm)
-# sol, history = scvx_solve(scvx_pbm)
+sol, history = scvx_solve(scvx_pbm)
 
 ###############################################################################
 

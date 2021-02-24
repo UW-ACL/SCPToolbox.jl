@@ -3,9 +3,9 @@
 using LinearAlgebra
 using Printf
 
-include("types.jl")
+import Base: vec, adjoint, *
 
-import Base.getindex, Base.*, Base.adjoint
+include("types.jl")
 
 # ..:: Public macros ::..
 
@@ -165,7 +165,7 @@ Returns:
 function slerp_interpolate(q0::T_Quaternion,
                            q1::T_Quaternion,
                            τ::T_Real)::T_Quaternion
-    τ = max(0.0, max(1.0, τ))
+    τ = max(0.0, min(1.0, τ))
     Δq = q1*q0' # Error quaternion correcting q0 to q1
     Δα, Δa = Log(Δq)
     Δq_t = T_Quaternion(τ*Δα, Δa)
