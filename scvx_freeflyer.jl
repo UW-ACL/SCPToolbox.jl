@@ -23,14 +23,14 @@ id_T = 1:3
 id_M = 4:6
 id_pt = 1
 v_max = 0.4
-ω_max = 1.0
+ω_max = deg2rad(10)
 T_max = 72e-3
 M_max = 2e-3
 mass = 7.2
 J = diagm([0.1083, 0.1083, 0.1083])
 R = sqrt(3)*(0.05/2)
 fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_xt, id_T, id_M, id_pt,
-                             T_max, M_max, mass, J, R)
+                             v_max, ω_max, T_max, M_max, mass, J, R)
 
 # >> Trajectory <<
 r0 = [7.2; -0.4; 5.0]
@@ -195,7 +195,13 @@ problem_set_dynamics!(pbm,
                       end)
 
 # Convex path constraints on the state
-# TODO
+problem_set_X!(pbm, (x, mdl, pbm) -> begin
+               traj = pbm.mdl.traj
+               veh = pbm.mdl.vehicle
+               X = [@constraint(mdl,
+                                traj.tf_min <= x[veh.id_xt] <= traj.tf_max)]
+               return X
+               end)
 
 # Convex path constraints on the input
 # TODO
@@ -278,7 +284,7 @@ iter_max = 20
 η_init = 1.0
 η_lb = 1e-3
 η_ub = 10.0
-ε_abs = 1e-4
+ε_abs = 0.0#1e-4
 ε_rel = 0.1/100
 feas_tol = 1e-2
 q_tr = Inf
@@ -302,6 +308,9 @@ sol, history = scvx_solve(scvx_pbm)
 ###############################################################################
 # ..:: Plot results ::..
 
-# TODO
+plot_trajectory_history(mdl, history)
+plot_final_trajectory(mdl, sol)
+plot_timeseries(mdl, sol)
+plot_convergence(mdl, history)
 
 ###############################################################################

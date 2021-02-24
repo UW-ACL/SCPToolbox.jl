@@ -276,11 +276,11 @@ function plot_input_norm(mdl::QuadrotorProblem,
 
     # @ Acceleration upper bound @
     bnd = mdl.vehicle.u_max
-    _quadrotor__plot_bound(0.0, tf, bnd, y_top-bnd)
+    plot_timeseries_bound(0.0, tf, bnd, y_top-bnd)
 
     # @ Acceleration lower bound @
     bnd = mdl.vehicle.u_min
-    _quadrotor__plot_bound(0.0, tf, bnd, y_bot-bnd)
+    plot_timeseries_bound(0.0, tf, bnd, y_bot-bnd)
 
     # @ Norm of acceleration vector (continuous-time) @
     ct_time = ct_τ*sol.p[mdl.vehicle.id_pt]
@@ -353,7 +353,7 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
 
     # @ Tilt angle upper bound @
     bnd = rad2deg(mdl.vehicle.tilt_max)
-    _quadrotor__plot_bound(0.0, tf, bnd, y_top-bnd)
+    plot_timeseries_bound(0.0, tf, bnd, y_top-bnd)
 
     # @ Tilt angle (continuous-time) @
     ct_time = ct_τ*sol.p[mdl.vehicle.id_pt]
@@ -392,7 +392,7 @@ end
 Args:
     mdl: the quadrotor problem parameters.
     history: SCvx iteration data history. =#
-function plot_convergence(mdl::QuadrotorProblem,
+function plot_convergence(mdl::QuadrotorProblem, #nowarn
                           history::SCvxHistory)::Nothing
 
     pyplot()
@@ -462,42 +462,4 @@ function _quadrotor__plot_obstacles!(mdl::QuadrotorProblem)::Nothing
               linewidth=1,
               linecolor="#26415d")
     end
-end
-
-#= Plot a bound keep-out zone.
-
-Supposedly to show a minimum or a maximum of a quantity on a time history plot.
-
-Args:
-    x_min: the left-most value.
-    x_max: the right-most value.
-    y_bnd: the bound value.
-    height: the "thickness" of the keep-out slab on the plot. =#
-function _quadrotor__plot_bound(x_min::T_Real,
-                                x_max::T_Real,
-                                y_bnd::T_Real,
-                                height::T_Real)::Nothing
-
-    y_other = y_bnd+height
-    x = [x_min, x_max, x_max, x_min, x_min]
-    y = [y_bnd, y_bnd, y_other, y_other, y_bnd]
-    infeas_region = Shape(x, y)
-
-    plot!(infeas_region;
-          reuse=true,
-          legend=false,
-          seriestype=:shape,
-          color="#db6245",
-          fillopacity=0.5,
-          linewidth=0)
-
-    plot!([x_min, x_max], [y_bnd, y_bnd];
-          reuse=true,
-          legend=false,
-          seriestype=:line,
-          color="#db6245",
-          linewidth=1.75,
-          linestyle=:dash)
-
-    return nothing
 end

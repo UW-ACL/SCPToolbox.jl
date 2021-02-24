@@ -2,6 +2,7 @@
 
 using LinearAlgebra
 using Printf
+using Plots
 
 import Base: vec, adjoint, *
 
@@ -423,6 +424,48 @@ function print(row::Dict{T_Symbol, T}, table::Table)::Nothing where {T}
 
     msg = @eval @printf($(table.row), $values...)
     println()
+
+    return nothing
+end
+
+#= Plot a y-value bound keep-out zone of a timeseries.
+
+Supposedly to show a minimum or a maximum of a quantity on a time history plot.
+
+Args:
+    x_min: the left-most value.
+    x_max: the right-most value.
+    y_bnd: the bound value.
+    height: the "thickness" of the keep-out slab on the plot.
+    subplot: (optional) which subplot to plot on. =#
+function plot_timeseries_bound(x_min::T_Real,
+                               x_max::T_Real,
+                               y_bnd::T_Real,
+                               height::T_Real;
+                               subplot::T_Int=1)::Nothing
+
+    y_other = y_bnd+height
+    x = [x_min, x_max, x_max, x_min, x_min]
+    y = [y_bnd, y_bnd, y_other, y_other, y_bnd]
+    infeas_region = Shape(x, y)
+
+    plot!(infeas_region;
+          subplot=subplot,
+          reuse=true,
+          legend=false,
+          seriestype=:shape,
+          color="#db6245",
+          fillopacity=0.5,
+          linewidth=0)
+
+    plot!([x_min, x_max], [y_bnd, y_bnd];
+          subplot=subplot,
+          reuse=true,
+          legend=false,
+          seriestype=:line,
+          color="#db6245",
+          linewidth=1.75,
+          linestyle=:dash)
 
     return nothing
 end

@@ -884,20 +884,25 @@ function _scvx__add_nonconvex_constraints!(spbm::SCvxSubproblem)::Nothing
     # Problem-specific convex constraints
     for k = 1:N
         s = traj_pbm.s(@k(xb), @k(ub), pb)
-        C = traj_pbm.C(@k(xb), @k(ub), pb)
-        D = traj_pbm.D(@k(xb), @k(ub), pb)
-        G = traj_pbm.G(@k(xb), @k(ub), pb)
-        r = s-C*@k(xb)-D*@k(ub)-G*pb
-        lhs = C*@k(x)+D*@k(u)+G*p+r
 
         if k==1
             # Initialize associated variables
-            n_ncvx = length(lhs)
+            n_ncvx = length(s)
             spbm.vs = @variable(spbm.mdl, [1:n_ncvx, 1:N], base_name="vs")
             spbm.pc_s = T_ConstraintMatrix(undef, n_ncvx, N)
         end
 
-        @k(spbm.pc_s) = @constraint(spbm.mdl, lhs+@k(spbm.vs) .<= 0.0)
+        if n_ncvx>0
+            C = traj_pbm.C(@k(xb), @k(ub), pb)
+            D = traj_pbm.D(@k(xb), @k(ub), pb)
+            G = traj_pbm.G(@k(xb), @k(ub), pb)
+            r = s-C*@k(xb)-D*@k(ub)-G*pb
+            lhs = C*@k(x)+D*@k(u)+G*p+r
+
+            @k(spbm.pc_s) = @constraint(spbm.mdl, lhs+@k(spbm.vs) .<= 0.0)
+        else
+            break
+        end
     end
 
     return nothing
@@ -1507,6 +1512,7 @@ function _scvx__actual_cost_penalty!(
     for k = 1:N
         δk = (k<N) ? @k(δ) : zeros(nx)
         sk = pbm.traj.s(@k(x), @k(u), sol.p)
+        sk = isempty(sk) ? [0.0] : sk
         @k(P) = _scvx__P(δk, max.(sk, 0.0))
     end
     pen = trapz(P, τ_grid)+_scvx__Pf(gic)+_scvx__Pf(gtc)

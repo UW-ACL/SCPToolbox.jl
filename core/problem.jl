@@ -81,7 +81,7 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     return pbm
 end
 
-# ..:: Methods ::..
+# ..:: Public methods ::..
 
 #= Set the problem dimensions.
 
