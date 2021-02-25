@@ -31,11 +31,9 @@ quad = QuadrotorParameters(id_r, id_v, id_xt, id_u, id_σ,
 
 # >> Environment <<
 g = 9.81
-obsiH = [diagm([2.0; 2.0; 0.0]),
-         diagm([1.5; 1.5; 0.0])]
-obsc = [[1.0; 2.0; 0.0],
-        [2.0; 5.0; 0.0]]
-env = EnvironmentParameters(g, obsiH, obsc)
+obs = [T_Ellipsoid(diagm([2.0; 2.0; 0.0]), [1.0; 2.0; 0.0]),
+       T_Ellipsoid(diagm([1.5; 1.5; 0.0]), [2.0; 5.0; 0.0])]
+env = EnvironmentParameters(g, obs)
 
 # >> Trajectory <<
 r0 = zeros(3)
@@ -164,11 +162,13 @@ problem_set_s!(pbm,
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
                veh = pbm.mdl.vehicle
-               s = zeros(env.obsN)
-               for i = 1:env.obsN
-               H, c = get_obstacle(i, pbm.mdl)
+               s = zeros(env.n_obs)
+               for i = 1:env.n_obs
+               # ---
+               E = env.obs[i]
                r = x[veh.id_r]
-               s[i] = 1-norm(H*(r-c))
+               s[i] = 1-E(r)
+               # ---
                end
                return s
                end,
@@ -176,24 +176,26 @@ problem_set_s!(pbm,
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
                veh = pbm.mdl.vehicle
-               C = zeros(env.obsN, pbm.nx)
-               for i = 1:env.obsN
-               H, c = get_obstacle(i, pbm.mdl)
+               C = zeros(env.n_obs, pbm.nx)
+               for i = 1:env.n_obs
+               # ---
+               E = env.obs[i]
                r = x[veh.id_r]
-               C[i, veh.id_r] = -(r-c)'*(H'*H)/norm(H*(r-c))
+               C[i, veh.id_r] = -∇(E, r)
+               # ---
                end
                return C
                end,
                # Jacobian ds/du
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
-               D = zeros(env.obsN, pbm.nu)
+               D = zeros(env.n_obs, pbm.nu)
                return D
                end,
                # Jacobian ds/dp
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
-               G = zeros(env.obsN, pbm.np)
+               G = zeros(env.n_obs, pbm.np)
                return G
                end)
 

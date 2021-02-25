@@ -29,6 +29,12 @@ struct FreeFlyerParameters
     R::T_Real        # [m] Vehicle radius (spherical representation)
 end
 
+#= Space station flight environment. =#
+struct EnvironmentParameters
+    obs::Vector{T_Ellipsoid} # Obstacles (ellipsoids)
+    n_obs::T_Int             # Number of obstacles
+end
+
 #= Trajectory parameters. =#
 struct TrajectoryParameters
     r0::T_RealVector # Initial position
@@ -47,7 +53,28 @@ end
 #= Free-flyer trajectory optimization problem parameters all in one. =#
 struct FreeFlyerProblem
     vehicle::FreeFlyerParameters # The ego-vehicle
+    env::EnvironmentParameters   # The environment
     traj::TrajectoryParameters   # The trajectory
+end
+
+# ..:: Constructors ::..
+
+#= Constructor for the environment.
+
+Args:
+    obs: array of obstacles (ellipsoids).
+
+Returns:
+    env: the environment struct. =#
+function EnvironmentParameters(
+    obs::Vector{T_Ellipsoid})::EnvironmentParameters
+
+    # Derived values
+    n_obs = length(obs)
+
+    env = EnvironmentParameters(obs, n_obs)
+
+    return env
 end
 
 # ..:: Public methods ::..
@@ -75,6 +102,8 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
          tickfontsize=10,
          labelfontsize=10,
          size=(280, 400))
+
+    plot_ellipsoids!(mdl.env.obs)
 
     # @ Draw the trajectories @
     for i = 0:num_iter
@@ -135,6 +164,8 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
          size=(280, 320),
          colorbar=:right,
          colorbar_title=L"$\Vert v_{\mathcal{I}}\Vert$ [m/s]")
+
+    plot_ellipsoids!(mdl.env.obs)
 
     # @ Draw the final continuous-time position trajectory @
     # Collect the continuous-time trajectory data

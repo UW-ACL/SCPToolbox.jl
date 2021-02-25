@@ -32,6 +32,13 @@ R = sqrt(3)*(0.05/2)
 fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_xt, id_T, id_M, id_pt,
                              v_max, ω_max, T_max, M_max, mass, J, R)
 
+# >> Environment <<
+obs_shape = diagm([1.0; 1.0; 1.0]/0.3)
+obs = [T_Ellipsoid(copy(obs_shape), [8.5; -0.15; 5.0]),
+       T_Ellipsoid(copy(obs_shape), [11.2; 1.84; 5.0]),
+       T_Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8])]
+env = EnvironmentParameters(obs)
+
 # >> Trajectory <<
 r0 = [7.2; -0.4; 5.0]
 v0 = [0.035; 0.035; 0.0]
@@ -41,12 +48,12 @@ rf = [11.3; 6.0; 4.5]
 vf = zeros(3)
 qf = T_Quaternion(deg2rad(0), [0.0; 0.0; 1.0])
 ωf = zeros(3)
-tf_min = 90.0
-tf_max = 100.0
+tf_min = 60.0
+tf_max = 120.0
 wt = 0.0
 traj = TrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min, tf_max, wt)
 
-mdl = FreeFlyerProblem(fflyer, traj)
+mdl = FreeFlyerProblem(fflyer, env, traj)
 
 ###############################################################################
 
@@ -225,7 +232,47 @@ problem_set_U!(pbm, (u, mdl, pbm) -> begin
                end)
 
 # Nonconvex path inequality constraints
-# TODO
+problem_set_s!(pbm,
+               # Constraint s
+               (x, u, p, pbm) -> begin
+               env = pbm.mdl.env
+               veh = pbm.mdl.vehicle
+               s = zeros(env.n_obs)
+               for i = 1:env.n_obs
+               # ---
+               E = env.obs[i]
+               r = x[veh.id_r]
+               s[i] = 1-E(r)
+               # ---
+               end
+               return s
+               end,
+               # Jacobian ds/dx
+               (x, u, p, pbm) -> begin
+               env = pbm.mdl.env
+               veh = pbm.mdl.vehicle
+               C = zeros(env.n_obs, pbm.nx)
+               for i = 1:env.n_obs
+               # ---
+               E = env.obs[i]
+               r = x[veh.id_r]
+               C[i, veh.id_r] = -∇(E, r)
+               # ---
+               end
+               return C
+               end,
+               # Jacobian ds/du
+               (x, u, p, pbm) -> begin
+               env = pbm.mdl.env
+               D = zeros(env.n_obs, pbm.nu)
+               return D
+               end,
+               # Jacobian ds/dp
+               (x, u, p, pbm) -> begin
+               env = pbm.mdl.env
+               G = zeros(env.n_obs, pbm.np)
+               return G
+               end)
 
 # Initial boundary conditions
 problem_set_bc!(pbm, :ic,
@@ -304,7 +351,7 @@ iter_max = 20
 η_ub = 10.0
 ε_abs = 0.0#1e-4
 ε_rel = 0.1/100
-feas_tol = 1e-2
+feas_tol = 1e-3
 q_tr = Inf
 q_exit = Inf
 solver = ECOS

@@ -128,10 +128,37 @@ struct T_Quaternion
     end
 end
 
-# ..:: Data structures ::..
+#= Ellipsoid geometric object.
+
+Ellipsoid set = {x : norm(H*(x-c), 2) <= 1},
+
+where H is a positive definite matrix which defines the ellipsoid shape,
+and c is the ellipsoid's center. =#
+struct T_Ellipsoid
+    H::T_RealMatrix # Ellipsoid shape matrix
+    c::T_RealVector # Ellipsoid center
+
+    #= Basic constructor.
+
+    Args:
+        H: ellipsoid shape matrix.
+        c: ellipsoid center
+
+    Returns:
+        E: the ellipsoid. =#
+    function T_Ellipsoid(H::T_RealMatrix,
+                         c::T_RealVector)::T_Ellipsoid
+        if size(H,2)!=length(c)
+            err = ArgumentError("ERROR: matrix size mismatch.")
+            throw(err)
+        end
+        E = new(H, c)
+        return E
+    end
+end
 
 #= Continuous-time trajectory data structure. =#
-struct ContinuousTimeTrajectory
+struct T_ContinuousTimeTrajectory
     t::T_RealVector  # The trajectory time nodes
     x::T_RealArray   # The trajectory values at the corresponding times
     # Interpolation type between time nodes, possible values are:
@@ -147,7 +174,7 @@ struct ContinuousTimeTrajectory
 
     Returns:
         traj: the continuous-time trajectory. =#
-    function ContinuousTimeTrajectory(
+    function T_ContinuousTimeTrajectory(
         t::T_RealVector,
         x::T_RealArray,
         interp::T_Symbol)
@@ -164,7 +191,7 @@ struct ContinuousTimeTrajectory
 end
 
 #= Iteration progress information table to be printed in REPL. =#
-mutable struct Table
+mutable struct T_Table
     headings::Array{T_String}      # Column headings
     sorting::Dict{T_Symbol, T_Int} # Column order
     fmt::Dict{T_Symbol, T_String}  # Column value format
@@ -194,9 +221,9 @@ Args:
 
 Returns:
     table: the table structure. =#
-function Table(
+function T_Table(
     def::Vector{Tuple{T_Symbol, T_String, T_String, T_Int}},
-    separator::T_String="|")::Table
+    separator::T_String="|")::T_Table
 
     # Initialize
     headings = Array{T_String}(undef, 0)
@@ -215,7 +242,7 @@ function Table(
     # Default values
     head_print = true
 
-    table = Table(headings, sorting, fmt, row, head_print, colw)
+    table = T_Table(headings, sorting, fmt, row, head_print, colw)
 
     return table
 end

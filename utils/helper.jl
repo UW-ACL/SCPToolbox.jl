@@ -182,7 +182,7 @@ Args:
 
 Returns:
     x: the trajectory value at time t. =#
-function sample(traj::ContinuousTimeTrajectory,
+function sample(traj::T_ContinuousTimeTrajectory,
                 t::T_Real)::T_RealArray
 
     if traj.interp==:linear
@@ -261,19 +261,14 @@ end
 #= Project an ellipsoid onto a subset of its axes.
 
 Args:
-    H: ellipsoid shape matrix.
-    c: ellipsoid center.
+    E: the ellipsoid to be projected.
     ax: array of the axes onto which to project.
 
 Returns:
-    H_prj: projected ellipsoid shape matrix.
-    c_prj: projected ellipsoid center. =#
-function project(H::T_RealMatrix,
-                 c::T_RealVector,
-                 ax::T_IntVector)::Tuple{T_RealMatrix,
-                                         T_RealVector}
+    E_prj: the projected ellipsoid. =#
+function project(E::T_Ellipsoid, ax::T_IntVector)::T_Ellipsoid
     # Parameters
-    n = size(H, 1)
+    n = length(E.c)
     m = length(ax)
 
     # Projection matrix onto lower-dimensional space
@@ -283,12 +278,13 @@ function project(H::T_RealMatrix,
     end
 
     # Do the projection
-    Hb = P*H
+    Hb = P*E.H
     F = svd(Hb)
     H_prj = F.U*diagm(F.S)
-    c_prj = P*c
+    c_prj = P*E.c
+    E_prj = T_Ellipsoid(H_prj, c_prj)
 
-    return H_prj, c_prj
+    return E_prj
 end
 
 #= Quaternion indexing.
@@ -473,12 +469,36 @@ function vec(q::T_Quaternion)::T_RealVector
     return q_vec
 end
 
+#= Evaluate ellipsoid level set value at location.
+
+Args:
+    r: location at which to evaluate ellipsoid value.
+
+Returns:
+    y: the level set value. =#
+function (E::T_Ellipsoid)(r::T_RealVector)::T_Real
+    y = norm(E.H*(r-E.c))
+    return y
+end
+
+#= Ellipsoid gradient at location.
+
+Args:
+    r: location at which to evaluate ellipsoid gradient.
+
+Returns:
+    g: the gradient value. =#
+function ∇(E::T_Ellipsoid, r::T_RealVector)::T_RealVector
+    g = (E.H'*E.H)*(r-E.c)/E(r)
+    return g
+end
+
 #= Print row of table.
 
 Args:
     row: table row specification.
     table: the table specification. =#
-function print(row::Dict{T_Symbol, T}, table::Table)::Nothing where {T}
+function print(row::Dict{T_Symbol, T}, table::T_Table)::Nothing where {T}
     # Assign values to table columns
     values = fill("", length(table.headings))
     for (k, v) in row
@@ -511,11 +531,11 @@ Args:
     y_bnd: the bound value.
     height: the "thickness" of the keep-out slab on the plot.
     subplot: (optional) which subplot to plot on. =#
-function plot_timeseries_bound(x_min::T_Real,
-                               x_max::T_Real,
-                               y_bnd::T_Real,
-                               height::T_Real;
-                               subplot::T_Int=1)::Nothing
+function plot_timeseries_bound!(x_min::T_Real,
+                                x_max::T_Real,
+                                y_bnd::T_Real,
+                                height::T_Real;
+                                subplot::T_Int=1)::Nothing
 
     y_other = y_bnd+height
     x = [x_min, x_max, x_max, x_min, x_min]
@@ -541,6 +561,28 @@ function plot_timeseries_bound(x_min::T_Real,
           linestyle=:dash)
 
     return nothing
+end
+
+#= Draw ellipsoids on the currently active plot.
+
+Args:
+    E: array of ellipsoids. =#
+function plot_ellipsoids!(E::Vector{T_Ellipsoid})::Nothing
+    θ = LinRange(0.0, 2*pi, 100)
+    circle = hcat(cos.(θ), sin.(θ))'
+    for i = 1:length(E)
+        Ep = project(E[i], [1, 2])
+        vertices = Ep.H\circle.+Ep.c
+        obs = Shape(vertices[1, :], vertices[2, :])
+        plot!(obs;
+              reuse=true,
+              legend=false,
+              seriestype=:shape,
+              color="#db6245",
+              fillopacity=0.5,
+              linewidth=1,
+              linecolor="#26415d")
+    end
 end
 
 # ..:: Private methods ::..
@@ -661,7 +703,7 @@ end
 
 Args:
     table: the table specification. =#
-function _helper__table_print_hrule(table::Table)::Nothing
+function _helper__table_print_hrule(table::T_Table)::Nothing
     hrule = ""
     num_cols = length(table.__colw)
     for i = 1:num_cols

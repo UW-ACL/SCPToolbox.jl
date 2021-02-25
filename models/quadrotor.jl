@@ -25,10 +25,9 @@ end
 
 #= Quadrotor flight environment. =#
 struct EnvironmentParameters
-    g::T_RealVector     # [m/s^2] Gravity vector
-    obsN::T_Int         # Number of obstacles
-    obsH::T_RealTensor  # Obstacle shapes (ellipsoids)
-    obsc::T_RealMatrix  # Obstacle centers
+    g::T_RealVector          # [m/s^2] Gravity vector
+    obs::Vector{T_Ellipsoid} # Obstacles (ellipsoids)
+    n_obs::T_Int             # Number of obstacles
 end
 
 #= Trajectory parameters. =#
@@ -54,48 +53,25 @@ end
 
 Args:
     gnrm: gravity vector norm.
-    obsiH: array of obstacle shapes (ellipsoids).
-    obsc: arrange of obstacle centers.
+    obs: array of obstacles (ellipsoids).
 
 Returns:
     env: the environment struct. =#
 function EnvironmentParameters(
     gnrm::T_Real,
-    obsiH::Vector{T_RealMatrix},
-    obsc::Vector{T_RealVector})::EnvironmentParameters
+    obs::Vector{T_Ellipsoid})::EnvironmentParameters
 
-    obsN = length(obsiH)
-    obsH = cat(obsiH...; dims=3)
-    obsc = cat(obsc...; dims=2)
-
-    # Gravity
+    # Derived values
     g = zeros(3)
     g[end] = -gnrm
+    n_obs = length(obs)
 
-    env = EnvironmentParameters(g, obsN, obsH, obsc)
+    env = EnvironmentParameters(g, obs, n_obs)
 
     return env
 end
 
 # ..:: Public methods ::..
-
-#= Get the i-th obstacle.
-
-Args:
-    i: the obstacle number.
-    pbm: the quadrotor trajectory problem parameters.
-
-Returns:
-    H: the obtacle shape (ellipsoid).
-    c: the obstacle center. =#
-function get_obstacle(i::T_Int, pbm::QuadrotorProblem)::Tuple{T_RealMatrix,
-                                                              T_RealVector}
-
-    H = pbm.env.obsH[:, :, i]
-    c = pbm.env.obsc[:, i]
-
-    return H, c
-end
 
 #= Plot the trajectory evolution through SCvx iterations.
 
@@ -121,7 +97,7 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
          labelfontsize=10,
          size=(280, 400))
 
-    _quadrotor__plot_obstacles!(mdl)
+    plot_ellipsoids!(mdl.env.obs)
 
     # @ Draw the trajectories @
     for i = 0:num_iter
@@ -183,7 +159,7 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
          colorbar=:right,
          colorbar_title=L"\mathrm{Velocity~[m/s]}")
 
-    _quadrotor__plot_obstacles!(mdl)
+    plot_ellipsoids!(mdl.env.obs)
 
     # @ Draw the final continuous-time position trajectory @
     # Collect the continuous-time trajectory data
@@ -438,28 +414,4 @@ function plot_convergence(mdl::QuadrotorProblem, #nowarn
     savefig("figures/scvx_quadrotor_convergence.pdf")
 
     return nothing
-end
-
-# ..:: Private methods ::..
-
-#= Draw the obstacles present in the environment.
-
-Args:
-    mdl: the quadrotor problem parameters. =#
-function _quadrotor__plot_obstacles!(mdl::QuadrotorProblem)::Nothing
-    θ = LinRange(0.0, 2*pi, 100)
-    circle = hcat(cos.(θ), sin.(θ))'
-    for i = 1:mdl.env.obsN
-        H, c = project(get_obstacle(i, mdl)..., [1, 2])
-        vertices = H\circle.+c
-        obs = Shape(vertices[1, :], vertices[2, :])
-        plot!(obs;
-              reuse=true,
-              legend=false,
-              seriestype=:shape,
-              color="#db6245",
-              fillopacity=0.5,
-              linewidth=1,
-              linecolor="#26415d")
-    end
 end

@@ -118,7 +118,7 @@ struct SCvxCommon
     # >> Scaling <<
     scale::SCvxScaling   # Variable scaling
     # >> Iteration info <<
-    table::Table         # Iteration info table (printout to REPL)
+    table::T_Table       # Iteration info table (printout to REPL)
 end
 
 #=Structure which contains all the necessary information to run SCvx.=#
@@ -199,8 +199,8 @@ struct SCvxSolution
     ud::T_RealMatrix  # Inputs
     p::T_RealVector   # Parameter vector
     # >> Continuous-time trajectory <<
-    xc::Union{ContinuousTimeTrajectory, Missing} # States
-    uc::Union{ContinuousTimeTrajectory, Missing} # Inputs
+    xc::Union{T_ContinuousTimeTrajectory, Missing} # States
+    uc::Union{T_ContinuousTimeTrajectory, Missing} # Inputs
     # >> Cost function value <<
     L_orig::T_Real    # The original convex cost function
     L_pen::T_Real     # The virtual control penalty
@@ -328,7 +328,7 @@ function SCvxProblem(pars::SCvxParameters,
     E = I(traj.nx)
     scale = _scvx__compute_scaling(pars, traj)
 
-    table = Table([
+    table = T_Table([
         # Iteration count
         (:iter, "k", "%d", 2),
         # Solver status
@@ -548,10 +548,10 @@ function SCvxSolution(history::SCvxHistory)::SCvxSolution
         # twice as many this time around seems like a good heuristic
         Nc = 2*Nsub*(N-1)
         τc = T_RealVector(LinRange(0.0, 1.0, Nc))
-        uc = ContinuousTimeTrajectory(τd, ud, :linear)
+        uc = T_ContinuousTimeTrajectory(τd, ud, :linear)
         F = (τ, x) -> pbm.traj.f(τ, x, sample(uc, τ), p)
         xc_vals = rk4(F, @first(last_sol.xd), τc; full=true)
-        xc = ContinuousTimeTrajectory(τc, xc_vals, :linear)
+        xc = T_ContinuousTimeTrajectory(τc, xc_vals, :linear)
 
         L_orig = last_sol.L_orig
         L_pen = last_sol.L_pen
@@ -884,10 +884,10 @@ function _scvx__add_nonconvex_constraints!(spbm::SCvxSubproblem)::Nothing
     # Problem-specific convex constraints
     for k = 1:N
         s = traj_pbm.s(@k(xb), @k(ub), pb)
+        n_ncvx = length(s)
 
         if k==1
             # Initialize associated variables
-            n_ncvx = length(s)
             spbm.vs = @variable(spbm.mdl, [1:n_ncvx, 1:N], base_name="vs")
             spbm.pc_s = T_ConstraintMatrix(undef, n_ncvx, N)
         end
