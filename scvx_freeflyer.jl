@@ -4,6 +4,7 @@ Solution via Sequential Convex Programming using the SCvx algorithm. =#
 
 using LinearAlgebra
 using JuMP
+using Plots
 
 include("utils/helper.jl")
 include("core/problem.jl")
@@ -37,7 +38,7 @@ obs_shape = diagm([1.0; 1.0; 1.0]/0.3)
 obs = [T_Ellipsoid(copy(obs_shape), [8.5; -0.15; 5.0]),
        T_Ellipsoid(copy(obs_shape), [11.2; 1.84; 5.0]),
        T_Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8])]
-env = EnvironmentParameters(obs)
+env = FreeFlyerEnvironmentParameters(obs)
 
 # >> Trajectory <<
 r0 = [7.2; -0.4; 5.0]
@@ -51,7 +52,8 @@ qf = T_Quaternion(deg2rad(0), [0.0; 0.0; 1.0])
 tf_min = 60.0
 tf_max = 120.0
 wt = 0.0
-traj = TrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min, tf_max, wt)
+traj = FreeFlyerTrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min,
+                                     tf_max, wt)
 
 mdl = FreeFlyerProblem(fflyer, env, traj)
 
@@ -350,7 +352,7 @@ iter_max = 20
 η_lb = 1e-3
 η_ub = 10.0
 ε_abs = 0.0#1e-4
-ε_rel = 0.1/100
+ε_rel = 0.01/100
 feas_tol = 1e-3
 q_tr = Inf
 q_exit = Inf
@@ -373,6 +375,7 @@ sol, history = scvx_solve(scvx_pbm)
 ###############################################################################
 # ..:: Plot results ::..
 
+pyplot()
 plot_trajectory_history(mdl, history)
 plot_final_trajectory(mdl, sol)
 plot_timeseries(mdl, sol)

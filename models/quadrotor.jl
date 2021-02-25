@@ -24,14 +24,14 @@ struct QuadrotorParameters
 end
 
 #= Quadrotor flight environment. =#
-struct EnvironmentParameters
+struct QuadrotorEnvironmentParameters
     g::T_RealVector          # [m/s^2] Gravity vector
     obs::Vector{T_Ellipsoid} # Obstacles (ellipsoids)
     n_obs::T_Int             # Number of obstacles
 end
 
 #= Trajectory parameters. =#
-struct TrajectoryParameters
+struct QuadrotorTrajectoryParameters
     r0::T_RealVector # Initial position
     rf::T_RealVector # Terminal position
     v0::T_RealVector # Initial velocity
@@ -42,9 +42,9 @@ end
 
 #= Quadrotor trajectory optimization problem parameters all in one. =#
 struct QuadrotorProblem
-    vehicle::QuadrotorParameters # The ego-vehicle
-    env::EnvironmentParameters   # The environment
-    traj::TrajectoryParameters   # The trajectory
+    vehicle::QuadrotorParameters        # The ego-vehicle
+    env::QuadrotorEnvironmentParameters # The environment
+    traj::QuadrotorTrajectoryParameters # The trajectory
 end
 
 # ..:: Constructors ::..
@@ -57,16 +57,16 @@ Args:
 
 Returns:
     env: the environment struct. =#
-function EnvironmentParameters(
+function QuadrotorEnvironmentParameters(
     gnrm::T_Real,
-    obs::Vector{T_Ellipsoid})::EnvironmentParameters
+    obs::Vector{T_Ellipsoid})::QuadrotorEnvironmentParameters
 
     # Derived values
     g = zeros(3)
     g[end] = -gnrm
     n_obs = length(obs)
 
-    env = EnvironmentParameters(g, obs, n_obs)
+    env = QuadrotorEnvironmentParameters(g, obs, n_obs)
 
     return env
 end
@@ -80,8 +80,6 @@ Args:
     history: SCvx iteration data history. =#
 function plot_trajectory_history(mdl::QuadrotorProblem,
                                  history::SCvxHistory)::Nothing
-
-    pyplot()
 
     # Common values
     num_iter = length(history.subproblems)
@@ -140,8 +138,6 @@ Args:
     sol: the trajectory solution output by SCvx. =#
 function plot_final_trajectory(mdl::QuadrotorProblem,
                                sol::SCvxSolution)::Nothing
-
-    pyplot()
 
     # Common values
     cmap = cgrad(:thermal; rev = true)
@@ -232,8 +228,6 @@ Args:
 function plot_input_norm(mdl::QuadrotorProblem,
                          sol::SCvxSolution)::Nothing
 
-    pyplot()
-
     # Common
     tf = sol.p[mdl.vehicle.id_pt]
     y_top = 25.0
@@ -252,11 +246,11 @@ function plot_input_norm(mdl::QuadrotorProblem,
 
     # @ Acceleration upper bound @
     bnd = mdl.vehicle.u_max
-    plot_timeseries_bound(0.0, tf, bnd, y_top-bnd)
+    plot_timeseries_bound!(0.0, tf, bnd, y_top-bnd)
 
     # @ Acceleration lower bound @
     bnd = mdl.vehicle.u_min
-    plot_timeseries_bound(0.0, tf, bnd, y_bot-bnd)
+    plot_timeseries_bound!(0.0, tf, bnd, y_bot-bnd)
 
     # @ Norm of acceleration vector (continuous-time) @
     ct_time = ct_τ*sol.p[mdl.vehicle.id_pt]
@@ -310,8 +304,6 @@ Args:
 function plot_tilt_angle(mdl::QuadrotorProblem,
                          sol::SCvxSolution)::Nothing
 
-    pyplot()
-
     # Common
     tf = sol.p[mdl.vehicle.id_pt]
     y_top = 70.0
@@ -329,7 +321,7 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
 
     # @ Tilt angle upper bound @
     bnd = rad2deg(mdl.vehicle.tilt_max)
-    plot_timeseries_bound(0.0, tf, bnd, y_top-bnd)
+    plot_timeseries_bound!(0.0, tf, bnd, y_top-bnd)
 
     # @ Tilt angle (continuous-time) @
     ct_time = ct_τ*sol.p[mdl.vehicle.id_pt]
@@ -370,8 +362,6 @@ Args:
     history: SCvx iteration data history. =#
 function plot_convergence(mdl::QuadrotorProblem, #nowarn
                           history::SCvxHistory)::Nothing
-
-    pyplot()
 
     # Common values
     cmap = cgrad(:thermal; rev = true)

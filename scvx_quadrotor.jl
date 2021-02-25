@@ -5,8 +5,6 @@ Solution via Sequential Convex Programming using the SCvx algorithm. =#
 using LinearAlgebra
 using JuMP
 using Plots
-using LaTeXStrings
-using ColorSchemes
 
 include("utils/helper.jl")
 include("core/problem.jl")
@@ -33,7 +31,7 @@ quad = QuadrotorParameters(id_r, id_v, id_xt, id_u, id_σ,
 g = 9.81
 obs = [T_Ellipsoid(diagm([2.0; 2.0; 0.0]), [1.0; 2.0; 0.0]),
        T_Ellipsoid(diagm([1.5; 1.5; 0.0]), [2.0; 5.0; 0.0])]
-env = EnvironmentParameters(g, obs)
+env = QuadrotorEnvironmentParameters(g, obs)
 
 # >> Trajectory <<
 r0 = zeros(3)
@@ -43,7 +41,7 @@ v0 = zeros(3)
 vf = zeros(3)
 tf_min = 0.0
 tf_max = 2.5
-traj = TrajectoryParameters(r0, rf, v0, vf, tf_min, tf_max)
+traj = QuadrotorTrajectoryParameters(r0, rf, v0, vf, tf_min, tf_max)
 
 mdl = QuadrotorProblem(quad, env, traj)
 
@@ -270,9 +268,9 @@ iter_max = 20
 η_init = 1.0
 η_lb = 1e-3
 η_ub = 10.0
-ε_abs = 1e-4
-ε_rel = 0.1/100
-feas_tol = 1e-2
+ε_abs = 0.0#1e-4
+ε_rel = 0.01/100
+feas_tol = 1e-3
 q_tr = Inf
 q_exit = Inf
 solver = ECOS
@@ -294,6 +292,7 @@ sol, history = scvx_solve(scvx_pbm)
 ###############################################################################
 # ..:: Plot results ::..
 
+pyplot()
 plot_trajectory_history(mdl, history)
 plot_final_trajectory(mdl, sol)
 plot_input_norm(mdl, sol)

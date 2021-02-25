@@ -30,13 +30,13 @@ struct FreeFlyerParameters
 end
 
 #= Space station flight environment. =#
-struct EnvironmentParameters
+struct FreeFlyerEnvironmentParameters
     obs::Vector{T_Ellipsoid} # Obstacles (ellipsoids)
     n_obs::T_Int             # Number of obstacles
 end
 
 #= Trajectory parameters. =#
-struct TrajectoryParameters
+struct FreeFlyerTrajectoryParameters
     r0::T_RealVector # Initial position
     rf::T_RealVector # Terminal position
     v0::T_RealVector # Initial velocity
@@ -52,9 +52,9 @@ end
 
 #= Free-flyer trajectory optimization problem parameters all in one. =#
 struct FreeFlyerProblem
-    vehicle::FreeFlyerParameters # The ego-vehicle
-    env::EnvironmentParameters   # The environment
-    traj::TrajectoryParameters   # The trajectory
+    vehicle::FreeFlyerParameters        # The ego-vehicle
+    env::FreeFlyerEnvironmentParameters # The environment
+    traj::FreeFlyerTrajectoryParameters # The trajectory
 end
 
 # ..:: Constructors ::..
@@ -66,13 +66,13 @@ Args:
 
 Returns:
     env: the environment struct. =#
-function EnvironmentParameters(
-    obs::Vector{T_Ellipsoid})::EnvironmentParameters
+function FreeFlyerEnvironmentParameters(
+    obs::Vector{T_Ellipsoid})::FreeFlyerEnvironmentParameters
 
     # Derived values
     n_obs = length(obs)
 
-    env = EnvironmentParameters(obs, n_obs)
+    env = FreeFlyerEnvironmentParameters(obs, n_obs)
 
     return env
 end
@@ -86,8 +86,6 @@ Args:
     history: SCvx iteration data history. =#
 function plot_trajectory_history(mdl::FreeFlyerProblem,
                                  history::SCvxHistory)::Nothing
-
-    pyplot()
 
     # Common values
     num_iter = length(history.subproblems)
@@ -146,8 +144,6 @@ Args:
     sol: the trajectory solution output by SCvx. =#
 function plot_final_trajectory(mdl::FreeFlyerProblem,
                                sol::SCvxSolution)::Nothing
-
-    pyplot()
 
     # Common values
     cmap = cgrad(:thermal; rev = true)
@@ -238,8 +234,6 @@ Args:
 function plot_timeseries(mdl::FreeFlyerProblem,
                          sol::SCvxSolution)::Nothing
 
-    pyplot()
-
     # Common values
     veh = mdl.vehicle
     ct_res = 500
@@ -298,7 +292,7 @@ function plot_timeseries(mdl::FreeFlyerProblem,
               xlabel=L"\mathrm{Time~[s]}",
               ylabel=data[i][:ylabel])
         if !isnothing(y_max)
-            plot_timeseries_bound(0.0, tf, y_max, y_top-y_max; subplot=i)
+            plot_timeseries_bound!(0.0, tf, y_max, y_top-y_max; subplot=i)
         end
         # @ Continuous-time components @
         yc = hcat([data[i][:scale](sample(data[i][:ct_y], τ)[data[i][:id]])
@@ -360,8 +354,6 @@ Args:
     history: SCvx iteration data history. =#
 function plot_convergence(mdl::FreeFlyerProblem, #nowarn
                           history::SCvxHistory)::Nothing
-
-    pyplot()
 
     # Common values
     cmap = cgrad(:thermal; rev = true)
