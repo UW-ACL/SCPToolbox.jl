@@ -87,6 +87,20 @@ pbm = TrajectoryProblem(mdl)
 # Variable dimensions
 problem_set_dims!(pbm, 14, 6, 1)
 
+# Variable scaling
+for i in id_r
+    min_pos = min(r0[i], rf[i])
+    max_pos = max(r0[i], rf[i])
+    problem_advise_scale!(pbm, :state, i, (min_pos, max_pos))
+end
+problem_advise_scale!(pbm, :parameter, id_pt, (tf_min, tf_max))
+
+# Quaternion re-normalization on numerical integration step
+problem_set_integration_action!(pbm, id_q, (x, pbm) -> begin
+                                xn = x/norm(x)
+                                return xn
+                                end)
+
 # Initial trajectory guess
 problem_set_guess!(pbm,
                    (N, pbm) -> begin
@@ -366,7 +380,7 @@ problem_set_bc!(pbm, :tc,
 N = 50
 Nsub = 15
 iter_max = 50
-λ = 1e4
+λ = 1e5
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7
@@ -403,7 +417,7 @@ pyplot()
 plot_trajectory_history(mdl, history)
 plot_final_trajectory(mdl, sol)
 plot_timeseries(mdl, sol)
-plot_convergence(mdl, history)
 plot_obstacle_constraints(mdl, sol)
+plot_convergence(mdl, history)
 
 ###############################################################################

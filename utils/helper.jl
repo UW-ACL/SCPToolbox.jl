@@ -200,15 +200,18 @@ Args:
     tspan: the discrete time grid over which to integrate.
     full: (optional) whether to return the full trajectory, or just
         the final point.
+    actions: (optional) actions to perform on the state after the
+        numerical integration state update.
 
 Returns:
-    X: the integrated trajectory (final point, or full). =#
+X: the integrated trajectory (final point, or full). =#
 function rk4(f::Function,
              x0::T_RealVector,
              tspan::T_RealVector;
-             full::T_Bool=false)::Union{T_RealVector,
-                                        T_RealMatrix}
-    X = _helper__rk4_generic(f, x0; tspan=tspan, full=full)
+             full::T_Bool=false,
+             actions::T_SIA=T_SIA(undef, 0))::Union{T_RealVector,
+                                                    T_RealMatrix}
+    X = _helper__rk4_generic(f, x0; tspan=tspan, full=full, actions=actions)
     return X
 end
 
@@ -221,6 +224,8 @@ Args:
     h: the discrete time step.
     full: (optional) whether to return the full trajectory, or just
         the final point.
+    actions: (optional) actions to perform on the state after the
+        numerical integration state update.
 
 Returns:
     X: the integrated trajectory (final point, or full). =#
@@ -228,14 +233,15 @@ function rk4(f::Function,
              x0::T_RealVector,
              tf::T_Real,
              h::T_Real;
-             full::T_Bool=false)::Union{T_RealVector,
-                                        T_RealMatrix}
+             full::T_Bool=false,
+             actions::T_SIA=T_SIA(undef, 0))::Union{T_RealVector,
+                                                    T_RealMatrix}
     # Define the scaled dynamics and time step
     F = (τ::T_Real, x::T_RealVector) -> tf*f(tf*τ, x)
     h /= tf
 
     # Integrate
-    X = _helper__rk4_generic(F, x0; h=h, full=full)
+    X = _helper__rk4_generic(F, x0; h=h, full=full, actions=actions)
 
     return X
 end
@@ -774,18 +780,22 @@ Args:
         If provided, a [0, 1] integration interval is assumed. If the time step
         does not split the [0, 1] interval into an integral number of temporal
         nodes, then the largest time step <=h is used.
-    full: (optional) whether to return the complete trajectory (if false, return
-        just the endpoint).
+    full: (optional) whether to return the complete trajectory (if false,
+        return just the endpoint).
+    actions: (optional) actions to perform on the state after the numerical
+        integration state update.
 
 Returns:
-    X: the integration result (final point, or full trajectory, depending on the
-        argument `full`).=#
+    X: the integration result (final point, or full trajectory, depending on
+        the argument `full`). =#
 function _helper__rk4_generic(f::Function,
                               x0::T_RealVector;
                               tspan::Union{T_RealVector, Nothing}=nothing,
                               h::Union{T_Real, Nothing}=nothing,
-                              full::T_Bool=false)::Union{T_RealVector,
-                                                         T_RealMatrix}
+                              full::T_Bool=false,
+                              actions::T_SIA=T_SIA(undef, 0))::Union{
+                                  T_RealVector,
+                                  T_RealMatrix}
 
     # Check that one and only one of the arguments tspan and h is passed
     if !xor(isnothing(tspan), isnothing(h))
@@ -816,9 +826,17 @@ function _helper__rk4_generic(f::Function,
         if full
             @k(X) = _helper__rk4_core_step(
                 f, @km1(X), @km1(tspan), @k(tspan))
+            # Update actions
+            for act in actions
+                @k(X)[act[1]] = act[2](@k(X)[act[1]])
+            end
         else
             X = _helper__rk4_core_step(
                 f, X, @km1(tspan), @k(tspan))
+            # Update actions
+            for act in actions
+                X[act[1]] = act[2](X[act[1]])
+            end
         end
     end
 

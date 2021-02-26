@@ -13,6 +13,12 @@ mutable struct TrajectoryProblem
     nx::T_Int         # Number of state variables
     nu::T_Int         # Number of input variables
     np::T_Int         # Number of parameter variables
+    # >> Variable scaling advice <<
+    xrg::Vector{Union{Nothing, Tuple{T_Real, T_Real}}} # State bounds
+    urg::Vector{Union{Nothing, Tuple{T_Real, T_Real}}} # Input bounds
+    prg::Vector{Union{Nothing, Tuple{T_Real, T_Real}}} # Parameter bounds
+    # >> Numerical integration <<
+    integ_actions::T_SpecialIntegrationActions # Special variable treatment
     # >> Initial guess <<
     guess::T_Function # The initial trajectory guess
     # >> Cost function <<
@@ -55,28 +61,35 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     nx = 0
     nu = 0
     np = 0
-    guess = (N) -> (T_RealMatrix[], T_RealMatrix[], T_RealVector[])
+    xrg = Vector{Nothing}(undef, 0)
+    urg = Vector{Nothing}(undef, 0)
+    prg = Vector{Nothing}(undef, 0)
+    propag_actions = T_SpecialIntegrationActions(undef, 0)
+    guess = (N) -> (T_RealMatrix(undef, 0, 0),
+                    T_RealMatrix(undef, 0, 0),
+                    T_RealVector(undef, 0))
     φ = (x, p) -> 0.0
     Γ = (x, u, p) -> 0.0
-    f = (τ, x, u, p) -> T_RealVector[]
-    A = (τ, x, u, p) -> T_RealMatrix[]
-    B = (τ, x, u, p) -> T_RealMatrix[]
-    F = (τ, x, u, p) -> T_RealMatrix[]
-    X! = (x, mdl) -> T_ConstraintVector[]
-    U! = (x, mdl) -> T_ConstraintVector[]
-    s = (x, u, p) -> T_RealVector[]
-    C = (x, u, p) -> T_RealMatrix[]
-    D = (x, u, p) -> T_RealMatrix[]
-    G = (x, u, p) -> T_RealMatrix[]
-    gic = (x, p) -> T_RealVector[]
-    H0 = (x, p) -> T_RealMatrix[]
-    K0 = (x, p) -> T_RealMatrix[]
-    gtc = (x, p) -> T_RealVector[]
-    Hf = (x, p) -> T_RealMatrix[]
-    Kf = (x, p) -> T_RealMatrix[]
+    f = (τ, x, u, p) -> T_RealVector(undef, 0)
+    A = (τ, x, u, p) -> T_RealMatrix(undef, 0, 0)
+    B = (τ, x, u, p) -> T_RealMatrix(undef, 0, 0)
+    F = (τ, x, u, p) -> T_RealMatrix(undef, 0, 0)
+    X! = (x, mdl) -> T_ConstraintVector(undef, 0)
+    U! = (x, mdl) -> T_ConstraintVector(undef, 0)
+    s = (x, u, p) -> T_RealVector(undef, 0)
+    C = (x, u, p) -> T_RealMatrix(undef, 0, 0)
+    D = (x, u, p) -> T_RealMatrix(undef, 0, 0)
+    G = (x, u, p) -> T_RealMatrix(undef, 0, 0)
+    gic = (x, p) -> T_RealVector(undef, 0)
+    H0 = (x, p) -> T_RealMatrix(undef, 0, 0)
+    K0 = (x, p) -> T_RealMatrix(undef, 0, 0)
+    gtc = (x, p) -> T_RealVector(undef, 0)
+    Hf = (x, p) -> T_RealMatrix(undef, 0, 0)
+    Kf = (x, p) -> T_RealMatrix(undef, 0, 0)
 
-    pbm = TrajectoryProblem(nx, nu, np, guess, φ, Γ, f, A, B, F, X!, U!,
-                            s, C, D, G, gic, H0, K0, gtc, Hf, Kf, mdl)
+    pbm = TrajectoryProblem(nx, nu, np, xrg, urg, prg, propag_actions, guess,
+                            φ, Γ, f, A, B, F, X!, U!, s, C, D, G, gic, H0,
+                            K0, gtc, Hf, Kf, mdl)
 
     return pbm
 end
@@ -97,12 +110,58 @@ function problem_set_dims!(pbm::TrajectoryProblem,
     pbm.nx = nx
     pbm.nu = nu
     pbm.np = np
+    pbm.xrg = fill(nothing, nx)
+    pbm.urg = fill(nothing, nu)
+    pbm.prg = fill(nothing, np)
+    return nothing
+end
+
+#= Set variable ranges to advise proper scaling.
+
+If no constraint is found that restricts the variable range, then the range
+passed manually into here is used.
+
+Args:
+    pbm: the trajectory problem structure.
+    which: either :state, :input, or :parameter.
+    idx: which elements this range applies to.
+    rg: the range itself, (min, max). =#
+function problem_advise_scale!(pbm::TrajectoryProblem,
+                               which::T_Symbol,
+                               idx::T_ElementIndex,
+                               rg::Tuple{T_Real, T_Real})::Nothing
+    if rg[2] < rg[1]
+        err = ArgumentError("ERROR: min must be less than max.")
+        throw(err)
+    end
+    map = Dict(:state => :xrg, :input => :urg, :parameter => :prg)
+    for i in idx
+        getfield(pbm, map[which])[i] = rg
+    end
+    return nothing
+end
+
+#= Define an action on (part of) the state at integration update step.
+
+Action signature: f(x, pbm), where:
+  - x (T_RealVector): subset of the state vector.
+  - pbm (TrajectoryProblem): the trajectory problem structure.
+
+Args:
+    pbm: the trajectory problem structure.
+    idx: state elements to which the action applies.
+    action: the action to do. Receives the subset of the state, and
+        returns the updated/correct value. =#
+function problem_set_integration_action!(pbm::TrajectoryProblem,
+                                         idx::T_ElementIndex,
+                                         action::T_Function)::Nothing
+    push!(pbm.integ_actions, (idx, (x) -> action(x, pbm)))
     return nothing
 end
 
 #= Define the initial trajectory guess.
 
-Function signature: f(pbm, N), where:
+Function signature: f(N, pbm), where:
   - N (T_Int): the number of discrete-time grid nodes.
   - pbm (TrajectoryProblem): the trajectory problem structure.
 

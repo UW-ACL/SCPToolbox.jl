@@ -53,6 +53,10 @@ const T_ExitStatus = Union{SCvxStatus, MOI.TerminationStatusCode}
 const T_Function = Union{Nothing, Function}
 const T_FunctionVector = Vector{T_Function}
 
+const T_ElementIndex = Union{T_Int, T_IntRange, Colon}
+const T_SpecialIntegrationActions = Vector{Tuple{T_ElementIndex, T_Function}}
+const T_SIA = T_SpecialIntegrationActions # Alias
+
 # ..:: Composite types ::..
 
 #= Quaternion using Hamiltonian convention.

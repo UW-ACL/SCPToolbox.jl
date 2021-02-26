@@ -550,7 +550,8 @@ function SCvxSolution(history::SCvxHistory)::SCvxSolution
         τc = T_RealVector(LinRange(0.0, 1.0, Nc))
         uc = T_ContinuousTimeTrajectory(τd, ud, :linear)
         F = (τ, x) -> pbm.traj.f(τ, x, sample(uc, τ), p)
-        xc_vals = rk4(F, @first(last_sol.xd), τc; full=true)
+        xc_vals = rk4(F, @first(last_sol.xd), τc; full=true,
+                      actions=pbm.traj.integ_actions)
         xc = T_ContinuousTimeTrajectory(τc, xc_vals, :linear)
 
         L_orig = last_sol.L_orig
@@ -707,7 +708,7 @@ function _scvx__discretize!(ref::SCvxSubproblemSolution,
             _scvx__derivs(τ, V, k, pbm, idcs, ref)
         τ_subgrid = T_RealVector(
             LinRange(pbm.common.τ_grid[k], pbm.common.τ_grid[k+1], Nsub))
-        V = rk4(f, V0, τ_subgrid)
+        V = rk4(f, V0, τ_subgrid; actions=pbm.traj.integ_actions)
 
         # Get the raw RK4 results
         xV = V[idcs.x]
@@ -1243,6 +1244,7 @@ function _scvx__compute_scaling(
     # Map varaibles to these scaled intervals
     intrvl_x = [0.0; 1.0]
     intrvl_u = [0.0; 1.0]
+    intrvl_p = [0.0; 1.0]
 
     # >> Compute bounding boxes for state and input <<
 
@@ -1251,8 +1253,10 @@ function _scvx__compute_scaling(
     x_bbox[:, 1] .= 0.0
     u_bbox[:, 1] .= 0.0
 
-    defs = [Dict(:dim => nx, :set => traj.X!, :bbox => x_bbox),
-            Dict(:dim => nu, :set => traj.U!, :bbox => u_bbox)]
+    defs = [Dict(:dim => nx, :set => traj.X!,
+                 :bbox => x_bbox, :advice => :xrg),
+            Dict(:dim => nu, :set => traj.U!,
+                 :bbox => u_bbox, :advice => :urg)]
 
     for def in defs
         for j = 1:2 # 1:min, 2:max
@@ -1284,7 +1288,24 @@ function _scvx__compute_scaling(
                             0, SCVX_SCALING_FAILED,
                             @eval @sprintf($msg, $status))
                     end
+                elseif !isnothing(getfield(traj, def[:advice])[i])
+                    # Take user scaling advice
+                    def[:bbox][i, j] = getfield(traj, def[:advice])[i][j]
                 end
+            end
+        end
+    end
+
+    # >> Compute bounding box for parameters <<
+
+    p_bbox = fill(1.0, np, 2)
+    p_bbox[:, 1] .= 0.0
+
+    for j = 1:2 # 1:min, 2:max
+        for i = 1:np
+            if !isnothing(traj.prg[i])
+                # Take user scaling advice
+                p_bbox[i, j] = traj.prg[i][j]
             end
         end
     end
@@ -1292,6 +1313,7 @@ function _scvx__compute_scaling(
     # >> Compute scaling matrices and offset vectors <<
     wdth_x = intrvl_x[2]-intrvl_x[1]
     wdth_u = intrvl_u[2]-intrvl_u[1]
+    wdth_p = intrvl_p[2]-intrvl_p[1]
 
     # State scaling terms
     x_min, x_max = x_bbox[:, 1], x_bbox[:, 2]
@@ -1309,11 +1331,13 @@ function _scvx__compute_scaling(
     iSu = inv(Su)
     cu = u_min-diag_Su*intrvl_u[1]
 
-    # Parameter scaling terms (no scaling applied)
-    diag_Sp = ones(np)
+    # Parameter scaling terms
+    p_min, p_max = p_bbox[:, 1], p_bbox[:, 2]
+    diag_Sp = (p_max-p_min)/wdth_p
+    diag_Sp[diag_Sp .< zero_intvl_tol] .= 1.0
     Sp = Diagonal(diag_Sp)
     iSp = inv(Sp)
-    cp = zeros(np)
+    cp = p_min-diag_Sp*intrvl_p[1]
 
     scale = SCvxScaling(Sx, cx, Su, cu, Sp, cp, iSx, iSu, iSp)
 
