@@ -31,8 +31,9 @@ end
 
 #= Space station flight environment. =#
 struct FreeFlyerEnvironmentParameters
-    obs::Vector{T_Ellipsoid} # Obstacles (ellipsoids)
-    n_obs::T_Int             # Number of obstacles
+    obs::Vector{T_Ellipsoid}      # Obstacles (ellipsoids)
+    iss::Vector{T_Hyperrectangle} # Space station flight space
+    n_obs::T_Int                  # Number of obstacles
 end
 
 #= Trajectory parameters. =#
@@ -62,17 +63,19 @@ end
 #= Constructor for the environment.
 
 Args:
+    iss: the space station flight corridors, defined as hyperrectangles.
     obs: array of obstacles (ellipsoids).
 
 Returns:
     env: the environment struct. =#
 function FreeFlyerEnvironmentParameters(
+    iss::Vector{T_Hyperrectangle},
     obs::Vector{T_Ellipsoid})::FreeFlyerEnvironmentParameters
 
     # Derived values
     n_obs = length(obs)
 
-    env = FreeFlyerEnvironmentParameters(obs, n_obs)
+    env = FreeFlyerEnvironmentParameters(obs, iss, n_obs)
 
     return env
 end
@@ -101,6 +104,7 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
          labelfontsize=10,
          size=(280, 400))
 
+    plot_prisms!(mdl.env.iss)
     plot_ellipsoids!(mdl.env.obs)
 
     # @ Draw the trajectories @
@@ -161,6 +165,7 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
          colorbar=:right,
          colorbar_title=L"$\Vert v_{\mathcal{I}}\Vert$ [m/s]")
 
+    plot_prisms!(mdl.env.iss)
     plot_ellipsoids!(mdl.env.obs)
 
     # @ Draw the final continuous-time position trajectory @
@@ -394,6 +399,116 @@ function plot_convergence(mdl::FreeFlyerProblem, #nowarn
           linewidth=2)
 
     savefig("figures/scvx_freeflyer_convergence.pdf")
+
+    return nothing
+end
+
+#= Timeseries plot of obstacle constraint values for final trajectory.
+
+Args:
+    mdl: the free-flyer problem parameters.
+    sol: the trajectory solution output by SCvx. =#
+function plot_obstacle_constraints(mdl::FreeFlyerProblem,
+                                   sol::SCvxSolution)::Nothing
+
+    # Common values
+    veh = mdl.vehicle
+    env = mdl.env
+    ct_res = 500
+    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
+    tf = sol.p[veh.id_pt]
+    dt_time = sol.τd*tf
+    ct_time = ct_τ*tf
+    cmap = cgrad(:thermal; rev = true)
+    xyz_clrs = ["#db6245", "#5da9a1", "#356397"]
+    marker_darken_factor = 0.2
+
+    plot(show=false,
+         tickfontsize=10,
+         labelfontsize=10,
+         size=(500, 250),
+         layout = (1, 2))
+
+    # ..:: Plot ISS flight space constraint ::..
+    y_max = -veh.R
+    y_top = 0.0
+    plot!(subplot=1,
+          xlabel=L"\mathrm{Time~[s]}",
+          ylabel=L"d_{\mathrm{ISS}}(r_{\mathcal{I}}(t))")
+    plot_timeseries_bound!(0.0, tf, y_max, y_top-y_max; subplot=1)
+    # >> Continuous-time components <<
+    yc = T_RealVector([signed_distance(env.iss, sample(sol.xc, τ)[veh.id_r])[1]
+                       for τ in ct_τ])
+    plot!(ct_time, yc;
+          subplot=1,
+          reuse=true,
+          legend=false,
+          seriestype=:line,
+          linewidth=1,
+          color=cmap[1.0])
+    # >> Discrete-time components <<
+    yd = sol.xd[veh.id_r, :]
+    yd = T_RealVector([signed_distance(env.iss, @k(yd))[1]
+                       for k=1:size(yd, 2)])
+    plot!(dt_time, yd;
+          subplot=1,
+          reuse=true,
+          legend=false,
+          seriestype=:scatter,
+          markershape=:circle,
+          markersize=4,
+          markerstrokewidth=0.0,
+          color=cmap[1.0],
+          markeralpha=1.0)
+    plot!(subplot=1,
+          xlims=(0.0, tf),
+          ylims=(minimum(yc),
+                 max(0.0, maximum(yc))))
+
+    # ..:: Plot ellipsoid obstacle constraints ::..
+    clr_offset = 0.4
+    y_min = 1.0
+    y_bot = 0.0
+    plot!(subplot=2,
+          xlabel=L"\mathrm{Time~[s]}",
+          ylabel=L"\Vert H_j(r_{\mathcal{I}}(t)-c_j)\Vert_2")
+    plot_timeseries_bound!(0.0, tf, y_min, y_bot-y_min; subplot=2)
+    # >> Continuous-time components <<
+    for j = 1:env.n_obs
+        yc = T_RealVector([env.obs[j](sample(sol.xc, τ)[veh.id_r])
+                           for τ in ct_τ])
+        clr = (j-1)/(env.n_obs-1)*(1-clr_offset)+clr_offset
+        plot!(ct_time, yc;
+              subplot=2,
+              reuse=true,
+              legend=false,
+              seriestype=:line,
+              linewidth=1,
+              color=cmap[clr])
+    end
+    # >> Discrete-time components <<
+    y_top = -Inf
+    for j = 1:env.n_obs
+        yd = sol.xd[veh.id_r, :]
+        yd = T_RealVector([env.obs[j](@k(yd)) for k=1:size(yd, 2)])
+        y_top = max(y_top, maximum(yd))
+        clr = (j-1)/(env.n_obs-1)*(1-clr_offset)+clr_offset
+        plot!(dt_time, yd;
+              subplot=2,
+              reuse=true,
+              legend=false,
+              seriestype=:scatter,
+              markershape=:circle,
+              markersize=4,
+              markerstrokewidth=0.0,
+              color=cmap[clr],
+              markeralpha=1.0)
+    end
+    plot!(subplot=2,
+          xlims=(0.0, tf),
+          ylims=(y_bot, y_top))
+
+    savefig("figures/scvx_freeflyer_obstacles.pdf")
 
     return nothing
 end

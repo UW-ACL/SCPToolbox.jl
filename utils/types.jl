@@ -19,6 +19,7 @@ const T_String = String
 const T_Real = Float64
 const T_Symbol = Symbol
 
+const T_BoolVector = Vector{T_Bool}
 const T_IntVector = Vector{T_Int}
 const T_IntRange = UnitRange{T_Int}
 
@@ -154,6 +155,113 @@ struct T_Ellipsoid
         end
         E = new(H, c)
         return E
+    end
+end
+
+#= Hyperrectangle geometric object.
+
+Hyperrectangle set = {x : l <= x <= u} =#
+struct T_Hyperrectangle
+    n::T_Int        # Ambient space dimension
+    l::T_RealVector # Lower bound ("lower-left" vertex)
+    u::T_RealVector # Upper bound ("upper-right" vertex)
+
+    #= Basic constructor.
+
+    Args:
+        l: the lower-left vertex.
+        u: the upper-right vertex.
+
+    Returns:
+        H: the hyperrectangle set. =#
+    function T_Hyperrectangle(l::T_RealVector,
+                              u::T_RealVector)::T_Hyperrectangle
+        if length(l)!=length(u)
+            err = ArgumentError("ERROR: vertex dimension mismatch.")
+            throw(err)
+        end
+        n = length(l)
+        H = new(n, l, u)
+        return H
+    end
+
+    #= Constructor from axis ranges.
+
+    Args:
+        range: the (min, max) range of values in the set along
+          axis 1, 2, etc.
+
+    Returns:
+        H: the hyperrectangle set. =#
+    function T_Hyperrectangle(
+        range::Tuple{T_Real, T_Real}...)::T_Hyperrectangle
+
+        n = length(range)
+        l = T_RealVector([range[i][1] for i=1:n])
+        u = T_RealVector([range[i][2] for i=1:n])
+
+        H = T_Hyperrectangle(l, u)
+
+        return H
+    end
+
+    #= Extrusion-like constructor for a 3D rectangular prism.
+
+    Think about it like extruding a 3D rectangular prism in a Computer Aided
+    Design (CAD) software. You create a 2D rectangle centered at c with
+    dimensions width x height. You then extrude "forward" along the +z axis by
+    the depth value. Afterwards, you yaw the rectangle by ±90 degrees in yaw,
+    pitch, and roll.
+
+    Args:
+        offset: the rectangular base center (aka centroid).
+        width: rectangular base width (along x).
+        height: rectangular base height (along y).
+        depth: extrusion depth (along +z).
+        yaw: (optional) the Tait-Bryan yaw angle (in degrees).
+        pitch: (optional) the Tait-Bryan pitch angle (in degrees).
+        roll: (optional) the Tait-Bryan roll angle (in degrees).
+
+    Returns:
+        H: the hyperrectangle set. =#
+    function T_Hyperrectangle(offset::T_RealVector,
+                              width::T_Real,
+                              height::T_Real,
+                              depth::T_Real;
+                              yaw::T_Real=0.0,
+                              pitch::T_Real=0.0,
+                              roll::T_Real=0.0)::T_Hyperrectangle
+        if yaw%90!=0 || pitch%90!=0 || roll%90!=0
+            err = ArgumentError("ERROR: hyperrectangle must be axis-aligned.")
+            throw(err)
+        end
+        # Compute the hyperrectangle min/max vertices in world frame, no offset
+        l = T_RealVector([-width/2, -height/2, 0.0])
+        u = T_RealVector([width/2, height/2, depth])
+        # Apply rotation
+        c = (angle) -> cosd(angle)
+        s = (angle) -> sind(angle)
+        ψ, θ, φ = yaw, pitch, roll
+        Rz = T_RealMatrix([c(ψ) -s(ψ) 0;
+                           s(ψ)  c(ψ) 0;
+                           0       0  1])
+        Ry = T_RealMatrix([ c(θ) 0 s(θ);
+                            0    1 0;
+                           -s(θ) 0 c(θ)])
+        Rx = T_RealMatrix([1 0     0;
+                           0 c(φ) -s(φ);
+                           0 s(φ)  c(φ)])
+        R = Rz*Ry*Rx
+        lr = R*l
+        ur = R*u
+        l = min.(lr, ur)
+        u = max.(lr, ur)
+        # Apply offset
+        l += offset
+        u += offset
+        # Save hyperrectangle
+        H = T_Hyperrectangle(l, u)
+        return H
     end
 end
 

@@ -493,6 +493,104 @@ function ∇(E::T_Ellipsoid, r::T_RealVector)::T_RealVector
     return g
 end
 
+#= Check if a point is contained in the hyperrectangle.
+
+Args:
+    H: the hyperrectangle set.
+    r: the point.
+
+Returns:
+    Boolean true iff r∈H. =#
+function contains(H::T_Hyperrectangle, r::T_RealVector)::T_Bool
+    return all(H.l .<= r .<= H.u)
+end
+
+#= Evaluate signed distance function for a hyperrectangle.
+
+Definition:
+
+  d(r) = min{norm(y-r):y∈H}-min{norm(z-r):z∉H}.
+
+Args:
+    H: the hyperrectangle set.
+    r: the point location.
+
+Returns:
+    d: the signed-distance function value at r.
+    ∇d: the gradient of the signed-distance function. =#
+function signed_distance(H::T_Hyperrectangle,
+                         r::T_RealVector)::Tuple{T_Real,
+                                                 T_RealVector}
+    if contains(H, r)
+        # ..:: Compute min{norm(y-r):y∉H} ::..
+        rp = copy(r)
+        d_argmin = [nothing, nothing]
+        d = Inf
+        for i = 1:H.n
+            if r[i]<H.l[i] || H.u[i]<r[i]
+                continue
+            end
+            d2min = r[i]-H.l[i]
+            d2max = H.u[i]-r[i]
+            buff = min(d2min, d2max)
+            if buff<d
+                d = buff
+                d_argmin = (d2min<d2max) ? [:min, i] : [:max, i]
+            end
+        end
+        side, id = d_argmin
+        rp[id] = (side==:min) ? H.l[id] : H.u[id]
+        d = -d
+    else
+        # ..:: Compute min{norm(y-r):y∈H} ::..
+        rp = copy(r)
+        d_argmin = [nothing, nothing]
+        for i = 1:H.n
+            if r[i] <= H.l[i]
+                rp[i] = H.l[i]
+                d_argmin = [:min, i]
+            elseif r[i] >= H.u[i]
+                rp[i] = H.u[i]
+                d_argmin = [:max, i]
+            end
+        end
+        d = norm(r-rp)
+    end
+    ∇d = (abs(d)<sqrt(eps())) ? zeros(H.n) : (r-rp)/d
+    return d, ∇d
+end
+
+#= Evaluate signed distance function for a union of hyperrectangle.
+
+Definition:
+
+  H = ∪_{i=1,...,m} H_i  (union of hyperrectangles)
+  d(r) = min{ min{norm(y-r):y∈H_i}-min{norm(z-r):z∉H_i} : i=1,...,m},
+
+where m is the number of hyperrectangles.
+
+Args:
+    H: the hyperrectangle sets defining the union.
+    r: the point location.
+
+Returns:
+    d: the signed-distance function value at r.
+    ∇d: the gradient of the signed-distance function. =#
+function signed_distance(H::Vector{T_Hyperrectangle},
+                         r::T_RealVector)::Tuple{T_Real,
+                                                 T_RealVector}
+    min_d = Inf
+    d, ∇d = nothing, nothing
+    for i = 1:length(H)
+        _d, _∇d = signed_distance(H[i], r)
+        if _d < min_d
+            min_d = _d
+            d, ∇d = _d, _∇d
+        end
+    end
+    return d, ∇d
+end
+
 #= Print row of table.
 
 Args:
@@ -566,15 +664,17 @@ end
 #= Draw ellipsoids on the currently active plot.
 
 Args:
-    E: array of ellipsoids. =#
-function plot_ellipsoids!(E::Vector{T_Ellipsoid})::Nothing
+    E: array of ellipsoids.
+    axes: (optional) which 2 axes to project onto. =#
+function plot_ellipsoids!(E::Vector{T_Ellipsoid},
+                          axes::T_IntVector=[1, 2])::Nothing
     θ = LinRange(0.0, 2*pi, 100)
     circle = hcat(cos.(θ), sin.(θ))'
     for i = 1:length(E)
-        Ep = project(E[i], [1, 2])
+        Ep = project(E[i], axes)
         vertices = Ep.H\circle.+Ep.c
-        obs = Shape(vertices[1, :], vertices[2, :])
-        plot!(obs;
+        ellipse = Shape(vertices[1, :], vertices[2, :])
+        plot!(ellipse;
               reuse=true,
               legend=false,
               seriestype=:shape,
@@ -583,6 +683,32 @@ function plot_ellipsoids!(E::Vector{T_Ellipsoid})::Nothing
               linewidth=1,
               linecolor="#26415d")
     end
+    return nothing
+end
+
+#= Draw rectangular prisms on the current active plot.
+
+Args:
+    H: array of 3D hyperrectangle sets.
+    axes: (optional) which 2 axes to project onto. =#
+function plot_prisms!(H::Vector{T_Hyperrectangle},
+                      axes::T_IntVector=[1, 2])::Nothing
+    for i = 1:length(H)
+        Hi = H[i]
+        x, y = axes
+        vertices = T_RealMatrix([Hi.l[x] Hi.u[x] Hi.u[x] Hi.l[x] Hi.l[x];
+                                 Hi.l[y] Hi.l[y] Hi.u[y] Hi.u[y] Hi.l[y]])
+        prism = Shape(vertices[1, :], vertices[2, :])
+        plot!(prism;
+              reuse=true,
+              legend=false,
+              seriestype=:shape,
+              color="#5da9a1",
+              fillopacity=0.5,
+              linewidth=1,
+              linecolor="#427d77")
+    end
+    return nothing
 end
 
 # ..:: Private methods ::..

@@ -35,10 +35,30 @@ fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_xt, id_T, id_M, id_pt,
 
 # >> Environment <<
 obs_shape = diagm([1.0; 1.0; 1.0]/0.3)
+z_iss = 4.75
+R_pad = 2*R
 obs = [T_Ellipsoid(copy(obs_shape), [8.5; -0.15; 5.0]),
        T_Ellipsoid(copy(obs_shape), [11.2; 1.84; 5.0]),
        T_Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8])]
-env = FreeFlyerEnvironmentParameters(obs)
+iss_rooms = [T_Hyperrectangle([6.0; 0.0; z_iss],
+                              1.0, 1.0, 1.5+R_pad;
+                              pitch=90.0),
+             T_Hyperrectangle([7.5; 0.0; z_iss],
+                              2.0, 2.0, 4.0;
+                              pitch=90.0),
+             T_Hyperrectangle([11.5-R_pad; 0.0; z_iss],
+                              1.25, 1.25, 0.5+R_pad;
+                              pitch=90.0),
+             T_Hyperrectangle([10.75; -1.0+R_pad; z_iss],
+                              1.5, 1.5, 1.5+R_pad;
+                              yaw=-90.0, pitch=90.0),
+             T_Hyperrectangle([10.75; 1.0-R_pad; z_iss],
+                              1.5, 1.5, 1.5+2*R_pad;
+                              yaw=90.0, pitch=90.0),
+             T_Hyperrectangle([10.75; 2.5; z_iss],
+                              2.5, 2.5, 4.5;
+                              yaw=90.0, pitch=90.0)]
+env = FreeFlyerEnvironmentParameters(iss_rooms, obs)
 
 # >> Trajectory <<
 r0 = [7.2; -0.4; 5.0]
@@ -367,8 +387,8 @@ pars = SCvxParameters(N, Nsub, iter_max, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
 ###############################################################################
 # ..:: Solve trajectory generation problem using SCvx ::..
 
-scvx_pbm = SCvxProblem(pars, pbm)
-sol, history = scvx_solve(scvx_pbm)
+# scvx_pbm = SCvxProblem(pars, pbm)
+# sol, history = scvx_solve(scvx_pbm)
 
 ###############################################################################
 
@@ -380,5 +400,6 @@ plot_trajectory_history(mdl, history)
 plot_final_trajectory(mdl, sol)
 plot_timeseries(mdl, sol)
 plot_convergence(mdl, history)
+plot_obstacle_constraints(mdl, sol)
 
 ###############################################################################
