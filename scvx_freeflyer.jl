@@ -36,24 +36,24 @@ fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_xt, id_T, id_M, id_pt,
 # >> Environment <<
 obs_shape = diagm([1.0; 1.0; 1.0]/0.3)
 z_iss = 4.75
-R_pad = 2*R
+pad = 0.2
 obs = [T_Ellipsoid(copy(obs_shape), [8.5; -0.15; 5.0]),
        T_Ellipsoid(copy(obs_shape), [11.2; 1.84; 5.0]),
        T_Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8])]
 iss_rooms = [T_Hyperrectangle([6.0; 0.0; z_iss],
-                              1.0, 1.0, 1.5+R_pad;
+                              1.0, 1.0, 1.5+pad;
                               pitch=90.0),
              T_Hyperrectangle([7.5; 0.0; z_iss],
                               2.0, 2.0, 4.0;
                               pitch=90.0),
-             T_Hyperrectangle([11.5-R_pad; 0.0; z_iss],
-                              1.25, 1.25, 0.5+R_pad;
+             T_Hyperrectangle([11.5-pad; 0.0; z_iss],
+                              1.25, 1.25, 0.5+pad;
                               pitch=90.0),
-             T_Hyperrectangle([10.75; -1.0+R_pad; z_iss],
-                              1.5, 1.5, 1.5+R_pad;
+             T_Hyperrectangle([10.75; -1.0+pad; z_iss],
+                              1.5, 1.5, 1.5+pad;
                               yaw=-90.0, pitch=90.0),
-             T_Hyperrectangle([10.75; 1.0-R_pad; z_iss],
-                              1.5, 1.5, 1.5+2*R_pad;
+             T_Hyperrectangle([10.75; 1.0-pad; z_iss],
+                              1.5, 1.5, 1.5+2*pad;
                               yaw=90.0, pitch=90.0),
              T_Hyperrectangle([10.75; 2.5; z_iss],
                               2.5, 2.5, 4.5;
@@ -61,7 +61,7 @@ iss_rooms = [T_Hyperrectangle([6.0; 0.0; z_iss],
 env = FreeFlyerEnvironmentParameters(iss_rooms, obs)
 
 # >> Trajectory <<
-r0 = [7.2; -0.4; 5.0]
+r0 = [7.0; -0.3; 5.0]
 v0 = [0.035; 0.035; 0.0]
 q0 = T_Quaternion(deg2rad(-40), [0.0; 1.0; 1.0])
 ω0 = zeros(3)
@@ -70,7 +70,7 @@ vf = zeros(3)
 qf = T_Quaternion(deg2rad(0), [0.0; 0.0; 1.0])
 ωf = zeros(3)
 tf_min = 60.0
-tf_max = 120.0
+tf_max = 180.0
 wt = 0.0
 traj = FreeFlyerTrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min,
                                      tf_max, wt)
@@ -259,40 +259,44 @@ problem_set_s!(pbm,
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
                veh = pbm.mdl.vehicle
-               s = zeros(env.n_obs)
+               r = x[veh.id_r]
+               s = zeros(env.n_obs+1)
                for i = 1:env.n_obs
                # ---
                E = env.obs[i]
-               r = x[veh.id_r]
                s[i] = 1-E(r)
                # ---
                end
+               d_iss, _ = signed_distance(env.iss, r)
+               s[end] = d_iss+veh.R
                return s
                end,
                # Jacobian ds/dx
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
                veh = pbm.mdl.vehicle
-               C = zeros(env.n_obs, pbm.nx)
+               r = x[veh.id_r]
+               C = zeros(env.n_obs+1, pbm.nx)
                for i = 1:env.n_obs
                # ---
                E = env.obs[i]
-               r = x[veh.id_r]
                C[i, veh.id_r] = -∇(E, r)
                # ---
                end
+               _, ∇d_iss = signed_distance(env.iss, r)
+               C[end, veh.id_r] = ∇d_iss
                return C
                end,
                # Jacobian ds/du
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
-               D = zeros(env.n_obs, pbm.nu)
+               D = zeros(env.n_obs+1, pbm.nu)
                return D
                end,
                # Jacobian ds/dp
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
-               G = zeros(env.n_obs, pbm.np)
+               G = zeros(env.n_obs+1, pbm.np)
                return G
                end)
 
@@ -359,10 +363,10 @@ problem_set_bc!(pbm, :tc,
 ###############################################################################
 # ..:: Define the SCvx algorithm parameters ::..
 
-N = 30
+N = 50
 Nsub = 15
-iter_max = 20
-λ = 1e3
+iter_max = 50
+λ = 1e4
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7
@@ -387,8 +391,8 @@ pars = SCvxParameters(N, Nsub, iter_max, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
 ###############################################################################
 # ..:: Solve trajectory generation problem using SCvx ::..
 
-# scvx_pbm = SCvxProblem(pars, pbm)
-# sol, history = scvx_solve(scvx_pbm)
+scvx_pbm = SCvxProblem(pars, pbm)
+sol, history = scvx_solve(scvx_pbm)
 
 ###############################################################################
 

@@ -97,9 +97,9 @@ struct T_Quaternion
         end
 
         if length(v)==3
-            q = new(v, 0.0)
+            q = T_Quaternion(v, 0.0)
         else
-            q = new(v[1:3], v[4])
+            q = T_Quaternion(v[1:3], v[4])
         end
 
         return q
@@ -123,7 +123,7 @@ struct T_Quaternion
         a /= norm(a)
         v = a*sin(α/2)
         w = cos(α/2)
-        q = new(v, w)
+        q = T_Quaternion(v, w)
 
         return q
     end

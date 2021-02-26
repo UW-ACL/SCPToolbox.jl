@@ -431,14 +431,14 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
 
     # ..:: Plot ISS flight space constraint ::..
     y_max = -veh.R
-    y_top = 0.0
     plot!(subplot=1,
           xlabel=L"\mathrm{Time~[s]}",
           ylabel=L"d_{\mathrm{ISS}}(r_{\mathcal{I}}(t))")
-    plot_timeseries_bound!(0.0, tf, y_max, y_top-y_max; subplot=1)
     # >> Continuous-time components <<
     yc = T_RealVector([signed_distance(env.iss, sample(sol.xc, τ)[veh.id_r])[1]
                        for τ in ct_τ])
+    y_top = max(0.0, maximum(yc))
+    plot_timeseries_bound!(0.0, tf, y_max, y_top-y_max; subplot=1)
     plot!(ct_time, yc;
           subplot=1,
           reuse=true,
@@ -467,6 +467,8 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
 
     # ..:: Plot ellipsoid obstacle constraints ::..
     clr_offset = 0.4
+    clr_map = (j) -> (env.n_obs==1) ? 1.0 :
+        (j-1)/(env.n_obs-1)*(1-clr_offset)+clr_offset
     y_min = 1.0
     y_bot = 0.0
     plot!(subplot=2,
@@ -477,14 +479,13 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
     for j = 1:env.n_obs
         yc = T_RealVector([env.obs[j](sample(sol.xc, τ)[veh.id_r])
                            for τ in ct_τ])
-        clr = (j-1)/(env.n_obs-1)*(1-clr_offset)+clr_offset
         plot!(ct_time, yc;
               subplot=2,
               reuse=true,
               legend=false,
               seriestype=:line,
               linewidth=1,
-              color=cmap[clr])
+              color=cmap[clr_map(j)])
     end
     # >> Discrete-time components <<
     y_top = -Inf
@@ -492,7 +493,6 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
         yd = sol.xd[veh.id_r, :]
         yd = T_RealVector([env.obs[j](@k(yd)) for k=1:size(yd, 2)])
         y_top = max(y_top, maximum(yd))
-        clr = (j-1)/(env.n_obs-1)*(1-clr_offset)+clr_offset
         plot!(dt_time, yd;
               subplot=2,
               reuse=true,
@@ -501,7 +501,7 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
               markershape=:circle,
               markersize=4,
               markerstrokewidth=0.0,
-              color=cmap[clr],
+              color=cmap[clr_map(j)],
               markeralpha=1.0)
     end
     plot!(subplot=2,
