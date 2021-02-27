@@ -1188,6 +1188,7 @@ function _scvx__print_info(spbm::SCvxSubproblem,
         status = @sprintf "%s" sol.status
         status = status[1:min(8, length(status))]
         ρ = !isnan(sol.ρ) ? @sprintf("%.2f", sol.ρ) : ""
+        ρ = (length(ρ)>8) ? @sprintf("%.1e", sol.ρ) : ρ
 
         # Associate values with columns
         assoc = Dict(:iter => spbm.iter,

@@ -38,7 +38,6 @@ end
 
 #= Trajectory parameters. =#
 mutable struct FreeFlyerTrajectoryParameters
-    # >> Boundary conditions <<
     r0::T_RealVector # Initial position
     rf::T_RealVector # Terminal position
     v0::T_RealVector # Initial velocity
@@ -47,35 +46,10 @@ mutable struct FreeFlyerTrajectoryParameters
     qf::T_Quaternion # Terminal attitude
     ω0::T_RealVector # Initial angular velocity
     ωf::T_RealVector # Terminal angular velocity
-    # >> Flight time  <<
     tf_min::T_Real   # Minimum flight time
     tf_max::T_Real   # Maximum flight time
-    # >> Cost <<
     wt::T_Real       # Tradeoff weight terminal vs. running cost
-    # >> Space station flight space homotopy <<
-    hom::T_Real         # Homotopy parameter for space station constraint
-    hom_max::T_Real     # Maximum homotopy, at which point to stop
-    μ::T_Real           # Homotopy scaling (>1) at each outer iteration
-    x_ref::Union{Nothing, T_RealMatrix} # Initial state trajectory
-    u_ref::Union{Nothing, T_RealMatrix} # Initial input trajectory
-    p_ref::Union{Nothing, T_RealVector} # Initial parameter
-
-    #= Basic constructor.
-
-    Args:
-        See the above comments.
-
-    Returns:
-        traj: the trajectory parameter structure. =#
-    function FreeFlyerTrajectoryParameters(
-        r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min, tf_max,
-        wt, hom, hom_max, μ)::FreeFlyerTrajectoryParameters
-
-        traj = new(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min, tf_max,
-                   wt, hom, hom_max, μ, nothing, nothing, nothing)
-
-        return traj
-    end
+    hom::T_Real      # Homotopy parameter for space station constraint
 end
 
 #= Free-flyer trajectory optimization problem parameters all in one. =#
@@ -134,6 +108,25 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
     plot_prisms!(mdl.env.iss)
     plot_ellipsoids!(mdl.env.obs)
 
+    # @ Plot the signed distance function zero-level set @
+    xlims = (6, 12)
+    ylims = (-2.5, 7)
+    res = 100
+    z_iss = @first(history.subproblems[end].sol.xd[mdl.vehicle.id_r, :])[3]
+    x = T_RealVector(LinRange(xlims..., res))
+    y = T_RealVector(LinRange(ylims..., res))
+    X = repeat(reshape(x, 1, :), length(y), 1)
+    Y = repeat(y, 1, length(x))
+    f = (x, y) -> signed_distance(mdl.env.iss, [x; y; z_iss];
+                                  t=mdl.traj.hom)[1]
+    Z = map(f, X, Y)
+
+    contour!(x, y, Z,
+             levels=[0],
+             linecolor="#f1d46a",
+             linewidth=1,
+             colorbar=false)
+
     # @ Draw the trajectories @
     for i = 0:num_iter
 
@@ -162,6 +155,9 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
               color=clr,
               markeralpha=alph)
     end
+
+    plot!(xlims=xlims,
+          ylims=ylims)
 
     savefig("figures/scvx_freeflyer_traj_iters.pdf")
 
@@ -194,6 +190,25 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
 
     plot_prisms!(mdl.env.iss)
     plot_ellipsoids!(mdl.env.obs)
+
+    # @ Plot the signed distance function zero-level set @
+    xlims = (6, 12)
+    ylims = (-2.5, 7)
+    res = 100
+    z_iss = @first(sol.xd[mdl.vehicle.id_r, :])[3]
+    x = T_RealVector(LinRange(xlims..., res))
+    y = T_RealVector(LinRange(ylims..., res))
+    X = repeat(reshape(x, 1, :), length(y), 1)
+    Y = repeat(y, 1, length(x))
+    f = (x, y) -> signed_distance(mdl.env.iss, [x; y; z_iss];
+                                  t=mdl.traj.hom)[1]
+    Z = map(f, X, Y)
+
+    contour!(x, y, Z,
+             levels=[0],
+             linecolor="#f1d46a",
+             linewidth=1,
+             colorbar=false)
 
     # @ Draw the final continuous-time position trajectory @
     # Collect the continuous-time trajectory data
@@ -252,6 +267,8 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
           color=cmap[1.0],
           markeralpha=1.0)
 
+    plot!(xlims=xlims,
+          ylims=ylims)
 
     savefig("figures/scvx_freeflyer_final_traj.pdf")
 

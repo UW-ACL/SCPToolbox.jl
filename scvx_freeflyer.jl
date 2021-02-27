@@ -36,24 +36,24 @@ fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_xt, id_T, id_M, id_pt,
 # >> Environment <<
 obs_shape = diagm([1.0; 1.0; 1.0]/0.3)
 z_iss = 4.75
-ol_iss = 0.0 # Space station room overlap
-obs = [T_Ellipsoid(copy(obs_shape), [8.5; -0.15; 5.0]),
+obs = [T_Ellipsoid(copy(obs_shape)/1.5, [8.5; -0.15; 5.0]),
        T_Ellipsoid(copy(obs_shape), [11.2; 1.84; 5.0]),
-       T_Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8])]
+       T_Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8]),
+       T_Ellipsoid(diagm([1.0; 1.0; 0.0]/0.15), [10.0; 1.0;  z_iss])]
 iss_rooms = [T_Hyperrectangle([6.0; 0.0; z_iss],
-                              1.0, 1.0, 1.5+ol_iss;
+                              1.0, 1.0, 1.5;
                               pitch=90.0),
              T_Hyperrectangle([7.5; 0.0; z_iss],
                               2.0, 2.0, 4.0;
                               pitch=90.0),
-             T_Hyperrectangle([11.5-ol_iss; 0.0; z_iss],
-                              1.25, 1.25, 0.5+ol_iss;
+             T_Hyperrectangle([11.5; 0.0; z_iss],
+                              1.25, 1.25, 0.5;
                               pitch=90.0),
-             T_Hyperrectangle([10.75; -1.0+ol_iss; z_iss],
-                              1.5, 1.5, 1.5+ol_iss;
+             T_Hyperrectangle([10.75; -1.0; z_iss],
+                              1.5, 1.5, 1.5;
                               yaw=-90.0, pitch=90.0),
-             T_Hyperrectangle([10.75; 1.0-ol_iss; z_iss],
-                              1.5, 1.5, 1.5+2*ol_iss;
+             T_Hyperrectangle([10.75; 1.0; z_iss],
+                              1.5, 1.5, 1.5;
                               yaw=90.0, pitch=90.0),
              T_Hyperrectangle([10.75; 2.5; z_iss],
                               2.5, 2.5, 4.5;
@@ -61,7 +61,7 @@ iss_rooms = [T_Hyperrectangle([6.0; 0.0; z_iss],
 env = FreeFlyerEnvironmentParameters(iss_rooms, obs)
 
 # >> Trajectory <<
-r0 = [7.0; 0.0; 5.0]
+r0 = [6.5; -0.2; 5.0]
 v0 = [0.035; 0.035; 0.0]
 q0 = T_Quaternion(deg2rad(-40), [0.0; 1.0; 1.0])
 ω0 = zeros(3)
@@ -72,11 +72,9 @@ qf = T_Quaternion(deg2rad(0), [0.0; 0.0; 1.0])
 tf_min = 60.0
 tf_max = 200.0
 wt = 0.0
-hom = 4.0
-μ = 2.0
-hom_max = 32.0
+hom = 5.0
 traj = FreeFlyerTrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min,
-                                     tf_max, wt, hom, hom_max, μ)
+                                     tf_max, wt, hom)
 
 mdl = FreeFlyerProblem(fflyer, env, traj)
 
@@ -109,8 +107,6 @@ problem_set_guess!(pbm,
                    (N, pbm) -> begin
                    veh = pbm.mdl.vehicle
                    traj = pbm.mdl.traj
-                   if isnothing(traj.x_ref)
-                   # -----------------------------------------
                    # No existing reference provided - make a new guess
                    # >> Parameter guess <<
                    p = zeros(pbm.np)
@@ -173,16 +169,6 @@ problem_set_guess!(pbm,
                    # >> Input guess <<
                    idle = zeros(pbm.nu)
                    u = straightline_interpolate(idle, idle, N)
-                   # -----------------------------------------
-                   else
-                   # -----------------------------------------
-                   # Use an existing reference
-                   traj = pbm.mdl.traj
-                   x = copy(traj.x_ref)
-                   u = copy(traj.u_ref)
-                   p = copy(traj.p_ref)
-                   # -----------------------------------------
-                   end
                    return x, u, p
                    end)
 
@@ -395,10 +381,10 @@ problem_set_bc!(pbm, :tc,
 ###############################################################################
 # ..:: Define the SCvx algorithm parameters ::..
 
-N = 25
+N = 50
 Nsub = 15
-iter_max = 40
-λ = 1e5
+iter_max = 30
+λ = 1e4
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7
@@ -424,33 +410,7 @@ pars = SCvxParameters(N, Nsub, iter_max, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
 # ..:: Solve trajectory generation problem using SCvx ::..
 
 scvx_pbm = SCvxProblem(pars, pbm)
-
-hom_step = 1
-sol = nothing
-global_history = SCvxHistory()
-
-while mdl.traj.hom <= mdl.traj.hom_max
-    global hom_step, sol, global_history
-
-    @printf(">> Homotopy step %d: hom = %.2f\n",
-            hom_step, mdl.traj.hom)
-    hom_step += 1
-
-    # Solve current problem
-    sol, history = scvx_solve(scvx_pbm)
-
-    for spbm in history.subproblems
-        _scvx__save!(global_history, spbm)
-    end
-
-    # Update initial guess
-    mdl.traj.x_ref = sol.xd
-    mdl.traj.u_ref = sol.ud
-    mdl.traj.p_ref = sol.p
-
-    # Increase homotopy pararameter
-    mdl.traj.hom *= mdl.traj.μ
-end
+sol, history = scvx_solve(scvx_pbm)
 
 ###############################################################################
 
@@ -458,10 +418,10 @@ end
 # ..:: Plot results ::..
 
 pyplot()
-plot_trajectory_history(mdl, global_history)
+plot_trajectory_history(mdl, history)
 plot_final_trajectory(mdl, sol)
 plot_timeseries(mdl, sol)
 plot_obstacle_constraints(mdl, sol)
-plot_convergence(mdl, global_history)
+plot_convergence(mdl, history)
 
 ###############################################################################
