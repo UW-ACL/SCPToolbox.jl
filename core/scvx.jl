@@ -640,6 +640,8 @@ function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
         _scvx__print_info(spbm)
     end
 
+    reset(pbm.common.table)
+
     # ..:: Save solution ::..
     sol = SCvxSolution(history)
 

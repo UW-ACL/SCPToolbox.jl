@@ -37,7 +37,8 @@ struct FreeFlyerEnvironmentParameters
 end
 
 #= Trajectory parameters. =#
-struct FreeFlyerTrajectoryParameters
+mutable struct FreeFlyerTrajectoryParameters
+    # >> Boundary conditions <<
     r0::T_RealVector # Initial position
     rf::T_RealVector # Terminal position
     v0::T_RealVector # Initial velocity
@@ -46,9 +47,35 @@ struct FreeFlyerTrajectoryParameters
     qf::T_Quaternion # Terminal attitude
     ω0::T_RealVector # Initial angular velocity
     ωf::T_RealVector # Terminal angular velocity
+    # >> Flight time  <<
     tf_min::T_Real   # Minimum flight time
     tf_max::T_Real   # Maximum flight time
+    # >> Cost <<
     wt::T_Real       # Tradeoff weight terminal vs. running cost
+    # >> Space station flight space homotopy <<
+    hom::T_Real         # Homotopy parameter for space station constraint
+    hom_max::T_Real     # Maximum homotopy, at which point to stop
+    μ::T_Real           # Homotopy scaling (>1) at each outer iteration
+    x_ref::Union{Nothing, T_RealMatrix} # Initial state trajectory
+    u_ref::Union{Nothing, T_RealMatrix} # Initial input trajectory
+    p_ref::Union{Nothing, T_RealVector} # Initial parameter
+
+    #= Basic constructor.
+
+    Args:
+        See the above comments.
+
+    Returns:
+        traj: the trajectory parameter structure. =#
+    function FreeFlyerTrajectoryParameters(
+        r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min, tf_max,
+        wt, hom, hom_max, μ)::FreeFlyerTrajectoryParameters
+
+        traj = new(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min, tf_max,
+                   wt, hom, hom_max, μ, nothing, nothing, nothing)
+
+        return traj
+    end
 end
 
 #= Free-flyer trajectory optimization problem parameters all in one. =#
@@ -375,7 +402,7 @@ function plot_convergence(mdl::FreeFlyerProblem, #nowarn
     for i = 1:num_iter
         X[:, i] = vcat(xd[i], ud[i], p[i])
     end
-    DX = T_RealVector([norm(X[:, i]-X[:, end]) for i=1:(num_iter-1)])
+    DX = max.(T_RealVector([norm(X[:, i]-X[:, end]) for i=1:(num_iter-1)]), eps())
     iters = T_IntVector(1:(num_iter-1))
 
     plot(show=false,
@@ -435,7 +462,9 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
           xlabel=L"\mathrm{Time~[s]}",
           ylabel=L"d_{\mathrm{ISS}}(r_{\mathcal{I}}(t))")
     # >> Continuous-time components <<
-    yc = T_RealVector([signed_distance(env.iss, sample(sol.xc, τ)[veh.id_r])[1]
+    yc = T_RealVector([signed_distance(env.iss,
+                                       sample(sol.xc, τ)[veh.id_r];
+                                       t=mdl.traj.hom)[1]
                        for τ in ct_τ])
     y_top = max(0.0, maximum(yc))
     plot_timeseries_bound!(0.0, tf, y_max, y_top-y_max; subplot=1)
@@ -448,7 +477,7 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
           color=cmap[1.0])
     # >> Discrete-time components <<
     yd = sol.xd[veh.id_r, :]
-    yd = T_RealVector([signed_distance(env.iss, @k(yd))[1]
+    yd = T_RealVector([signed_distance(env.iss, @k(yd); t=mdl.traj.hom)[1]
                        for k=1:size(yd, 2)])
     plot!(dt_time, yd;
           subplot=1,

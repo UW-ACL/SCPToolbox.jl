@@ -457,9 +457,9 @@ Returns:
     v: a 3-tuple of the angles (yaw, pitch, roll) (in radians). =#
 function rpy(q::T_Quaternion)::Tuple{T_Real, T_Real, T_Real}
     R = dcm(q)
-    pitch = acos(max(0.0, min(1.0, sqrt(R[1, 1]^2+R[1, 2]^2))))
-    roll = atan(-R[2, 3], R[3, 3])
-    yaw = atan(-R[1, 2], R[1, 1])
+    pitch = acos(max(0.0, min(1.0, sqrt(R[1, 1]^2+R[2, 1]^2))))
+    roll = atan(R[3, 2], R[3, 3])
+    yaw = atan(R[2, 1], R[1, 1])
     return yaw, pitch, roll
 end
 
@@ -511,89 +511,115 @@ function contains(H::T_Hyperrectangle, r::T_RealVector)::T_Bool
     return all(H.l .<= r .<= H.u)
 end
 
-#= Evaluate signed distance function for a hyperrectangle.
+#= Compute log-sum-exp function value and its gradient.
 
-Definition:
+Numerically stable implementation based on [1]. The log-sum-exp function is:
 
-  d(r) = min{norm(y-r):y∈H}-min{norm(z-r):z∉H}.
+  L(x) = 1/t*log( ∑_i^{m} exp(t*f_i(x)) ).
+
+As t increases, this becomes an increasingly accurate approximation of:
+
+    max_i f_i(x).
+
+References:
+
+[1] https://leimao.github.io/blog/LogSumExp/
+
+Args:
+    f: the function in the exponent.
+    ∇f: the gradient of the function.
+    t: the homotopy parameter.
+
+Returns:
+    L: the log-sum-exp function value.
+    ∇L: the log-sum-exp function gradient. =#
+function logsumexp(
+    f::T_RealVector,
+    ∇f::Vector{T_RealVector};
+    t::T_Real=1.0)::Tuple{T_Real, T_RealVector}
+
+    n = length(f)
+
+    # Value
+    a = maximum(t*f)
+    sumexp = sum([exp(t*f[i]-a) for i=1:n])
+    logsumexp = a+log(sumexp)
+    L = logsumexp/t
+
+    # Gradient
+    ∇L = sum([∇f[i]*exp(t*f[i]-a) for i=1:n])/sumexp
+
+    return L, ∇L
+end
+
+#= Evaluate signed distance function (SDF) for a hyperrectangle.
+
+Let the hyperrectangle be represented as the set:
+
+  H = {x : l <= x <= u}
+    = {x : norm((x-c)./s, Inf) <= 1},
+
+where s and c are vectors that define a scaling which allows to express H as a
+unity bound on the inf-norm. We define the SDF to be:
+
+  d(r) = -1+max_i ((x_i-c_i)/s_i)^2,
+
+hence d(r)<=0 if and only if x∈H. To make the SDF smooth, instead of the max we
+use the softmax (log-sum-exp) function.
 
 Args:
     H: the hyperrectangle set.
     r: the point location.
+    t: positive homotopy parameter for log-sum-exp.
 
 Returns:
-    d: the signed-distance function value at r.
-    ∇d: the gradient of the signed-distance function. =#
+    d: the SDF value at r.
+    ∇d: the SDF gradient at r. =#
 function signed_distance(H::T_Hyperrectangle,
-                         r::T_RealVector)::Tuple{T_Real,
+                         r::T_RealVector;
+                         t::T_Real = 1.0)::Tuple{T_Real,
                                                  T_RealVector}
-    if contains(H, r)
-        # ..:: Compute min{norm(y-r):y∉H} ::..
-        rp = copy(r)
-        d_argmin = [nothing, nothing]
-        d = Inf
-        for i = 1:H.n
-            if r[i]<H.l[i] || H.u[i]<r[i]
-                continue
-            end
-            d2min = r[i]-H.l[i]
-            d2max = H.u[i]-r[i]
-            buff = min(d2min, d2max)
-            if buff<d
-                d = buff
-                d_argmin = (d2min<d2max) ? [:min, i] : [:max, i]
-            end
-        end
-        side, id = d_argmin
-        rp[id] = (side==:min) ? H.l[id] : H.u[id]
-        d = -d
-    else
-        # ..:: Compute min{norm(y-r):y∈H} ::..
-        rp = copy(r)
-        d_argmin = [nothing, nothing]
-        for i = 1:H.n
-            if r[i] <= H.l[i]
-                rp[i] = H.l[i]
-                d_argmin = [:min, i]
-            elseif r[i] >= H.u[i]
-                rp[i] = H.u[i]
-                d_argmin = [:max, i]
-            end
-        end
-        d = norm(r-rp)
+    n = length(r)
+    f = T_RealVector(undef, n)
+    ∇f = Vector{T_RealVector}(undef, n)
+    for i = 1:n
+        f[i] = ((r[i]-H.c[i])/H.s[i])^2
+        ∇f[i] = zeros(n)
+        ∇f[i][i] = 2*(r[i]-H.c[i])/H.s[i]^2
     end
-    ∇d = (abs(d)<sqrt(eps())) ? zeros(H.n) : (r-rp)/d
+    d, ∇d = logsumexp(f, ∇f; t=t)
+    d -= 1
     return d, ∇d
 end
 
-#= Evaluate signed distance function for a union of hyperrectangle.
+#= Evaluate signed distance function (SDF) for a union of hyperrectangles.
 
-Definition:
-
-  H = ∪_{i=1,...,m} H_i  (union of hyperrectangles)
-  d(r) = min{ min{norm(y-r):y∈H_i}-min{norm(z-r):z∉H_i} : i=1,...,m},
-
-where m is the number of hyperrectangles.
+Given a collection of hyperrectangles H_i, i=1,...,m, we define the SDF for the
+union as the min over the individual SDFs. To make the function smooth, we use
+the log-sum-exp softmax with a homotopy parameter (the larger, the more
+accurate the min approximation).
 
 Args:
     H: the hyperrectangle sets defining the union.
     r: the point location.
+    t: positive homotopy parameter for log-sum-exp.
 
 Returns:
     d: the signed-distance function value at r.
     ∇d: the gradient of the signed-distance function. =#
 function signed_distance(H::Vector{T_Hyperrectangle},
-                         r::T_RealVector)::Tuple{T_Real,
-                                                 T_RealVector}
-    min_d = Inf
-    d, ∇d = nothing, nothing
-    for i = 1:length(H)
-        _d, _∇d = signed_distance(H[i], r)
-        if _d < min_d
-            min_d = _d
-            d, ∇d = _d, _∇d
-        end
+                         r::T_RealVector;
+                         t::T_Real=1.0)::Tuple{T_Real,
+                                               T_RealVector}
+    # Evaluate the SDFs for all hyperrectangles
+    m = length(H)
+    _d = T_RealVector(undef, m)
+    _∇d = Vector{T_RealVector}(undef, m)
+    for i = 1:m
+        _d[i], _∇d[i] = signed_distance(H[i], r; t=t)
     end
+    d, ∇d = logsumexp(-_d, -_∇d; t=t)
+    d, ∇d = -d, -∇d
     return d, ∇d
 end
 
@@ -622,6 +648,17 @@ function print(row::Dict{T_Symbol, T}, table::T_Table)::Nothing where {T}
     msg = @eval @printf($(table.row), $values...)
     println()
 
+    return nothing
+end
+
+#= Reset table printing.
+
+This will make the columnd headings be printed again.
+
+Args:
+    table: the table specification. =#
+function reset(table::T_Table)::Nothing
+    table.__head_print = true
     return nothing
 end
 

@@ -164,11 +164,14 @@ end
 
 #= Hyperrectangle geometric object.
 
-Hyperrectangle set = {x : l <= x <= u} =#
+Hyperrectangle set H = {x : l <= x <= u} =#
 struct T_Hyperrectangle
     n::T_Int        # Ambient space dimension
     l::T_RealVector # Lower bound ("lower-left" vertex)
     u::T_RealVector # Upper bound ("upper-right" vertex)
+    # >> Scaling x=s.*y+c such that H maps to {y: -1 <= y <= 1} <<
+    s::T_RealVector # Dilation
+    c::T_RealVector # Offset
 
     #= Basic constructor.
 
@@ -185,7 +188,9 @@ struct T_Hyperrectangle
             throw(err)
         end
         n = length(l)
-        H = new(n, l, u)
+        s = (u-l)/2
+        c = (u+l)/2
+        H = new(n, l, u, s, c)
         return H
     end
 
@@ -255,7 +260,7 @@ struct T_Hyperrectangle
         Rx = T_RealMatrix([1 0     0;
                            0 c(φ) -s(φ);
                            0 s(φ)  c(φ)])
-        R = Rz*Ry*Rx
+        R = Rz*Ry*Rx # **intrinsic** rotations
         lr = R*l
         ur = R*u
         l = min.(lr, ur)
