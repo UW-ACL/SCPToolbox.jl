@@ -29,9 +29,8 @@ T_max = 20e-3
 M_max = 1e-4
 mass = 7.2
 J = diagm([0.1083, 0.1083, 0.1083])
-R = sqrt(3)*(0.05/2)
 fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_xt, id_T, id_M, id_pt,
-                             v_max, ω_max, T_max, M_max, mass, J, R)
+                             v_max, ω_max, T_max, M_max, mass, J)
 
 # >> Environment <<
 obs_shape = diagm([1.0; 1.0; 1.0]/0.3)

@@ -26,7 +26,6 @@ struct FreeFlyerParameters
     M_max::T_Real    # [N*m] Maximum torque
     m::T_Real        # [kg] Mass
     J::T_RealMatrix  # [kg*m^2] Principle moments of inertia matrix
-    R::T_Real        # [m] Vehicle radius (spherical representation)
 end
 
 #= Space station flight environment. =#
