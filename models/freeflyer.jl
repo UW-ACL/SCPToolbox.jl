@@ -48,7 +48,8 @@ mutable struct FreeFlyerTrajectoryParameters
     tf_min::T_Real   # Minimum flight time
     tf_max::T_Real   # Maximum flight time
     wt::T_Real       # Tradeoff weight terminal vs. running cost
-    hom::T_Real      # Homotopy parameter for space station constraint
+    hom::T_Real      # Homotopy parameter for signed-distance function
+    sdf_pwr::T_Real  # Exponent used in signed-distance function
 end
 
 #= Free-flyer trajectory optimization problem parameters all in one. =#
@@ -117,7 +118,7 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
     X = repeat(reshape(x, 1, :), length(y), 1)
     Y = repeat(y, 1, length(x))
     f = (x, y) -> signed_distance(mdl.env.iss, [x; y; z_iss];
-                                  t=mdl.traj.hom)[1]
+                                  t=mdl.traj.hom, a=mdl.traj.sdf_pwr)[1]
     Z = map(f, X, Y)
 
     contour!(x, y, Z,
@@ -200,7 +201,7 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
     X = repeat(reshape(x, 1, :), length(y), 1)
     Y = repeat(y, 1, length(x))
     f = (x, y) -> signed_distance(mdl.env.iss, [x; y; z_iss];
-                                  t=mdl.traj.hom)[1]
+                                  t=mdl.traj.hom, a=mdl.traj.sdf_pwr)[1]
     Z = map(f, X, Y)
 
     contour!(x, y, Z,
@@ -473,16 +474,16 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
          layout = (1, 2))
 
     # ..:: Plot ISS flight space constraint ::..
-    y_max = -veh.R
+    y_max = 0.0
     plot!(subplot=1,
           xlabel=L"\mathrm{Time~[s]}",
           ylabel=L"d_{\mathrm{ISS}}(r_{\mathcal{I}}(t))")
     # >> Continuous-time components <<
     yc = T_RealVector([signed_distance(env.iss,
                                        sample(sol.xc, τ)[veh.id_r];
-                                       t=mdl.traj.hom)[1]
+                                       t=mdl.traj.hom, a=mdl.traj.sdf_pwr)[1]
                        for τ in ct_τ])
-    y_top = max(0.0, maximum(yc))
+    y_top = max(0.1, maximum(yc))
     plot_timeseries_bound!(0.0, tf, y_max, y_top-y_max; subplot=1)
     plot!(ct_time, yc;
           subplot=1,
@@ -493,7 +494,8 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
           color=cmap[1.0])
     # >> Discrete-time components <<
     yd = sol.xd[veh.id_r, :]
-    yd = T_RealVector([signed_distance(env.iss, @k(yd); t=mdl.traj.hom)[1]
+    yd = T_RealVector([signed_distance(env.iss, @k(yd); t=mdl.traj.hom,
+                                       a=mdl.traj.sdf_pwr)[1]
                        for k=1:size(yd, 2)])
     plot!(dt_time, yd;
           subplot=1,
@@ -507,8 +509,7 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
           markeralpha=1.0)
     plot!(subplot=1,
           xlims=(0.0, tf),
-          ylims=(minimum(yc),
-                 max(0.0, maximum(yc))))
+          ylims=(minimum(yc), y_top))
 
     # ..:: Plot ellipsoid obstacle constraints ::..
     clr_offset = 0.4

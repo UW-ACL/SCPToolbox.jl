@@ -35,10 +35,9 @@ fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_xt, id_T, id_M, id_pt,
 # >> Environment <<
 obs_shape = diagm([1.0; 1.0; 1.0]/0.3)
 z_iss = 4.75
-obs = [T_Ellipsoid(copy(obs_shape)/1.5, [8.5; -0.15; 5.0]),
+obs = [T_Ellipsoid(copy(obs_shape), [8.5; -0.15; 5.0]),
        T_Ellipsoid(copy(obs_shape), [11.2; 1.84; 5.0]),
-       T_Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8]),
-       T_Ellipsoid(diagm([1.0; 1.0; 0.0]/0.15), [10.0; 1.0;  z_iss])]
+       T_Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8])]
 iss_rooms = [T_Hyperrectangle([6.0; 0.0; z_iss],
                               1.0, 1.0, 1.5;
                               pitch=90.0),
@@ -71,9 +70,10 @@ qf = T_Quaternion(deg2rad(0), [0.0; 0.0; 1.0])
 tf_min = 60.0
 tf_max = 200.0
 wt = 0.0
-hom = 5.0
+hom = 40.0
+sdf_pwr = 0.25
 traj = FreeFlyerTrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min,
-                                     tf_max, wt, hom)
+                                     tf_max, wt, hom, sdf_pwr)
 
 mdl = FreeFlyerProblem(fflyer, env, traj)
 
@@ -283,7 +283,8 @@ problem_set_s!(pbm,
                s[i] = 1-E(r)
                # ---
                end
-               d_iss, _ = signed_distance(env.iss, r; t=traj.hom)
+               d_iss, _ = signed_distance(env.iss, r; t=traj.hom,
+                                          a=traj.sdf_pwr)
                s[end] = d_iss
                return s
                end,
@@ -300,7 +301,8 @@ problem_set_s!(pbm,
                C[i, veh.id_r] = -∇(E, r)
                # ---
                end
-               _, ∇d_iss = signed_distance(env.iss, r; t=traj.hom)
+               _, ∇d_iss = signed_distance(env.iss, r; t=traj.hom,
+                                           a=traj.sdf_pwr)
                C[end, veh.id_r] = ∇d_iss
                return C
                end,
@@ -387,8 +389,8 @@ iter_max = 30
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7
-β_sh = 2.0
-β_gr = 2.0
+β_sh = 4.0
+β_gr = 1.2
 η_init = 1.0
 η_lb = 1e-4
 η_ub = 10.0
