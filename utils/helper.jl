@@ -204,7 +204,7 @@ Args:
         numerical integration state update.
 
 Returns:
-X: the integrated trajectory (final point, or full). =#
+    X: the integrated trajectory (final point, or full). =#
 function rk4(f::Function,
              x0::T_RealVector,
              tspan::T_RealVector;

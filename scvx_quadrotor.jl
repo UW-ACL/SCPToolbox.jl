@@ -93,7 +93,7 @@ problem_set_cost!(pbm,
 # Dynamics constraint
 problem_set_dynamics!(pbm,
                       # Dynamics f
-                      (τ, x, u, p, pbm) -> begin
+                      (x, u, p, pbm) -> begin
                       g = pbm.mdl.env.g
                       veh = pbm.mdl.vehicle
                       v = x[veh.id_v]
@@ -106,7 +106,7 @@ problem_set_dynamics!(pbm,
                       return f
                       end,
                       # Jacobian df/dx
-                      (τ, x, u, p, pbm) -> begin
+                      (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
                       tdil = p[veh.id_pt]
                       A = zeros(pbm.nx, pbm.nx)
@@ -115,7 +115,7 @@ problem_set_dynamics!(pbm,
                       return A
                       end,
                       # Jacobian df/du
-                      (τ, x, u, p, pbm) -> begin
+                      (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
                       tdil = p[veh.id_pt]
                       B = zeros(pbm.nx, pbm.nu)
@@ -124,11 +124,11 @@ problem_set_dynamics!(pbm,
                       return B
                       end,
                       # Jacobian df/dp
-                      (τ, x, u, p, pbm) -> begin
+                      (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
                       tdil = p[veh.id_pt]
                       F = zeros(pbm.nx, pbm.np)
-                      F[:, veh.id_pt] = pbm.f(τ, x, u, p)/tdil
+                      F[:, veh.id_pt] = pbm.f(x, u, p)/tdil
                       return F
                       end)
 

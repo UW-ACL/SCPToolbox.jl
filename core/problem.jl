@@ -215,8 +215,7 @@ end
 
 #= Define the dynamics.
 
-Function signature: f(τ, x, u, p, pbm), where:
-  - τ (T_Int): the scaled time in [0,1]
+Function signature: f(x, u, p, pbm), where:
   - x (T_RealVector): the current state vector.
   - u (T_RealVector): the current input vector.
   - p (T_RealVector): the current parameter vector.
@@ -236,10 +235,10 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
                                A::T_Function,
                                B::T_Function,
                                F::T_Function)::Nothing
-    pbm.f = (τ, x, u, p) -> f(τ, x, u, p, pbm)
-    pbm.A = (τ, x, u, p) -> A(τ, x, u, p, pbm)
-    pbm.B = (τ, x, u, p) -> B(τ, x, u, p, pbm)
-    pbm.F = (τ, x, u, p) -> F(τ, x, u, p, pbm)
+    pbm.f = (x, u, p) -> f(x, u, p, pbm)
+    pbm.A = (x, u, p) -> A(x, u, p, pbm)
+    pbm.B = (x, u, p) -> B(x, u, p, pbm)
+    pbm.F = (x, u, p) -> F(x, u, p, pbm)
     return nothing
 end
 
