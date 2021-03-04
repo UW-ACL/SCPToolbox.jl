@@ -1,4 +1,20 @@
-#= This file stores the data structures and methods for the SCvx algorithm. =#
+#= SCvx algorithm data structures and methods.
+
+Sequential convex programming algorithms for trajectory optimization.
+Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
+                   and Autonomous Systems Laboratory (Stanford University)
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 using LinearAlgebra
 using JuMP
@@ -10,7 +26,9 @@ include("../utils/helper.jl")
 include("problem.jl")
 include("scp.jl")
 
-# ..:: Data structures ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Structure holding the SCvx algorithm parameters. =#
 struct SCvxParameters
@@ -135,7 +153,9 @@ mutable struct SCvxSubproblem <: SCPSubproblem
     fit::T_ConstraintVector      # Constraints to fit problem and JuMP template
 end
 
-# ..:: Constructors ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Construct a subproblem solution from a discrete-time trajectory.
 
@@ -394,7 +414,9 @@ function SCvxSubproblemSolution(spbm::SCvxSubproblem)::SCvxSubproblemSolution
     return sol
 end
 
-# ..:: Public methods ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Apply the SCvx algorithm to solve the trajectory generation problem.
 
@@ -466,7 +488,9 @@ function scvx_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution, Nothing},
     return sol, history
 end
 
-# ..:: Private methods ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Compute the initial trajectory guess.
 

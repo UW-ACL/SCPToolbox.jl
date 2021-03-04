@@ -1,4 +1,20 @@
-#= Helper functions used throughout the code. =#
+#= Helper functions used throughout the code.
+
+Sequential convex programming algorithms for trajectory optimization.
+Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
+                   and Autonomous Systems Laboratory (Stanford University)
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 using LinearAlgebra
 using Printf
@@ -8,7 +24,9 @@ import Base: vec, adjoint, *
 
 include("types.jl")
 
-# ..:: Public macros ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Public macros ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Get discrete-time trajectory values at time step k or step range {k,...,l}.
 
@@ -82,7 +100,9 @@ macro last(traj)
     :( @k($(esc(traj)), size($(esc(traj)))[end]) )
 end
 
-# ..:: Public methods ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Linear interpolation on a grid.
 
@@ -767,7 +787,9 @@ function plot_prisms!(H::Vector{T_Hyperrectangle},
     return nothing
 end
 
-# ..:: Private methods ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Compute grid bin.
 

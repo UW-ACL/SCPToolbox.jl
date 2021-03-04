@@ -1,6 +1,20 @@
-#= 6-DoF Free-flyer.
+#= 6-Degree of Freedom free-flyer example.
 
-Solution via Sequential Convex Programming using the SCvx algorithm. =#
+Sequential convex programming algorithms for trajectory optimization.
+Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
+                   and Autonomous Systems Laboratory (Stanford University)
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 using LinearAlgebra
 using JuMP
@@ -11,8 +25,9 @@ include("core/problem.jl")
 include("core/scvx.jl")
 include("models/freeflyer.jl")
 
-###############################################################################
-# ..:: Define the trajectory problem data ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Trajectory problem data ::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 # >> Free-flyer <<
 id_r = 1:3
@@ -77,10 +92,9 @@ traj = FreeFlyerTrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min,
 
 mdl = FreeFlyerProblem(fflyer, env, traj)
 
-###############################################################################
-
-###############################################################################
-# ..:: Define the trajectory optimization problem ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 pbm = TrajectoryProblem(mdl)
 
@@ -377,10 +391,9 @@ problem_set_bc!(pbm, :tc,
                 return K
                 end)
 
-###############################################################################
-
-###############################################################################
-# ..:: Define the SCvx algorithm parameters ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: SCvx algorithm parameters ::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 N = 50
 Nsub = 15
@@ -405,18 +418,16 @@ pars = SCvxParameters(N, Nsub, iter_max, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
                       η_init, η_lb, η_ub, ε_abs, ε_rel, feas_tol, q_tr,
                       q_exit, solver, solver_options)
 
-###############################################################################
-
-###############################################################################
-# ..:: Solve trajectory generation problem using SCvx ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Solve trajectory generation problem ::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 scvx_pbm = SCvxProblem(pars, pbm)
 sol, history = scvx_solve(scvx_pbm)
 
-###############################################################################
-
-###############################################################################
-# ..:: Plot results ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 pyplot()
 plot_trajectory_history(mdl, history)
@@ -424,5 +435,3 @@ plot_final_trajectory(mdl, sol)
 plot_timeseries(mdl, sol)
 plot_obstacle_constraints(mdl, sol)
 plot_convergence(mdl, history)
-
-###############################################################################

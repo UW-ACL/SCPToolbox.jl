@@ -1,4 +1,4 @@
-#= Data structures and methods for the GuSTO algorithm.
+#= GuSTO algorithm data structures and methods.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
@@ -16,7 +16,11 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-# ..:: Data structures ::..
+include("../utils/types.jl")
+
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Structure holding the GuSTO algorithm parameters. =#
 struct GuSTOParameters

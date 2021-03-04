@@ -1,11 +1,29 @@
 #= General trajectory problem data structures and methods.
 
-This file stores the __general__ data structures and methods which define the
-particular instance of the trajectory generation problem. =#
+This acts as a "parser" interface to define a particular instance of the
+trajectory generation problem.
+
+Sequential convex programming algorithms for trajectory optimization.
+Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
+                   and Autonomous Systems Laboratory (Stanford University)
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 include("../utils/types.jl")
 
-# ..:: Data structures ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Trajectory problem definition. =#
 mutable struct TrajectoryProblem
@@ -47,7 +65,9 @@ mutable struct TrajectoryProblem
     mdl::Any          # Problem-specific data structure
 end
 
-# ..:: Constructors ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Default (empty) constructor of a trajectory problem.
 
@@ -94,7 +114,9 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     return pbm
 end
 
-# ..:: Public methods ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Set the problem dimensions.
 
