@@ -6,7 +6,7 @@ using LaTeXStrings
 
 include("../utils/types.jl")
 include("../utils/helper.jl")
-include("../core/scvx.jl")
+include("../core/scp.jl")
 
 # ..:: Data structures ::..
 
@@ -77,9 +77,9 @@ end
 
 Args:
     mdl: the quadrotor problem parameters.
-    history: SCvx iteration data history. =#
+    history: SCP iteration data history. =#
 function plot_trajectory_history(mdl::QuadrotorProblem,
-                                 history::SCvxHistory)::Nothing
+                                 history::SCPHistory)::Nothing
 
     # Common values
     num_iter = length(history.subproblems)
@@ -137,7 +137,7 @@ Args:
     mdl: the quadrotor problem parameters.
     sol: the trajectory solution output by SCvx. =#
 function plot_final_trajectory(mdl::QuadrotorProblem,
-                               sol::SCvxSolution)::Nothing
+                               sol::SCPSolution)::Nothing
 
     # Common values
     cmap = cgrad(:thermal; rev = true)
@@ -226,7 +226,7 @@ Args:
     mdl: the quadrotor problem parameters.
     sol: the trajectory solution output by SCvx. =#
 function plot_input_norm(mdl::QuadrotorProblem,
-                         sol::SCvxSolution)::Nothing
+                         sol::SCPSolution)::Nothing
 
     # Common
     tf = sol.p[mdl.vehicle.id_pt]
@@ -302,7 +302,7 @@ Args:
     mdl: the quadrotor problem parameters.
     sol: the trajectory solution output by SCvx. =#
 function plot_tilt_angle(mdl::QuadrotorProblem,
-                         sol::SCvxSolution)::Nothing
+                         sol::SCPSolution)::Nothing
 
     # Common
     tf = sol.p[mdl.vehicle.id_pt]
@@ -361,7 +361,7 @@ Args:
     mdl: the quadrotor problem parameters.
     history: SCvx iteration data history. =#
 function plot_convergence(mdl::QuadrotorProblem, #nowarn
-                          history::SCvxHistory)::Nothing
+                          history::SCPHistory)::Nothing
 
     # Common values
     cmap = cgrad(:thermal; rev = true)

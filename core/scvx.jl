@@ -8,6 +8,7 @@ using Printf
 include("../utils/types.jl")
 include("../utils/helper.jl")
 include("problem.jl")
+include("scp.jl")
 
 # ..:: Data structures ::..
 
@@ -34,42 +35,11 @@ struct SCvxParameters
     solver_opts::Dict{T_String, Any} # Numerical solver options
 end
 
-#= Variable scaling parameters.
-
-Holds the SCvx internal scaling parameters, which makes the numerical
-optimization subproblems better conditioned. =#
-struct SCvxScaling
-    Sx::T_RealMatrix  # State scaling coefficient matrix
-    cx::T_RealVector  # State scaling offset vector
-    Su::T_RealMatrix  # Input scaling coefficient matrix
-    cu::T_RealVector  # Input scaling offset vector
-    Sp::T_RealMatrix  # Parameter scaling coefficient matrix
-    cp::T_RealVector  # Parameter scaling offset matrix
-    iSx::T_RealMatrix # Inverse of state scaling matrix
-    iSu::T_RealMatrix # Inverse of input scaling matrix
-    iSp::T_RealMatrix # Inverse of parameter scaling coefficient matrix
-end
-
-#= Indexing arrays for convenient access during dynamics discretization.
-
-Container of indices useful for extracting variables from the propagation
-vector during the linearized dynamics discretization process. =#
-struct SCvxDiscretizationIndices
-    x::T_IntRange  # Indices for state
-    A::T_IntRange  # Indices for A matrix
-    Bm::T_IntRange # Indices for B_{-} matrix
-    Bp::T_IntRange # Indices for B_{+} matrix
-    F::T_IntRange  # Indices for S matrix
-    r::T_IntRange  # Indices for r vector
-    E::T_IntRange  # Indices for E matrix
-    length::T_Int  # Propagation vector total length
-end
-
 #= Subproblem solution.
 
 Structure which stores a solution obtained by solving the subproblem during an
 SCvx iteration. =#
-mutable struct SCvxSubproblemSolution
+mutable struct SCvxSubproblemSolution <: SCPSubproblemSolution
     iter::T_Int          # SCvx iteration number
     # >> Discrete-time rajectory <<
     xd::T_RealMatrix     # States
@@ -108,35 +78,15 @@ mutable struct SCvxSubproblemSolution
     E::T_RealTensor      # ... +E[:, :, k]*v
 end
 
-#= Common constant terms used throughout the algorithm. =#
-struct SCvxCommon
-    # >> Discrete-time grid <<
-    Δτ::T_Real           # Discrete time step
-    τ_grid::T_RealVector # Grid of scaled timed on the [0,1] interval
-    # >> Virtual control <<
-    E::T_RealMatrix      # Continuous-time matrix for dynamics virtual control
-    # >> Scaling <<
-    scale::SCvxScaling   # Variable scaling
-    # >> Iteration info <<
-    table::T_Table       # Iteration info table (printout to REPL)
-end
-
-#=Structure which contains all the necessary information to run SCvx.=#
-struct SCvxProblem
-    pars::SCvxParameters    # Algorithm parameters
-    traj::TrajectoryProblem # The underlying trajectory problem
-    common::SCvxCommon      # Common precomputed terms
-end
-
 #= Subproblem data in JuMP format for the convex numerical optimizer.
 
 This structure holds the final data that goes into the subproblem
 optimization. =#
-mutable struct SCvxSubproblem
+mutable struct SCvxSubproblem <: SCPSubproblem
     iter::T_Int                  # SCvx iteration number
     mdl::Model                   # The optimization problem handle
     # >> Algorithm parameters <<
-    scvx::SCvxProblem            # The SCvx problem definition
+    scvx::SCPProblem             # The SCvx problem definition
     # >> Reference and solution trajectories <<
     sol::Union{SCvxSubproblemSolution, Missing} # Solution trajectory
     ref::Union{SCvxSubproblemSolution, Missing} # Reference trajectory
@@ -185,61 +135,7 @@ mutable struct SCvxSubproblem
     fit::T_ConstraintVector      # Constraints to fit problem and JuMP template
 end
 
-#= Overall trajectory solution.
-
-Structure which holds the trajectory solution that the SCvx algorithm
-returns. =#
-struct SCvxSolution
-    # >> Properties <<
-    status::T_String  # Solution status (success? failure?)
-    iterations::T_Int # Number of SCvx iterations that occurred
-    # >> Discrete-time trajectory <<
-    τd::T_RealVector   # Discrete times
-    xd::T_RealMatrix  # States
-    ud::T_RealMatrix  # Inputs
-    p::T_RealVector   # Parameter vector
-    # >> Continuous-time trajectory <<
-    xc::Union{T_ContinuousTimeTrajectory, Missing} # States
-    uc::Union{T_ContinuousTimeTrajectory, Missing} # Inputs
-    # >> Cost function value <<
-    L_orig::T_Real    # The original convex cost function
-    L_pen::T_Real     # The virtual control penalty
-    L::T_Real         # Overall linear cost function of the subproblem
-    J::T_Real         # Overall nonlinear cost function
-end
-
-#= SCvx iteration history.
-
-Holds the history of SCvx iteration data. =#
-struct SCvxHistory
-    subproblems::Vector{SCvxSubproblem} # Subproblems
-end
-
 # ..:: Constructors ::..
-
-#= Indexing arrays from problem definition.
-
-Args:
-    pbm: the SCvx problem definition.
-
-Returns:
-    idcs: the indexing array structure. =#
-function SCvxDiscretizationIndices(pbm::SCvxProblem)::SCvxDiscretizationIndices
-    nx = pbm.traj.nx
-    nu = pbm.traj.nu
-    np = pbm.traj.np
-    id_x  = (1:nx)
-    id_A  = id_x[end].+(1:nx*nx)
-    id_Bm = id_A[end].+(1:nx*nu)
-    id_Bp = id_Bm[end].+(1:nx*nu)
-    id_S  = id_Bp[end].+(1:nx*np)
-    id_r  = id_S[end].+(1:nx)
-    id_E  = id_r[end].+(1:length(pbm.common.E))
-    id_sz = length([id_x; id_A; id_Bm; id_Bp; id_S; id_r; id_E])
-    idcs = SCvxDiscretizationIndices(id_x, id_A, id_Bm, id_Bp, id_S,
-                                     id_r, id_E, id_sz)
-    return idcs
-end
 
 #= Construct a subproblem solution from a discrete-time trajectory.
 
@@ -260,7 +156,7 @@ function SCvxSubproblemSolution(
     u::T_RealMatrix,
     p::T_RealVector,
     iter::T_Int,
-    pbm::SCvxProblem)::SCvxSubproblemSolution
+    pbm::SCPProblem)::SCvxSubproblemSolution
 
     # Parameters
     N = pbm.pars.N
@@ -320,7 +216,7 @@ Args:
 Returns:
     pbm: the problem structure ready for being solved by SCvx. =#
 function SCvxProblem(pars::SCvxParameters,
-                     traj::TrajectoryProblem)::SCvxProblem
+                     traj::TrajectoryProblem)::SCPProblem
 
     # Compute the common constant terms
     τ_grid = LinRange(0.0, 1.0, pars.N)
@@ -362,51 +258,11 @@ function SCvxProblem(pars::SCvxParameters,
         # Reject solution indicator
         (:rej, "rej", "%s", 5)])
 
-    consts = SCvxCommon(Δτ, τ_grid, E, scale, table)
+    consts = SCPCommon(Δτ, τ_grid, E, scale, table)
 
-    pbm = SCvxProblem(pars, traj, consts)
+    pbm = SCPProblem(pars, traj, consts)
 
     return pbm
-end
-
-#= Construct subproblem solution from a subproblem object.
-
-Expects that the subproblem argument is a solved subproblem (i.e. one to which
-numerical optimization has been applied).
-
-Args:
-    spbm: the subproblem structure.
-
-Returns:
-    sol: subproblem solution. =#
-function SCvxSubproblemSolution(spbm::SCvxSubproblem)::SCvxSubproblemSolution
-    # Extract the discrete-time trajectory
-    x = value.(spbm.x)
-    u = value.(spbm.u)
-    p = value.(spbm.p)
-
-    # Form the partly uninitialized subproblem
-    sol = SCvxSubproblemSolution(x, u, p, spbm.iter, spbm.scvx)
-
-    # Save the virtual control values and penalty terms
-    sol.vd = value.(spbm.vd)
-    sol.vs = value.(spbm.vs)
-    sol.vic = value.(spbm.vic)
-    sol.vtc = value.(spbm.vtc)
-    sol.P = value.(spbm.P)
-    sol.Pf = value.(spbm.Pf)
-
-    # Save the optimal cost values
-    sol.L_orig = value(spbm.L_orig)
-    sol.L_pen = value(spbm.L_pen)
-    sol.L = value(spbm.L)
-    _scvx__discretize!(sol, spbm.scvx)
-    _scvx__solution_cost!(sol, :nonlinear, spbm.scvx)
-
-    # Save the solution status
-    sol.status = termination_status(spbm.mdl)
-
-    return sol
 end
 
 #= Constructor for an empty convex optimization subproblem.
@@ -422,7 +278,7 @@ Args:
 
 Returns:
     spbm: the subproblem structure. =#
-function SCvxSubproblem(pbm::SCvxProblem,
+function SCvxSubproblem(pbm::SCPProblem,
                         iter::T_Int,
                         η::T_Real,
                         ref::Union{SCvxSubproblemSolution,
@@ -498,82 +354,44 @@ function SCvxSubproblem(pbm::SCvxProblem,
     return spbm
 end
 
-#= Convert subproblem solution to a final trajectory solution.
+#= Construct subproblem solution from a subproblem object.
 
-This is what the SCvx algorithm returns in the end to the user.
+Expects that the subproblem argument is a solved subproblem (i.e. one to which
+numerical optimization has been applied).
 
 Args:
-    history: SCvx iteration history.
+    spbm: the subproblem structure.
 
 Returns:
-    sol: the trajectory solution. =#
-function SCvxSolution(history::SCvxHistory)::SCvxSolution
+    sol: subproblem solution. =#
+function SCvxSubproblemSolution(spbm::SCvxSubproblem)::SCvxSubproblemSolution
+    # Extract the discrete-time trajectory
+    x = value.(spbm.x)
+    u = value.(spbm.u)
+    p = value.(spbm.p)
 
-    # Get the solution
-    last_spbm = history.subproblems[end]
-    last_sol = last_spbm.sol
+    # Form the partly uninitialized subproblem
+    sol = SCvxSubproblemSolution(x, u, p, spbm.iter, spbm.scvx)
 
-    # Extract relevant parameters
-    num_iters = last_spbm.iter
-    pbm = last_spbm.scvx
-    N = pbm.pars.N
-    Nsub = pbm.pars.Nsub
-    nx = pbm.traj.nx
-    nu = pbm.traj.nu
-    np = pbm.traj.np
-    τd = pbm.common.τ_grid
+    # Save the virtual control values and penalty terms
+    sol.vd = value.(spbm.vd)
+    sol.vs = value.(spbm.vs)
+    sol.vic = value.(spbm.vic)
+    sol.vtc = value.(spbm.vtc)
+    sol.P = value.(spbm.P)
+    sol.Pf = value.(spbm.Pf)
 
-    if _scvx__unsafe_solution(last_sol)
-        # SCvx failed :(
-        status = @sprintf "%s (%s)" SCVX_FAILED last_sol.status
-        xd = T_RealMatrix(undef, size(last_sol.xd))
-        ud = T_RealMatrix(undef, size(last_sol.ud))
-        p = T_RealVector(undef, size(last_sol.p))
-        xc = missing
-        uc = missing
-        L_orig = Inf
-        L_pen = Inf
-        L = Inf
-        J = Inf
-    else
-        # SCvx solved the problem!
-        status = @sprintf "%s" SCVX_SOLVED
+    # Save the optimal cost values
+    sol.L_orig = value(spbm.L_orig)
+    sol.L_pen = value(spbm.L_pen)
+    sol.L = value(spbm.L)
+    _scvx__discretize!(sol, spbm.scvx)
+    _scvx__solution_cost!(sol, :nonlinear, spbm.scvx)
 
-        xd = last_sol.xd
-        ud = last_sol.ud
-        p = last_sol.p
-
-        # >> Continuos-time trajectory <<
-        # Since within-interval integration using Nsub points worked, using
-        # twice as many this time around seems like a good heuristic
-        Nc = 2*Nsub*(N-1)
-        τc = T_RealVector(LinRange(0.0, 1.0, Nc))
-        uc = T_ContinuousTimeTrajectory(τd, ud, :linear)
-        F = (τ, x) -> pbm.traj.f(τ, x, sample(uc, τ), p)
-        xc_vals = rk4(F, @first(last_sol.xd), τc; full=true,
-                      actions=pbm.traj.integ_actions)
-        xc = T_ContinuousTimeTrajectory(τc, xc_vals, :linear)
-
-        L_orig = last_sol.L_orig
-        L_pen = last_sol.L_pen
-        L = last_sol.L
-        J = last_sol.J
-    end
-
-    sol = SCvxSolution(status, num_iters, τd, xd, ud, p, xc, uc,
-                       L_orig, L_pen, L, J)
+    # Save the solution status
+    sol.status = termination_status(spbm.mdl)
 
     return sol
-end
-
-#= Empty history.
-
-Returns:
-    history: history with no entries. =#
-function SCvxHistory()::SCvxHistory
-    subproblems = Vector{SCvxSubproblem}(undef, 0)
-    history = SCvxHistory(subproblems)
-    return history
 end
 
 # ..:: Public methods ::..
@@ -586,14 +404,14 @@ Args:
 Returns:
     sol: the SCvx solution structure.
     history: SCvx iteration data history. =#
-function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
-                                             SCvxHistory}
+function scvx_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution, Nothing},
+                                             SCPHistory}
     # ..:: Initialize ::..
 
     η = pbm.pars.η_init
     ref = _scvx__generate_initial_guess(pbm)
 
-    history = SCvxHistory()
+    history = SCPHistory()
 
     # ..:: Iterate ::..
 
@@ -608,7 +426,7 @@ function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
         _scvx__add_trust_region!(spbm)
         _scvx__add_cost!(spbm)
 
-        _scvx__save!(history, spbm)
+        _scp__save!(history, spbm)
 
         try
             # >> Solve the subproblem <<
@@ -616,7 +434,7 @@ function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
 
             # "Emergency exit" the SCvx loop if something bad happened
             # (e.g. numerical problems)
-            if _scvx__unsafe_solution(spbm)
+            if _scp__unsafe_solution(spbm)
                 _scvx__print_info(spbm)
                 break
             end
@@ -643,7 +461,7 @@ function scvx_solve(pbm::SCvxProblem)::Tuple{Union{SCvxSolution, Nothing},
     reset(pbm.common.table)
 
     # ..:: Save solution ::..
-    sol = SCvxSolution(history)
+    sol = SCPSolution(history)
 
     return sol, history
 end
@@ -661,7 +479,7 @@ Args:
 Returns:
     guess: the initial guess. =#
 function _scvx__generate_initial_guess(
-    pbm::SCvxProblem)::SCvxSubproblemSolution
+    pbm::SCPProblem)::SCvxSubproblemSolution
 
     # Construct the raw trajectory
     x, u, p = pbm.traj.guess(pbm.pars.N)
@@ -685,7 +503,7 @@ Args:
     ref: the reference trajectory for which the propagation is done.
     pbm: the SCvx problem definition. =#
 function _scvx__discretize!(ref::SCvxSubproblemSolution,
-                            pbm::SCvxProblem)::Nothing
+                            pbm::SCPProblem)::Nothing
     # Parameters
     nx = pbm.traj.nx
     nu = pbm.traj.nu
@@ -695,7 +513,7 @@ function _scvx__discretize!(ref::SCvxSubproblemSolution,
     _E = pbm.common.E
 
     # Initialization
-    idcs = SCvxDiscretizationIndices(pbm)
+    idcs = SCPDiscretizationIndices(pbm)
     V0 = zeros(idcs.length)
     V0[idcs.A] = vec(I(nx))
     ref.feas = true
@@ -1049,31 +867,6 @@ function _scvx__solve_subproblem!(spbm::SCvxSubproblem)::Nothing
     return nothing
 end
 
-#= Check if the subproblem optimization had issues.
-
-A solution is judged unsafe if the numerical optimizer exit code indicates that
-there were serious problems in solving the subproblem.
-
-Args:
-    sol: the subproblem or directly its solution.
-
-Returns:
-    unsafe: true if the subproblem solution process "failed". =#
-function _scvx__unsafe_solution(sol::Union{SCvxSubproblemSolution,
-                                           SCvxSubproblem})::T_Bool
-
-    # If the parent subproblem passed in, then get its solution
-    if typeof(sol)==SCvxSubproblem
-        sol = sol.sol
-    end
-
-    if !sol.unsafe
-        safe = sol.status==MOI.OPTIMAL || sol.status==MOI.ALMOST_OPTIMAL
-        sol.unsafe = !safe
-    end
-    return sol.unsafe
-end
-
 #= Check if stopping criterion is triggered.
 
 Args:
@@ -1170,7 +963,7 @@ function _scvx__print_info(spbm::SCvxSubproblem,
 
     if !isnothing(err)
         @printf "ERROR: %s, exiting\n" err.msg
-    elseif _scvx__unsafe_solution(sol)
+    elseif _scp__unsafe_solution(sol)
         @printf "ERROR: unsafe solution (%s), exiting\n" sol.status
     else
         # Complicated values
@@ -1214,16 +1007,6 @@ function _scvx__print_info(spbm::SCvxSubproblem,
     return nothing
 end
 
-#= Add a subproblem to SCvx history.
-
-Args:
-    hist: the history.
-    spbm: a subproblem structure. =#
-function _scvx__save!(hist::SCvxHistory, spbm::SCvxSubproblem)::Nothing
-    push!(hist.subproblems, spbm)
-    return nothing
-end
-
 #= Compute the scaling matrices given the problem definition.
 
 Args:
@@ -1234,7 +1017,7 @@ Returns:
     scale: the scaling structure. =#
 function _scvx__compute_scaling(
     pars::SCvxParameters,
-    traj::TrajectoryProblem)::SCvxScaling
+    traj::TrajectoryProblem)::SCPScaling
 
     # Parameters
     nx = traj.nx
@@ -1342,7 +1125,7 @@ function _scvx__compute_scaling(
     iSp = inv(Sp)
     cp = p_min-diag_Sp*intrvl_p[1]
 
-    scale = SCvxScaling(Sx, cx, Su, cu, Sp, cp, iSx, iSu, iSp)
+    scale = SCPScaling(Sx, cx, Su, cu, Sp, cp, iSx, iSu, iSp)
 
     return scale
 end
@@ -1362,8 +1145,8 @@ Returns:
 function _scvx__derivs(τ::T_Real,
                        V::T_RealVector,
                        k::T_Int,
-                       pbm::SCvxProblem,
-                       idcs::SCvxDiscretizationIndices,
+                       pbm::SCPProblem,
+                       idcs::SCPDiscretizationIndices,
                        ref::SCvxSubproblemSolution)::T_RealVector
     # Parameters
     nx = pbm.traj.nx
@@ -1379,10 +1162,10 @@ function _scvx__derivs(τ::T_Real,
     σ_p = (τ-τ_span[1])/(τ_span[2]-τ_span[1])
 
     # Compute the state time derivative and local linearization
-    f = pbm.traj.f(τ, x, u, p)
-    A = pbm.traj.A(τ, x, u, p)
-    B = pbm.traj.B(τ, x, u, p)
-    F = pbm.traj.F(τ, x, u, p)
+    f = pbm.traj.f(x, u, p)
+    A = pbm.traj.A(x, u, p)
+    B = pbm.traj.B(x, u, p)
+    F = pbm.traj.F(x, u, p)
     B_m = σ_m*B
     B_p = σ_p*B
     r = f-A*x-B*u-F*p
@@ -1418,7 +1201,7 @@ function _scvx__original_cost(
     x::T_OptiVarMatrix,
     u::T_OptiVarMatrix,
     p::T_OptiVarVector,
-    pbm::SCvxProblem)::T_Objective
+    pbm::SCPProblem)::T_Objective
 
     # Parameters
     N = pbm.pars.N
@@ -1453,7 +1236,7 @@ Returns:
 function _scvx__overall_cost(
     orig::T_Objective,
     pen::T_Objective,
-    pbm::SCvxProblem)::T_Objective
+    pbm::SCPProblem)::T_Objective
 
     # Parameters
     λ = pbm.pars.λ
@@ -1519,7 +1302,7 @@ Returns:
     pen: the nonlinear cost penalty term. =#
 function _scvx__actual_cost_penalty!(
     sol::SCvxSubproblemSolution,
-    pbm::SCvxProblem)::T_Real
+    pbm::SCPProblem)::T_Real
 
     # Values and parameters from the solution
     N = pbm.pars.N
@@ -1559,7 +1342,7 @@ Returns:
 function _scvx__solution_cost!(
     sol::SCvxSubproblemSolution,
     kind::Symbol,
-    pbm::SCvxProblem)::T_Real
+    pbm::SCPProblem)::T_Real
 
     if isnan(sol.L_orig)
         sol.L_orig = _scvx__original_cost(
@@ -1663,7 +1446,7 @@ Args:
 function _scvx__correct_convex!(
     x_ref::T_RealMatrix,
     u_ref::T_RealMatrix,
-    pbm::SCvxProblem)::Nothing
+    pbm::SCPProblem)::Nothing
 
     # Parameters
     N = pbm.pars.N
