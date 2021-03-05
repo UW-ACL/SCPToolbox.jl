@@ -19,13 +19,14 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 using LinearAlgebra
 using JuMP
 
-# Possible SCvx-specific solution statuses
-@enum(SCvxStatus,
-      SCVX_SOLVED,
-      SCVX_FAILED,
-      SCVX_EMPTY_VARIABLE,
-      SCVX_SCALING_FAILED,
-      SCVX_GUESS_PROJECTION_FAILED)
+# List of possible SCP statuses/errors
+@enum(SCPStatus,
+      SCP_SOLVED,
+      SCP_FAILED,
+      SCP_EMPTY_VARIABLE,
+      SCP_SCALING_FAILED,
+      SCP_GUESS_PROJECTION_FAILED,
+      SCP_BAD_ARGUMENT)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Basic types ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -55,8 +56,14 @@ __types_f(n) = Union{
     Array{GenericAffExpr{T_Real, VariableRef}, n}}
 const T_OptiVarVector = __types_f(1)
 const T_OptiVarMatrix = __types_f(2)
+const T_OptiVar = Union{T_Real,
+                        VariableRef,
+                        GenericAffExpr{T_Real, VariableRef},
+                        T_OptiVarVector,
+                        T_OptiVarMatrix}
 
-__types_f(n) = Array{ConstraintRef, n}
+const T_Constraint = ConstraintRef
+__types_f(n) = Array{T_Constraint, n}
 const T_ConstraintVector = __types_f(1)
 const T_ConstraintMatrix = __types_f(2)
 
@@ -66,7 +73,7 @@ const T_Objective = Union{Missing,
                           GenericAffExpr{T_Real, VariableRef},
                           GenericQuadExpr{T_Real, VariableRef}}
 
-const T_ExitStatus = Union{SCvxStatus, MOI.TerminationStatusCode}
+const T_ExitStatus = Union{SCPStatus, MOI.TerminationStatusCode}
 
 const T_Function = Union{Nothing, Function}
 const T_FunctionVector = Vector{T_Function}
@@ -294,6 +301,57 @@ struct T_Hyperrectangle
     end
 end
 
+#= Convex cone constraint.
+
+A conic constraint is of the form {z : z ∈ K}, where K is a convex cone.
+
+The supported cones are:
+    :nonpositiveorthant for constraints z<=0.
+    :normonecone        for constraints z=(t, x), norm(x, 1)<=t.
+    :secondordercone    for constraints z=(t, x), norm(x, 2)<=t.
+    :norminfinitycone   for constraints z=(t, x), norm(x, ∞)<=t. =#
+struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
+    z::T_OptiVar # The expression to be constraints in the cone.
+    K::T         # The cone set.
+
+    #= Basic constructor.
+
+    Args:
+        z: the vector to be constraint to lie within the cone.
+        kind: the cone type.
+
+    Returns:
+        constraint: the conic constraint. =#
+    function T_ConvexConeConstraint(z::T_OptiVar,
+                                    kind::T_Symbol)::T_ConvexConeConstraint
+        if !(kind in (:nonpositiveorthant,
+                      :normonecone,
+                      :secondordercone,
+                      :norminfinitycone))
+            err = SCPError(0, SCP_BAD_ARGUMENT, "Unsupported cone")
+            throw(err)
+        end
+
+        dim = length(z)
+
+        if kind==:nonpositiveorthant
+            K = MOI.Nonpositives(dim)
+        elseif kind==:normonecone
+            K = MOI.NormOneCone(dim)
+        elseif kind==:secondordercone
+            K = MOI.SecondOrderCone(dim)
+        elseif kind==:norminfinitycone
+            K = MOI.NormInfinityCone(dim)
+        end
+
+        constraint = new{typeof(K)}(z, K)
+
+        return constraint
+    end
+end
+
+const T_ConvexSet = Union{Nothing, Vector{T_ConvexConeConstraint}}
+
 #= Continuous-time trajectory data structure. =#
 struct T_ContinuousTimeTrajectory
     t::T_RealVector  # The trajectory time nodes
@@ -339,9 +397,9 @@ mutable struct T_Table
 end
 
 #= Error exception in SCvx algorithm. Hopefully it doesn't happen! =#
-struct SCvxError <: Exception
+struct SCPError <: Exception
     k::T_Int           # At what discrete time step the error occured
-    status::SCvxStatus # Error status code
+    status::SCPStatus  # Error status code
     msg::T_String      # Error message
 end
 

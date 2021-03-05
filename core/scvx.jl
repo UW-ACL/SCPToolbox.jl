@@ -31,7 +31,7 @@ include("scp.jl")
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Structure holding the SCvx algorithm parameters. =#
-struct SCvxParameters
+struct SCvxParameters <: SCPParameters
     N::T_Int          # Number of temporal grid nodes
     Nsub::T_Int       # Number of subinterval integration time nodes
     iter_max::T_Int   # Maximum number of iterations
@@ -53,10 +53,7 @@ struct SCvxParameters
     solver_opts::Dict{T_String, Any} # Numerical solver options
 end
 
-#= Subproblem solution.
-
-Structure which stores a solution obtained by solving the subproblem during an
-SCvx iteration. =#
+#= SCvx subproblem solution. =#
 mutable struct SCvxSubproblemSolution <: SCPSubproblemSolution
     iter::T_Int          # SCvx iteration number
     # >> Discrete-time rajectory <<
@@ -226,9 +223,6 @@ end
 
 #= Construct the SCvx problem definition.
 
-This internally also computes the scaling matrices used to improve subproblem
-numerics.
-
 Args:
     pars: SCvx algorithm parameters.
     traj: the underlying trajectory optimization problem.
@@ -237,12 +231,6 @@ Returns:
     pbm: the problem structure ready for being solved by SCvx. =#
 function SCvxProblem(pars::SCvxParameters,
                      traj::TrajectoryProblem)::SCPProblem
-
-    # Compute the common constant terms
-    τ_grid = LinRange(0.0, 1.0, pars.N)
-    Δτ = τ_grid[2]-τ_grid[1]
-    E = I(traj.nx)
-    scale = _scvx__compute_scaling(pars, traj)
 
     table = T_Table([
         # Iteration count
@@ -278,9 +266,7 @@ function SCvxProblem(pars::SCvxParameters,
         # Reject solution indicator
         (:rej, "rej", "%s", 5)])
 
-    consts = SCPCommon(Δτ, τ_grid, E, scale, table)
-
-    pbm = SCPProblem(pars, traj, consts)
+    pbm = SCPProblem(pars, traj, table)
 
     return pbm
 end
@@ -471,7 +457,7 @@ function scvx_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution, Nothing},
             # >> Update trust region <<
             ref, η = _scvx__update_trust_region!(spbm)
         catch e
-            isa(e, SCvxError) || rethrow(e)
+            isa(e, SCPError) || rethrow(e)
             _scvx__print_info(spbm, e)
             break
         end
@@ -537,7 +523,7 @@ function _scvx__discretize!(ref::SCvxSubproblemSolution,
     _E = pbm.common.E
 
     # Initialization
-    idcs = SCPDiscretizationIndices(pbm)
+    idcs = pbm.common.id
     V0 = zeros(idcs.length)
     V0[idcs.A] = vec(I(nx))
     ref.feas = true
@@ -549,7 +535,7 @@ function _scvx__discretize!(ref::SCvxSubproblemSolution,
 
         # Integrate
         f = (τ::T_Real, V::T_RealVector) ->
-            _scvx__derivs(τ, V, k, pbm, idcs, ref)
+            _scvx__derivs(τ, V, k, pbm, ref)
         τ_subgrid = T_RealVector(
             LinRange(pbm.common.τ_grid[k], pbm.common.τ_grid[k+1], Nsub))
         V = rk4(f, V0, τ_subgrid; actions=pbm.traj.integ_actions)
@@ -681,30 +667,34 @@ function _scvx__add_convex_constraints!(spbm::SCvxSubproblem)::Nothing
     u = spbm.u
     p = spbm.p
 
-    # Convex state constraints
-    for k = 1:N
-        X = traj_pbm.X!(@k(x), spbm.mdl)
-
-        if k==1
-            # Initialize associated variables
-            n_X = length(X)
-            spbm.pc_X = T_ConstraintMatrix(undef, n_X, N)
+    # ..:: Convex state constraints ::..
+    if !isnothing(traj_pbm.X)
+        for k = 1:N
+            xk_in_X = traj_pbm.X(@k(x))
+            if k==1
+                # Initialize associated variables
+                n_X = length(xk_in_X)
+                spbm.pc_X = T_ConstraintMatrix(undef, n_X, N)
+            end
+            @k(spbm.pc_X) = add_conic_constraints!(spbm.mdl, xk_in_X)
         end
-
-        @k(spbm.pc_X) = X
+    else
+        spbm.pc_X = T_ConstraintMatrix(undef, 0, N)
     end
 
-    # Convex input constraints
-    for k = 1:N
-        U = traj_pbm.U!(@k(u), spbm.mdl)
-
-        if k==1
-            # Initialize associated variables
-            n_U = length(U)
-            spbm.pc_U = T_ConstraintMatrix(undef, n_U, N)
+    # ..:: Convex input constraints ::..
+    if !isnothing(traj_pbm.U)
+        for k = 1:N
+            uk_in_U = traj_pbm.U(@k(u))
+            if k==1
+                # Initialize associated variables
+                n_U = length(uk_in_U)
+                spbm.pc_U = T_ConstraintMatrix(undef, n_U, N)
+            end
+            @k(spbm.pc_U) = add_conic_constraints!(spbm.mdl, uk_in_U)
         end
-
-        @k(spbm.pc_U) = U
+    else
+        spbm.pc_U = T_ConstraintMatrix(undef, 0, N)
     end
 
     return nothing
@@ -837,9 +827,9 @@ function _scvx__add_cost!(spbm::SCvxSubproblem)::Nothing
     vtc = spbm.vtc
 
     if isempty(vic) || isempty(vtc)
-        err = SCvxError(0, SCVX_EMPTY_VARIABLE,
-                        string("Uninitialized boundary condition",
-                               " virtual control"))
+        err = SCPError(0, SCP_EMPTY_VARIABLE,
+                       string("Uninitialized boundary condition",
+                              " virtual control"))
         throw(err)
     end
 
@@ -978,7 +968,7 @@ Args:
     spbm: the subproblem that was solved.
     err: an SCvx-specific error message. =#
 function _scvx__print_info(spbm::SCvxSubproblem,
-                           err::Union{Nothing, SCvxError}=nothing)::Nothing
+                           err::Union{Nothing, SCPError}=nothing)::Nothing
 
     # Convenience variables
     sol = spbm.sol
@@ -1031,129 +1021,6 @@ function _scvx__print_info(spbm::SCvxSubproblem,
     return nothing
 end
 
-#= Compute the scaling matrices given the problem definition.
-
-Args:
-    pars: the SCvx algorithm parameters.
-    traj: the trajectory problem defintion.
-
-Returns:
-    scale: the scaling structure. =#
-function _scvx__compute_scaling(
-    pars::SCvxParameters,
-    traj::TrajectoryProblem)::SCPScaling
-
-    # Parameters
-    nx = traj.nx
-    nu = traj.nu
-    np = traj.np
-    solver = pars.solver
-    solver_opts = pars.solver_opts
-    zero_intvl_tol = sqrt(eps())
-
-    # Map varaibles to these scaled intervals
-    intrvl_x = [0.0; 1.0]
-    intrvl_u = [0.0; 1.0]
-    intrvl_p = [0.0; 1.0]
-
-    # >> Compute bounding boxes for state and input <<
-
-    x_bbox = fill(1.0, nx, 2)
-    u_bbox = fill(1.0, nu, 2)
-    x_bbox[:, 1] .= 0.0
-    u_bbox[:, 1] .= 0.0
-
-    defs = [Dict(:dim => nx, :set => traj.X!,
-                 :bbox => x_bbox, :advice => :xrg),
-            Dict(:dim => nu, :set => traj.U!,
-                 :bbox => u_bbox, :advice => :urg)]
-
-    for def in defs
-        for j = 1:2 # 1:min, 2:max
-            for i = 1:def[:dim]
-                # Initialize JuMP model
-                mdl = Model()
-                set_optimizer(mdl, solver.Optimizer)
-                for (key,val) in solver_opts
-                    set_optimizer_attribute(mdl, key, val)
-                end
-                # Variables
-                var = @variable(mdl, [1:def[:dim]])
-                # Constraints
-                def[:set](var, mdl)
-                # Cost
-                set_objective_function(mdl, var[i])
-                set_objective_sense(mdl, (j==1) ? MOI.MIN_SENSE :
-                                    MOI.MAX_SENSE)
-                # Solve
-                optimize!(mdl)
-                # Record the solution
-                status = termination_status(mdl)
-                if status != MOI.DUAL_INFEASIBLE
-                    if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
-                        def[:bbox][i, j] = objective_value(mdl)
-                    else
-                        msg = "Solver failed during variable scaling (%s)"
-                        err = SCvxError(
-                            0, SCVX_SCALING_FAILED,
-                            @eval @sprintf($msg, $status))
-                    end
-                elseif !isnothing(getfield(traj, def[:advice])[i])
-                    # Take user scaling advice
-                    def[:bbox][i, j] = getfield(traj, def[:advice])[i][j]
-                end
-            end
-        end
-    end
-
-    # >> Compute bounding box for parameters <<
-
-    p_bbox = fill(1.0, np, 2)
-    p_bbox[:, 1] .= 0.0
-
-    for j = 1:2 # 1:min, 2:max
-        for i = 1:np
-            if !isnothing(traj.prg[i])
-                # Take user scaling advice
-                p_bbox[i, j] = traj.prg[i][j]
-            end
-        end
-    end
-
-    # >> Compute scaling matrices and offset vectors <<
-    wdth_x = intrvl_x[2]-intrvl_x[1]
-    wdth_u = intrvl_u[2]-intrvl_u[1]
-    wdth_p = intrvl_p[2]-intrvl_p[1]
-
-    # State scaling terms
-    x_min, x_max = x_bbox[:, 1], x_bbox[:, 2]
-    diag_Sx = (x_max-x_min)/wdth_x
-    diag_Sx[diag_Sx .< zero_intvl_tol] .= 1.0
-    Sx = Diagonal(diag_Sx)
-    iSx = inv(Sx)
-    cx = x_min-diag_Sx*intrvl_x[1]
-
-    # Input scaling terms
-    u_min, u_max = u_bbox[:, 1], u_bbox[:, 2]
-    diag_Su = (u_max-u_min)/wdth_u
-    diag_Su[diag_Su .< zero_intvl_tol] .= 1.0
-    Su = Diagonal(diag_Su)
-    iSu = inv(Su)
-    cu = u_min-diag_Su*intrvl_u[1]
-
-    # Parameter scaling terms
-    p_min, p_max = p_bbox[:, 1], p_bbox[:, 2]
-    diag_Sp = (p_max-p_min)/wdth_p
-    diag_Sp[diag_Sp .< zero_intvl_tol] .= 1.0
-    Sp = Diagonal(diag_Sp)
-    iSp = inv(Sp)
-    cp = p_min-diag_Sp*intrvl_p[1]
-
-    scale = SCPScaling(Sx, cx, Su, cu, Sp, cp, iSx, iSu, iSp)
-
-    return scale
-end
-
 #= Compute concatenanted time derivative vector for dynamics discretization.
 
 Args:
@@ -1170,7 +1037,6 @@ function _scvx__derivs(τ::T_Real,
                        V::T_RealVector,
                        k::T_Int,
                        pbm::SCPProblem,
-                       idcs::SCPDiscretizationIndices,
                        ref::SCvxSubproblemSolution)::T_RealVector
     # Parameters
     nx = pbm.traj.nx
@@ -1178,6 +1044,7 @@ function _scvx__derivs(τ::T_Real,
     τ_span = @k(pbm.common.τ_grid, k, k+1)
 
     # Get current values
+    idcs = pbm.common.id
     x = V[idcs.x]
     u = linterp(τ, @k(ref.ud, k, k+1), τ_span)
     p = ref.p
@@ -1234,12 +1101,12 @@ function _scvx__original_cost(
 
     # Terminal cost
     xf = @last(x)
-    J_term = pbm.traj.φ(xf, p)
+    J_term = isnothing(pbm.traj.φ) ? 0.0 : pbm.traj.φ(xf, p)
 
     # Integrated running cost
     J_run = Vector{T_Objective}(undef, N)
     for k = 1:N
-        @k(J_run) = pbm.traj.Γ(@k(x), @k(u), p)
+        @k(J_run) = isnothing(pbm.traj.Γ) ? 0.0 : pbm.traj.Γ(@k(x), @k(u), p)
     end
     integ_J_run = trapz(J_run, τ_grid)
 
@@ -1453,7 +1320,7 @@ Args:
     sol: subproblem solution.
     err: the SCvx error that occurred. =#
 function _scvx__mark_unsafe!(sol::SCvxSubproblemSolution,
-                             err::SCvxError)::Nothing
+                             err::SCPError)::Nothing
     sol.status = err.status
     sol.unsafe = true
     return nothing
@@ -1516,8 +1383,8 @@ function _scvx__correct_convex!(
     else
         msg = string("Solver failed to find the closest initial guess ",
                      "that satisfies the convex constraints (%s)")
-        err = SCvxError(0, SCVX_GUESS_PROJECTION_FAILED,
-                        @eval @sprintf($msg, $status))
+        err = SCPError(0, SCP_GUESS_PROJECTION_FAILED,
+                       @eval @sprintf($msg, $status))
         throw(err)
     end
 

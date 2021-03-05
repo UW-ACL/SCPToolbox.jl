@@ -21,9 +21,11 @@ using LaTeXStrings
 using Colors
 
 include("../utils/types.jl")
-include("../core/scvx.jl")
+include("../core/scp.jl")
 
-# ..:: Data structures ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Free-flyer vehicle parameters. =#
 struct FreeFlyerParameters
@@ -74,7 +76,9 @@ struct FreeFlyerProblem
     traj::FreeFlyerTrajectoryParameters # The trajectory
 end
 
-# ..:: Constructors ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Constructor for the environment.
 
@@ -96,7 +100,9 @@ function FreeFlyerEnvironmentParameters(
     return env
 end
 
-# ..:: Public methods ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Plot the trajectory evolution through SCvx iterations.
 
@@ -104,7 +110,7 @@ Args:
     mdl: the free-flyer problem parameters.
     history: SCvx iteration data history. =#
 function plot_trajectory_history(mdl::FreeFlyerProblem,
-                                 history::SCvxHistory)::Nothing
+                                 history::SCPHistory)::Nothing
 
     # Common values
     num_iter = length(history.subproblems)
@@ -185,7 +191,7 @@ Args:
     mdl: the free-flyer problem parameters.
     sol: the trajectory solution output by SCvx. =#
 function plot_final_trajectory(mdl::FreeFlyerProblem,
-                               sol::SCvxSolution)::Nothing
+                               sol::SCPSolution)::Nothing
 
     # Common values
     cmap = cgrad(:thermal; rev = true)
@@ -296,7 +302,7 @@ Args:
     mdl: the free-flyer problem parameters.
     sol: the trajectory solution output by SCvx. =#
 function plot_timeseries(mdl::FreeFlyerProblem,
-                         sol::SCvxSolution)::Nothing
+                         sol::SCPSolution)::Nothing
 
     # Common values
     veh = mdl.vehicle
@@ -417,7 +423,7 @@ Args:
     mdl: the free-flyer problem parameters.
     history: SCvx iteration data history. =#
 function plot_convergence(mdl::FreeFlyerProblem, #nowarn
-                          history::SCvxHistory)::Nothing
+                          history::SCPHistory)::Nothing
 
     # Common values
     cmap = cgrad(:thermal; rev = true)
@@ -468,7 +474,7 @@ Args:
     mdl: the free-flyer problem parameters.
     sol: the trajectory solution output by SCvx. =#
 function plot_obstacle_constraints(mdl::FreeFlyerProblem,
-                                   sol::SCvxSolution)::Nothing
+                                   sol::SCPSolution)::Nothing
 
     # Common values
     veh = mdl.vehicle

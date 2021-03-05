@@ -17,6 +17,7 @@ You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 using LinearAlgebra
+using JuMP
 using Printf
 using Plots
 
@@ -103,6 +104,43 @@ end
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+#= Add a conic constraint to the optimization problem.
+
+Args:
+    pbm: the optimization problem structure.
+    cone: the conic constraint structure.
+
+Returns:
+    constraint: the conic constraint reference. =#
+function add_conic_constraint!(
+    pbm::Model, cone::T_ConvexConeConstraint)::T_Constraint
+
+    constraint = @constraint(pbm, cone.z in cone.K)
+
+    return constraint
+end
+
+#= Add several conic constraints to the optimization problem.
+
+Args:
+    pbm: the optimization problem structure.
+    cones: an array of conic constraint structures.
+
+Returns:
+    constraints: the conic constraint references. =#
+function add_conic_constraints!(
+    pbm::Model,
+    cones::Vector{T_ConvexConeConstraint})::T_ConstraintVector
+
+    constraints = T_ConstraintVector(undef, 0)
+
+    for cone in cones
+        push!(constraints, add_conic_constraint!(pbm, cone))
+    end
+
+    return constraints
+end
 
 #= Linear interpolation on a grid.
 

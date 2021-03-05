@@ -38,18 +38,27 @@ mutable struct TrajectoryProblem
     # >> Numerical integration <<
     integ_actions::T_SpecialIntegrationActions # Special variable treatment
     # >> Initial guess <<
-    guess::T_Function # The initial trajectory guess
+    guess::T_Function # (SCvx/GuSTO) The initial trajectory guess
     # >> Cost function <<
-    φ::T_Function     # Terminal cost
-    Γ::T_Function     # Running cost
+    φ::T_Function     # (SCvx/GuSTO) Terminal cost
+    Γ::T_Function     # (SCvx) Running cost
+    S::T_Function     # (GuSTO) Running cost quadratic input penalty
+    ∇pS::T_Function   # (GuSTO) Jacobian of S wrt parameter vector
+    ℓ::T_Function     # (GuSTO) Running cost input-affine penalty
+    ∇xℓ::T_Function   # (GuSTO) Jacobian of ℓ wrt state
+    ∇pℓ::T_Function   # (GuSTO) Jacobian of ℓ wrt parameter
+    g::T_Function     # (GuSTO) Running cost additive penalty
+    ∇xg::T_Function   # (GuSTO) Jacobian of g wrt state
+    ∇pg::T_Function   # (GuSTO) Jacobian of g wrt parameter
+    g_cvx::T_Bool     # (GuSTO) Indicator if g is convex
     # >> Dynamics <<
     f::T_Function     # State time derivative
     A::T_Function     # Jacobian df/dx
     B::T_Function     # Jacobian df/du
     F::T_Function     # Jacobian df/dp
     # >> Constraints <<
-    X!::T_Function    # Vector of convex state constraints
-    U!::T_Function    # Vector of convex input constraints
+    X::T_ConvexSet    # Convex state constraints
+    U::T_ConvexSet    # Convex input constraints
     s::T_Function     # Nonconvex inequality constraint function
     C::T_Function     # Jacobian ds/dx
     D::T_Function     # Jacobian ds/du
@@ -88,14 +97,23 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     guess = (N) -> (T_RealMatrix(undef, 0, 0),
                     T_RealMatrix(undef, 0, 0),
                     T_RealVector(undef, 0))
-    φ = (x, p) -> 0.0
-    Γ = (x, u, p) -> 0.0
+    φ = nothing
+    Γ = nothing
+    S = nothing
+    ∇pS = nothing
+    ℓ = nothing
+    ∇xℓ = nothing
+    ∇pℓ = nothing
+    g = nothing
+    ∇xg = nothing
+    ∇pg = nothing
+    g_cvx = true
     f = (τ, x, u, p) -> T_RealVector(undef, 0)
     A = (τ, x, u, p) -> T_RealMatrix(undef, 0, 0)
     B = (τ, x, u, p) -> T_RealMatrix(undef, 0, 0)
     F = (τ, x, u, p) -> T_RealMatrix(undef, 0, 0)
-    X! = (x, mdl) -> T_ConstraintVector(undef, 0)
-    U! = (x, mdl) -> T_ConstraintVector(undef, 0)
+    X = nothing
+    U = nothing
     s = (x, u, p) -> T_RealVector(undef, 0)
     C = (x, u, p) -> T_RealMatrix(undef, 0, 0)
     D = (x, u, p) -> T_RealMatrix(undef, 0, 0)
@@ -108,8 +126,9 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     Kf = (x, p) -> T_RealMatrix(undef, 0, 0)
 
     pbm = TrajectoryProblem(nx, nu, np, xrg, urg, prg, propag_actions, guess,
-                            φ, Γ, f, A, B, F, X!, U!, s, C, D, G, gic, H0,
-                            K0, gtc, Hf, Kf, mdl)
+                            φ, Γ, S, ∇pS, ℓ, ∇xℓ, ∇pℓ, g, ∇xg, ∇pg, g_cvx, f,
+                            A, B, F, X, U, s, C, D, G, gic, H0, K0, gtc, Hf,
+                            Kf, mdl)
 
     return pbm
 end
@@ -201,7 +220,7 @@ function problem_set_guess!(pbm::TrajectoryProblem,
     return nothing
 end
 
-#= Define the cost function.
+#= Define the cost function (SCvx variant).
 
 Function signature: φ(x, p, pbm), where:
   - x (T_OptiVarVector): the final state.
@@ -216,21 +235,82 @@ Function signature: Γ(x, u, p, pbm), where:
 
 Both functions must return a real number.
 
-When you pass "nothing" as the argument, an identically zero function is used
-in its place.
+When you pass "nothing" as the argument, this term will be interpreted as zero
+in the optimization problem.
 
 Args:
     pbm: the trajectory problem structure.
-    φ: the terminal cost.
-    Γ: the running cost. =#
-function problem_set_cost!(pbm::TrajectoryProblem,
-                           φ::T_Function,
-                           Γ::T_Function)::Nothing
-    if !isnothing(φ)
-        pbm.φ = (x, p) -> φ(x, p, pbm)
-    end
-    if !isnothing(Γ)
-        pbm.Γ = (x, u, p) -> Γ(x, u, p, pbm)
+    φ: (optional) the terminal cost.
+    Γ: (optional) the running cost. =#
+function problem_set_cost!(pbm::TrajectoryProblem;
+                           φ::T_Function=nothing,
+                           Γ::T_Function=nothing)::Nothing
+    pbm.φ = !isnothing(φ) ? (x, p) -> φ(x, p, pbm) : nothing
+    pbm.Γ = !isnothing(Γ) ? (x, u, p) -> Γ(x, u, p, pbm) : nothing
+    return nothing
+end
+
+#= Define the cost function (GuSTO variant).
+
+The running cost is given by:
+
+    u'*S(p)*u+u'*ℓ(x, p)+g(x, p).
+
+Function signatures: φ(x, p, pbm),
+                     S(p, pbm),
+                     ∇pS(p, pbm),
+                     ℓ(x, p, pbm),
+                     ∇xℓ(x, p, pbm),
+                     ∇pℓ(x, p, pbm),
+                     g(x, p, pbm),
+                     ∇xg(x, p, pbm),
+                     ∇pg(x, p, pbm), where
+  - x (T_OptiVarVector): the current state.
+  - p (T_OptiVarVector): the parameter vector.
+  - pbm (TrajectoryProblem): the trajectory problem structure.
+
+The function S must return a positive-semidefinite R^{nu x nu} matrix; the
+function ∇pS must return an np-element array of R^{nu x nu} matrices where the
+i-th matrix represents the Jacobian of S with respect to the i-th parameter;
+the functions φ, ℓ and g must return a real number; the functions ∇xℓ and ∇xg
+must return an R^nx vector; and the functions ∇pℓ and ∇pg must return an R^np
+vector.
+
+When you pass "nothing" as the argument, this term will be interpreted as zero
+in the optimization problem.
+
+Args:
+    pbm: the trajectory problem structure.
+    φ: (optional) the terminal cost.
+    S: (optional) the input quadratic penalty.
+    ∇pS: (optional) the input penalty quadratic form Jacobian wrt state.
+    ℓ: (optional) the input-affine penalty function.
+    ∇xℓ: (optional) the input-affine penalty function Jacobian wrt state.
+    ∇pℓ: (optional) the input-affine penalty function Jacobian wrt parameter.
+    g: (optional) the additive penalty function.
+    ∇xg: (optional) the additive penalty function Jacobian wrt state.
+    ∇pg: (optional) the additive penalty function Jacobian wrt parameter. =#
+function problem_set_cost!(pbm::TrajectoryProblem;
+                           φ::T_Function=nothing,
+                           S::T_Function=nothing,
+                           ∇pS::T_Function=nothing,
+                           ℓ::T_Function=nothing,
+                           ∇xℓ::T_Function=nothing,
+                           ∇pℓ::T_Function=nothing,
+                           g::T_Function=nothing,
+                           ∇xg::T_Function=nothing,
+                           ∇pg::T_Function=nothing)::Nothing
+    pbm.φ = !isnothing(φ) ? (x, p) -> φ(x, p, pbm) : nothing
+    pbm.S = !isnothing(S) ? (p) -> S(p, pbm) : nothing
+    pbm.∇pS = !isnothing(∇pS) ? (p) -> ∇pS(p, pbm) : nothing
+    pbm.ℓ = !isnothing(ℓ) ? (x, p) -> ℓ(x, p, pbm) : nothing
+    pbm.∇xℓ = !isnothing(∇xℓ) ? (x, p) -> ∇xℓ(x, p, pbm) : nothing
+    pbm.∇pℓ = !isnothing(∇pℓ) ? (x, p) -> ∇pℓ(x, p, pbm) : nothing
+    pbm.g = !isnothing(g) ? (x, p) -> g(x, p, pbm) : nothing
+    pbm.∇xg = !isnothing(∇xg) ? (x, p) -> ∇xg(x, p, pbm) : nothing
+    pbm.∇pg = !isnothing(∇pg) ? (x, p) -> ∇pg(x, p, pbm) : nothing
+    if !isnothing(∇xg) || !isnothing(∇pg)
+        pbm.g_cvx = false
     end
     return nothing
 end
@@ -266,37 +346,37 @@ end
 
 #= Define the convex state constraint set.
 
-Function signature: X!(x, mdl, pbm), where:
+Function signature: X(x, pbm), where:
   - x (T_OptiVarVector): the state vector.
-  - mdl (Model): the JuMP optimization model object.
   - pbm (TrajectoryProblem): the trajectory problem structure.
 
-The function must return a T_ConstraintVector.
+The function must return an Vector{T_ConvexConeConstraint}.
 
 Args:
     pbm: the trajectory problem structure.
-    X!: the constraints defining the convex state set. =#
+    X: the conic constraints whose intersection defines the convex
+       state set. =#
 function problem_set_X!(pbm::TrajectoryProblem,
-                        X!::T_Function)::Nothing
-    pbm.X! = (x, mdl) -> X!(x, mdl, pbm)
+                        X::T_Function)::Nothing
+    pbm.X = (x) -> X(x, pbm)
     return nothing
 end
 
 #= Define the convex input constraint set.
 
-Function signature: U!(u, mdl, pbm), where:
+Function signature: U(u, pbm), where:
   - u (T_OptiVarVector): the input vector.
-  - mdl (Model): the JuMP optimization model object.
   - pbm (TrajectoryProblem): the trajectory problem structure.
 
-The function must return a T_ContraintVector.
+The function must return an Vector{T_ConvexConeConstraint}.
 
 Args:
     pbm: the trajectory problem structure.
-    U!: the constraints defining the convex input set. =#
+    U: the conic constraints whose intersection defines the convex
+       input set. =#
 function problem_set_U!(pbm::TrajectoryProblem,
-                        U!::T_Function)::Nothing
-    pbm.U! = (u, mdl) -> U!(u, mdl, pbm)
+                        U::T_Function)::Nothing
+    pbm.U = (u, mdl) -> U(u, pbm)
     return nothing
 end
 

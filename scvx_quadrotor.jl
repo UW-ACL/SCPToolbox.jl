@@ -1,4 +1,4 @@
-#= Quadrotor obstacle avoidance example.
+#= Quadrotor obstacle avoidance example using SCvx.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
@@ -17,89 +17,33 @@ You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 using LinearAlgebra
-using JuMP
+using ECOS
 using Plots
 
-include("utils/helper.jl")
+include("models/quadrotor.jl")
 include("core/problem.jl")
 include("core/scvx.jl")
-include("models/quadrotor.jl")
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Trajectory problem data ::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-# >> Quadrotor <<
-id_r = 1:3
-id_v = 4:6
-id_xt = 7
-id_u = 1:3
-id_σ = 4
-id_pt = 1
-u_max = 23.2
-u_min = 0.6
-tilt_max = deg2rad(60)
-quad = QuadrotorParameters(id_r, id_v, id_xt, id_u, id_σ,
-                           id_pt, u_max, u_min, tilt_max)
-
-# >> Environment <<
-g = 9.81
-obs = [T_Ellipsoid(diagm([2.0; 2.0; 0.0]), [1.0; 2.0; 0.0]),
-       T_Ellipsoid(diagm([1.5; 1.5; 0.0]), [2.0; 5.0; 0.0])]
-env = QuadrotorEnvironmentParameters(g, obs)
-
-# >> Trajectory <<
-r0 = zeros(3)
-rf = zeros(3)
-rf[1:2] = [2.5; 6.0]
-v0 = zeros(3)
-vf = zeros(3)
-tf_min = 0.0
-tf_max = 2.5
-traj = QuadrotorTrajectoryParameters(r0, rf, v0, vf, tf_min, tf_max)
-
-mdl = QuadrotorProblem(quad, env, traj)
+include("utils/helper.jl")
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
+mdl = QuadrotorProblem()
 pbm = TrajectoryProblem(mdl)
 
 # Variable dimensions
 problem_set_dims!(pbm, 7, 4, 1)
 
 # Initial trajectory guess
-problem_set_guess!(pbm,
-                   (N, pbm) -> begin
-                   veh = pbm.mdl.vehicle
-                   traj = pbm.mdl.traj
-                   g = pbm.mdl.env.g
-                   # Parameter guess
-                   p = zeros(pbm.np)
-                   p[veh.id_pt] = 0.5*(traj.tf_min+traj.tf_max)
-                   # State guess
-                   x0 = zeros(pbm.nx)
-                   xf = zeros(pbm.nx)
-                   x0[veh.id_r] = traj.r0
-                   xf[veh.id_r] = traj.rf
-                   x0[veh.id_v] = traj.v0
-                   xf[veh.id_v] = traj.vf
-                   x0[veh.id_xt] = p[veh.id_pt]
-                   xf[veh.id_xt] = p[veh.id_pt]
-                   x = straightline_interpolate(x0, xf, N)
-                   # Input guess
-                   hover = [-g; norm(g)]
-                   u = straightline_interpolate(hover, hover, N)
-                   return x, u, p
+problem_set_guess!(pbm, (N, pbm) -> begin
+                   return quadrotor_initial_guess(N, pbm)
                    end)
 
 # Cost to be minimized
-problem_set_cost!(pbm,
-                  # Terminal cost
-                  nothing,
+problem_set_cost!(pbm;
                   # Running cost
-                  (x, u, p, pbm) -> begin
+                  Γ = (x, u, p, pbm) -> begin
                   σ = u[pbm.mdl.vehicle.id_σ]
                   return σ^2
                   end)
@@ -147,24 +91,25 @@ problem_set_dynamics!(pbm,
                       end)
 
 # Convex path constraints on the state
-problem_set_X!(pbm, (x, mdl, pbm) -> begin
+problem_set_X!(pbm, (x, pbm) -> begin
                traj = pbm.mdl.traj
                veh = pbm.mdl.vehicle
-               X = [@constraint(mdl,
-                                traj.tf_min <= x[veh.id_xt] <= traj.tf_max)]
+               C = T_ConvexConeConstraint
+               X = [C(x[veh.id_xt]-traj.tf_max, :nonpositiveorthant),
+                    C(traj.tf_min-x[veh.id_xt], :nonpositiveorthant)]
                return X
                end)
 
 # Convex path constraints on the input
-problem_set_U!(pbm, (u, mdl, pbm) -> begin
+problem_set_U!(pbm, (u, pbm) -> begin
                veh = pbm.mdl.vehicle
                uu = u[veh.id_u]
                σ = u[veh.id_σ]
-               U = [@constraint(mdl, veh.u_min <= σ);
-                    @constraint(mdl, σ <= veh.u_max);
-                    @constraint(mdl, vcat(σ, uu) in
-                                MOI.SecondOrderCone(pbm.nu));
-                    @constraint(mdl, σ*cos(veh.tilt_max) <= uu[3])]
+               C = T_ConvexConeConstraint
+               U = [C(veh.u_min-σ, :nonpositiveorthant),
+                    C(σ-veh.u_max, :nonpositiveorthant),
+                    C(vcat(σ, uu), :secondordercone),
+                    C(σ*cos(veh.tilt_max)-uu[3], :nonpositiveorthant)]
                return U
                end)
 

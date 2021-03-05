@@ -20,10 +20,12 @@ using Plots
 using LaTeXStrings
 
 include("../utils/types.jl")
-include("../utils/helper.jl")
+include("../core/problem.jl")
 include("../core/scp.jl")
 
-# ..:: Data structures ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Quadrotor vehicle parameters. =#
 struct QuadrotorParameters
@@ -62,7 +64,9 @@ struct QuadrotorProblem
     traj::QuadrotorTrajectoryParameters # The trajectory
 end
 
-# ..:: Constructors ::..
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #= Constructor for the environment.
 
@@ -86,7 +90,91 @@ function QuadrotorEnvironmentParameters(
     return env
 end
 
-# ..:: Public methods ::..
+#= Constructor the quadrotor problem.
+
+Returns:
+    mdl: the quadrotor problem. =#
+function QuadrotorProblem()::QuadrotorProblem
+
+    # >> Quadrotor <<
+    id_r = 1:3
+    id_v = 4:6
+    id_xt = 7
+    id_u = 1:3
+    id_σ = 4
+    id_pt = 1
+    u_max = 23.2
+    u_min = 0.6
+    tilt_max = deg2rad(60)
+    quad = QuadrotorParameters(id_r, id_v, id_xt, id_u, id_σ,
+                               id_pt, u_max, u_min, tilt_max)
+
+    # >> Environment <<
+    g = 9.81
+    obs = [T_Ellipsoid(diagm([2.0; 2.0; 0.0]), [1.0; 2.0; 0.0]),
+           T_Ellipsoid(diagm([1.5; 1.5; 0.0]), [2.0; 5.0; 0.0])]
+    env = QuadrotorEnvironmentParameters(g, obs)
+
+    # >> Trajectory <<
+    r0 = zeros(3)
+    rf = zeros(3)
+    rf[1:2] = [2.5; 6.0]
+    v0 = zeros(3)
+    vf = zeros(3)
+    tf_min = 0.0
+    tf_max = 2.5
+    traj = QuadrotorTrajectoryParameters(r0, rf, v0, vf, tf_min, tf_max)
+
+    mdl = QuadrotorProblem(quad, env, traj)
+
+    return mdl
+end
+
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+#= Compute the initial guess for a discrete-time trajectory.
+
+Use straight-line interpolation and a thrust that opposes gravity ("hover").
+
+Args:
+    N: the number of temporal grid nodes.
+    pbm: the trajectory problem definition.
+
+Returns:
+    x: the disrete-time state trajectory guess.
+    u: the disrete-time input trajectory guess.
+    p: the parameter vector guess. =#
+function quadrotor_initial_guess(
+    N::T_Int, pbm::TrajectoryProblem)::Tuple{T_RealMatrix,
+                                             T_RealMatrix,
+                                             T_RealVector}
+    veh = pbm.mdl.vehicle
+    traj = pbm.mdl.traj
+    g = pbm.mdl.env.g
+
+    # Parameter guess
+    p = zeros(pbm.np)
+    p[veh.id_pt] = 0.5*(traj.tf_min+traj.tf_max)
+
+    # State guess
+    x0 = zeros(pbm.nx)
+    xf = zeros(pbm.nx)
+    x0[veh.id_r] = traj.r0
+    xf[veh.id_r] = traj.rf
+    x0[veh.id_v] = traj.v0
+    xf[veh.id_v] = traj.vf
+    x0[veh.id_xt] = p[veh.id_pt]
+    xf[veh.id_xt] = p[veh.id_pt]
+    x = straightline_interpolate(x0, xf, N)
+
+    # Input guess
+    hover = [-g; norm(g)]
+    u = straightline_interpolate(hover, hover, N)
+
+    return x, u, p
+end
 
 #= Plot the trajectory evolution through SCvx iterations.
 

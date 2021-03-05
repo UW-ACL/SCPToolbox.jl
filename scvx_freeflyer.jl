@@ -1,4 +1,4 @@
-#= 6-Degree of Freedom free-flyer example.
+#= 6-Degree of Freedom free-flyer example using SCvx.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),

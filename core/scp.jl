@@ -26,6 +26,7 @@ include("problem.jl")
 # :: Abstract types :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
+abstract type SCPParameters end
 abstract type SCPSubproblem end
 abstract type SCPSubproblemSolution end
 
@@ -69,11 +70,9 @@ struct SCPCommon
     # >> Discrete-time grid <<
     Δτ::T_Real           # Discrete time step
     τ_grid::T_RealVector # Grid of scaled timed on the [0,1] interval
-    # >> Virtual control <<
     E::T_RealMatrix      # Continuous-time matrix for dynamics virtual control
-    # >> Scaling <<
     scale::SCPScaling    # Variable scaling
-    # >> Iteration info <<
+    id::SCPDiscretizationIndices # Convenience indices during propagation
     table::T_Table       # Iteration info table (printout to REPL)
 end
 
@@ -115,28 +114,60 @@ end
 #= Indexing arrays from problem definition.
 
 Args:
-    pbm: the SCP problem definition.
+    traj: the trajectory problem definition.
+    E: the dynamics virtual control coefficient matrix.
 
 Returns:
     idcs: the indexing array structure. =#
 function SCPDiscretizationIndices(
-    pbm::T)::SCPDiscretizationIndices where {T<:SCPProblem}
+    traj::TrajectoryProblem,
+    E::T_RealMatrix)::SCPDiscretizationIndices
 
-    nx = pbm.traj.nx
-    nu = pbm.traj.nu
-    np = pbm.traj.np
+    nx = traj.nx
+    nu = traj.nu
+    np = traj.np
     id_x  = (1:nx)
     id_A  = id_x[end].+(1:nx*nx)
     id_Bm = id_A[end].+(1:nx*nu)
     id_Bp = id_Bm[end].+(1:nx*nu)
     id_S  = id_Bp[end].+(1:nx*np)
     id_r  = id_S[end].+(1:nx)
-    id_E  = id_r[end].+(1:length(pbm.common.E))
+    id_E  = id_r[end].+(1:length(E))
     id_sz = length([id_x; id_A; id_Bm; id_Bp; id_S; id_r; id_E])
     idcs = SCPDiscretizationIndices(id_x, id_A, id_Bm, id_Bp, id_S,
                                     id_r, id_E, id_sz)
 
     return idcs
+end
+
+#= Construct the SCP problem definition.
+
+This internally also computes the scaling matrices used to improve subproblem
+numerics.
+
+Args:
+    pars: GuSTO algorithm parameters.
+    traj: the underlying trajectory optimization problem.
+    table: the iteration progress table.
+
+Returns:
+    pbm: the problem structure ready for being solved by GuSTO. =#
+function SCPProblem(
+    pars::T,
+    traj::TrajectoryProblem,
+    table::T_Table)::SCPProblem where {T<:SCPParameters}
+
+    # Compute the common constant terms
+    τ_grid = LinRange(0.0, 1.0, pars.N)
+    Δτ = τ_grid[2]-τ_grid[1]
+    E = T_RealMatrix(I(traj.nx))
+    scale = _scp__compute_scaling(pars, traj)
+    idcs = SCPDiscretizationIndices(traj, E)
+    consts = SCPCommon(Δτ, τ_grid, E, scale, idcs, table)
+
+    pbm = SCPProblem(pars, traj, consts)
+
+    return pbm
 end
 
 #= Convert subproblem solution to a final trajectory solution.
@@ -166,7 +197,7 @@ function SCPSolution(history::SCPHistory)::SCPSolution
 
     if _scp__unsafe_solution(last_sol)
         # SCvx failed :(
-        status = @sprintf "%s (%s)" SCVX_FAILED last_sol.status
+        status = @sprintf "%s (%s)" SCP_FAILED last_sol.status
         xd = T_RealMatrix(undef, size(last_sol.xd))
         ud = T_RealMatrix(undef, size(last_sol.ud))
         p = T_RealVector(undef, size(last_sol.p))
@@ -175,7 +206,7 @@ function SCPSolution(history::SCPHistory)::SCPSolution
         cost = Inf
     else
         # SCvx solved the problem!
-        status = @sprintf "%s" SCVX_SOLVED
+        status = @sprintf "%s" SCP_SOLVED
 
         xd = last_sol.xd
         ud = last_sol.ud
@@ -213,6 +244,130 @@ end
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+#= Compute the scaling matrices given the problem definition.
+
+Args:
+    pars: the SCP algorithm parameters.
+    traj: the trajectory problem definition.
+
+Returns:
+    scale: the scaling structure. =#
+function _scp__compute_scaling(
+    pars::T,
+    traj::TrajectoryProblem)::SCPScaling where {T<:SCPParameters}
+
+    # Parameters
+    nx = traj.nx
+    nu = traj.nu
+    np = traj.np
+    solver = pars.solver
+    solver_opts = pars.solver_opts
+    zero_intvl_tol = sqrt(eps())
+
+    # Map varaibles to these scaled intervals
+    intrvl_x = [0.0; 1.0]
+    intrvl_u = [0.0; 1.0]
+    intrvl_p = [0.0; 1.0]
+
+    # >> Compute bounding boxes for state and input <<
+
+    x_bbox = fill(1.0, nx, 2)
+    u_bbox = fill(1.0, nu, 2)
+    x_bbox[:, 1] .= 0.0
+    u_bbox[:, 1] .= 0.0
+
+    defs = [Dict(:dim => nx, :set => traj.X,
+                 :bbox => x_bbox, :advice => :xrg),
+            Dict(:dim => nu, :set => traj.U,
+                 :bbox => u_bbox, :advice => :urg)]
+
+    for def in defs
+        for j = 1:2 # 1:min, 2:max
+            for i = 1:def[:dim]
+                # Initialize JuMP model
+                mdl = Model()
+                set_optimizer(mdl, solver.Optimizer)
+                for (key,val) in solver_opts
+                    set_optimizer_attribute(mdl, key, val)
+                end
+                # Variables
+                var = @variable(mdl, [1:def[:dim]])
+                # Constraints
+                if !isnothing(def[:set])
+                    add_conic_constraints!(mdl, def[:set](var))
+                end
+                # Cost
+                set_objective_function(mdl, var[i])
+                set_objective_sense(mdl, (j==1) ? MOI.MIN_SENSE :
+                                    MOI.MAX_SENSE)
+                # Solve
+                optimize!(mdl)
+                # Record the solution
+                status = termination_status(mdl)
+                if status != MOI.DUAL_INFEASIBLE
+                    if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
+                        def[:bbox][i, j] = objective_value(mdl)
+                    else
+                        msg = "Solver failed during variable scaling (%s)"
+                        err = SCPError(0, SCP_SCALING_FAILED,
+                                       @eval @sprintf($msg, $status))
+                    end
+                elseif !isnothing(getfield(traj, def[:advice])[i])
+                    # Take user scaling advice
+                    def[:bbox][i, j] = getfield(traj, def[:advice])[i][j]
+                end
+            end
+        end
+    end
+
+    # >> Compute bounding box for parameters <<
+
+    p_bbox = fill(1.0, np, 2)
+    p_bbox[:, 1] .= 0.0
+
+    for j = 1:2 # 1:min, 2:max
+        for i = 1:np
+            if !isnothing(traj.prg[i])
+                # Take user scaling advice
+                p_bbox[i, j] = traj.prg[i][j]
+            end
+        end
+    end
+
+    # >> Compute scaling matrices and offset vectors <<
+    wdth_x = intrvl_x[2]-intrvl_x[1]
+    wdth_u = intrvl_u[2]-intrvl_u[1]
+    wdth_p = intrvl_p[2]-intrvl_p[1]
+
+    # State scaling terms
+    x_min, x_max = x_bbox[:, 1], x_bbox[:, 2]
+    diag_Sx = (x_max-x_min)/wdth_x
+    diag_Sx[diag_Sx .< zero_intvl_tol] .= 1.0
+    Sx = Diagonal(diag_Sx)
+    iSx = inv(Sx)
+    cx = x_min-diag_Sx*intrvl_x[1]
+
+    # Input scaling terms
+    u_min, u_max = u_bbox[:, 1], u_bbox[:, 2]
+    diag_Su = (u_max-u_min)/wdth_u
+    diag_Su[diag_Su .< zero_intvl_tol] .= 1.0
+    Su = Diagonal(diag_Su)
+    iSu = inv(Su)
+    cu = u_min-diag_Su*intrvl_u[1]
+
+    # Parameter scaling terms
+    p_min, p_max = p_bbox[:, 1], p_bbox[:, 2]
+    diag_Sp = (p_max-p_min)/wdth_p
+    diag_Sp[diag_Sp .< zero_intvl_tol] .= 1.0
+    Sp = Diagonal(diag_Sp)
+    iSp = inv(Sp)
+    cp = p_min-diag_Sp*intrvl_p[1]
+
+    scale = SCPScaling(Sx, cx, Su, cu, Sp, cp, iSx, iSu, iSp)
+
+    return scale
+end
 
 #= Check if the subproblem optimization had issues.
 
