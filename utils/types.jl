@@ -309,7 +309,9 @@ The supported cones are:
     :nonpositiveorthant for constraints z<=0.
     :normonecone        for constraints z=(t, x), norm(x, 1)<=t.
     :secondordercone    for constraints z=(t, x), norm(x, 2)<=t.
-    :norminfinitycone   for constraints z=(t, x), norm(x, ∞)<=t. =#
+    :norminfinitycone   for constraints z=(t, x), norm(x, ∞)<=t.
+    :geomeancone        for constraints z=(t, x), geomean(x)>=t.
+ =#
 struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
     z::T_OptiVar # The expression to be constrained in the cone.
     K::T         # The cone set.
@@ -327,7 +329,8 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
         if !(kind in (:nonpositiveorthant,
                       :normonecone,
                       :secondordercone,
-                      :norminfinitycone))
+                      :norminfinitycone,
+                      :geomeancone))
             err = SCPError(0, SCP_BAD_ARGUMENT, "Unsupported cone")
             throw(err)
         end
@@ -343,6 +346,8 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
             K = MOI.SecondOrderCone(dim)
         elseif kind==:norminfinitycone
             K = MOI.NormInfinityCone(dim)
+        elseif kind==:geomeancone
+            K = MOI.GeometricMeanCone(dim)
         end
 
         constraint = new{typeof(K)}(z, K)

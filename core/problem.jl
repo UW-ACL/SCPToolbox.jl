@@ -369,7 +369,7 @@ Args:
        state set. =#
 function problem_set_X!(pbm::TrajectoryProblem,
                         X::T_Function)::Nothing
-    pbm.X = (x) -> X(x, pbm)
+    pbm.X = (x, p) -> X(x, p, pbm)
     return nothing
 end
 
@@ -387,7 +387,7 @@ Args:
        input set. =#
 function problem_set_U!(pbm::TrajectoryProblem,
                         U::T_Function)::Nothing
-    pbm.U = (u) -> U(u, pbm)
+    pbm.U = (u, p) -> U(u, p, pbm)
     return nothing
 end
 

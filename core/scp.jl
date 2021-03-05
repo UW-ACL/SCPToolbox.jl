@@ -293,9 +293,10 @@ function _scp__compute_scaling(
                 end
                 # Variables
                 var = @variable(mdl, [1:def[:dim]])
+                par = @variable(mdl, [1:np])
                 # Constraints
                 if !isnothing(def[:set])
-                    add_conic_constraints!(mdl, def[:set](var))
+                    add_conic_constraints!(mdl, def[:set](var, par))
                 end
                 # Cost
                 set_objective_function(mdl, var[i])
@@ -305,17 +306,21 @@ function _scp__compute_scaling(
                 optimize!(mdl)
                 # Record the solution
                 status = termination_status(mdl)
-                if status != MOI.DUAL_INFEASIBLE
+                if (status == MOI.DUAL_INFEASIBLE ||
+                    status == MOI.NUMERICAL_ERROR)
+                    if !isnothing(getfield(traj, def[:advice])[i])
+                        # Take user scaling advice
+                        def[:bbox][i, j] = getfield(traj, def[:advice])[i][j]
+                    end
+                else
                     if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
                         def[:bbox][i, j] = objective_value(mdl)
                     else
                         msg = "Solver failed during variable scaling (%s)"
                         err = SCPError(0, SCP_SCALING_FAILED,
                                        @eval @sprintf($msg, $status))
+                        throw(err)
                     end
-                elseif !isnothing(getfield(traj, def[:advice])[i])
-                    # Take user scaling advice
-                    def[:bbox][i, j] = getfield(traj, def[:advice])[i][j]
                 end
             end
         end

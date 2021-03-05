@@ -330,7 +330,7 @@ function SCvxSubproblem(pbm::SCPProblem,
     # Other variables
     P = @variable(mdl, [1:N], base_name="P")
     Pf = @variable(mdl, [1:2], base_name="Pf")
-    tr_rx = @variable(mdl, [1:2, 1:N], base_name="tr_xu")
+    tr_rx = @variable(mdl, [1:3, 1:N], base_name="tr_xu")
 
     # Uninitialized parameters
     A = T_RealTensor(undef, nx, nx, N-1)
@@ -671,7 +671,7 @@ function _scvx__add_convex_constraints!(spbm::SCvxSubproblem)::Nothing
     # ..:: Convex state constraints ::..
     if !isnothing(traj_pbm.X)
         for k = 1:N
-            xk_in_X = traj_pbm.X(@k(x))
+            xk_in_X = traj_pbm.X(@k(x), p)
             if k==1
                 # Initialize associated variables
                 n_X = length(xk_in_X)
@@ -686,7 +686,7 @@ function _scvx__add_convex_constraints!(spbm::SCvxSubproblem)::Nothing
     # ..:: Convex input constraints ::..
     if !isnothing(traj_pbm.U)
         for k = 1:N
-            uk_in_U = traj_pbm.U(@k(u))
+            uk_in_U = traj_pbm.U(@k(u), p)
             if k==1
                 # Initialize associated variables
                 n_U = length(uk_in_U)
@@ -757,25 +757,29 @@ function _scvx__add_trust_region!(spbm::SCvxSubproblem)::Nothing
     traj_pbm = spbm.scvx.traj
     nx = traj_pbm.nx
     nu = traj_pbm.nu
+    np = traj_pbm.np
     η = spbm.η
     sqrt_η = sqrt(η)
-    soc_dim = 1+nx+nu
+    soc_dim = 1+nx+nu+np
     xh = spbm.xh
     uh = spbm.uh
+    ph = spbm.ph
     xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
     uh_ref = scale.iSu*(spbm.ref.ud.-scale.cu)
+    ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
     tr_xu = spbm.tr_xu
 
     # Measure the *scaled* state and input deviations
     dx = xh-xh_ref
     du = uh-uh_ref
+    dp = ph-ph_ref
 
     # Trust region constraint
     for k = 1:N
         if q==1
             # 1-norm
             @k(tr_xu) = @constraint(
-                spbm.mdl, vcat(η, @k(dx), @k(du))
+                spbm.mdl, vcat(η, @k(dx), @k(du), dp)
                 in MOI.NormOneCone(soc_dim))
         elseif q==2
             # 2-norm
@@ -789,16 +793,21 @@ function _scvx__add_trust_region!(spbm::SCvxSubproblem)::Nothing
                 in MOI.SecondOrderCone(1+nu))
             push!(spbm.fit, cstrt)
 
+            cstrt = @constraint(
+                spbm.mdl, vcat(spbm.tr_rx[3, k], dp)
+                in MOI.SecondOrderCone(1+np))
+            push!(spbm.fit, cstrt)
+
             @k(tr_xu) = @constraint(spbm.mdl, sum(spbm.tr_rx[:, k]) <= η)
         elseif q==4
             # 2-norm squared
             @k(tr_xu) = @constraint(
-                spbm.mdl, vcat(sqrt_η, @k(dx), @k(du))
+                spbm.mdl, vcat(sqrt_η, @k(dx), @k(du), dp)
                 in MOI.SecondOrderCone(soc_dim))
         else
             # Infinity-norm
             @k(tr_xu) = @constraint(
-                spbm.mdl, vcat(η, @k(dx), @k(du))
+                spbm.mdl, vcat(η, @k(dx), @k(du), dp)
                 in MOI.NormInfinityCone(soc_dim))
         end
     end

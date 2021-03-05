@@ -33,7 +33,7 @@ mdl = QuadrotorProblem()
 pbm = TrajectoryProblem(mdl)
 
 # Variable dimensions
-problem_set_dims!(pbm, 7, 4, 1)
+problem_set_dims!(pbm, 6, 4, 1)
 
 # Initial trajectory guess
 problem_set_guess!(pbm, (N, pbm) -> begin
@@ -54,7 +54,7 @@ problem_set_dynamics!(pbm,
                       veh = pbm.mdl.vehicle
                       v = x[veh.id_v]
                       uu = u[veh.id_u]
-                      tdil = p[veh.id_pt] # Time dilation
+                      tdil = p[veh.id_t]
                       f = zeros(pbm.nx)
                       f[veh.id_r] = v
                       f[veh.id_v] = uu+g
@@ -64,7 +64,7 @@ problem_set_dynamics!(pbm,
                       # Jacobian df/dx
                       (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
-                      tdil = p[veh.id_pt]
+                      tdil = p[veh.id_t]
                       A = zeros(pbm.nx, pbm.nx)
                       A[veh.id_r, veh.id_v] = I(3)
                       A *= tdil
@@ -73,7 +73,7 @@ problem_set_dynamics!(pbm,
                       # Jacobian df/du
                       (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
-                      tdil = p[veh.id_pt]
+                      tdil = p[veh.id_t]
                       B = zeros(pbm.nx, pbm.nu)
                       B[veh.id_v, veh.id_u] = I(3)
                       B *= tdil
@@ -82,27 +82,19 @@ problem_set_dynamics!(pbm,
                       # Jacobian df/dp
                       (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
-                      tdil = p[veh.id_pt]
+                      tdil = p[veh.id_t]
                       F = zeros(pbm.nx, pbm.np)
-                      F[:, veh.id_pt] = pbm.f(x, u, p)/tdil
+                      F[:, veh.id_t] = pbm.f(x, u, p)/tdil
                       return F
                       end)
 
-# Convex path constraints on the state
-problem_set_X!(pbm, (x, pbm) -> begin
-               traj = pbm.mdl.traj
-               veh = pbm.mdl.vehicle
-               C = T_ConvexConeConstraint
-               X = [C(x[veh.id_xt]-traj.tf_max, :nonpositiveorthant),
-                    C(traj.tf_min-x[veh.id_xt], :nonpositiveorthant)]
-               return X
-               end)
-
 # Convex path constraints on the input
-problem_set_U!(pbm, (u, pbm) -> begin
+problem_set_U!(pbm, (u, p, pbm) -> begin
                veh = pbm.mdl.vehicle
+               traj = pbm.mdl.traj
                uu = u[veh.id_u]
                σ = u[veh.id_σ]
+               tdil = p[veh.id_t]
                C = T_ConvexConeConstraint
                U = [C(veh.u_min-σ, :nonpositiveorthant),
                     C(σ-veh.u_max, :nonpositiveorthant),
@@ -117,7 +109,8 @@ problem_set_s!(pbm,
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
                veh = pbm.mdl.vehicle
-               s = zeros(env.n_obs)
+               traj = pbm.mdl.traj
+               s = zeros(env.n_obs+2)
                for i = 1:env.n_obs
                # ---
                E = env.obs[i]
@@ -125,13 +118,15 @@ problem_set_s!(pbm,
                s[i] = 1-E(r)
                # ---
                end
+               s[end-1] = p[veh.id_t]-traj.tf_max
+               s[end] = traj.tf_min-p[veh.id_t]
                return s
                end,
                # Jacobian ds/dx
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
                veh = pbm.mdl.vehicle
-               C = zeros(env.n_obs, pbm.nx)
+               C = zeros(env.n_obs+2, pbm.nx)
                for i = 1:env.n_obs
                # ---
                E = env.obs[i]
@@ -144,13 +139,16 @@ problem_set_s!(pbm,
                # Jacobian ds/du
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
-               D = zeros(env.n_obs, pbm.nu)
+               D = zeros(env.n_obs+2, pbm.nu)
                return D
                end,
                # Jacobian ds/dp
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
-               G = zeros(env.n_obs, pbm.np)
+               veh = pbm.mdl.vehicle
+               G = zeros(env.n_obs+2, pbm.np)
+               G[end-1, veh.id_t] = 1.0
+               G[end, veh.id_t] = -1.0
                return G
                end)
 
@@ -160,11 +158,9 @@ problem_set_bc!(pbm, :ic,
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
                 traj = pbm.mdl.traj
-                tdil = p[veh.id_pt]
                 rhs = zeros(pbm.nx)
                 rhs[veh.id_r] = traj.r0
                 rhs[veh.id_v] = traj.v0
-                rhs[veh.id_xt] = tdil
                 g = x-rhs
                 return g
                 end,
@@ -177,7 +173,6 @@ problem_set_bc!(pbm, :ic,
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
                 K = zeros(pbm.nx, pbm.np)
-                K[veh.id_xt, veh.id_pt] = -1.0
                 return K
                 end)
 
@@ -187,11 +182,9 @@ problem_set_bc!(pbm, :tc,
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
                 traj = pbm.mdl.traj
-                tdil = p[veh.id_pt]
                 rhs = zeros(pbm.nx)
                 rhs[veh.id_r] = traj.rf
                 rhs[veh.id_v] = traj.vf
-                rhs[veh.id_xt] = tdil
                 g = x-rhs
                 return g
                 end,
@@ -204,7 +197,6 @@ problem_set_bc!(pbm, :tc,
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
                 K = zeros(pbm.nx, pbm.np)
-                K[veh.id_xt, veh.id_pt] = -1.0
                 return K
                 end)
 

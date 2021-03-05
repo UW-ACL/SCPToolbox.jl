@@ -31,10 +31,9 @@ include("../core/scp.jl")
 struct QuadrotorParameters
     id_r::T_IntRange # Position indices of the state vector
     id_v::T_IntRange # Velocity indices of the state vector
-    id_xt::T_Int     # Index of time dilation state
     id_u::T_IntRange # Indices of the thrust input vector
-    id_σ::T_Int      # Indices of the slack input
-    id_pt::T_Int     # Index of time dilation
+    id_σ::T_Int      # Index of the slack input
+    id_t::T_Int      # Index of time dilation
     u_max::T_Real    # [N] Maximum thrust
     u_min::T_Real    # [N] Minimum thrust
     tilt_max::T_Real # [rad] Maximum tilt
@@ -99,15 +98,14 @@ function QuadrotorProblem()::QuadrotorProblem
     # >> Quadrotor <<
     id_r = 1:3
     id_v = 4:6
-    id_xt = 7
     id_u = 1:3
     id_σ = 4
-    id_pt = 1
+    id_t = 1
     u_max = 23.2
     u_min = 0.6
     tilt_max = deg2rad(60)
-    quad = QuadrotorParameters(id_r, id_v, id_xt, id_u, id_σ,
-                               id_pt, u_max, u_min, tilt_max)
+    quad = QuadrotorParameters(id_r, id_v, id_u, id_σ, id_t,
+                               u_max, u_min, tilt_max)
 
     # >> Environment <<
     g = 9.81
@@ -121,7 +119,7 @@ function QuadrotorProblem()::QuadrotorProblem
     rf[1:2] = [2.5; 6.0]
     v0 = zeros(3)
     vf = zeros(3)
-    tf_min = 0.0
+    tf_min = 0.1
     tf_max = 2.5
     traj = QuadrotorTrajectoryParameters(r0, rf, v0, vf, tf_min, tf_max)
 
@@ -156,7 +154,7 @@ function quadrotor_initial_guess(
 
     # Parameter guess
     p = zeros(pbm.np)
-    p[veh.id_pt] = 0.5*(traj.tf_min+traj.tf_max)
+    p[veh.id_t] = 0.5*(traj.tf_min+traj.tf_max)
 
     # State guess
     x0 = zeros(pbm.nx)
@@ -165,12 +163,12 @@ function quadrotor_initial_guess(
     xf[veh.id_r] = traj.rf
     x0[veh.id_v] = traj.v0
     xf[veh.id_v] = traj.vf
-    x0[veh.id_xt] = p[veh.id_pt]
-    xf[veh.id_xt] = p[veh.id_pt]
     x = straightline_interpolate(x0, xf, N)
 
     # Input guess
-    hover = [-g; norm(g)]
+    hover = zeros(pbm.nu)
+    hover[veh.id_u] = -g
+    hover[veh.id_σ] = norm(g)
     u = straightline_interpolate(hover, hover, N)
 
     return x, u, p
@@ -332,7 +330,7 @@ function plot_input_norm(mdl::QuadrotorProblem,
                          sol::SCPSolution)::Nothing
 
     # Common
-    tf = sol.p[mdl.vehicle.id_pt]
+    tf = sol.p[mdl.vehicle.id_t]
     y_top = 25.0
     y_bot = 0.0
     ct_res = 500
@@ -356,7 +354,7 @@ function plot_input_norm(mdl::QuadrotorProblem,
     plot_timeseries_bound!(0.0, tf, bnd, y_bot-bnd)
 
     # @ Norm of acceleration vector (continuous-time) @
-    ct_time = ct_τ*sol.p[mdl.vehicle.id_pt]
+    ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
     ct_acc_vec = hcat([sample(sol.uc, τ)[mdl.vehicle.id_u] for τ in ct_τ]...)
     ct_acc_nrm = T_RealVector([norm(@k(ct_acc_vec)) for k in 1:ct_res])
     plot!(ct_time, ct_acc_nrm;
@@ -367,7 +365,7 @@ function plot_input_norm(mdl::QuadrotorProblem,
           linecolor=cmap[1.0])
 
     # @ Norm of acceleration vector (discrete-time) @
-    time = sol.τd*sol.p[mdl.vehicle.id_pt]
+    time = sol.τd*sol.p[mdl.vehicle.id_t]
     acc_vec = sol.ud[mdl.vehicle.id_u, :]
     acc_nrm = T_RealVector([norm(@k(acc_vec)) for k in 1:size(acc_vec, 2)])
     plot!(time, acc_nrm;
@@ -408,7 +406,7 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
                          sol::SCPSolution)::Nothing
 
     # Common
-    tf = sol.p[mdl.vehicle.id_pt]
+    tf = sol.p[mdl.vehicle.id_t]
     y_top = 70.0
     ct_res = 500
     ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
@@ -427,7 +425,7 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
     plot_timeseries_bound!(0.0, tf, bnd, y_top-bnd)
 
     # @ Tilt angle (continuous-time) @
-    ct_time = ct_τ*sol.p[mdl.vehicle.id_pt]
+    ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
     _u = hcat([sample(sol.uc, τ)[mdl.vehicle.id_u] for τ in ct_τ]...)
     ct_tilt = T_RealVector([acosd(@k(_u)[3]/norm(@k(_u))) for k in 1:ct_res])
     plot!(ct_time, ct_tilt;
@@ -438,7 +436,7 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
           linecolor=cmap[1.0])
 
     # @ Norm of acceleration vector (discrete-time) @
-    time = sol.τd*sol.p[mdl.vehicle.id_pt]
+    time = sol.τd*sol.p[mdl.vehicle.id_t]
     _u = sol.ud[mdl.vehicle.id_u, :]
     acc_nrm = T_RealVector([acosd(@k(_u)[3]/norm(@k(_u)))
                             for k in 1:size(_u, 2)])
