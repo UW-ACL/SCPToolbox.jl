@@ -68,12 +68,12 @@ mutable struct SCvxSubproblemSolution <: SCPSubproblemSolution
     P::T_RealVector      # Virtual control penalty integrand terms
     Pf::T_RealVector     # Boundary condition virtual control penalty
     # >> Cost values <<
-    L_orig::T_Real       # The original convex cost function
+    L::T_Real            # The original cost
     L_pen::T_Real        # The virtual control penalty
-    L::T_Real            # Overall linear cost
-    J::T_Real            # Overall nonlinear cost
-    dJ::T_Real           # Actual cost improvement
-    dL::T_Real           # Predicted cost improvement
+    L_aug::T_Real        # Overall cost
+    J_aug::T_Real        # Overall cost for nonlinear problem
+    act_improv::T_Real   # Actual cost improvement
+    pre_improv::T_Real   # Predicted cost improvement
     # >> Trajectory properties <<
     status::T_ExitStatus # Numerical optimizer exit status
     feas::T_Bool         # Dynamic feasibility flag
@@ -106,9 +106,9 @@ mutable struct SCvxSubproblem <: SCPSubproblem
     sol::Union{SCvxSubproblemSolution, Missing} # Solution trajectory
     ref::Union{SCvxSubproblemSolution, Missing} # Reference trajectory
     # >> Cost function <<
-    L_orig::T_Objective          # The original convex cost function
+    L::T_Objective               # The original convex cost function
     L_pen::T_Objective           # The virtual control penalty
-    L::T_Objective               # Overall cost function
+    L_aug::T_Objective           # Overall cost function
     # >> Scaled variables <<
     xh::T_OptiVarMatrix          # Discrete-time states
     uh::T_OptiVarMatrix          # Discrete-time inputs
@@ -199,12 +199,12 @@ function SCvxSubproblemSolution(
     P = zeros(N)
     Pf = zeros(2)
 
-    L_orig = NaN
-    L_pen = NaN
     L = NaN
-    J = NaN
-    dJ = NaN
-    dL = NaN
+    L_pen = NaN
+    L_aug = NaN
+    J_aug = NaN
+    act_improv = NaN
+    pre_improv = NaN
 
     A = T_RealTensor(undef, nx, nx, N-1)
     Bm = T_RealTensor(undef, nx, nu, N-1)
@@ -214,9 +214,10 @@ function SCvxSubproblemSolution(
     E = T_RealTensor(undef, size(_E)..., N-1)
 
     subsol = SCvxSubproblemSolution(iter, x, u, p, vd, vs, vic, vtc, P, Pf,
-                                    L_orig, L_pen, L, J, dJ, dL, status,
-                                    feas, defect, deviation, unsafe, ρ,
-                                    tr_update, reject, A, Bm, Bp, S, r, E)
+                                    L, L_pen, L_aug, J_aug, act_improv,
+                                    pre_improv, status, feas, defect,
+                                    deviation, unsafe, ρ, tr_update, reject,
+                                    A, Bm, Bp, S, r, E)
 
     return subsol
 end
@@ -260,7 +261,7 @@ function SCvxProblem(pars::SCvxParameters,
         # Convexification performance metric
         (:ρ, "ρ", "%s", 8),
         # Predicted cost improvement (percent)
-        (:dL, "dL %", "%.2f", 8),
+        (:pre_improv, "J-L %", "%.2f", 8),
         # Update direction for trust region radius (grow? shrink?)
         (:dtr, "Δη", "%s", 3),
         # Reject solution indicator
@@ -307,10 +308,10 @@ function SCvxSubproblem(pbm::SCPProblem,
 
     sol = missing # No solution associated yet with the subproblem
 
-    # Cost (default: feasibility problem)
-    L_orig = missing
-    L_pen = missing
+    # Cost
     L = missing
+    L_pen = missing
+    L_aug = missing
 
     # Decision variables (scaled)
     xh = @variable(mdl, [1:nx, 1:N], base_name="xh")
@@ -352,7 +353,7 @@ function SCvxSubproblem(pbm::SCPProblem,
     tr_xu = T_ConstraintVector(undef, N)
     fit = T_ConstraintVector(undef, 0)
 
-    spbm = SCvxSubproblem(iter, mdl, pbm, sol, ref, L_orig, L_pen, L, xh, uh,
+    spbm = SCvxSubproblem(iter, mdl, pbm, sol, ref, L, L_pen, L_aug, xh, uh,
                           ph, x, u, p, vd, vs, vic, vtc, P, Pf, tr_rx, η, A,
                           Bm, Bp, F, r, E, dynamics, ic, tc, p_bnds, pc_x,
                           pc_u, pc_X, pc_U, pc_s, tr_xu, fit)
@@ -388,9 +389,9 @@ function SCvxSubproblemSolution(spbm::SCvxSubproblem)::SCvxSubproblemSolution
     sol.Pf = value.(spbm.Pf)
 
     # Save the optimal cost values
-    sol.L_orig = value(spbm.L_orig)
-    sol.L_pen = value(spbm.L_pen)
     sol.L = value(spbm.L)
+    sol.L_pen = value(spbm.L_pen)
+    sol.L_aug = value(spbm.L_aug)
     _scvx__discretize!(sol, spbm.scvx)
     _scvx__solution_cost!(sol, :nonlinear, spbm.scvx)
 
@@ -834,7 +835,7 @@ function _scvx__add_cost!(spbm::SCvxSubproblem)::Nothing
     end
 
     # Original cost
-    spbm.L_orig = _scvx__original_cost(x, u, p, spbm.scvx)
+    spbm.L = _scvx__original_cost(x, u, p, spbm.scvx)
 
     # Virtual control penalty
     spbm.L_pen = trapz(P, τ_grid)+sum(Pf)
@@ -858,10 +859,10 @@ function _scvx__add_cost!(spbm::SCvxSubproblem)::Nothing
     push!(spbm.fit, pen_tc)
 
     # Overall cost
-    spbm.L = _scvx__overall_cost(spbm.L_orig, spbm.L_pen, spbm.scvx)
+    spbm.L_aug = _scvx__overall_cost(spbm.L, spbm.L_pen, spbm.scvx)
 
     # Associate cost function with the model
-    set_objective_function(spbm.mdl, spbm.L)
+    set_objective_function(spbm.mdl, spbm.L_aug)
     set_objective_sense(spbm.mdl, MOI.MIN_SENSE)
 
     return nothing
@@ -915,12 +916,12 @@ function _scvx__check_stopping_criterion!(spbm::SCvxSubproblem)::T_Bool
     # Check predicted cost improvement
     J_ref = _scvx__solution_cost!(ref, :nonlinear, pbm)
     L_sol = _scvx__solution_cost!(sol, :linear, pbm)
-    predicted_improvement = J_ref-L_sol
-    sol.dL = predicted_improvement
-    dL_relative = sol.dL/abs(J_ref)
+    sol.pre_improv = J_ref-L_sol
+    pre_improv_rel = sol.pre_improv/abs(J_ref)
 
     # Compute stopping criterion
-    stop = (spbm.iter>1) && ((dL_relative<=ε_rel) || (sol.deviation<=ε_abs))
+    stop = (spbm.iter>1) && ((pre_improv_rel<=ε_rel) ||
+                             (sol.deviation<=ε_abs))
 
     return stop
 end
@@ -949,12 +950,10 @@ function _scvx__update_trust_region!(
     # Compute the actual cost improvement
     J_ref = _scvx__solution_cost!(ref, :nonlinear, pbm)
     J_sol = _scvx__solution_cost!(sol, :nonlinear, pbm)
-    actual_improvement = J_ref-J_sol
-    sol.dJ = actual_improvement
+    sol.act_improv = J_ref-J_sol
 
     # Convexification performance metric
-    predicted_improvement = sol.dL
-    sol.ρ = actual_improvement/predicted_improvement
+    sol.ρ = sol.act_improv/sol.pre_improv
 
     # Apply update rule
     next_ref, next_η = _scvx__update_rule(spbm)
@@ -1003,14 +1002,14 @@ function _scvx__print_info(spbm::SCvxSubproblem,
                      :maxvd => norm(sol.vd, Inf),
                      :maxvs => norm(sol.vs, Inf),
                      :maxvbc => norm([sol.vic; sol.vtc], Inf),
-                     :cost => sol.J,
+                     :cost => sol.J_aug,
                      :dx => max_dxh,
                      :du => max_duh,
                      :dp => max_dph,
                      :dynfeas => sol.feas ? "T" : "F",
                      :δ => sol.deviation,
                      :ρ => ρ,
-                     :dL => sol.dL/abs(ref.J)*100,
+                     :pre_improv => sol.pre_improv/abs(ref.J_aug)*100,
                      :dtr => sol.tr_update,
                      :rej => sol.reject ? "x" : "",
                      :tr => spbm.η)
@@ -1235,20 +1234,19 @@ function _scvx__solution_cost!(
     kind::Symbol,
     pbm::SCPProblem)::T_Real
 
-    if isnan(sol.L_orig)
-        sol.L_orig = _scvx__original_cost(
-            sol.xd, sol.ud, sol.p, pbm)
+    if isnan(sol.L)
+        sol.L = _scvx__original_cost(sol.xd, sol.ud, sol.p, pbm)
     end
 
     if kind==:linear
         cost = sol.L
     else
-        if isnan(sol.J)
-            orig = sol.L_orig
+        if isnan(sol.J_aug)
+            orig = sol.L
             pen = _scvx__actual_cost_penalty!(sol, pbm)
-            sol.J = _scvx__overall_cost(orig, pen, pbm)
+            sol.J_aug = _scvx__overall_cost(orig, pen, pbm)
         end
-        cost = sol.J
+        cost = sol.J_aug
     end
 
     return cost

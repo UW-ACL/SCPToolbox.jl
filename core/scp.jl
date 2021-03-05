@@ -223,7 +223,7 @@ function SCPSolution(history::SCPHistory)::SCPSolution
                       actions=pbm.traj.integ_actions)
         xc = T_ContinuousTimeTrajectory(τc, xc_vals, :linear)
 
-        cost = last_sol.L_orig
+        cost = last_sol.L
     end
 
     sol = SCPSolution(status, num_iters, cost, τd, xd, ud, p, xc, uc)
