@@ -671,7 +671,7 @@ function _scvx__add_convex_constraints!(spbm::SCvxSubproblem)::Nothing
     # ..:: Convex state constraints ::..
     if !isnothing(traj_pbm.X)
         for k = 1:N
-            xk_in_X = traj_pbm.X(@k(x), p)
+            xk_in_X = traj_pbm.X(@k(x))
             if k==1
                 # Initialize associated variables
                 n_X = length(xk_in_X)
@@ -686,7 +686,7 @@ function _scvx__add_convex_constraints!(spbm::SCvxSubproblem)::Nothing
     # ..:: Convex input constraints ::..
     if !isnothing(traj_pbm.U)
         for k = 1:N
-            uk_in_U = traj_pbm.U(@k(u), p)
+            uk_in_U = traj_pbm.U(@k(u))
             if k==1
                 # Initialize associated variables
                 n_U = length(uk_in_U)
@@ -760,7 +760,6 @@ function _scvx__add_trust_region!(spbm::SCvxSubproblem)::Nothing
     np = traj_pbm.np
     η = spbm.η
     sqrt_η = sqrt(η)
-    soc_dim = 1+nx+nu+np
     xh = spbm.xh
     uh = spbm.uh
     ph = spbm.ph
@@ -776,39 +775,28 @@ function _scvx__add_trust_region!(spbm::SCvxSubproblem)::Nothing
 
     # Trust region constraint
     for k = 1:N
+        C = T_ConvexConeConstraint
         if q==1
             # 1-norm
-            @k(tr_xu) = @constraint(
-                spbm.mdl, vcat(η, @k(dx), @k(du), dp)
-                in MOI.NormOneCone(soc_dim))
+            tr_cone = C(vcat(η, @k(dx), @k(du), dp), :normonecone)
+            @k(tr_xu) = add_conic_constraint!(spbm.mdl, tr_cone)
         elseif q==2
             # 2-norm
-            cstrt = @constraint(
-                spbm.mdl, vcat(spbm.tr_rx[1, k], @k(dx))
-                in MOI.SecondOrderCone(1+nx))
-            push!(spbm.fit, cstrt)
-
-            cstrt = @constraint(
-                spbm.mdl, vcat(spbm.tr_rx[2, k], @k(du))
-                in MOI.SecondOrderCone(1+nu))
-            push!(spbm.fit, cstrt)
-
-            cstrt = @constraint(
-                spbm.mdl, vcat(spbm.tr_rx[3, k], dp)
-                in MOI.SecondOrderCone(1+np))
-            push!(spbm.fit, cstrt)
-
+            tr_cone_x = C(vcat(spbm.tr_rx[1, k], @k(dx)), :secondordercone)
+            tr_cone_u = C(vcat(spbm.tr_rx[2, k], @k(du)), :secondordercone)
+            tr_cone_p = C(vcat(spbm.tr_rx[3, k], dp), :secondordercone)
+            push!(spbm.fit, add_conic_constraint!(tr_cone_x))
+            push!(spbm.fit, add_conic_constraint!(tr_cone_u))
+            push!(spbm.fit, add_conic_constraint!(tr_cone_p))
             @k(tr_xu) = @constraint(spbm.mdl, sum(spbm.tr_rx[:, k]) <= η)
         elseif q==4
             # 2-norm squared
-            @k(tr_xu) = @constraint(
-                spbm.mdl, vcat(sqrt_η, @k(dx), @k(du), dp)
-                in MOI.SecondOrderCone(soc_dim))
+            tr_cone = C(vcat(sqrt_η, @k(dx), @k(du), dp), :secondordercone)
+            @k(tr_xu) = add_conic_constraint!(spbm.mdl, tr_cone)
         else
             # Infinity-norm
-            @k(tr_xu) = @constraint(
-                spbm.mdl, vcat(η, @k(dx), @k(du), dp)
-                in MOI.NormInfinityCone(soc_dim))
+            tr_cone = C(vcat(η, @k(dx), @k(du), dp), :norminfinitycone)
+            @k(tr_xu) = add_conic_constraint!(spbm.mdl, tr_cone)
         end
     end
 

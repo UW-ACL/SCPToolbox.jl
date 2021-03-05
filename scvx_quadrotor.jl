@@ -32,21 +32,42 @@ include("utils/helper.jl")
 mdl = QuadrotorProblem()
 pbm = TrajectoryProblem(mdl)
 
-# Variable dimensions
+# >> Variable dimensions <<
 problem_set_dims!(pbm, 6, 4, 1)
 
-# Initial trajectory guess
+# >> Variable scaling <<
+tdil_min = mdl.traj.tf_min
+tdil_max = mdl.traj.tf_max
+tdil_max_adj = tdil_min+0.1*(tdil_max-tdil_min)
+problem_advise_scale!(pbm, :parameter, mdl.vehicle.id_t,
+                      (tdil_min, tdil_max_adj))
+
+# >> Initial trajectory guess <<
 problem_set_guess!(pbm, (N, pbm) -> begin
                    return quadrotor_initial_guess(N, pbm)
                    end)
 
-# Cost to be minimized
+# >> Cost to be minimized <<
+problem_set_terminal_cost!(pbm, (x, p, pbm) -> begin
+                           veh = pbm.mdl.vehicle
+                           traj = pbm.mdl.traj
+                           tdil = p[veh.id_t]
+                           tdil_max = traj.tf_max
+                           γ = traj.γ
+                           return γ*tdil/tdil_max
+                           end)
+
 problem_set_running_cost!(pbm, (x, u, p, pbm) -> begin
-                          σ = u[pbm.mdl.vehicle.id_σ]
-                          return σ^2
+                          veh = pbm.mdl.vehicle
+                          env = pbm.mdl.env
+                          traj = pbm.mdl.traj
+                          σ = u[veh.id_σ]
+                          hover = norm(env.g)
+                          γ = traj.γ
+                          return (1-γ)*(σ/hover)^2
                           end)
 
-# Dynamics constraint
+# >> Dynamics constraint <<
 problem_set_dynamics!(pbm,
                       # Dynamics f
                       (x, u, p, pbm) -> begin
@@ -88,13 +109,12 @@ problem_set_dynamics!(pbm,
                       return F
                       end)
 
-# Convex path constraints on the input
-problem_set_U!(pbm, (u, p, pbm) -> begin
+# >> Convex path constraints on the input <<
+problem_set_U!(pbm, (u, pbm) -> begin
                veh = pbm.mdl.vehicle
                traj = pbm.mdl.traj
                uu = u[veh.id_u]
                σ = u[veh.id_σ]
-               tdil = p[veh.id_t]
                C = T_ConvexConeConstraint
                U = [C(veh.u_min-σ, :nonpositiveorthant),
                     C(σ-veh.u_max, :nonpositiveorthant),
@@ -103,7 +123,7 @@ problem_set_U!(pbm, (u, p, pbm) -> begin
                return U
                end)
 
-# Nonconvex path inequality constraints
+# >> Nonconvex path inequality constraints <<
 problem_set_s!(pbm,
                # Constraint s
                (x, u, p, pbm) -> begin
@@ -152,7 +172,7 @@ problem_set_s!(pbm,
                return G
                end)
 
-# Initial boundary conditions
+# >> Initial boundary conditions <<
 problem_set_bc!(pbm, :ic,
                 # Constraint g
                 (x, p, pbm) -> begin
@@ -176,7 +196,7 @@ problem_set_bc!(pbm, :ic,
                 return K
                 end)
 
-# Terminal boundary conditions
+# >> Terminal boundary conditions <<
 problem_set_bc!(pbm, :tc,
                 # Constraint g
                 (x, p, pbm) -> begin
@@ -206,8 +226,8 @@ problem_set_bc!(pbm, :tc,
 
 N = 30
 Nsub = 15
-iter_max = 20
-λ = 1e3
+iter_max = 50
+λ = 10.0
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7

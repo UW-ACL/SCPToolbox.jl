@@ -293,10 +293,9 @@ function _scp__compute_scaling(
                 end
                 # Variables
                 var = @variable(mdl, [1:def[:dim]])
-                par = @variable(mdl, [1:np])
                 # Constraints
                 if !isnothing(def[:set])
-                    add_conic_constraints!(mdl, def[:set](var, par))
+                    add_conic_constraints!(mdl, def[:set](var))
                 end
                 # Cost
                 set_objective_function(mdl, var[i])

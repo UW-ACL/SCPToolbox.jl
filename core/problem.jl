@@ -240,6 +240,7 @@ Args:
 function problem_set_terminal_cost!(pbm::TrajectoryProblem,
                                     φ::T_Function)::Nothing
     pbm.φ = (x, p) -> φ(x, p, pbm)
+    return nothing
 end
 
 #= Define the running cost function (SCvx).
@@ -369,7 +370,7 @@ Args:
        state set. =#
 function problem_set_X!(pbm::TrajectoryProblem,
                         X::T_Function)::Nothing
-    pbm.X = (x, p) -> X(x, p, pbm)
+    pbm.X = (x) -> X(x, pbm)
     return nothing
 end
 
@@ -387,7 +388,7 @@ Args:
        input set. =#
 function problem_set_U!(pbm::TrajectoryProblem,
                         U::T_Function)::Nothing
-    pbm.U = (u, p) -> U(u, p, pbm)
+    pbm.U = (u) -> U(u, pbm)
     return nothing
 end
 

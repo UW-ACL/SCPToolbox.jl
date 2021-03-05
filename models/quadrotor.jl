@@ -54,6 +54,7 @@ struct QuadrotorTrajectoryParameters
     vf::T_RealVector # Terminal velocity
     tf_min::T_Real   # Minimum flight time
     tf_max::T_Real   # Maximum flight time
+    γ::T_Real        # Minimum-time vs. minimum-energy tradeoff
 end
 
 #= Quadrotor trajectory optimization problem parameters all in one. =#
@@ -119,9 +120,10 @@ function QuadrotorProblem()::QuadrotorProblem
     rf[1:2] = [2.5; 6.0]
     v0 = zeros(3)
     vf = zeros(3)
-    tf_min = 0.1
+    tf_min = 0.0
     tf_max = 2.5
-    traj = QuadrotorTrajectoryParameters(r0, rf, v0, vf, tf_min, tf_max)
+    γ = 0.0
+    traj = QuadrotorTrajectoryParameters(r0, rf, v0, vf, tf_min, tf_max, γ)
 
     mdl = QuadrotorProblem(quad, env, traj)
 
