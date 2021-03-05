@@ -3,6 +3,11 @@
 This acts as a "parser" interface to define a particular instance of the
 trajectory generation problem.
 
+The following design philosophy applies: if you leave pieces of the trajectory
+problem undefined, then it is assumed that piece is not present in the
+optimization problem. For example, if the running cost is left undefined, then
+it is taken to be zero.
+
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
                    and Autonomous Systems Laboratory (Stanford University)
@@ -57,8 +62,8 @@ mutable struct TrajectoryProblem
     B::T_Function     # Jacobian df/du
     F::T_Function     # Jacobian df/dp
     # >> Constraints <<
-    X::T_ConvexSet    # Convex state constraints
-    U::T_ConvexSet    # Convex input constraints
+    X::T_Function     # Convex state constraints
+    U::T_Function     # Convex input constraints
     s::T_Function     # Nonconvex inequality constraint function
     C::T_Function     # Jacobian ds/dx
     D::T_Function     # Jacobian ds/du
@@ -220,12 +225,24 @@ function problem_set_guess!(pbm::TrajectoryProblem,
     return nothing
 end
 
-#= Define the cost function (SCvx variant).
+#= Define the terminal cost.
 
 Function signature: φ(x, p, pbm), where:
   - x (T_OptiVarVector): the final state.
   - p (T_OptiVarVector): the parameter vector.
   - pbm (TrajectoryProblem): the trajectory problem structure.
+
+The function must return a real number.
+
+Args:
+    pbm: the trajectory problem structure.
+    φ: (optional) the terminal cost. =#
+function problem_set_terminal_cost!(pbm::TrajectoryProblem,
+                                    φ::T_Function)::Nothing
+    pbm.φ = (x, p) -> φ(x, p, pbm)
+end
+
+#= Define the running cost function (SCvx).
 
 Function signature: Γ(x, u, p, pbm), where:
   - x (T_OptiVarVector): the current state.
@@ -233,20 +250,14 @@ Function signature: Γ(x, u, p, pbm), where:
   - p (T_OptiVarVector): the parameter vector.
   - pbm (TrajectoryProblem): the trajectory problem structure.
 
-Both functions must return a real number.
-
-When you pass "nothing" as the argument, this term will be interpreted as zero
-in the optimization problem.
+The function must return a real number.
 
 Args:
     pbm: the trajectory problem structure.
-    φ: (optional) the terminal cost.
     Γ: (optional) the running cost. =#
-function problem_set_cost!(pbm::TrajectoryProblem;
-                           φ::T_Function=nothing,
-                           Γ::T_Function=nothing)::Nothing
-    pbm.φ = !isnothing(φ) ? (x, p) -> φ(x, p, pbm) : nothing
-    pbm.Γ = !isnothing(Γ) ? (x, u, p) -> Γ(x, u, p, pbm) : nothing
+function problem_set_running_cost!(pbm::TrajectoryProblem,
+                                   Γ::T_Function=nothing)::Nothing
+    pbm.Γ = (x, u, p) -> Γ(x, u, p, pbm)
     return nothing
 end
 
@@ -376,7 +387,7 @@ Args:
        input set. =#
 function problem_set_U!(pbm::TrajectoryProblem,
                         U::T_Function)::Nothing
-    pbm.U = (u, mdl) -> U(u, pbm)
+    pbm.U = (u) -> U(u, pbm)
     return nothing
 end
 

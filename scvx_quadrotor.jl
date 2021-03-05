@@ -41,12 +41,10 @@ problem_set_guess!(pbm, (N, pbm) -> begin
                    end)
 
 # Cost to be minimized
-problem_set_cost!(pbm;
-                  # Running cost
-                  Γ = (x, u, p, pbm) -> begin
-                  σ = u[pbm.mdl.vehicle.id_σ]
-                  return σ^2
-                  end)
+problem_set_running_cost!(pbm, (x, u, p, pbm) -> begin
+                          σ = u[pbm.mdl.vehicle.id_σ]
+                          return σ^2
+                          end)
 
 # Dynamics constraint
 problem_set_dynamics!(pbm,

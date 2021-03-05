@@ -311,7 +311,7 @@ The supported cones are:
     :secondordercone    for constraints z=(t, x), norm(x, 2)<=t.
     :norminfinitycone   for constraints z=(t, x), norm(x, ∞)<=t. =#
 struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
-    z::T_OptiVar # The expression to be constraints in the cone.
+    z::T_OptiVar # The expression to be constrained in the cone.
     K::T         # The cone set.
 
     #= Basic constructor.
@@ -332,6 +332,7 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
             throw(err)
         end
 
+        z = (typeof(z) <: Array) ? z : [z]
         dim = length(z)
 
         if kind==:nonpositiveorthant
