@@ -116,10 +116,10 @@ problem_set_U!(pbm, (u, pbm) -> begin
                uu = u[veh.id_u]
                σ = u[veh.id_σ]
                C = T_ConvexConeConstraint
-               U = [C(veh.u_min-σ, :nonpositiveorthant),
-                    C(σ-veh.u_max, :nonpositiveorthant),
-                    C(vcat(σ, uu), :secondordercone),
-                    C(σ*cos(veh.tilt_max)-uu[3], :nonpositiveorthant)]
+               U = [C(veh.u_min-σ, :nonpos),
+                    C(σ-veh.u_max, :nonpos),
+                    C(vcat(σ, uu), :soc),
+                    C(σ*cos(veh.tilt_max)-uu[3], :nonpos)]
                return U
                end)
 

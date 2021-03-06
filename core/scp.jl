@@ -187,7 +187,7 @@ function SCPSolution(history::SCPHistory)::SCPSolution
 
     # Extract relevant parameters
     num_iters = last_spbm.iter
-    pbm = last_spbm.scvx
+    pbm = last_spbm.def
     N = pbm.pars.N
     Nsub = pbm.pars.Nsub
     nx = pbm.traj.nx
@@ -196,7 +196,7 @@ function SCPSolution(history::SCPHistory)::SCPSolution
     τd = pbm.common.τ_grid
 
     if _scp__unsafe_solution(last_sol)
-        # SCvx failed :(
+        # SCP failed :(
         status = @sprintf "%s (%s)" SCP_FAILED last_sol.status
         xd = T_RealMatrix(undef, size(last_sol.xd))
         ud = T_RealMatrix(undef, size(last_sol.ud))
@@ -205,7 +205,7 @@ function SCPSolution(history::SCPHistory)::SCPSolution
         uc = missing
         cost = Inf
     else
-        # SCvx solved the problem!
+        # SCP solved the problem!
         status = @sprintf "%s" SCP_SOLVED
 
         xd = last_sol.xd
@@ -371,6 +371,156 @@ function _scp__compute_scaling(
     scale = SCPScaling(Sx, cx, Su, cu, Sp, cp, iSx, iSu, iSp)
 
     return scale
+end
+
+#= Compute concatenanted time derivative vector for dynamics discretization.
+
+Args:
+    τ: the time.
+    V: the current concatenated vector.
+    k: the discrete time grid interval.
+    pbm: the SCP problem definition.
+    idcs: indexing arrays into V.
+    ref: the reference trajectory.
+
+Returns:
+    dVdt: the time derivative of V. =#
+function _scp__derivs(τ::T_Real,
+                      V::T_RealVector,
+                      k::T_Int,
+                      pbm::SCPProblem,
+                      ref::T)::T_RealVector where {
+                          T<:SCPSubproblemSolution}
+    # Parameters
+    nx = pbm.traj.nx
+    N = pbm.pars.N
+    τ_span = @k(pbm.common.τ_grid, k, k+1)
+
+    # Get current values
+    idcs = pbm.common.id
+    x = V[idcs.x]
+    u = linterp(τ, @k(ref.ud, k, k+1), τ_span)
+    p = ref.p
+    Phi = reshape(V[idcs.A], (nx, nx))
+    σ_m = (τ_span[2]-τ)/(τ_span[2]-τ_span[1])
+    σ_p = (τ-τ_span[1])/(τ_span[2]-τ_span[1])
+
+    # Compute the state time derivative and local linearization
+    f = pbm.traj.f(x, u, p)
+    A = pbm.traj.A(x, u, p)
+    B = pbm.traj.B(x, u, p)
+    F = pbm.traj.F(x, u, p)
+    B_m = σ_m*B
+    B_p = σ_p*B
+    r = f-A*x-B*u-F*p
+    E = pbm.common.E
+
+    # Compute the running derivatives for the discrete-time state update
+    # matrices
+    iPhi = Phi\I(nx)
+    dPhidt = A*Phi
+    dBmdt = iPhi*B_m
+    dBpdt = iPhi*B_p
+    dFdt = iPhi*F
+    drdt = iPhi*r
+    dEdt = iPhi*E
+
+    dVdt = [f; vec(dPhidt); vec(dBmdt); vec(dBpdt);
+            vec(dFdt); drdt; vec(dEdt)]
+
+    return dVdt
+end
+
+#= Discrete linear time varying dynamics computation.
+
+Compute the discrete-time update matrices for the linearized dynamics about a
+reference trajectory. As a byproduct, this calculates the defects needed for
+the trust region update.
+
+Args:
+    ref: the reference trajectory for which the propagation is done.
+    pbm: the SCP problem definition. =#
+function _scp__discretize!(ref::T,
+                           pbm::SCPProblem)::Nothing where {
+                               T<:SCPSubproblemSolution}
+    # Parameters
+    nx = pbm.traj.nx
+    nu = pbm.traj.nu
+    np = pbm.traj.np
+    N = pbm.pars.N
+    Nsub = pbm.pars.Nsub
+    sz_E = size(pbm.common.E)
+
+    # Initialization
+    idcs = pbm.common.id
+    V0 = zeros(idcs.length)
+    V0[idcs.A] = vec(I(nx))
+    ref.feas = true
+
+    # Propagate individually over each discrete-time interval
+    for k = 1:N-1
+        # Reset the state initial condition
+        V0[idcs.x] = @k(ref.xd)
+
+        # Integrate
+        f = (τ, V) -> _scp__derivs(τ, V, k, pbm, ref)
+        τ_subgrid = T_RealVector(
+            LinRange(pbm.common.τ_grid[k], pbm.common.τ_grid[k+1], Nsub))
+        V = rk4(f, V0, τ_subgrid; actions=pbm.traj.integ_actions)
+
+        # Get the raw RK4 results
+        xV = V[idcs.x]
+        AV = V[idcs.A]
+        BmV = V[idcs.Bm]
+        BpV = V[idcs.Bp]
+        FV = V[idcs.F]
+        rV = V[idcs.r]
+        EV = V[idcs.E]
+
+        # Extract the discrete-time update matrices for this time interval
+	A_k = reshape(AV, (nx, nx))
+        Bm_k = A_k*reshape(BmV, (nx, nu))
+        Bp_k = A_k*reshape(BpV, (nx, nu))
+        F_k = A_k*reshape(FV, (nx, np))
+        r_k = A_k*rV
+        E_k = A_k*reshape(EV, sz_E)
+
+        # Save the discrete-time update matrices
+        @k(ref.A) = A_k
+        @k(ref.Bm) = Bm_k
+        @k(ref.Bp) = Bp_k
+        @k(ref.F) = F_k
+        @k(ref.r) = r_k
+        @k(ref.E) = E_k
+
+        # Take this opportunity to comput the defect, which will be needed
+        # later for the trust region update
+        x_next = @kp1(ref.xd)
+        @k(ref.defect) = x_next-xV
+        if norm(@k(ref.defect)) > pbm.pars.feas_tol
+            ref.feas = false
+        end
+
+    end
+
+    return nothing
+end
+
+#= Solve the SCP method's convex subproblem via numerical optimization.
+
+Args:
+    spbm: the subproblem structure. =#
+function _scp__solve_subproblem!(spbm::T)::Nothing where {T<:SCPSubproblem}
+    # Optimize
+    optimize!(spbm.mdl)
+
+    # Save the solution
+    # (this complicated-looking thing calls the constructor for the
+    #  SCPSubproblemSolution child type)
+    constructor = Meta.parse(string(typeof(spbm.ref)))
+    spbm.sol = eval(Expr(:call, constructor, spbm))
+
+    return nothing
 end
 
 #= Check if the subproblem optimization had issues.

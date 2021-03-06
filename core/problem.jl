@@ -3,10 +3,10 @@
 This acts as a "parser" interface to define a particular instance of the
 trajectory generation problem.
 
-The following design philosophy applies: if you leave pieces of the trajectory
-problem undefined, then it is assumed that piece is not present in the
-optimization problem. For example, if the running cost is left undefined, then
-it is taken to be zero.
+The following design philosophy applies: you can omit a term by passing
+`nothing` to the function. If you leave a piece out of the trajectory problem,
+then it is assumed that piece is not present in the optimization problem. For
+example, if the running cost is left undefined, then it is taken to be zero.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
@@ -48,13 +48,13 @@ mutable struct TrajectoryProblem
     φ::T_Function     # (SCvx/GuSTO) Terminal cost
     Γ::T_Function     # (SCvx) Running cost
     S::T_Function     # (GuSTO) Running cost quadratic input penalty
-    ∇pS::T_Function   # (GuSTO) Jacobian of S wrt parameter vector
+    dSdp::T_Function  # (GuSTO) Jacobian of S wrt parameter vector
     ℓ::T_Function     # (GuSTO) Running cost input-affine penalty
-    ∇xℓ::T_Function   # (GuSTO) Jacobian of ℓ wrt state
-    ∇pℓ::T_Function   # (GuSTO) Jacobian of ℓ wrt parameter
+    dℓdx::T_Function  # (GuSTO) Jacobian of ℓ wrt state
+    dℓdp::T_Function  # (GuSTO) Jacobian of ℓ wrt parameter
     g::T_Function     # (GuSTO) Running cost additive penalty
-    ∇xg::T_Function   # (GuSTO) Jacobian of g wrt state
-    ∇pg::T_Function   # (GuSTO) Jacobian of g wrt parameter
+    dgdx::T_Function  # (GuSTO) Jacobian of g wrt state
+    dgdp::T_Function  # (GuSTO) Jacobian of g wrt parameter
     g_cvx::T_Bool     # (GuSTO) Indicator if g is convex
     # >> Dynamics <<
     f::T_Function     # State time derivative
@@ -62,8 +62,8 @@ mutable struct TrajectoryProblem
     B::T_Function     # Jacobian df/du
     F::T_Function     # Jacobian df/dp
     # >> Constraints <<
-    X::T_Function     # Convex state constraints
-    U::T_Function     # Convex input constraints
+    X::T_Function     # (SCvx/GuSTO) Convex state constraints
+    U::T_Function     # (SCvx/GuSTO) Convex input constraints
     s::T_Function     # Nonconvex inequality constraint function
     C::T_Function     # Jacobian ds/dx
     D::T_Function     # Jacobian ds/du
@@ -105,18 +105,18 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     φ = nothing
     Γ = nothing
     S = nothing
-    ∇pS = nothing
+    dSdp = nothing
     ℓ = nothing
-    ∇xℓ = nothing
-    ∇pℓ = nothing
+    dℓdx = nothing
+    dℓdp = nothing
     g = nothing
-    ∇xg = nothing
-    ∇pg = nothing
+    dgdx = nothing
+    dgdp = nothing
     g_cvx = true
-    f = (τ, x, u, p) -> T_RealVector(undef, 0)
-    A = (τ, x, u, p) -> T_RealMatrix(undef, 0, 0)
-    B = (τ, x, u, p) -> T_RealMatrix(undef, 0, 0)
-    F = (τ, x, u, p) -> T_RealMatrix(undef, 0, 0)
+    f = nothing
+    A = nothing
+    B = nothing
+    F = nothing
     X = nothing
     U = nothing
     s = (x, u, p) -> T_RealVector(undef, 0)
@@ -131,8 +131,8 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     Kf = (x, p) -> T_RealMatrix(undef, 0, 0)
 
     pbm = TrajectoryProblem(nx, nu, np, xrg, urg, prg, propag_actions, guess,
-                            φ, Γ, S, ∇pS, ℓ, ∇xℓ, ∇pℓ, g, ∇xg, ∇pg, g_cvx, f,
-                            A, B, F, X, U, s, C, D, G, gic, H0, K0, gtc, Hf,
+                            φ, Γ, S, dSdp, ℓ, dℓdx, dℓdp, g, dgdx, dgdp, g_cvx,
+                            f, A, B, F, X, U, s, C, D, G, gic, H0, K0, gtc, Hf,
                             Kf, mdl)
 
     return pbm
@@ -257,7 +257,7 @@ Args:
     pbm: the trajectory problem structure.
     Γ: (optional) the running cost. =#
 function problem_set_running_cost!(pbm::TrajectoryProblem,
-                                   Γ::T_Function=nothing)::Nothing
+                                   Γ::T_Function)::Nothing
     pbm.Γ = (x, u, p) -> Γ(x, u, p, pbm)
     return nothing
 end
@@ -268,24 +268,23 @@ The running cost is given by:
 
     u'*S(p)*u+u'*ℓ(x, p)+g(x, p).
 
-Function signatures: φ(x, p, pbm),
-                     S(p, pbm),
-                     ∇pS(p, pbm),
+Function signatures: S(p, pbm),
+                     dSdp(p, pbm),
                      ℓ(x, p, pbm),
-                     ∇xℓ(x, p, pbm),
-                     ∇pℓ(x, p, pbm),
+                     dℓdx(x, p, pbm),
+                     dℓdp(x, p, pbm),
                      g(x, p, pbm),
-                     ∇xg(x, p, pbm),
-                     ∇pg(x, p, pbm), where
+                     dgdx(x, p, pbm),
+                     dgdp(x, p, pbm), where
   - x (T_OptiVarVector): the current state.
   - p (T_OptiVarVector): the parameter vector.
   - pbm (TrajectoryProblem): the trajectory problem structure.
 
 The function S must return a positive-semidefinite R^{nu x nu} matrix; the
-function ∇pS must return an np-element array of R^{nu x nu} matrices where the
+function dSdp must return an np-element array of R^{nu x nu} matrices where the
 i-th matrix represents the Jacobian of S with respect to the i-th parameter;
-the functions φ, ℓ and g must return a real number; the functions ∇xℓ and ∇xg
-must return an R^nx vector; and the functions ∇pℓ and ∇pg must return an R^np
+the functions φ, ℓ and g must return a real number; the functions dℓdx and dgdx
+must return an R^nx vector; and the functions dℓdp and dgdp must return an R^np
 vector.
 
 When you pass "nothing" as the argument, this term will be interpreted as zero
@@ -293,35 +292,32 @@ in the optimization problem.
 
 Args:
     pbm: the trajectory problem structure.
-    φ: (optional) the terminal cost.
-    S: (optional) the input quadratic penalty.
-    ∇pS: (optional) the input penalty quadratic form Jacobian wrt state.
-    ℓ: (optional) the input-affine penalty function.
-    ∇xℓ: (optional) the input-affine penalty function Jacobian wrt state.
-    ∇pℓ: (optional) the input-affine penalty function Jacobian wrt parameter.
-    g: (optional) the additive penalty function.
-    ∇xg: (optional) the additive penalty function Jacobian wrt state.
-    ∇pg: (optional) the additive penalty function Jacobian wrt parameter. =#
-function problem_set_cost!(pbm::TrajectoryProblem;
-                           φ::T_Function=nothing,
-                           S::T_Function=nothing,
-                           ∇pS::T_Function=nothing,
-                           ℓ::T_Function=nothing,
-                           ∇xℓ::T_Function=nothing,
-                           ∇pℓ::T_Function=nothing,
-                           g::T_Function=nothing,
-                           ∇xg::T_Function=nothing,
-                           ∇pg::T_Function=nothing)::Nothing
-    pbm.φ = !isnothing(φ) ? (x, p) -> φ(x, p, pbm) : nothing
+    S: the input quadratic penalty.
+    dSdp: the input penalty quadratic form Jacobian wrt state.
+    ℓ: the input-affine penalty function.
+    dℓdx: the input-affine penalty function Jacobian wrt state.
+    dℓdp: the input-affine penalty function Jacobian wrt parameter.
+    g: the additive penalty function.
+    dgdx: the additive penalty function Jacobian wrt state.
+    dgdp: the additive penalty function Jacobian wrt parameter. =#
+function problem_set_running_cost!(pbm::TrajectoryProblem,
+                                   S::T_Function,
+                                   dSdp::T_Function,
+                                   ℓ::T_Function,
+                                   dℓdx::T_Function,
+                                   dℓdp::T_Function,
+                                   g::T_Function,
+                                   dgdx::T_Function,
+                                   dgdp::T_Function)::Nothing
     pbm.S = !isnothing(S) ? (p) -> S(p, pbm) : nothing
-    pbm.∇pS = !isnothing(∇pS) ? (p) -> ∇pS(p, pbm) : nothing
+    pbm.dSdp = !isnothing(dSdp) ? (p) -> dSdp(p, pbm) : nothing
     pbm.ℓ = !isnothing(ℓ) ? (x, p) -> ℓ(x, p, pbm) : nothing
-    pbm.∇xℓ = !isnothing(∇xℓ) ? (x, p) -> ∇xℓ(x, p, pbm) : nothing
-    pbm.∇pℓ = !isnothing(∇pℓ) ? (x, p) -> ∇pℓ(x, p, pbm) : nothing
+    pbm.dℓdx = !isnothing(dℓdx) ? (x, p) -> dℓdx(x, p, pbm) : nothing
+    pbm.dℓdp = !isnothing(dℓdp) ? (x, p) -> dℓdp(x, p, pbm) : nothing
     pbm.g = !isnothing(g) ? (x, p) -> g(x, p, pbm) : nothing
-    pbm.∇xg = !isnothing(∇xg) ? (x, p) -> ∇xg(x, p, pbm) : nothing
-    pbm.∇pg = !isnothing(∇pg) ? (x, p) -> ∇pg(x, p, pbm) : nothing
-    if !isnothing(∇xg) || !isnothing(∇pg)
+    pbm.dgdx = !isnothing(dgdx) ? (x, p) -> dgdx(x, p, pbm) : nothing
+    pbm.dgdp = !isnothing(dgdp) ? (x, p) -> dgdp(x, p, pbm) : nothing
+    if !isnothing(dgdx) || !isnothing(dgdp)
         pbm.g_cvx = false
     end
     return nothing
@@ -335,11 +331,19 @@ Function signature: f(x, u, p, pbm), where:
   - p (T_RealVector): the current parameter vector.
   - pbm (TrajectorProblem): the trajectory problem structure.
 
-The function f must return a T_RealVector, while A, B, and F must return a
-T_RealMatrix.
+If kind is :nonlinear, then it is assumed that f is a fully nonlinear function,
+and:
+  - f must return a T_RealVector;
+  - A, B, and F must return a T_RealMatrix.
+
+If kind is :inputaffine, then it is assumed that f is affine in the input, and:
+  - f must return a Vector{T_RealVector}, the first element of which is taken
+    to be independent of the input;
+  - A, B, and F must return a Vector{T_RealMatrix}.
 
 Args:
     pbm: the trajectory problem structure.
+    kind: either :nonlinear or :inputaffine.
     f: the dynamics function.
     A: Jacobian with respect to the state, df/dx.
     B: Jacobian with respect to the input, df/du.
@@ -350,9 +354,46 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
                                B::T_Function,
                                F::T_Function)::Nothing
     pbm.f = (x, u, p) -> f(x, u, p, pbm)
-    pbm.A = (x, u, p) -> A(x, u, p, pbm)
-    pbm.B = (x, u, p) -> B(x, u, p, pbm)
-    pbm.F = (x, u, p) -> F(x, u, p, pbm)
+    pbm.A = !isnothing(A) ? (x, u, p) -> A(x, u, p, pbm) :
+        (x, u, p) -> zeros(pbm.nx, pbm.nx)
+    pbm.B = !isnothing(A) ? (x, u, p) -> B(x, u, p, pbm) :
+        (x, u, p) -> zeros(pbm.nx, pbm.nu)
+    pbm.F = !isnothing(F) ? (x, u, p) -> F(x, u, p, pbm) :
+        (x, u, p) -> zeros(pbm.nx, pbm.nu)
+    return nothing
+end
+
+function problem_set_dynamics!(pbm::TrajectoryProblem,
+                               f::T_Function,
+                               A::T_Function,
+                               F::T_Function)::Nothing
+    pbm.f = (x, u, p) -> begin
+        _f = f(x, p, pbm)
+        _f = _f[1]+sum(u[i]*_f[i+1] for i=1:pbm.nu)
+        return _f
+    end
+
+    pbm.A = !isnothing(A) ? (x, u, p) -> begin
+        _A = A(x, p, pbm)
+        _A = _A[1]+sum(u[i]*_A[i+1] for i=1:pbm.nu)
+        return _A
+    end : (x, u, p) -> zeros(pbm.nx, pbm.nx)
+
+    pbm.B = (x, u, p) -> begin
+        _B = zeros(pbm.nx, pbm.nu)
+        _f = f(x, p, pbm)
+        for i = 1:pbm.nu
+            _B[:, i] = _f[i+1]
+        end
+        return _B
+    end
+
+    pbm.F = !isnothing(F) ? (x, u, p) -> begin
+        _F = F(x, p, pbm)
+        _F = _F[1]+sum(u[i]*_F[i+1] for i=1:pbm.nu)
+        return _F
+    end : (x, u, p) -> zeros(pbm.nx, pbm.nx)
+
     return nothing
 end
 

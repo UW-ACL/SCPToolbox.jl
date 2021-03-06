@@ -51,7 +51,7 @@ end
 
 #= GuSTO subproblem solution. =#
 mutable struct GuSTOSubproblemSolution <: SCPSubproblemSolution
-    iter::T_Int          # SCvx iteration number
+    iter::T_Int          # GuSTO iteration number
     # >> Discrete-time rajectory <<
     xd::T_RealMatrix     # States
     ud::T_RealMatrix     # Inputs
@@ -75,7 +75,7 @@ mutable struct GuSTOSubproblemSolution <: SCPSubproblemSolution
     dyn_error::T_Real    # Cumulative dynamics error committed
     ρ::T_Real            # Convexification performance metric
     tr_update::T_String  # Indicator of growth direction for trust region
-    reject::T_Bool       # Indicator whether SCvx rejected this solution
+    reject::T_Bool       # Indicator whether GuSTO rejected this solution
     # >> Discrete-time dynamics update matrices <<
     # x[:, k+1] = ...
     A::T_RealTensor      # ...  A[:, :, k]*x[:, k]+ ...
@@ -84,6 +84,42 @@ mutable struct GuSTOSubproblemSolution <: SCPSubproblemSolution
     F::T_RealTensor      # ... +F[:, :, k]*p+ ...
     r::T_RealMatrix      # ... +r[:, k]+ ...
     E::T_RealTensor      # ... +E[:, :, k]*v
+end
+const T_GuSTOSubSol = GuSTOSubproblemSolution # Alias
+
+#= Subproblem definition in JuMP format for the convex numerical optimizer. =#
+mutable struct GuSTOSubproblem <: SCPSubproblem
+    iter::T_Int                  # GuSTO iteration number
+    mdl::Model                   # The optimization problem handle
+    # >> Algorithm parameters <<
+    def::SCPProblem              # The GuSTO algorithm definition
+    λ::T_Real                    # Soft penalty weight
+    η::T_Real                    # Trust region radius
+    # >> Reference and solution trajectories <<
+    sol::Union{T_GuSTOSubSol, Missing} # Solution trajectory
+    ref::Union{T_GuSTOSubSol, Missing} # Reference trajectory
+    # >> Cost function <<
+    # TODO
+    # >> Scaled variables <<
+    xh::T_OptiVarMatrix          # Discrete-time states
+    uh::T_OptiVarMatrix          # Discrete-time inputs
+    ph::T_OptiVarVector          # Parameter
+    # >> Physical variables <<
+    x::T_OptiVarMatrix           # Discrete-time states
+    u::T_OptiVarMatrix           # Discrete-time inputs
+    p::T_OptiVarVector           # Parameters
+    # >> Virtual control (never scaled) <<
+    vd::T_OptiVarMatrix          # Dynamics virtual control
+    # >> Discrete-time dynamics update matrices <<
+    # x[:,k+1] = ...
+    A::T_RealTensor              # ...  A[:, :, k]*x[:, k]+ ...
+    Bm::T_RealTensor             # ... +Bm[:, :, k]*u[:, k]+ ...
+    Bp::T_RealTensor             # ... +Bp[:, :, k]*u[:, k+1]+ ...
+    F::T_RealTensor              # ... +F[:, :, k]*p+ ...
+    r::T_RealMatrix              # ... +r[:, k]+ ...
+    E::T_RealTensor              # ... +E[:, :, k]*v
+    # >> Constraint references <<
+    # TODO
 end
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -112,38 +148,219 @@ function GuSTOProblem(pars::GuSTOParameters,
     return pbm
 end
 
+#= Constructor for an empty convex optimization subproblem.
+
+No cost or constraints. Just the decision variables and empty associated
+parameters.
+
+Args:
+    pbm: the GuSTO problem being solved.
+    iter: GuSTO iteration number.
+    λ: the soft penalty weight.
+    η: the trust region radius.
+    ref: the reference trajectory.
+
+Returns:
+    spbm: the subproblem structure. =#
+function GuSTOSubproblem(pbm::SCPProblem,
+                         iter::T_Int,
+                         λ::T_Real,
+                         η::T_Real,
+                         ref::T_GuSTOSubSol)::GuSTOSubproblem
+
+    # Convenience values
+    pars = pbm.pars
+    scale = pbm.common.scale
+    nx = pbm.traj.nx
+    nu = pbm.traj.nu
+    np = pbm.traj.np
+    N = pbm.pars.N
+    _E = pbm.common.E
+
+    # Optimization problem handle
+    solver = pars.solver
+    solver_opts = pars.solver_opts
+    mdl = Model()
+    set_optimizer(mdl, solver.Optimizer)
+    for (key,val) in solver_opts
+        set_optimizer_attribute(mdl, key, val)
+    end
+
+    sol = missing # No solution associated yet with the subproblem
+
+    # Decision variables (scaled)
+    xh = @variable(mdl, [1:nx, 1:N], base_name="xh")
+    uh = @variable(mdl, [1:nu, 1:N], base_name="uh")
+    ph = @variable(mdl, [1:np], base_name="ph")
+
+    # Physical decision variables
+    x = scale.Sx*xh.+scale.cx
+    u = scale.Su*uh.+scale.cu
+    p = scale.Sp*ph.+scale.cp
+    vd = @variable(mdl, [1:size(_E, 2), 1:N-1], base_name="vd")
+
+    # Uninitialized parameters
+    A = T_RealTensor(undef, nx, nx, N-1)
+    Bm = T_RealTensor(undef, nx, nu, N-1)
+    Bp = T_RealTensor(undef, nx, nu, N-1)
+    F = T_RealTensor(undef, nx, np, N-1)
+    r = T_RealMatrix(undef, nx, N-1)
+    E = T_RealTensor(undef, size(_E)..., N-1)
+
+    spbm = GuSTOSubproblem(iter, mdl, pbm, λ, η, sol, ref, xh, uh, ph, x, u,
+                           p, vd, A, Bm, Bp, F, r, E)
+
+    return spbm
+end
+
+#= Construct a subproblem solution from a discrete-time trajectory.
+
+This leaves parameters of the solution other than the passed discrete-time
+trajectory unset.
+
+Args:
+    x: discrete-time state trajectory.
+    u: discrete-time input trajectory.
+    p: parameter vector.
+    iter: GuSTO iteration number.
+    pbm: the GuSTO problem definition.
+
+Returns:
+    subsol: subproblem solution structure. =#
+function GuSTOSubproblemSolution(
+    x::T_RealMatrix,
+    u::T_RealMatrix,
+    p::T_RealVector,
+    iter::T_Int,
+    pbm::SCPProblem)::T_GuSTOSubSol
+
+    # Parameters
+    N = pbm.pars.N
+    nx = pbm.traj.nx
+    nu = pbm.traj.nu
+    np = pbm.traj.np
+    _E = pbm.common.E
+
+    # Uninitialized parts
+    status = MOI.OPTIMIZE_NOT_CALLED
+    feas = false
+    defect = fill(NaN, nx, N-1)
+    deviation = NaN
+    unsafe = false
+    cost_error = NaN
+    dyn_error = NaN
+    ρ = NaN
+    tr_update = ""
+    reject = false
+
+    vd = T_RealMatrix(undef, 0, N)
+
+    J = NaN
+    J_st = NaN
+    J_tr = NaN
+    J_vc = NaN
+    L = NaN
+    L_st = NaN
+
+    A = T_RealTensor(undef, nx, nx, N-1)
+    Bm = T_RealTensor(undef, nx, nu, N-1)
+    Bp = T_RealTensor(undef, nx, nu, N-1)
+    F = T_RealTensor(undef, nx, np, N-1)
+    r = T_RealMatrix(undef, nx, N-1)
+    E = T_RealTensor(undef, size(_E)..., N-1)
+
+    subsol = GuSTOSubproblemSolution(iter, x, u, p, vd, J, J_st, J_tr, J_vc,
+                                     L, L_st, status, feas, defect, deviation,
+                                     unsafe, cost_error, dyn_error, ρ, tr_update,
+                                     reject, A, Bm, Bp, F, r, E)
+
+    return subsol
+end
+
+#= Construct subproblem solution from a subproblem object.
+
+Expects that the subproblem argument is a solved subproblem (i.e. one to which
+numerical optimization has been applied).
+
+Args:
+    spbm: the subproblem structure.
+
+Returns:
+    sol: subproblem solution. =#
+function GuSTOSubproblemSolution(spbm::GuSTOSubproblem)::T_GuSTOSubSol
+    # Extract the discrete-time trajectory
+    x = value.(spbm.x)
+    u = value.(spbm.u)
+    p = value.(spbm.p)
+
+    # Form the partly uninitialized subproblem
+    sol = GuSTOSubproblemSolution(x, u, p, spbm.iter, spbm.def)
+
+    # Save the virtual control values and penalty terms
+    sol.vd = value.(spbm.vd)
+
+    # Save the optimal cost values
+    # TODO
+
+    # Save the solution status
+    sol.status = termination_status(spbm.mdl)
+
+    return sol
+end
+
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Apply the SCvx algorithm to solve the trajectory generation problem.
+#= Apply the GuSTO algorithm to solve the trajectory generation problem.
 
 Args:
     pbm: the trajectory problem to be solved.
 
 Returns:
-    sol: the SCvx solution structure.
-    history: SCvx iteration data history. =#
-function gusto_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution, Nothing},
+    sol: the GuSTO solution structure.
+    history: GuSTO iteration data history. =#
+function gusto_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution,
+                                                   T_GuSTOSubSol,
+                                                   Nothing},
                                              SCPHistory}
     # ..:: Initialize ::..
 
     λ = pbm.pars.λ_init
     η = pbm.pars.η_init
-    # ref = _gusto__generate_initial_guess(pbm)
+    ref = _gusto__generate_initial_guess(pbm)
 
     history = SCPHistory()
 
     # ..:: Iterate ::..
 
     for k = 1:pbm.pars.iter_max
-        # TODO
+        # >> Construct the subproblem <<
+        spbm = GuSTOSubproblem(pbm, k, λ, η, ref)
+
+        # TODO _gusto__add_<...>!(spbm)
+
+        _scp__save!(history, spbm)
+
+        try
+            # >> Solve the subproblem <<
+            _scp__solve_subproblem!(spbm)
+
+            # TODO
+        catch e
+            isa(e, SCPError) || rethrow(e)
+            _gusto__print_info(spbm, e)
+            break
+        end
+
+        # >> Print iteration info <<
+        _gusto__print_info(spbm)
     end
 
-    # reset(pbm.common.table)
+    reset(pbm.common.table)
 
     # ..:: Save solution ::..
-    sol = nothing # TODO SCPSolution(history)
+    sol = ref # TODO SCPSolution(history)
 
     return sol, history
 end
@@ -162,17 +379,44 @@ Args:
 
 Returns:
     guess: the initial guess. =#
-# function _gusto__generate_initial_guess(
-#     pbm::SCPProblem)::GuSTOSubproblemSolution
+function _gusto__generate_initial_guess(
+    pbm::SCPProblem)::T_GuSTOSubSol
 
-#     # Construct the raw trajectory
-#     x, u, p = pbm.traj.guess(pbm.pars.N)
-#     _scp__correct_convex!(x, u, pbm)
-#     guess = GuSTOSubproblemSolution(x, u, p, 0, pbm)
+    x, u, p = pbm.traj.guess(pbm.pars.N)
+    guess = T_GuSTOSubSol(x, u, p, 0, pbm)
+    _scp__discretize!(guess, pbm)
 
-#     # Compute the nonlinear cost
-#     _scp__discretize!(guess, pbm)
-#     _gusto__solution_cost!(guess, :nonlinear, pbm)
+    return guess
+end
 
-#     return guess
-# end
+#= Print command line info message.
+
+Args:
+    spbm: the subproblem that was solved.
+    err: a GuSTO-specific error message. =#
+function _gusto__print_info(spbm::GuSTOSubproblem,
+                            err::Union{Nothing, SCPError}=nothing)::Nothing
+
+    # Convenience variables
+    sol = spbm.sol
+    ref = spbm.ref
+    table = spbm.def.common.table
+
+    if !isnothing(err)
+        @printf "ERROR: %s, exiting\n" err.msg
+    elseif _scp__unsafe_solution(sol)
+        @printf "ERROR: unsafe solution (%s), exiting\n" sol.status
+    else
+        # Preprocess values
+        status = @sprintf "%s" sol.status
+        status = status[1:min(8, length(status))]
+
+        # Associate values with columns
+        assoc = Dict(:iter => spbm.iter,
+                     :status => status)
+
+        print(assoc, table)
+    end
+
+    return nothing
+end

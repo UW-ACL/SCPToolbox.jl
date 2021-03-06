@@ -30,30 +30,113 @@ include("utils/helper.jl")
 mdl = QuadrotorProblem()
 pbm = TrajectoryProblem(mdl)
 
-# Variable dimensions
-problem_set_dims!(pbm, 7, 4, 1)
+# >> Variable dimensions <<
+problem_set_dims!(pbm, 6, 4, 1)
 
-# Initial trajectory guess
+# >> Initial trajectory guess <<
 problem_set_guess!(pbm, (N, pbm) -> begin
                    return quadrotor_initial_guess(N, pbm)
                    end)
 
-# Cost to be minimized
-problem_set_cost!(pbm;
-                  # Input quadratic penalty, S
-                  S = (p, pbm) -> begin
-                  veh = pbm.mdl.vehicle
-                  S = zeros(pbm.nu, pbm.nu)
-                  S[veh.id_σ, veh.id_σ] = p[veh.id_pt]
-                  return S
-                  end,
-                  # Jacobian dS/dp
-                  ∇pS = (p, pbm) -> begin
-                  veh = pbm.mdl.vehicle
-                  ∇pS = [zeros(pbm.nu, pbm.nu) for i=1:pbm.np]
-                  ∇pS[veh.id_pt][veh.id_σ, veh.id_σ] = 1.0
-                  return ∇pS
-                  end)
+# >> Cost to be minimized <<
+problem_set_terminal_cost!(pbm, (x, p, pbm) -> begin
+                           veh = pbm.mdl.vehicle
+                           traj = pbm.mdl.traj
+                           tdil = p[veh.id_t]
+                           tdil_max = traj.tf_max
+                           γ = traj.γ
+                           return γ*tdil/tdil_max
+                           end)
+
+problem_set_running_cost!(pbm,
+                          # Input quadratic penalty S
+                          (p, pbm) -> begin
+                          veh = pbm.mdl.vehicle
+                          env = pbm.mdl.env
+                          traj = pbm.mdl.traj
+                          hover = norm(env.g)
+                          γ = traj.γ
+                          S = zeros(pbm.nu, pbm.nu)
+                          S[veh.id_σ, veh.id_σ] = (1-γ)*1/hover^2
+                          return S
+                          end,
+                          # Jacobian dS/dp
+                          nothing,
+                          # Input-affine penalty ℓ
+                          nothing,
+                          # Jacobian dℓ/dx
+                          nothing,
+                          # Jacobian dℓ/dp
+                          nothing,
+                          # Additive penalty g
+                          nothing,
+                          # Jacobian dg/dx
+                          nothing,
+                          # Jacobian dg/dp
+                          nothing)
+
+# >> Dynamics constraint <<
+
+# The input-affine dynamics function
+_gusto_quadrotor__f = (x, p, pbm) -> begin
+    veh = pbm.mdl.vehicle
+    g = pbm.mdl.env.g
+    v = x[veh.id_v]
+    tdil = p[veh.id_t]
+    f = [zeros(pbm.nx) for i=1:pbm.nu+1]
+    f[1][veh.id_r] = v
+    f[1][veh.id_v] = g
+    for j = 1:length(veh.id_u)
+        # ---
+        i = veh.id_u[j]
+        f[i+1][veh.id_v[j]] = 1.0
+        # ---
+    end
+    f = [_f*tdil for _f in f]
+    return f
+end
+
+problem_set_dynamics!(pbm,
+                      # Dynamics f
+                      (x, p, pbm) -> begin
+                      return _gusto_quadrotor__f(x, p, pbm)
+                      end,
+                      # Jacobian df/dx
+                      (x, p, pbm) -> begin
+                      veh = pbm.mdl.vehicle
+                      tdil = p[veh.id_t]
+                      A = [zeros(pbm.nx, pbm.nx) for i=1:pbm.nu+1]
+                      A[1][veh.id_r, veh.id_v] = I(3)
+                      A = [_A*tdil for _A in A]
+                      return A
+                      end,
+                      # Jacobian df/dp
+                      (x, p, pbm) -> begin
+                      veh = pbm.mdl.vehicle
+                      tdil = p[veh.id_t]
+                      F = [zeros(pbm.nx, pbm.np) for i=1:pbm.nu+1]
+                      _f = _gusto_quadrotor__f(x, p, pbm)
+                      for i = 1:pbm.nu+1
+                      # ---
+                      F[i][:, veh.id_t] = _f[i]/tdil
+                      # ---
+                      end
+                      return F
+                      end)
+
+# >> Convex path constraints on the input <<
+problem_set_U!(pbm, (u, pbm) -> begin
+               veh = pbm.mdl.vehicle
+               traj = pbm.mdl.traj
+               uu = u[veh.id_u]
+               σ = u[veh.id_σ]
+               C = T_ConvexConeConstraint
+               U = [C(veh.u_min-σ, :nonpos),
+                    C(σ-veh.u_max, :nonpos),
+                    C(vcat(σ, uu), :soc),
+                    C(σ*cos(veh.tilt_max)-uu[3], :nonpos)]
+               return U
+               end)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: GuSTO algorithm parameters :::::::::::::::::::::::::::::::::::::::::::::::
@@ -62,7 +145,7 @@ problem_set_cost!(pbm;
 N = 30
 Nsub = 15
 iter_max = 20
-ω = 1e3
+ω = 10.0
 λ_init = 13e3
 λ_max = 1e9
 ρ_0 = 5.0

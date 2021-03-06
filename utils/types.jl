@@ -306,12 +306,11 @@ end
 A conic constraint is of the form {z : z ∈ K}, where K is a convex cone.
 
 The supported cones are:
-    :nonpositiveorthant for constraints z<=0.
-    :normonecone        for constraints z=(t, x), norm(x, 1)<=t.
-    :secondordercone    for constraints z=(t, x), norm(x, 2)<=t.
-    :norminfinitycone   for constraints z=(t, x), norm(x, ∞)<=t.
-    :geomeancone        for constraints z=(t, x), geomean(x)>=t.
- =#
+    :nonpos for constraints z<=0.
+    :l1     for constraints z=(t, x), norm(x, 1)<=t.
+    :soc    for constraints z=(t, x), norm(x, 2)<=t.
+    :linf   for constraints z=(t, x), norm(x, ∞)<=t.
+    :geom   for constraints z=(t, x), geomean(x)>=t. =#
 struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
     z::T_OptiVar # The expression to be constrained in the cone.
     K::T         # The cone set.
@@ -326,11 +325,7 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
         constraint: the conic constraint. =#
     function T_ConvexConeConstraint(z::T_OptiVar,
                                     kind::T_Symbol)::T_ConvexConeConstraint
-        if !(kind in (:nonpositiveorthant,
-                      :normonecone,
-                      :secondordercone,
-                      :norminfinitycone,
-                      :geomeancone))
+        if !(kind in (:nonpos, :l1, :soc, :linf, :geom))
             err = SCPError(0, SCP_BAD_ARGUMENT, "Unsupported cone")
             throw(err)
         end
@@ -338,15 +333,15 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
         z = (typeof(z) <: Array) ? z : [z]
         dim = length(z)
 
-        if kind==:nonpositiveorthant
+        if kind==:nonpos
             K = MOI.Nonpositives(dim)
-        elseif kind==:normonecone
+        elseif kind==:l1
             K = MOI.NormOneCone(dim)
-        elseif kind==:secondordercone
+        elseif kind==:soc
             K = MOI.SecondOrderCone(dim)
-        elseif kind==:norminfinitycone
+        elseif kind==:linf
             K = MOI.NormInfinityCone(dim)
-        elseif kind==:geomeancone
+        elseif kind==:geom
             K = MOI.GeometricMeanCone(dim)
         end
 
