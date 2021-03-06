@@ -506,6 +506,49 @@ function _scp__discretize!(ref::T,
     return nothing
 end
 
+#= Add dynamics constraints to the problem.
+
+Args:
+    spbm: the subproblem definition. =#
+function _scp__add_dynamics!(
+    spbm::T)::Nothing where {T<:SCPSubproblem}
+
+    # Variables and parameters
+    N = spbm.def.pars.N
+    x = spbm.x
+    u = spbm.u
+    p = spbm.p
+    vd = spbm.vd
+
+    for k = 1:N-1
+        # Update matrices for this interval
+        A =  @k(spbm.ref.A)
+        Bm = @k(spbm.ref.Bm)
+        Bp = @k(spbm.ref.Bp)
+        F =  @k(spbm.ref.F)
+        r =  @k(spbm.ref.r)
+        E =  @k(spbm.ref.E)
+
+        # Associate matrices with subproblem
+        @k(spbm.A) = A
+        @k(spbm.Bm) = Bm
+        @k(spbm.Bp) = Bp
+        @k(spbm.F) = F
+        @k(spbm.r) = r
+        @k(spbm.E) = E
+    end
+
+    # Add dynamics constraint to optimization model
+    for k = 1:N-1
+        @k(spbm.dynamics) = @constraint(
+            spbm.mdl,
+            @kp1(x) .== @k(spbm.A)*@k(x)+@k(spbm.Bm)*@k(u)+
+            @k(spbm.Bp)*@kp1(u)+@k(spbm.F)*p+@k(spbm.r)+@k(spbm.E)*@k(vd))
+    end
+
+    return nothing
+end
+
 #= Solve the SCP method's convex subproblem via numerical optimization.
 
 Args:

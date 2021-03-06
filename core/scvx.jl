@@ -425,7 +425,7 @@ function scvx_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution, Nothing},
         # >> Construct the subproblem <<
         spbm = SCvxSubproblem(pbm, k, η, ref)
 
-        _scvx__add_dynamics!(spbm)
+        _scp__add_dynamics!(spbm)
         _scvx__add_bcs!(spbm)
         _scvx__add_convex_constraints!(spbm)
         _scvx__add_nonconvex_constraints!(spbm)
@@ -499,49 +499,6 @@ function _scvx__generate_initial_guess(
     _scvx__solution_cost!(guess, :nonlinear, pbm)
 
     return guess
-end
-
-#= Add dynamics constraints to the problem.
-
-Args:
-    spbm: the subproblem definition. =#
-function _scvx__add_dynamics!(
-    spbm::SCvxSubproblem)::Nothing
-
-    # Variables and parameters
-    N = spbm.def.pars.N
-    x = spbm.x
-    u = spbm.u
-    p = spbm.p
-    vd = spbm.vd
-
-    for k = 1:N-1
-        # Update matrices for this interval
-        A =  @k(spbm.ref.A)
-        Bm = @k(spbm.ref.Bm)
-        Bp = @k(spbm.ref.Bp)
-        F =  @k(spbm.ref.F)
-        r =  @k(spbm.ref.r)
-        E =  @k(spbm.ref.E)
-
-        # Associate matrices with subproblem
-        @k(spbm.A) = A
-        @k(spbm.Bm) = Bm
-        @k(spbm.Bp) = Bp
-        @k(spbm.F) = F
-        @k(spbm.r) = r
-        @k(spbm.E) = E
-    end
-
-    # Add dynamics constraint to optimization model
-    for k = 1:N-1
-        @k(spbm.dynamics) = @constraint(
-            spbm.mdl,
-            @kp1(x) .== @k(spbm.A)*@k(x)+@k(spbm.Bm)*@k(u)+
-            @k(spbm.Bp)*@kp1(u)+@k(spbm.F)*p+@k(spbm.r)+@k(spbm.E)*@k(vd))
-    end
-
-    return nothing
 end
 
 #= Add boundary condition constraints to the problem.
@@ -758,6 +715,7 @@ function _scvx__add_cost!(spbm::SCvxSubproblem)::Nothing
 
     # Virtual control penalty
     spbm.L_pen = trapz(P, τ_grid)+sum(Pf)
+    C = T_ConvexConeConstraint
 
     for k = 1:N
         if k<N
@@ -765,16 +723,14 @@ function _scvx__add_cost!(spbm::SCvxSubproblem)::Nothing
         else
             tmp = vcat(@k(P), @k(vs))
         end
-        cstrt = @constraint(spbm.mdl, tmp in MOI.NormOneCone(length(tmp)))
+        cstrt = add_conic_constraint!(spbm.mdl, C(tmp, :l1))
         push!(spbm.fit, cstrt)
     end
 
-    pen_ic = @constraint(
-        spbm.mdl, vcat(@first(Pf), vic) in MOI.NormOneCone(1+length(vic)))
+    pen_ic = add_conic_constraint!(spbm.mdl, C(vcat(@first(Pf), vic), :l1))
     push!(spbm.fit, pen_ic)
 
-    pen_tc = @constraint(
-        spbm.mdl, vcat(@last(Pf), vtc) in MOI.NormOneCone(1+length(vtc)))
+    pen_tc = add_conic_constraint!(spbm.mdl, C(vcat(@last(Pf), vtc), :l1))
     push!(spbm.fit, pen_tc)
 
     # Overall cost
@@ -1206,11 +1162,10 @@ function _scvx__correct_convex!(
     du = opti.uh-uh_ref
     epi_x = @variable(opti.mdl, [1:N], base_name="τx")
     epi_u = @variable(opti.mdl, [1:N], base_name="τu")
+    C = T_ConvexConeConstraint
     for k = 1:N
-        @constraint(opti.mdl, vcat(@k(epi_x), @k(dx))
-                    in MOI.NormOneCone(cone_dim_x))
-        @constraint(opti.mdl, vcat(@k(epi_u), @k(du))
-                    in MOI.NormOneCone(cone_dim_u))
+        add_conic_constraint!(opti.mdl, C(vcat(@k(epi_x), @k(dx)), :l1))
+        add_conic_constraint!(opti.mdl, C(vcat(@k(epi_u), @k(du)), :l1))
     end
 
     # Define the cost

@@ -119,6 +119,7 @@ mutable struct GuSTOSubproblem <: SCPSubproblem
     r::T_RealMatrix              # ... +r[:, k]+ ...
     E::T_RealTensor              # ... +E[:, :, k]*v
     # >> Constraint references <<
+    dynamics::T_ConstraintMatrix # Dynamics
     # TODO
 end
 
@@ -207,8 +208,11 @@ function GuSTOSubproblem(pbm::SCPProblem,
     r = T_RealMatrix(undef, nx, N-1)
     E = T_RealTensor(undef, size(_E)..., N-1)
 
+    # Empty constraints
+    dynamics = T_ConstraintMatrix(undef, nx, N-1)
+
     spbm = GuSTOSubproblem(iter, mdl, pbm, λ, η, sol, ref, xh, uh, ph, x, u,
-                           p, vd, A, Bm, Bp, F, r, E)
+                           p, vd, A, Bm, Bp, F, r, E, dynamics)
 
     return spbm
 end
@@ -338,6 +342,7 @@ function gusto_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution,
         # >> Construct the subproblem <<
         spbm = GuSTOSubproblem(pbm, k, λ, η, ref)
 
+        _scp__add_dynamics!(spbm)
         # TODO _gusto__add_<...>!(spbm)
 
         _scp__save!(history, spbm)
