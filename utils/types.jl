@@ -23,10 +23,10 @@ using JuMP
 @enum(SCPStatus,
       SCP_SOLVED,
       SCP_FAILED,
-      SCP_EMPTY_VARIABLE,
       SCP_SCALING_FAILED,
       SCP_GUESS_PROJECTION_FAILED,
-      SCP_BAD_ARGUMENT)
+      SCP_BAD_ARGUMENT,
+      SCP_BAD_PROBLEM)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Basic types ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -51,7 +51,7 @@ const T_RealTensor = __types_f(3)
 const T_OptiModel = Model
 
 __types_f(n) = Union{
-    Array{T_Real, n},
+    T_RealArray{n},
     Array{VariableRef, n},
     Array{GenericAffExpr{T_Real, VariableRef}, n}}
 const T_OptiVarVector = __types_f(1)
@@ -326,7 +326,7 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
     function T_ConvexConeConstraint(z::T_OptiVar,
                                     kind::T_Symbol)::T_ConvexConeConstraint
         if !(kind in (:nonpos, :l1, :soc, :linf, :geom))
-            err = SCPError(0, SCP_BAD_ARGUMENT, "Unsupported cone")
+            err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: Unsupported cone.")
             throw(err)
         end
 
@@ -350,8 +350,46 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
         return constraint
     end
 end
-
 const T_ConvexSet = Union{Nothing, Vector{T_ConvexConeConstraint}}
+
+#= Discrete-time linear time-varying system, with virtual control. =#
+mutable struct T_DLTV
+    # x[:,k+1] = ...
+    A::T_RealTensor  # ...  A[:, :, k]*x[:, k]+ ...
+    Bm::T_RealTensor # ... +Bm[:, :, k]*u[:, k]+ ...
+    Bp::T_RealTensor # ... +Bp[:, :, k]*u[:, k+1]+ ...
+    F::T_RealTensor  # ... +F[:, :, k]*p+ ...
+    r::T_RealMatrix  # ... +r[:, k]+ ...
+    E::T_RealTensor  # ... +E[:, :, k]*v
+
+    #= Basic constructor.
+
+    Args:
+        nx: state dimension.
+        nu: input dimension.
+        np: parameter dimension.
+        nv: virtual control dimension.
+        N: the number of discrete time nodes.
+
+    Returns:
+        dyn: the dynamics, with empty (undefined) matrices. =#
+    function T_DLTV(nx::T_Int,
+                    nu::T_Int,
+                    np::T_Int,
+                    nv::T_Int,
+                    N::T_Int)::T_DLTV
+        A = T_RealTensor(undef, nx, nx, N-1)
+        Bm = T_RealTensor(undef, nx, nu, N-1)
+        Bp = T_RealTensor(undef, nx, nu, N-1)
+        F = T_RealTensor(undef, nx, np, N-1)
+        r = T_RealMatrix(undef, nx, N-1)
+        E = T_RealTensor(undef, nx, nv, N-1)
+
+        dyn = new(A, Bm, Bp, F, r, E)
+
+        return dyn
+    end
+end
 
 #= Continuous-time trajectory data structure. =#
 struct T_ContinuousTimeTrajectory

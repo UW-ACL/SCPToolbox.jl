@@ -29,7 +29,7 @@ struct GuSTOParameters <: SCPParameters
     N::T_Int          # Number of temporal grid nodes
     Nsub::T_Int       # Number of subinterval integration time nodes
     iter_max::T_Int   # Maximum number of iterations
-    ω::T_Int          # Dynamics virtual control weight
+    ω::T_Real         # Dynamics virtual control weight
     λ_init::T_Real    # Initial soft penalty weight
     λ_max::T_Real     # Maximum soft penalty weight
     ρ_0::T_Real       # Trust region update threshold (lower, good solution)
@@ -76,14 +76,7 @@ mutable struct GuSTOSubproblemSolution <: SCPSubproblemSolution
     ρ::T_Real            # Convexification performance metric
     tr_update::T_String  # Indicator of growth direction for trust region
     reject::T_Bool       # Indicator whether GuSTO rejected this solution
-    # >> Discrete-time dynamics update matrices <<
-    # x[:, k+1] = ...
-    A::T_RealTensor      # ...  A[:, :, k]*x[:, k]+ ...
-    Bm::T_RealTensor     # ... +Bm[:, :, k]*u[:, k]+ ...
-    Bp::T_RealTensor     # ... +Bp[:, :, k]*u[:, k+1]+ ...
-    F::T_RealTensor      # ... +F[:, :, k]*p+ ...
-    r::T_RealMatrix      # ... +r[:, k]+ ...
-    E::T_RealTensor      # ... +E[:, :, k]*v
+    dyn::T_DLTV          # The dynamics
 end
 const T_GuSTOSubSol = GuSTOSubproblemSolution # Alias
 
@@ -99,7 +92,11 @@ mutable struct GuSTOSubproblem <: SCPSubproblem
     sol::Union{T_GuSTOSubSol, Missing} # Solution trajectory
     ref::Union{T_GuSTOSubSol, Missing} # Reference trajectory
     # >> Cost function <<
-    # TODO
+    L::T_Objective               # The original cost
+    L_st::T_Objective            # The state constraint soft penalty
+    L_tr::T_Objective            # The trust region soft penalty
+    L_vc::T_Objective            # The virtual control soft penalty
+    L_aug::T_Objective           # Overall cost
     # >> Scaled variables <<
     xh::T_OptiVarMatrix          # Discrete-time states
     uh::T_OptiVarMatrix          # Discrete-time inputs
@@ -110,17 +107,6 @@ mutable struct GuSTOSubproblem <: SCPSubproblem
     p::T_OptiVarVector           # Parameters
     # >> Virtual control (never scaled) <<
     vd::T_OptiVarMatrix          # Dynamics virtual control
-    # >> Discrete-time dynamics update matrices <<
-    # x[:,k+1] = ...
-    A::T_RealTensor              # ...  A[:, :, k]*x[:, k]+ ...
-    Bm::T_RealTensor             # ... +Bm[:, :, k]*u[:, k]+ ...
-    Bp::T_RealTensor             # ... +Bp[:, :, k]*u[:, k+1]+ ...
-    F::T_RealTensor              # ... +F[:, :, k]*p+ ...
-    r::T_RealMatrix              # ... +r[:, k]+ ...
-    E::T_RealTensor              # ... +E[:, :, k]*v
-    # >> Constraint references <<
-    dynamics::T_ConstraintMatrix # Dynamics
-    # TODO
 end
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -189,6 +175,13 @@ function GuSTOSubproblem(pbm::SCPProblem,
 
     sol = missing # No solution associated yet with the subproblem
 
+    # Cost function
+    L = missing
+    L_st = missing
+    L_tr = missing
+    L_vc = missing
+    L_aug = missing
+
     # Decision variables (scaled)
     xh = @variable(mdl, [1:nx, 1:N], base_name="xh")
     uh = @variable(mdl, [1:nu, 1:N], base_name="uh")
@@ -200,19 +193,8 @@ function GuSTOSubproblem(pbm::SCPProblem,
     p = scale.Sp*ph.+scale.cp
     vd = @variable(mdl, [1:size(_E, 2), 1:N-1], base_name="vd")
 
-    # Uninitialized parameters
-    A = T_RealTensor(undef, nx, nx, N-1)
-    Bm = T_RealTensor(undef, nx, nu, N-1)
-    Bp = T_RealTensor(undef, nx, nu, N-1)
-    F = T_RealTensor(undef, nx, np, N-1)
-    r = T_RealMatrix(undef, nx, N-1)
-    E = T_RealTensor(undef, size(_E)..., N-1)
-
-    # Empty constraints
-    dynamics = T_ConstraintMatrix(undef, nx, N-1)
-
-    spbm = GuSTOSubproblem(iter, mdl, pbm, λ, η, sol, ref, xh, uh, ph, x, u,
-                           p, vd, A, Bm, Bp, F, r, E, dynamics)
+    spbm = GuSTOSubproblem(iter, mdl, pbm, λ, η, sol, ref, L, L_st, L_tr, L_vc,
+                           L_aug, xh, uh, ph, x, u, p, vd)
 
     return spbm
 end
@@ -243,7 +225,7 @@ function GuSTOSubproblemSolution(
     nx = pbm.traj.nx
     nu = pbm.traj.nu
     np = pbm.traj.np
-    _E = pbm.common.E
+    nv = size(pbm.common.E, 2)
 
     # Uninitialized parts
     status = MOI.OPTIMIZE_NOT_CALLED
@@ -256,6 +238,7 @@ function GuSTOSubproblemSolution(
     ρ = NaN
     tr_update = ""
     reject = false
+    dyn = T_DLTV(nx, nu, np, nv, N)
 
     vd = T_RealMatrix(undef, 0, N)
 
@@ -266,17 +249,13 @@ function GuSTOSubproblemSolution(
     L = NaN
     L_st = NaN
 
-    A = T_RealTensor(undef, nx, nx, N-1)
-    Bm = T_RealTensor(undef, nx, nu, N-1)
-    Bp = T_RealTensor(undef, nx, nu, N-1)
-    F = T_RealTensor(undef, nx, np, N-1)
-    r = T_RealMatrix(undef, nx, N-1)
-    E = T_RealTensor(undef, size(_E)..., N-1)
+    subsol = GuSTOSubproblemSolution(iter, x, u, p, vd, J, J_st, J_tr, J_vc, L,
+                                     L_st, status, feas, defect, deviation,
+                                     unsafe, cost_error, dyn_error, ρ,
+                                     tr_update, reject, dyn)
 
-    subsol = GuSTOSubproblemSolution(iter, x, u, p, vd, J, J_st, J_tr, J_vc,
-                                     L, L_st, status, feas, defect, deviation,
-                                     unsafe, cost_error, dyn_error, ρ, tr_update,
-                                     reject, A, Bm, Bp, F, r, E)
+    # Compute the DLTV dynamics around this solution
+    _scp__discretize!(subsol, pbm)
 
     return subsol
 end
@@ -304,6 +283,7 @@ function GuSTOSubproblemSolution(spbm::GuSTOSubproblem)::T_GuSTOSubSol
     sol.vd = value.(spbm.vd)
 
     # Save the optimal cost values
+    sol.L = value.(spbm.L)
     # TODO
 
     # Save the solution status
@@ -343,6 +323,7 @@ function gusto_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution,
         spbm = GuSTOSubproblem(pbm, k, λ, η, ref)
 
         _scp__add_dynamics!(spbm)
+        _gusto__add_cost!(spbm)
         # TODO _gusto__add_<...>!(spbm)
 
         _scp__save!(history, spbm)
@@ -387,11 +368,181 @@ Returns:
 function _gusto__generate_initial_guess(
     pbm::SCPProblem)::T_GuSTOSubSol
 
+    # Construct the raw trajectory
     x, u, p = pbm.traj.guess(pbm.pars.N)
     guess = T_GuSTOSubSol(x, u, p, 0, pbm)
-    _scp__discretize!(guess, pbm)
 
     return guess
+end
+
+#= Define the subproblem cost function.
+
+Args:
+    spbm: the subproblem definition. =#
+function _gusto__add_cost!(spbm::GuSTOSubproblem)::Nothing
+
+    # Variables and parameters
+    x = spbm.x
+    u = spbm.u
+    p = spbm.p
+    vd = spbm.vd
+
+    # Compute the cost components
+    spbm.L = _gusto__original_cost(x, u, p, spbm)
+    spbm.L_st = 0.0 # TODO _gusto__state_penalty_cost(x, u, p, spbm.def)
+    spbm.L_tr = 0.0 # TODO _gusto__trust_region_cost(x, u, p, spbm.def)
+    spbm.L_vc = _gusto__virtual_control_cost(vd, spbm)
+
+    # Overall cost
+    spbm.L_aug = spbm.L+spbm.L_st+spbm.L_tr+spbm.L_vc
+
+    # Associate cost function with the model
+    set_objective_function(spbm.mdl, spbm.L_aug)
+    set_objective_sense(spbm.mdl, MOI.MIN_SENSE)
+
+    return nothing
+end
+
+#= Compute the original cost function.
+
+This function has two "modes": the (default) convex mode computes the convex
+version of the cost (where all non-convexity has been convexified), while the
+nonconvex mode computes the fully nonlinear cost.
+
+Args:
+    x: the discrete-time state trajectory.
+    u: the discrete-time input trajectory.
+    p: the parameter vector.
+    spbm: the subproblem structure.
+    mode: (optional) either :convex (default) or :nonconvex.
+
+Returns:
+    cost: the original cost. =#
+function _gusto__original_cost(x::T_OptiVarMatrix,
+                               u::T_OptiVarMatrix,
+                               p::T_OptiVarVector,
+                               spbm::GuSTOSubproblem,
+                               mode::T_Symbol=:convex)::T_Objective
+    # Parameters
+    pars = spbm.def.pars
+    traj = spbm.def.traj
+    ref = spbm.ref
+    if mode==:convex
+        N = pars.N
+        τ_grid = spbm.def.common.τ_grid
+    else
+        N = size(x, 2)
+        τ_grid = T_RealVector(LinRange(0.0, 1.0, N))
+        xb = ref.xd
+        ub = ref.ud
+        pb = ref.p
+    end
+
+    # Terminal cost
+    xf = @last(x)
+    cost_term = isnothing(traj.φ) ? 0.0 : traj.φ(xf, p)
+
+    # Integrated running cost
+    cost_run_integrand = Vector{T_Objective}(undef, N)
+    no_running_cost = (isnothing(traj.S) &&
+                       isnothing(traj.ℓ) &&
+                       isnothing(traj.g))
+    for k = 1:N
+        if no_running_cost
+            @k(cost_run_integrand) = 0.0
+        elseif mode==:convex
+            Γk = 0.0
+            if !isnothing(traj.S)
+                if traj.S_cvx
+                    Γk += @k(u)'*traj.S(p)*@k(u)
+                else
+                    S = traj.S(pb)
+                    ∇S = traj.dSdp(pb)
+                    dp = p-pb
+                    S1 = S+∇S.*dp
+                    Γk += @k(u)'*S1*@k(u)
+                end
+            end
+            if !isnothing(traj.ℓ)
+                if traj.ℓ_cvx
+                    Γk += @k(u)'*traj.ℓ(@k(x), p)
+                else
+                    uℓ = @k(ub)'*traj.ℓ(@k(xb), pb)
+                    ∇uuℓ = traj.ℓ(@k(xb), pb)
+                    ∇xuℓ = traj.dℓdx(@k(xb), pb)'*@k(ub)
+                    ∇puℓ = traj.dℓdp(@k(xb), pb)'*@k(ub)
+                    du = @k(u)-@k(ub)
+                    dx = @k(x)-@k(xb)
+                    dp = p-pb
+                    uℓ1 = uℓ+∇uuℓ'*du+∇xuℓ'*dx+∇puℓ'*dp
+                    Γk += uℓ1
+                end
+            end
+            if !isnothing(traj.g)
+                if traj.g_cvx
+                    Γk += traj.g(@k(x), p)
+                else
+                    g = traj.g(@k(xb), pb)
+                    ∇xg = traj.dgdx(@k(xb), pb)
+                    ∇pg = traj.dgdp(@k(xb), pb)
+                    dx = @k(x)-@k(xb)
+                    dp = p-pb
+                    g1 = g+∇xg'*dx+∇pg'*dp
+                    Γk += g1
+                end
+            end
+            @k(cost_run_integrand) = Γk
+        else
+            Γk = 0.0
+            Γk += !isnothing(traj.S) ? @k(u)'*traj.S(p)*@k(u) : 0.0
+            Γk += !isnothing(traj.ℓ) ? @k(u)'*traj.ℓ(@k(x), p) : 0.0
+            Γk += !isnothing(traj.g) ? traj.g(@k(x), p) : 0.0
+            @k(cost_run_integrand) = Γk
+        end
+    end
+    cost_run = trapz(cost_run_integrand, τ_grid)
+
+    # Overall original cost
+    cost = cost_term+cost_run
+
+    return cost
+end
+
+#= Compute the virtual control penalty.
+
+Args:
+    vd: the discrete-time dynamics virtual control trajectory.
+    spbm: the subproblem structure.
+
+Returns:
+    cost_vc: the virtual control penalty cost. =#
+function _gusto__virtual_control_cost(vd::T_OptiVarMatrix,
+                                      spbm::GuSTOSubproblem)::T_Objective
+
+    # Parameters
+    pars = spbm.def.pars
+    ω = pars.ω
+    E = spbm.ref.dyn.E
+    N = size(vd, 2)
+    τ_grid = T_RealVector(LinRange(0.0, 1.0, N))
+
+    # Integrated running cost
+    cost_vc_integrand = Vector{T_Objective}(undef, N)
+    for k = 1:N
+        if typeof(vd)==T_RealMatrix
+            # Evaluation using what's assumed to be defects that are passed in
+            vc_l1 = norm(@k(vd), 1)
+        else
+            # Evaluation using virtual control in an optimization subproblem
+            vc_l1 = @variable(spbm.mdl, base_name=@sprintf("vc_l1_%d", k))
+            C = T_ConvexConeConstraint(vcat(vc_l1, @k(E)*@k(vd)), :l1)
+            add_conic_constraint!(spbm.mdl, C)
+        end
+        @k(cost_vc_integrand) = ω*vc_l1
+    end
+    cost_vc = trapz(cost_vc_integrand, τ_grid)
+
+    return cost_vc
 end
 
 #= Print command line info message.

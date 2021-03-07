@@ -77,10 +77,32 @@ struct SCPCommon
 end
 
 #= Structure which contains all the necessary information to run SCP. =#
-struct SCPProblem{T}
+struct SCPProblem{T<:SCPParameters}
     pars::T                 # Algorithm parameters
     traj::TrajectoryProblem # The underlying trajectory problem
     common::SCPCommon       # Common precomputed terms
+
+    #= Basic constructor.
+
+    Args:
+        See the above comments.
+
+    Returns:
+        pbm: the SCP problem definition structure. =#
+    function SCPProblem(pars::T,
+                        traj::TrajectoryProblem,
+                        common::SCPCommon)::SCPProblem where {T<:SCPParameters}
+        if !(traj.nx>=1 && traj.nu >=1)
+            msg = string("ERROR: the current implementation only supports",
+                         " problems with at least 1 state and 1 control.")
+            err = SCPError(0, SCP_BAD_PROBLEM, msg)
+            throw(err)
+        end
+
+        pbm = new{typeof(pars)}(pars, traj, common)
+
+        return pbm
+    end
 end
 
 #= Overall trajectory solution.
@@ -438,11 +460,11 @@ reference trajectory. As a byproduct, this calculates the defects needed for
 the trust region update.
 
 Args:
-    ref: the reference trajectory for which the propagation is done.
+    ref: reference solution about which to discretize.
     pbm: the SCP problem definition. =#
-function _scp__discretize!(ref::T,
-                           pbm::SCPProblem)::Nothing where {
-                               T<:SCPSubproblemSolution}
+function _scp__discretize!(
+    ref::T, pbm::SCPProblem)::Nothing where {T<:SCPSubproblemSolution}
+
     # Parameters
     nx = pbm.traj.nx
     nu = pbm.traj.nu
@@ -486,12 +508,12 @@ function _scp__discretize!(ref::T,
         E_k = A_k*reshape(EV, sz_E)
 
         # Save the discrete-time update matrices
-        @k(ref.A) = A_k
-        @k(ref.Bm) = Bm_k
-        @k(ref.Bp) = Bp_k
-        @k(ref.F) = F_k
-        @k(ref.r) = r_k
-        @k(ref.E) = E_k
+        @k(ref.dyn.A) = A_k
+        @k(ref.dyn.Bm) = Bm_k
+        @k(ref.dyn.Bp) = Bp_k
+        @k(ref.dyn.F) = F_k
+        @k(ref.dyn.r) = r_k
+        @k(ref.dyn.E) = E_k
 
         # Take this opportunity to comput the defect, which will be needed
         # later for the trust region update
@@ -520,30 +542,16 @@ function _scp__add_dynamics!(
     p = spbm.p
     vd = spbm.vd
 
-    for k = 1:N-1
-        # Update matrices for this interval
-        A =  @k(spbm.ref.A)
-        Bm = @k(spbm.ref.Bm)
-        Bp = @k(spbm.ref.Bp)
-        F =  @k(spbm.ref.F)
-        r =  @k(spbm.ref.r)
-        E =  @k(spbm.ref.E)
-
-        # Associate matrices with subproblem
-        @k(spbm.A) = A
-        @k(spbm.Bm) = Bm
-        @k(spbm.Bp) = Bp
-        @k(spbm.F) = F
-        @k(spbm.r) = r
-        @k(spbm.E) = E
-    end
-
     # Add dynamics constraint to optimization model
     for k = 1:N-1
-        @k(spbm.dynamics) = @constraint(
-            spbm.mdl,
-            @kp1(x) .== @k(spbm.A)*@k(x)+@k(spbm.Bm)*@k(u)+
-            @k(spbm.Bp)*@kp1(u)+@k(spbm.F)*p+@k(spbm.r)+@k(spbm.E)*@k(vd))
+        xk, xkp1, uk, ukp1, vdk = @k(x), @kp1(x), @k(u), @kp1(u), @k(vd)
+        A = @k(spbm.ref.dyn.A)
+        Bm = @k(spbm.ref.dyn.Bm)
+        Bp = @k(spbm.ref.dyn.Bp)
+        F = @k(spbm.ref.dyn.F)
+        r = @k(spbm.ref.dyn.r)
+        E = @k(spbm.ref.dyn.E)
+        @constraint(spbm.mdl, xkp1.==A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk)
     end
 
     return nothing

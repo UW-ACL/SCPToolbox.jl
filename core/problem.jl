@@ -55,6 +55,8 @@ mutable struct TrajectoryProblem
     g::T_Function     # (GuSTO) Running cost additive penalty
     dgdx::T_Function  # (GuSTO) Jacobian of g wrt state
     dgdp::T_Function  # (GuSTO) Jacobian of g wrt parameter
+    S_cvx::T_Bool     # (GuSTO) Indicator if S is convex
+    ℓ_cvx::T_Bool     # (GuSTO) Indicator if ℓ is convex
     g_cvx::T_Bool     # (GuSTO) Indicator if g is convex
     # >> Dynamics <<
     f::T_Function     # State time derivative
@@ -99,9 +101,7 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     urg = Vector{Nothing}(undef, 0)
     prg = Vector{Nothing}(undef, 0)
     propag_actions = T_SpecialIntegrationActions(undef, 0)
-    guess = (N) -> (T_RealMatrix(undef, 0, 0),
-                    T_RealMatrix(undef, 0, 0),
-                    T_RealVector(undef, 0))
+    guess = nothing
     φ = nothing
     Γ = nothing
     S = nothing
@@ -112,6 +112,8 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     g = nothing
     dgdx = nothing
     dgdp = nothing
+    S_cvx = true
+    ℓ_cvx = true
     g_cvx = true
     f = nothing
     A = nothing
@@ -119,21 +121,21 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     F = nothing
     X = nothing
     U = nothing
-    s = (x, u, p) -> T_RealVector(undef, 0)
-    C = (x, u, p) -> T_RealMatrix(undef, 0, 0)
-    D = (x, u, p) -> T_RealMatrix(undef, 0, 0)
-    G = (x, u, p) -> T_RealMatrix(undef, 0, 0)
-    gic = (x, p) -> T_RealVector(undef, 0)
-    H0 = (x, p) -> T_RealMatrix(undef, 0, 0)
-    K0 = (x, p) -> T_RealMatrix(undef, 0, 0)
-    gtc = (x, p) -> T_RealVector(undef, 0)
-    Hf = (x, p) -> T_RealMatrix(undef, 0, 0)
-    Kf = (x, p) -> T_RealMatrix(undef, 0, 0)
+    s = nothing
+    C = nothing
+    D = nothing
+    G = nothing
+    gic = nothing
+    H0 = nothing
+    K0 = nothing
+    gtc = nothing
+    Hf = nothing
+    Kf = nothing
 
     pbm = TrajectoryProblem(nx, nu, np, xrg, urg, prg, propag_actions, guess,
-                            φ, Γ, S, dSdp, ℓ, dℓdx, dℓdp, g, dgdx, dgdp, g_cvx,
-                            f, A, B, F, X, U, s, C, D, G, gic, H0, K0, gtc, Hf,
-                            Kf, mdl)
+                            φ, Γ, S, dSdp, ℓ, dℓdx, dℓdp, g, dgdx, dgdp, S_cvx,
+                            ℓ_cvx, g_cvx, f, A, B, F, X, U, s, C, D, G, gic,
+                            H0, K0, gtc, Hf, Kf, mdl)
 
     return pbm
 end
@@ -280,15 +282,16 @@ Function signatures: S(p, pbm),
   - p (T_OptiVarVector): the parameter vector.
   - pbm (TrajectoryProblem): the trajectory problem structure.
 
-The function S must return a positive-semidefinite R^{nu x nu} matrix; the
-function dSdp must return an np-element array of R^{nu x nu} matrices where the
-i-th matrix represents the Jacobian of S with respect to the i-th parameter;
-the functions φ, ℓ and g must return a real number; the functions dℓdx and dgdx
-must return an R^nx vector; and the functions dℓdp and dgdp must return an R^np
-vector.
-
-When you pass "nothing" as the argument, this term will be interpreted as zero
-in the optimization problem.
+The functions must return the following values:
+  - S: a positive-semidefinite R^{nu x nu} matrix
+  - dSdp: an np-element array of R^{nu x nu} matrices where the i-th matrix
+    represents the Jacobian of S with respect to the i-th parameter
+  - ℓ: a vector in R^nu
+  - dℓdx: a matrix in R^{nu x nx}
+  - dℓdp: a matrix in R^{nu x np}
+  - g: a real value
+  - dgdx: a vector R^nx
+  - dgdp: a vector R^np
 
 Args:
     pbm: the trajectory problem structure.
@@ -299,7 +302,10 @@ Args:
     dℓdp: the input-affine penalty function Jacobian wrt parameter.
     g: the additive penalty function.
     dgdx: the additive penalty function Jacobian wrt state.
-    dgdp: the additive penalty function Jacobian wrt parameter. =#
+    dgdp: the additive penalty function Jacobian wrt parameter.
+    g_cvx: a manual flag whether g(x, p) is a convex function (in which
+        case, the return value of g(x, p) must be a convex function in
+        JuMP format). =#
 function problem_set_running_cost!(pbm::TrajectoryProblem,
                                    S::T_Function,
                                    dSdp::T_Function,
@@ -308,18 +314,19 @@ function problem_set_running_cost!(pbm::TrajectoryProblem,
                                    dℓdp::T_Function,
                                    g::T_Function,
                                    dgdx::T_Function,
-                                   dgdp::T_Function)::Nothing
+                                   dgdp::T_Function;
+                                   g_cvx::T_Bool=false)::Nothing
     pbm.S = !isnothing(S) ? (p) -> S(p, pbm) : nothing
     pbm.dSdp = !isnothing(dSdp) ? (p) -> dSdp(p, pbm) : nothing
+    pbm.S_cvx = isnothing(dSdp)
     pbm.ℓ = !isnothing(ℓ) ? (x, p) -> ℓ(x, p, pbm) : nothing
     pbm.dℓdx = !isnothing(dℓdx) ? (x, p) -> dℓdx(x, p, pbm) : nothing
     pbm.dℓdp = !isnothing(dℓdp) ? (x, p) -> dℓdp(x, p, pbm) : nothing
+    pbm.ℓ_cvx = isnothing(dℓdx) && isnothing(dℓdp)
     pbm.g = !isnothing(g) ? (x, p) -> g(x, p, pbm) : nothing
     pbm.dgdx = !isnothing(dgdx) ? (x, p) -> dgdx(x, p, pbm) : nothing
     pbm.dgdp = !isnothing(dgdp) ? (x, p) -> dgdp(x, p, pbm) : nothing
-    if !isnothing(dgdx) || !isnothing(dgdp)
-        pbm.g_cvx = false
-    end
+    pbm.g_cvx = g_cvx || (isnothing(dgdx) && isnothing(dgdp))
     return nothing
 end
 
@@ -455,10 +462,10 @@ function problem_set_s!(pbm::TrajectoryProblem,
                         C::T_Function,
                         D::T_Function,
                         G::T_Function)::Nothing
-    pbm.s = (x, u, p) -> s(x, u, p, pbm)
-    pbm.C = (x, u, p) -> C(x, u, p, pbm)
-    pbm.D = (x, u, p) -> D(x, u, p, pbm)
-    pbm.G = (x, u, p) -> G(x, u, p, pbm)
+    pbm.s = !isnothing(s) ? (x, u, p) -> s(x, u, p, pbm) : nothing
+    pbm.C = !isnothing(C) ? (x, u, p) -> C(x, u, p, pbm) : nothing
+    pbm.D = !isnothing(D) ? (x, u, p) -> D(x, u, p, pbm) : nothing
+    pbm.G = !isnothing(G) ? (x, u, p) -> G(x, u, p, pbm) : nothing
     return nothing
 end
 
@@ -484,13 +491,13 @@ function problem_set_bc!(pbm::TrajectoryProblem,
                          H::T_Function,
                          K::T_Function)::Nothing
     if kind==:ic
-        pbm.gic = (x, p) -> g(x, p, pbm)
-        pbm.H0 = (x, p) -> H(x, p, pbm)
-        pbm.K0 = (x, p) -> K(x, p, pbm)
+        pbm.gic = !isnothing(g) ? (x, p) -> g(x, p, pbm) : nothing
+        pbm.H0 = !isnothing(H) ? (x, p) -> H(x, p, pbm) : nothing
+        pbm.K0 = !isnothing(K) ? (x, p) -> K(x, p, pbm) : nothing
     else
-        pbm.gtc = (x, p) -> g(x, p, pbm)
-        pbm.Hf = (x, p) -> H(x, p, pbm)
-        pbm.Kf = (x, p) -> K(x, p, pbm)
+        pbm.gtc = !isnothing(g) ? (x, p) -> g(x, p, pbm) : nothing
+        pbm.Hf = !isnothing(H) ? (x, p) -> H(x, p, pbm) : nothing
+        pbm.Kf = !isnothing(K) ? (x, p) -> K(x, p, pbm) : nothing
     end
     return nothing
 end
