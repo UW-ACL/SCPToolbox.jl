@@ -159,13 +159,14 @@ iter_max = 20
 ε = 1e-3
 feas_tol = 1e-3
 pen = :quad
+hom = 10.0
 q_tr = Inf
 q_exit = Inf
 solver = ECOS
 solver_options = Dict("verbose"=>0)
 pars = GuSTOParameters(N, Nsub, iter_max, ω, λ_init, λ_max, ρ_0, ρ_1, β_sh,
                        β_gr, γ_fail, η_init, η_lb, η_ub, ε, feas_tol, pen,
-                       q_tr, q_exit, solver, solver_options)
+                       hom, q_tr, q_exit, solver, solver_options)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Solve trajectory generation problem ::::::::::::::::::::::::::::::::::::::

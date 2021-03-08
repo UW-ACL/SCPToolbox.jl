@@ -585,16 +585,17 @@ References:
 
 Args:
     f: the function in the exponent.
-    ∇f: the gradient of the function.
-    t: the homotopy parameter.
+    ∇f: (optional) the gradient of the function.
+    t: (optional) the homotopy parameter.
 
 Returns:
     L: the log-sum-exp function value.
-    ∇L: the log-sum-exp function gradient. =#
+    ∇L: the log-sum-exp function gradient. Only returned in ∇f provided. =#
 function logsumexp(
     f::T_RealVector,
-    ∇f::Vector{T_RealVector};
-    t::T_Real=1.0)::Tuple{T_Real, T_RealVector}
+    ∇f::Union{Nothing, Vector{T_RealVector}}=nothing;
+    t::T_Real=1.0)::Union{Tuple{T_Real, T_RealVector},
+                          T_Real}
 
     n = length(f)
 
@@ -605,9 +606,12 @@ function logsumexp(
     L = logsumexp/t
 
     # Gradient
-    ∇L = sum([∇f[i]*exp(t*f[i]-a) for i=1:n])/sumexp
+    if !isnothing(∇f)
+        ∇L = sum([∇f[i]*exp(t*f[i]-a) for i=1:n])/sumexp
+        return L, ∇L
+    end
 
-    return L, ∇L
+    return L
 end
 
 #= Evaluate signed distance function (SDF) for a hyperrectangle.

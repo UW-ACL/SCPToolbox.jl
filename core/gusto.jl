@@ -43,6 +43,7 @@ struct GuSTOParameters <: SCPParameters
     ε::T_Real         # Convergence tolerance
     feas_tol::T_Real  # Dynamic feasibility tolerance
     pen::T_Symbol     # Penalty type (:quad, :logsumexp)
+    hom::T_Real       # Homotopy parameter to use when pen==:logsumexp
     q_tr::T_Real      # Trust region norm (possible: 1, 2, 4 (2^2), Inf)
     q_exit::T_Real    # Stopping criterion norm
     solver::Module    # The numerical solver to use for the subproblems
@@ -284,6 +285,7 @@ function GuSTOSubproblemSolution(spbm::GuSTOSubproblem)::T_GuSTOSubSol
 
     # Save the optimal cost values
     sol.L = value.(spbm.L)
+    sol.J_vc = value.(spbm.L_vc)
     # TODO
 
     # Save the solution status
@@ -389,8 +391,8 @@ function _gusto__add_cost!(spbm::GuSTOSubproblem)::Nothing
 
     # Compute the cost components
     spbm.L = _gusto__original_cost(x, u, p, spbm)
-    spbm.L_st = 0.0 # TODO _gusto__state_penalty_cost(x, u, p, spbm.def)
-    spbm.L_tr = 0.0 # TODO _gusto__trust_region_cost(x, u, p, spbm.def)
+    spbm.L_st = 0.0 # TODO _gusto__state_penalty_cost(x, u, p, spbm)
+    spbm.L_tr = _gusto__trust_region_cost(x, p, spbm)
     spbm.L_vc = _gusto__virtual_control_cost(vd, spbm)
 
     # Overall cost
@@ -427,12 +429,9 @@ function _gusto__original_cost(x::T_OptiVarMatrix,
     pars = spbm.def.pars
     traj = spbm.def.traj
     ref = spbm.ref
-    if mode==:convex
-        N = pars.N
-        τ_grid = spbm.def.common.τ_grid
-    else
-        N = size(x, 2)
-        τ_grid = T_RealVector(LinRange(0.0, 1.0, N))
+    N = pars.N
+    τ_grid = spbm.def.common.τ_grid
+    if mode!=:convex
         xb = ref.xd
         ub = ref.ud
         pb = ref.p
@@ -508,37 +507,204 @@ function _gusto__original_cost(x::T_OptiVarMatrix,
     return cost
 end
 
+#= Compute a smooth, convex and nondecreasing penalization function.
+
+If the Jacobian values are passed in, a linearized version of the penalty
+function is computed.
+
+Args:
+    spbm: the subproblem structure.
+    f: the quantity to be penalized.
+    dfdx: (optional) Jacobian of f wrt state.
+    dfdp: (optional) Jacobian of f wrt parameter vector.
+
+Returns:
+    h: penalization function value. =#
+function _gusto__soft_penalty(
+    spbm::GuSTOSubproblem,
+    f::T_OptiVar,
+    dfdx::Union{T_OptiVar, Nothing}=nothing,
+    dfdp::Union{T_OptiVar, Nothing}=nothing)::T_Objective
+
+    # Parameters
+    pars = spbm.def.pars
+    penalty = pars.pen
+    hom = pars.hom
+    λ = spbm.λ
+    mode = (typeof(f)==T_Real) ? :numerical : :jump
+    linearized = !isnothing(dfdx) || !isnothing(dfdp)
+
+    # Compute the function value
+    # The possibilities are:
+    #   (:quad)      h(f(x, p)) = λ*(max(0, f(x, p)))^2
+    #   (:logsumexp) h(f(x, p)) = λ*log(1+exp(hom*f(x, p)))/hom
+    if penalty==:quad
+        # ..:: Quadratic penalty ::..
+        if mode==:numerical
+            if linearized
+                # TODO
+            else
+                # TODO
+            end
+        else
+            if linearized
+                # TODO
+            else
+                slack = @variable(spbm.mdl, base_name="slack")
+                γ = @variable(spbm.mdl, base_name="γ")
+                @constraint(spbm.mdl, slack<=0.0)
+                @constraint(spbm.mdl, f-slack <= γ)
+                @constraint(spbm.mdl, -γ <= f-slack)
+                h = γ^2
+            end
+        end
+    else
+        # ..:: Log-sum-exp penalty ::..
+        if mode==:numerical
+            if linearized
+                # TODO
+            else
+                F = [0, f]
+                h = logsumexp(F; t=hom)
+            end
+        else
+            if linearized
+                # TODO
+            else
+                # TODO
+            end
+        end
+    end
+    h *= λ
+
+    return h
+end
+
+#= Compute the trust region constraint soft penalty.
+
+This function has two "modes": the (default) convex mode computes the convex
+version of the cost (where all non-convexity has been convexified), while the
+nonconvex mode computes the fully nonlinear cost.
+
+Args:
+    x: the discrete-time state trajectory.
+    u: the discrete-time input trajectory.
+    p: the parameter vector.
+    spbm: the subproblem structure.
+    mode: (optional) either :convex (default) or :nonconvex.
+
+Returns:
+    cost_tr: the trust region soft penalty cost. =#
+function _gusto__trust_region_cost(x::T_OptiVarMatrix,
+                                   p::T_OptiVarVector,
+                                   spbm::GuSTOSubproblem,
+                                   mode::T_Symbol=:convex)::T_Objective
+
+    # Parameters
+    pars = spbm.def.pars
+    scale = spbm.def.common.scale
+    q = pars.q_tr
+    N = pars.N
+    η = spbm.η
+    sqrt_η = sqrt(η)
+    τ_grid = spbm.def.common.τ_grid
+    xh = scale.iSx*(x.-scale.cx)
+    ph = scale.iSp*(p-scale.cp)
+    xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
+    ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
+    dx = xh-xh_ref
+    dp = ph-ph_ref
+    if mode==:convex
+        tr = @variable(spbm.mdl, [1:N], base_name="tr")
+    end
+
+    # Integrated running cost
+    cost_tr_integrand = Vector{T_Objective}(undef, N)
+    C = T_ConvexConeConstraint
+    acc! = add_conic_constraint!
+    if q==2
+        dx_l2 = @variable(spbm.mdl, [1:N], base_name="dx_l2")
+        dp_l2 = @variable(spbm.mdl, base_name="dp_l2")
+        acc!(spbm.mdl, C(vcat(dp_l2, dp), :soc))
+    end
+    for k = 1:N
+        if mode==:convex
+            tr_k = @k(tr)
+            if q==1
+                # 1-norm
+                tr_cone = C(vcat(η+tr_k, @k(dx), dp), :l1)
+                add_conic_constraint!(spbm.mdl, tr_cone)
+            elseif q==2
+                # 2-norm
+                acc!(spbm.mdl, C(vcat(@k(dx_l2), @k(dx)), :soc))
+                @constraint(spbm.mdl, @k(dx_l2)+dp_l2 <= η+tr_k)
+            elseif q==4
+                # 2-norm squared
+                tr_cone = C(vcat(sqrt_η+tr_k, @k(dx), dp), :soc)
+                add_conic_constraint!(spbm.mdl, tr_cone)
+            else
+                # Infinity-norm
+                tr_cone = C(vcat(η+tr_k, @k(dx), dp), :linf)
+                add_conic_constraint!(spbm.mdl, tr_cone)
+            end
+        else
+            if q==4
+                tr_k = @k(dx)'*@k(dx)+@k(dp)'*@k(dp)-η
+            else
+                tr_k = norm(@k(dx), q)+norm(@k(dp), q)-η
+            end
+        end
+        @k(cost_tr_integrand) = _gusto__soft_penalty(spbm, tr_k)
+    end
+    cost_tr = trapz(cost_tr_integrand, τ_grid)
+
+    return cost_tr
+end
+
 #= Compute the virtual control penalty.
+
+This function has two "modes": the (default) convex mode computes the convex
+version of the cost (where all non-convexity has been convexified), while the
+nonconvex mode computes the fully nonlinear cost.
 
 Args:
     vd: the discrete-time dynamics virtual control trajectory.
     spbm: the subproblem structure.
+    mode: (optional) either :convex (default) or :nonconvex.
 
 Returns:
     cost_vc: the virtual control penalty cost. =#
 function _gusto__virtual_control_cost(vd::T_OptiVarMatrix,
-                                      spbm::GuSTOSubproblem)::T_Objective
+                                      spbm::GuSTOSubproblem,
+                                      mode::T_Symbol=:convex)::T_Objective
 
     # Parameters
     pars = spbm.def.pars
     ω = pars.ω
-    E = spbm.ref.dyn.E
-    N = size(vd, 2)
-    τ_grid = T_RealVector(LinRange(0.0, 1.0, N))
+    N = pars.N
+    τ_grid = spbm.def.common.τ_grid
+    if mode==:convex
+        E = spbm.ref.dyn.E
+        vc_l1 = @variable(spbm.mdl, [1:N-1], base_name="vc_l1")
+    end
 
     # Integrated running cost
     cost_vc_integrand = Vector{T_Objective}(undef, N)
     for k = 1:N
-        if typeof(vd)==T_RealMatrix
-            # Evaluation using what's assumed to be defects that are passed in
-            vc_l1 = norm(@k(vd), 1)
-        else
+        if mode==:convex
             # Evaluation using virtual control in an optimization subproblem
-            vc_l1 = @variable(spbm.mdl, base_name=@sprintf("vc_l1_%d", k))
-            C = T_ConvexConeConstraint(vcat(vc_l1, @k(E)*@k(vd)), :l1)
-            add_conic_constraint!(spbm.mdl, C)
+            if k<N
+                vck_l1 = @k(vc_l1)
+                C = T_ConvexConeConstraint(vcat(vck_l1, @k(E)*@k(vd)), :l1)
+                add_conic_constraint!(spbm.mdl, C)
+            else
+                vck_l1 = 0.0
+            end
+        else
+            # Evaluation using nonlinear propagation defects
+            vck_l1 = norm(@k(vd), 1)
         end
-        @k(cost_vc_integrand) = ω*vc_l1
+        @k(cost_vc_integrand) = ω*vck_l1
     end
     cost_vc = trapz(cost_vc_integrand, τ_grid)
 
