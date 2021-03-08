@@ -42,8 +42,8 @@ struct GuSTOParameters <: SCPParameters
     η_ub::T_Real      # Maximum trust region radius
     ε::T_Real         # Convergence tolerance
     feas_tol::T_Real  # Dynamic feasibility tolerance
-    pen::T_Symbol     # Penalty type (:quad, :logsumexp)
-    hom::T_Real       # Homotopy parameter to use when pen==:logsumexp
+    pen::T_Symbol     # Penalty type (:quad, :softplus)
+    hom::T_Real       # Homotopy parameter to use when pen==:softplus
     q_tr::T_Real      # Trust region norm (possible: 1, 2, 4 (2^2), Inf)
     q_exit::T_Real    # Stopping criterion norm
     solver::Module    # The numerical solver to use for the subproblems
@@ -510,13 +510,16 @@ end
 #= Compute a smooth, convex and nondecreasing penalization function.
 
 If the Jacobian values are passed in, a linearized version of the penalty
-function is computed.
+function is computed. If one of the Jacobians is zero (e.g. d/dx or d/dp), then
+you can pass `nothing` in its place.
 
 Args:
     spbm: the subproblem structure.
     f: the quantity to be penalized.
     dfdx: (optional) Jacobian of f wrt state.
     dfdp: (optional) Jacobian of f wrt parameter vector.
+    dx: (optional) state vector deviation from reference.
+    dp: (optional) parameter vector deviation from reference.
 
 Returns:
     h: penalization function value. =#
@@ -524,55 +527,73 @@ function _gusto__soft_penalty(
     spbm::GuSTOSubproblem,
     f::T_OptiVar,
     dfdx::Union{T_OptiVar, Nothing}=nothing,
-    dfdp::Union{T_OptiVar, Nothing}=nothing)::T_Objective
+    dfdp::Union{T_OptiVar, Nothing}=nothing,
+    dx::Union{T_OptiVar, Nothing}=nothing,
+    dp::Union{T_OptiVar, Nothing}=nothing)::T_Objective
 
     # Parameters
     pars = spbm.def.pars
+    traj = spbm.def.traj
     penalty = pars.pen
     hom = pars.hom
     λ = spbm.λ
-    mode = (typeof(f)==T_Real) ? :numerical : :jump
     linearized = !isnothing(dfdx) || !isnothing(dfdp)
+    mode = (typeof(f)!=T_Real ||
+            (linearized && (typeof(dx)!=T_RealVector ||
+                            typeof(dp)!=T_RealVector))) ? :jump : :numerical
+    if linearized
+        dfdx = !isnothing(dfdx) ? dfdx : zeros(traj.nx)
+        dfdp = !isnothing(dfdp) ? dfdp : zeros(traj.np)
+        dx = !isnothing(dx) ? dx : zeros(traj.nx)
+        dp = !isnothing(dp) ? dp : zeros(traj.np)
+    end
 
     # Compute the function value
     # The possibilities are:
     #   (:quad)      h(f(x, p)) = λ*(max(0, f(x, p)))^2
-    #   (:logsumexp) h(f(x, p)) = λ*log(1+exp(hom*f(x, p)))/hom
+    #   (:softplus)  h(f(x, p)) = λ*log(1+exp(hom*f(x, p)))/hom
     if penalty==:quad
         # ..:: Quadratic penalty ::..
-        if mode==:numerical
+        if mode==:numerical || (mode==:jump && linearized)
+            h = (max(0.0, f))^2
             if linearized
-                # TODO
-            else
-                # TODO
+                if f<0
+                    h = 0.0
+                else
+                    dhdx, dhdp = 2*f*dfdx, 2*f*dfdp
+                    h = h+dhdx*dx+dhdp*dp
+                end
             end
         else
-            if linearized
-                # TODO
-            else
-                slack = @variable(spbm.mdl, base_name="slack")
-                γ = @variable(spbm.mdl, base_name="γ")
-                @constraint(spbm.mdl, slack<=0.0)
-                @constraint(spbm.mdl, f-slack <= γ)
-                @constraint(spbm.mdl, -γ <= f-slack)
-                h = γ^2
-            end
+            u = @variable(spbm.mdl, base_name="u")
+            v = @variable(spbm.mdl, base_name="v")
+            @constraint(spbm.mdl, u<=0.0)
+            @constraint(spbm.mdl, f-u <= v)
+            @constraint(spbm.mdl, -v <= f-u)
+            h = v^2
         end
     else
         # ..:: Log-sum-exp penalty ::..
-        if mode==:numerical
+        if mode==:numerical || (mode==:jump && linearized)
+            F = [0, f]
+            h = logsumexp(F; t=hom)
             if linearized
-                # TODO
-            else
-                F = [0, f]
-                h = logsumexp(F; t=hom)
+                dFdx = [zeros(traj.nx), dfdx]
+                dFdp = [zeros(traj.np), dfdp]
+                _, dhdx = logsumexp(F, dFdx; t=hom)
+                _, dhdp = logsumexp(F, dFdp; t=hom)
+                h = h+dhdx*dx+dhdp*dp
             end
         else
-            if linearized
-                # TODO
-            else
-                # TODO
-            end
+            u = @variable(spbm.mdl, base_name="u")
+            v = @variable(spbm.mdl, base_name="v")
+            w = @variable(spbm.mdl, base_name="w")
+            acc! = add_conic_constraint!
+            C = T_ConvexConeConstraint
+            acc!(spbm.mdl, C(vcat(-w, 1, u), :exp))
+            acc!(spbm.mdl, C(vcat(hom*f-w, 1, v), :exp))
+            @constraint(spbm.mdl, u+v <= 1)
+            h = w/hom
         end
     end
     h *= λ

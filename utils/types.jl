@@ -310,7 +310,8 @@ The supported cones are:
     :l1     for constraints z=(t, x), norm(x, 1)<=t.
     :soc    for constraints z=(t, x), norm(x, 2)<=t.
     :linf   for constraints z=(t, x), norm(x, ∞)<=t.
-    :geom   for constraints z=(t, x), geomean(x)>=t. =#
+    :geom   for constraints z=(t, x), geomean(x)>=t.
+    :exp    for constraints z=(x, y, w), y*exp(x/y)<=w, y>0. =#
 struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
     z::T_OptiVar # The expression to be constrained in the cone.
     K::T         # The cone set.
@@ -325,7 +326,7 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
         constraint: the conic constraint. =#
     function T_ConvexConeConstraint(z::T_OptiVar,
                                     kind::T_Symbol)::T_ConvexConeConstraint
-        if !(kind in (:nonpos, :l1, :soc, :linf, :geom))
+        if !(kind in (:nonpos, :l1, :soc, :linf, :geom, :exp))
             err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: Unsupported cone.")
             throw(err)
         end
@@ -343,6 +344,13 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
             K = MOI.NormInfinityCone(dim)
         elseif kind==:geom
             K = MOI.GeometricMeanCone(dim)
+        elseif kind==:exp
+            if dim!=3
+                msg = "ERROR: Exponential cone is in R^3."
+                err = SCPError(0, SCP_BAD_ARGUMENT, msg)
+                throw(err)
+            end
+            K = MOI.ExponentialCone()
         end
 
         constraint = new{typeof(K)}(z, K)
