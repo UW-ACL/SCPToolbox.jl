@@ -34,9 +34,7 @@ pbm = TrajectoryProblem(mdl)
 problem_set_dims!(pbm, 6, 4, 1)
 
 # >> Initial trajectory guess <<
-problem_set_guess!(pbm, (N, pbm) -> begin
-                   return quadrotor_initial_guess(N, pbm)
-                   end)
+quadrotor_set_initial_guess!(pbm)
 
 # >> Cost to be minimized <<
 problem_set_terminal_cost!(pbm, (x, p, pbm) -> begin
@@ -137,6 +135,107 @@ problem_set_U!(pbm, (u, pbm) -> begin
                     C(σ*cos(veh.tilt_max)-uu[3], :nonpos)]
                return U
                end)
+
+# >> Nonconvex path inequality constraints <<
+problem_set_s!(pbm,
+               # Constraint s
+               (x, u, p, pbm) -> begin
+               env = pbm.mdl.env
+               veh = pbm.mdl.vehicle
+               traj = pbm.mdl.traj
+               s = zeros(2)
+               # s = zeros(env.n_obs+2)
+               # for i = 1:env.n_obs
+               # # ---
+               # E = env.obs[i]
+               # r = x[veh.id_r]
+               # s[i] = 1-E(r)
+               # # ---
+               # end
+               s[end-1] = p[veh.id_t]-traj.tf_max
+               s[end] = traj.tf_min-p[veh.id_t]
+               return s
+               end,
+               # Jacobian ds/dx
+               (x, u, p, pbm) -> begin
+               env = pbm.mdl.env
+               veh = pbm.mdl.vehicle
+               C = zeros(2, pbm.nx)
+               # C = zeros(env.n_obs+2, pbm.nx)
+               # for i = 1:env.n_obs
+               # # ---
+               # E = env.obs[i]
+               # r = x[veh.id_r]
+               # C[i, veh.id_r] = -∇(E, r)
+               # # ---
+               # end
+               return C
+               end,
+               # Jacobian ds/du
+               (x, u, p, pbm) -> begin
+               env = pbm.mdl.env
+               D = zeros(2, pbm.nu)
+               # D = zeros(env.n_obs+2, pbm.nu)
+               return D
+               end,
+               # Jacobian ds/dp
+               (x, u, p, pbm) -> begin
+               env = pbm.mdl.env
+               veh = pbm.mdl.vehicle
+               G = zeros(2, pbm.np)
+               # G = zeros(env.n_obs+2, pbm.np)
+               G[end-1, veh.id_t] = 1.0
+               G[end, veh.id_t] = -1.0
+               return G
+               end)
+
+# >> Initial boundary conditions <<
+problem_set_bc!(pbm, :ic,
+                # Constraint g
+                (x, p, pbm) -> begin
+                veh = pbm.mdl.vehicle
+                traj = pbm.mdl.traj
+                rhs = zeros(pbm.nx)
+                rhs[veh.id_r] = traj.r0
+                rhs[veh.id_v] = traj.v0
+                g = x-rhs
+                return g
+                end,
+                # Jacobian dg/dx
+                (x, p, pbm) -> begin
+                H = I(pbm.nx)
+                return H
+                end,
+                # Jacobian dg/dp
+                (x, p, pbm) -> begin
+                veh = pbm.mdl.vehicle
+                K = zeros(pbm.nx, pbm.np)
+                return K
+                end)
+
+# >> Terminal boundary conditions <<
+problem_set_bc!(pbm, :tc,
+                # Constraint g
+                (x, p, pbm) -> begin
+                veh = pbm.mdl.vehicle
+                traj = pbm.mdl.traj
+                rhs = zeros(pbm.nx)
+                rhs[veh.id_r] = traj.rf
+                rhs[veh.id_v] = traj.vf
+                g = x-rhs
+                return g
+                end,
+                # Jacobian dg/dx
+                (x, p, pbm) -> begin
+                H = I(pbm.nx)
+                return H
+                end,
+                # Jacobian dg/dp
+                (x, p, pbm) -> begin
+                veh = pbm.mdl.vehicle
+                K = zeros(pbm.nx, pbm.np)
+                return K
+                end)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: GuSTO algorithm parameters :::::::::::::::::::::::::::::::::::::::::::::::

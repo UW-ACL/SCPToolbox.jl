@@ -43,9 +43,7 @@ problem_advise_scale!(pbm, :parameter, mdl.vehicle.id_t,
                       (tdil_min, tdil_max_adj))
 
 # >> Initial trajectory guess <<
-problem_set_guess!(pbm, (N, pbm) -> begin
-                   return quadrotor_initial_guess(N, pbm)
-                   end)
+quadrotor_set_initial_guess!(pbm)
 
 # >> Cost to be minimized <<
 problem_set_terminal_cost!(pbm, (x, p, pbm) -> begin

@@ -379,12 +379,13 @@ function scvx_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution, Nothing},
         # >> Construct the subproblem <<
         spbm = SCvxSubproblem(pbm, k, η, ref)
 
-        _scp__add_dynamics!(spbm)
-        _scvx__add_bcs!(spbm)
-        _scvx__add_convex_constraints!(spbm)
-        _scvx__add_nonconvex_constraints!(spbm)
-        _scvx__add_trust_region!(spbm)
         _scvx__add_cost!(spbm)
+        _scp__add_dynamics!(spbm)
+        _scvx__add_convex_state_constraints!(spbm)
+        _scp__add_convex_input_constraints!(spbm)
+        _scvx__add_nonconvex_constraints!(spbm)
+        _scp__add_bcs!(spbm)
+        _scvx__add_trust_region!(spbm)
 
         _scp__save!(history, spbm)
 
@@ -451,77 +452,22 @@ function _scvx__generate_initial_guess(
     return guess
 end
 
-#= Add boundary condition constraints to the problem.
+#= Add convex state constraints.
 
 Args:
     spbm: the subproblem definition. =#
-function _scvx__add_bcs!(spbm::SCvxSubproblem)::Nothing
-    # Variables and parameters
-    traj = spbm.def.traj
-    nx = traj.nx
-    np = traj.np
-    x0 = @first(spbm.x)
-    xb0 = @first(spbm.ref.xd)
-    xf = @last(spbm.x)
-    xbf = @last(spbm.ref.xd)
-    p = spbm.p
-    pb = spbm.ref.p
+function _scvx__add_convex_state_constraints!(
+    spbm::SCvxSubproblem)::Nothing
 
-    # Initial condition
-    if !isnothing(traj.gic)
-        gic = traj.gic(xb0, pb)
-        nic = length(gic)
-        H0 = !isnothing(traj.H0) ? traj.H0(xb0, pb) : zeros(nic, nx)
-        K0 = !isnothing(traj.K0) ? traj.K0(xb0, pb) : zeros(nic, np)
-        ℓ0 = gic-H0*xb0-K0*pb
-        spbm.vic = @variable(spbm.mdl, [1:nic], base_name="vic")
-        @constraint(spbm.mdl, H0*x0+K0*p+ℓ0+spbm.vic .== 0.0)
-    else
-        spbm.vic = @variable(spbm.mdl, [1:0], base_name="vic")
-    end
-
-    # Terminal condition
-    if !isnothing(traj.gtc)
-        gtc = traj.gtc(xbf, pb)
-        ntc = length(gtc)
-        Hf = !isnothing(traj.Hf) ? traj.Hf(xbf, pb) : zeros(ntc, nx)
-        Kf = !isnothing(traj.Kf) ? traj.Kf(xbf, pb) : zeros(ntc, np)
-        ℓf = gtc-Hf*xbf-Kf*pb
-        spbm.vtc = @variable(spbm.mdl, [1:ntc], base_name="vtc")
-        @constraint(spbm.mdl, Hf*xf+Kf*p+ℓf+spbm.vtc .== 0.0)
-    else
-        spbm.vtc = @variable(spbm.mdl, [1:0], base_name="vtc")
-    end
-
-    return nothing
-end
-
-#= Add convex state, input, and parameter constraints.
-
-Args:
-    spbm: the subproblem definition. =#
-function _scvx__add_convex_constraints!(spbm::SCvxSubproblem)::Nothing
     # Variables and parameters
     N = spbm.def.pars.N
     traj_pbm = spbm.def.traj
-    nu = traj_pbm.nu
     x = spbm.x
-    u = spbm.u
-    p = spbm.p
 
-    # ..:: Convex state constraints ::..
     if !isnothing(traj_pbm.X)
         for k = 1:N
             xk_in_X = traj_pbm.X(@k(x))
             add_conic_constraints!(spbm.mdl, xk_in_X)
-        end
-    end
-
-    # ..:: Convex input constraints ::..
-    if !isnothing(traj_pbm.U)
-        for k = 1:N
-            uk_in_U = traj_pbm.U(@k(u))
-            add_conic_constraints!(spbm.mdl, uk_in_U)
         end
     end
 
@@ -669,25 +615,13 @@ function _scvx__check_stopping_criterion!(spbm::SCvxSubproblem)::T_Bool
 
     # Extract values
     pbm = spbm.def
-    N = pbm.pars.N
-    ε_abs = pbm.pars.ε_abs
-    ε_rel = pbm.pars.ε_rel
-    q = pbm.pars.q_exit
-    scale = pbm.common.scale
     ref = spbm.ref
     sol = spbm.sol
-    xh = scale.iSx*(sol.xd.-scale.cx)
-    ph = scale.iSp*(sol.p-scale.cp)
-    xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
-    ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
+    ε_abs = pbm.pars.ε_abs
+    ε_rel = pbm.pars.ε_rel
 
-    # Check solution deviation from reference
-    dp = norm(ph-ph_ref, q)
-    dx = 0.0
-    for k = 1:N
-        dx = max(dx, norm(@k(xh)-@k(xh_ref), q))
-    end
-    sol.deviation = dp+dx
+    # Compute solution deviation from reference
+    sol.deviation = _scp__solution_deviation(spbm)
 
     # Check predicted cost improvement
     J_ref = _scvx__solution_cost!(ref, :nonlinear, pbm)
@@ -702,7 +636,7 @@ function _scvx__check_stopping_criterion!(spbm::SCvxSubproblem)::T_Bool
     return stop
 end
 
-#= Compute the new trust region.
+#= Compute the new reference and trust region.
 
 Apply the trust region update rule based on the most recent subproblem
 solution. This updates the trust region radius, and selects either the current
@@ -1081,7 +1015,8 @@ function _scvx__correct_convex!(
     opti = SCvxSubproblem(pbm, 0, 0.0)
 
     # Add the convex path constraints
-    _scvx__add_convex_constraints!(opti)
+    _scvx__add_convex_state_constraints!(opti)
+    _scp__add_convex_input_constraints!(opti)
 
     # Add epigraph constraints to make a convex cost for JuMP
     xh_ref = scale.iSx*(x_ref.-scale.cx)

@@ -557,6 +557,120 @@ function _scp__add_dynamics!(
     return nothing
 end
 
+#= Add convex input constraints.
+
+Args:
+    spbm: the subproblem definition. =#
+function _scp__add_convex_input_constraints!(
+    spbm::T)::Nothing where {T<:SCPSubproblem}
+
+    # Variables and parameters
+    N = spbm.def.pars.N
+    traj_pbm = spbm.def.traj
+    u = spbm.u
+
+    if !isnothing(traj_pbm.U)
+        for k = 1:N
+            uk_in_U = traj_pbm.U(@k(u))
+            add_conic_constraints!(spbm.mdl, uk_in_U)
+        end
+    end
+
+    return nothing
+end
+
+#= Add boundary condition constraints to the problem.
+
+Args:
+    spbm: the subproblem definition.
+    relaxed: (optional) if true then relax equalities with a virtual control, else
+        impose the linearized boundary conditions exactly. =#
+function _scp__add_bcs!(
+    spbm::T; relaxed::T_Bool=true)::Nothing where {T<:SCPSubproblem}
+
+    # Variables and parameters
+    traj = spbm.def.traj
+    nx = traj.nx
+    np = traj.np
+    x0 = @first(spbm.x)
+    xb0 = @first(spbm.ref.xd)
+    xf = @last(spbm.x)
+    xbf = @last(spbm.ref.xd)
+    p = spbm.p
+    pb = spbm.ref.p
+
+    # Initial condition
+    if !isnothing(traj.gic)
+        gic = traj.gic(xb0, pb)
+        nic = length(gic)
+        H0 = !isnothing(traj.H0) ? traj.H0(xb0, pb) : zeros(nic, nx)
+        K0 = !isnothing(traj.K0) ? traj.K0(xb0, pb) : zeros(nic, np)
+        ℓ0 = gic-H0*xb0-K0*pb
+        lhs = H0*x0+K0*p+ℓ0
+        if relaxed
+            spbm.vic = @variable(spbm.mdl, [1:nic], base_name="vic")
+            @constraint(spbm.mdl, lhs+spbm.vic .== 0.0)
+        else
+            @constraint(spbm.mdl, lhs .== 0.0)
+        end
+    elseif relaxed
+        spbm.vic = @variable(spbm.mdl, [1:0], base_name="vic")
+    end
+
+    # Terminal condition
+    if !isnothing(traj.gtc)
+        gtc = traj.gtc(xbf, pb)
+        ntc = length(gtc)
+        Hf = !isnothing(traj.Hf) ? traj.Hf(xbf, pb) : zeros(ntc, nx)
+        Kf = !isnothing(traj.Kf) ? traj.Kf(xbf, pb) : zeros(ntc, np)
+        ℓf = gtc-Hf*xbf-Kf*pb
+        lhs = Hf*xf+Kf*p+ℓf
+        if relaxed
+            spbm.vtc = @variable(spbm.mdl, [1:ntc], base_name="vtc")
+            @constraint(spbm.mdl, lhs+spbm.vtc .== 0.0)
+        else
+            @constraint(spbm.mdl, lhs .== 0.0)
+        end
+    elseif relaxed
+        spbm.vtc = @variable(spbm.mdl, [1:0], base_name="vtc")
+    end
+
+    return nothing
+end
+
+#= Compute the deviation of subproblem solution from the reference.
+
+It is assumed that the function received a solved subproblem.
+
+Args:
+    spbm: the subproblem structure.
+
+Returns:
+    deviation: a measure of deviation of spbm.sol from spbm.ref. =#
+function _scp__solution_deviation(spbm::T)::T_Real where {T<:SCPSubproblem}
+    # Extract values
+    pbm = spbm.def
+    N = pbm.pars.N
+    q = pbm.pars.q_exit
+    scale = pbm.common.scale
+    ref = spbm.ref
+    sol = spbm.sol
+    xh = scale.iSx*(sol.xd.-scale.cx)
+    ph = scale.iSp*(sol.p-scale.cp)
+    xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
+    ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
+
+    # Compute deviation
+    dp = norm(ph-ph_ref, q)
+    dx = 0.0
+    for k = 1:N
+        dx = max(dx, norm(@k(xh)-@k(xh_ref), q))
+    end
+    deviation = dp+dx
+
+    return deviation
+end
+
 #= Solve the SCP method's convex subproblem via numerical optimization.
 
 Args:

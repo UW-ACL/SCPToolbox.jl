@@ -330,7 +330,7 @@ function problem_set_running_cost!(pbm::TrajectoryProblem,
     return nothing
 end
 
-#= Define the dynamics.
+#= Define the dynamics (SCvx).
 
 Function signature: f(x, u, p, pbm), where:
   - x (T_RealVector): the current state vector.
@@ -338,19 +338,11 @@ Function signature: f(x, u, p, pbm), where:
   - p (T_RealVector): the current parameter vector.
   - pbm (TrajectorProblem): the trajectory problem structure.
 
-If kind is :nonlinear, then it is assumed that f is a fully nonlinear function,
-and:
-  - f must return a T_RealVector;
-  - A, B, and F must return a T_RealMatrix.
-
-If kind is :inputaffine, then it is assumed that f is affine in the input, and:
-  - f must return a Vector{T_RealVector}, the first element of which is taken
-    to be independent of the input;
-  - A, B, and F must return a Vector{T_RealMatrix}.
+The function f must return a T_RealVector, while A, B, and F must return a
+T_RealMatrix.
 
 Args:
     pbm: the trajectory problem structure.
-    kind: either :nonlinear or :inputaffine.
     f: the dynamics function.
     A: Jacobian with respect to the state, df/dx.
     B: Jacobian with respect to the input, df/du.
@@ -370,6 +362,30 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
     return nothing
 end
 
+#= Define the input-affine dynamics (GuSTO).
+
+Function signature: f(x, u, p, pbm), where:
+  - x (T_RealVector): the current state vector.
+  - u (T_RealVector): the current input vector.
+  - p (T_RealVector): the current parameter vector.
+  - pbm (TrajectorProblem): the trajectory problem structure.
+
+GuSTO assumes that the dynamics are input-affine, which means:
+
+f(x, u, p) = f0(x, p)+∑_{i=1}^{m} u_i*f_i(x, p)
+
+We thus require the user to provide each function fi (i=1,...,m), and each
+functions Jacobian with respect to the state and input. In particular:
+  - f must return a Vector{T_RealVector}, the first element of which is taken
+    to be independent of the input (i.e, f0 above);
+  - A, F must return a Vector{T_RealMatrix}.
+
+Args:
+    pbm: the trajectory problem structure.
+    kind: either :nonlinear or :inputaffine.
+    f: the dynamics functions {f0, f1, ...}.
+    A: Jacobians with respect to the state, {df0/dx, df1/dx, ...}.
+    F: Jacobians with respect to the parameter, {df0/dp, df1/dp, ...}.. =#
 function problem_set_dynamics!(pbm::TrajectoryProblem,
                                f::T_Function,
                                A::T_Function,
@@ -462,7 +478,11 @@ function problem_set_s!(pbm::TrajectoryProblem,
                         C::T_Function,
                         D::T_Function,
                         G::T_Function)::Nothing
-    pbm.s = !isnothing(s) ? (x, u, p) -> s(x, u, p, pbm) : nothing
+    if isnothing(s)
+        err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: must at least provide s.")
+        throw(err)
+    end
+    pbm.s = (x, u, p) -> s(x, u, p, pbm)
     pbm.C = !isnothing(C) ? (x, u, p) -> C(x, u, p, pbm) : nothing
     pbm.D = !isnothing(D) ? (x, u, p) -> D(x, u, p, pbm) : nothing
     pbm.G = !isnothing(G) ? (x, u, p) -> G(x, u, p, pbm) : nothing
@@ -490,12 +510,16 @@ function problem_set_bc!(pbm::TrajectoryProblem,
                          g::T_Function,
                          H::T_Function,
                          K::T_Function)::Nothing
+    if isnothing(g)
+        err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: must at least provide g.")
+        throw(err)
+    end
     if kind==:ic
-        pbm.gic = !isnothing(g) ? (x, p) -> g(x, p, pbm) : nothing
+        pbm.gic = (x, p) -> g(x, p, pbm)
         pbm.H0 = !isnothing(H) ? (x, p) -> H(x, p, pbm) : nothing
         pbm.K0 = !isnothing(K) ? (x, p) -> K(x, p, pbm) : nothing
     else
-        pbm.gtc = !isnothing(g) ? (x, p) -> g(x, p, pbm) : nothing
+        pbm.gtc = (x, p) -> g(x, p, pbm)
         pbm.Hf = !isnothing(H) ? (x, p) -> H(x, p, pbm) : nothing
         pbm.Kf = !isnothing(K) ? (x, p) -> K(x, p, pbm) : nothing
     end
