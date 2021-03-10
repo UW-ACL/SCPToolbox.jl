@@ -379,13 +379,13 @@ function scvx_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution, Nothing},
         # >> Construct the subproblem <<
         spbm = SCvxSubproblem(pbm, k, η, ref)
 
-        _scvx__add_cost!(spbm)
         _scp__add_dynamics!(spbm)
         _scvx__add_convex_state_constraints!(spbm)
         _scp__add_convex_input_constraints!(spbm)
         _scvx__add_nonconvex_constraints!(spbm)
         _scp__add_bcs!(spbm)
         _scvx__add_trust_region!(spbm)
+        _scvx__add_cost!(spbm)
 
         _scp__save!(history, spbm)
 
