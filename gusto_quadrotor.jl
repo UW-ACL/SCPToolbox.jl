@@ -144,15 +144,15 @@ problem_set_s!(pbm,
                env = pbm.mdl.env
                veh = pbm.mdl.vehicle
                traj = pbm.mdl.traj
-               s = zeros(2)
-               # s = zeros(env.n_obs+2)
-               # for i = 1:env.n_obs
-               # # ---
-               # E = env.obs[i]
-               # r = x[veh.id_r]
-               # s[i] = 1-E(r)
-               # # ---
-               # end
+               # s = zeros(2)
+               s = zeros(env.n_obs+2)
+               for i = 1:env.n_obs
+               # ---
+               E = env.obs[i]
+               r = x[veh.id_r]
+               s[i] = 1-E(r)
+               # ---
+               end
                s[end-1] = p[veh.id_t]-traj.tf_max
                s[end] = traj.tf_min-p[veh.id_t]
                return s
@@ -161,30 +161,30 @@ problem_set_s!(pbm,
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
                veh = pbm.mdl.vehicle
-               C = zeros(2, pbm.nx)
-               # C = zeros(env.n_obs+2, pbm.nx)
-               # for i = 1:env.n_obs
-               # # ---
-               # E = env.obs[i]
-               # r = x[veh.id_r]
-               # C[i, veh.id_r] = -∇(E, r)
-               # # ---
-               # end
+               # C = zeros(2, pbm.nx)
+               C = zeros(env.n_obs+2, pbm.nx)
+               for i = 1:env.n_obs
+               # ---
+               E = env.obs[i]
+               r = x[veh.id_r]
+               C[i, veh.id_r] = -∇(E, r)
+               # ---
+               end
                return C
                end,
                # Jacobian ds/du
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
-               D = zeros(2, pbm.nu)
-               # D = zeros(env.n_obs+2, pbm.nu)
+               # D = zeros(2, pbm.nu)
+               D = zeros(env.n_obs+2, pbm.nu)
                return D
                end,
                # Jacobian ds/dp
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
                veh = pbm.mdl.vehicle
-               G = zeros(2, pbm.np)
-               # G = zeros(env.n_obs+2, pbm.np)
+               # G = zeros(2, pbm.np)
+               G = zeros(env.n_obs+2, pbm.np)
                G[end-1, veh.id_t] = 1.0
                G[end, veh.id_t] = -1.0
                return G
@@ -245,7 +245,7 @@ problem_set_bc!(pbm, :tc,
 N = 30
 Nsub = 15
 iter_max = 20
-ω = 10.0
+ω = 100.0
 λ_init = 13e3
 λ_max = 1e9
 ρ_0 = 0.5
@@ -256,17 +256,19 @@ iter_max = 20
 η_init = 1.0
 η_lb = 1e-3
 η_ub = 10.0
-ε = 1e-3
+ε_abs = 1e-3
+ε_rel = 0.01/100
 feas_tol = 1e-3
 pen = :softplus
-hom = 20.0
+hom = 100.0
 q_tr = Inf
 q_exit = Inf
 solver = ECOS
 solver_options = Dict("verbose"=>0)
 pars = GuSTOParameters(N, Nsub, iter_max, ω, λ_init, λ_max, ρ_0, ρ_1, β_sh,
-                       β_gr, γ_fail, η_init, η_lb, η_ub, ε, feas_tol, pen,
-                       hom, q_tr, q_exit, solver, solver_options)
+                       β_gr, γ_fail, η_init, η_lb, η_ub, ε_abs, ε_rel,
+                       feas_tol, pen, hom, q_tr, q_exit, solver,
+                       solver_options)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Solve trajectory generation problem ::::::::::::::::::::::::::::::::::::::

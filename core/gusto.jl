@@ -42,7 +42,8 @@ struct GuSTOParameters <: SCPParameters
     η_init::T_Real    # Initial trust region radius
     η_lb::T_Real      # Minimum trust region radius
     η_ub::T_Real      # Maximum trust region radius
-    ε::T_Real         # Convergence tolerance
+    ε_abs::T_Real     # Absolute convergence tolerance
+    ε_rel::T_Real     # Relative convergence tolerance
     feas_tol::T_Real  # Dynamic feasibility tolerance
     pen::T_Symbol     # Penalty type (:quad, :softplus)
     hom::T_Real       # Homotopy parameter to use when pen==:softplus
@@ -727,9 +728,8 @@ function _gusto__soft_penalty(
         else
             u = @variable(spbm.mdl, base_name="u")
             v = @variable(spbm.mdl, base_name="v")
-            @constraint(spbm.mdl, u<=0.0)
-            @constraint(spbm.mdl, f-u <= v)
-            @constraint(spbm.mdl, -v <= f-u)
+            @constraint(spbm.mdl, u>=0)
+            @constraint(spbm.mdl, f+u<=v)
             h = v^2
         end
     else
@@ -901,18 +901,22 @@ function _gusto__check_stopping_criterion!(spbm::GuSTOSubproblem)::T_Bool
     pbm = spbm.def
     ref = spbm.ref
     sol = spbm.sol
-    ε = pbm.pars.ε
+    ε_abs = pbm.pars.ε_abs
+    ε_rel = pbm.pars.ε_rel
     λ = spbm.λ
     λ_max = pbm.pars.λ_max
 
     # Compute solution deviation from reference
     sol.deviation = _scp__solution_deviation(spbm)
 
+    # Compute cost improvement
+    ΔJ = abs(ref.J_aug-sol.J_aug)/abs(ref.J_aug)
+
     # Check infeasibility
     infeas = λ>λ_max
 
     # Compute stopping criterion
-    stop = sol.deviation<=ε || infeas
+    stop = (spbm.iter>1) && (ΔJ<=ε_rel || sol.deviation<=ε_abs || infeas)
 
     return stop
 end
@@ -1067,9 +1071,14 @@ function _gusto__update_rule(
     η_lb = pars.η_lb
     η_ub = pars.η_ub
 
+    # Tolerances for checking trust region and soft-penalized constraint
+    # satisfaction
+    tr_buffer = 1e-3
+    c_buffer = 1e-5
+
     # Compute trust region constraint satisfaction
     tr = _gusto__trust_region_cost(sol.xd, sol.p, spbm, :nonconvex; raw=true)
-    trust_viol = any(tr.>0)
+    trust_viol = any(tr.>tr_buffer)
 
     # Compute state and nonlinear path constraint satisfaction
     if !trust_viol
@@ -1081,7 +1090,7 @@ function _gusto__update_rule(
                     xk_in_X = traj.X(@k(sol.xd))
                     for cone in xk_in_X
                         ρ = get_conic_constraint_indicator!(spbm.mdl, cone)
-                        if ρ>0
+                        if ρ>c_buffer
                             error("Convex state constraint violated")
                         end
                     end
@@ -1092,7 +1101,7 @@ function _gusto__update_rule(
             if !isnothing(traj.s)
                 for k = 1:N
                     s = traj.s(@k(sol.xd), @k(sol.ud), sol.p)
-                    if any(s.>0)
+                    if any(s.>c_buffer)
                         error("Nonconvex path constraint violated")
                     end
                 end
