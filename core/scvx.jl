@@ -90,8 +90,10 @@ end
 mutable struct SCvxSubproblem <: SCPSubproblem
     iter::T_Int                  # SCvx iteration number
     mdl::Model                   # The optimization problem handle
+    algo::T_String               # SCP and convex algorithms used
     # >> Algorithm parameters <<
     def::SCPProblem              # The SCvx problem definition
+    η::T_Real                    # Trust region radius
     # >> Reference and solution trajectories <<
     sol::Union{SCvxSubproblemSolution, Missing} # Solution trajectory
     ref::Union{SCvxSubproblemSolution, Missing} # Reference trajectory
@@ -115,8 +117,6 @@ mutable struct SCvxSubproblem <: SCPSubproblem
     # >> Other variables <<
     P::T_OptiVarVector           # Virtual control penalty
     Pf::T_OptiVarVector          # Boundary condition virtual control penalty
-    # >> Trust region <<
-    η::T_Real                    # Trust region radius
 end
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -145,7 +145,7 @@ function SCvxProblem(pars::SCvxParameters,
         (:maxvs, "vs", "%.0e", 5),
         # Maximum boundary conditions virtual control element
         (:maxvbc, "vbc", "%.0e", 5),
-        # Original cost value
+        # Overall cost (including penalties)
         (:cost, "J", "%.2e", 8),
         # Maximum deviation in state
         (:dx, "Δx", "%.0e", 5),
@@ -191,7 +191,9 @@ function SCvxSubproblem(pbm::SCPProblem,
                         η::T_Real,
                         ref::Union{SCvxSubproblemSolution,
                                    Missing}=missing)::SCvxSubproblem
-    # Sizes
+    # Convenience values
+    pars = pbm.pars
+    scale = pbm.common.scale
     nx = pbm.traj.nx
     nu = pbm.traj.nu
     np = pbm.traj.np
@@ -199,13 +201,15 @@ function SCvxSubproblem(pbm::SCPProblem,
     _E = pbm.common.E
 
     # Optimization problem handle
-    solver = pbm.pars.solver
-    solver_opts = pbm.pars.solver_opts
+    solver = pars.solver
+    solver_opts = pars.solver_opts
     mdl = Model()
     set_optimizer(mdl, solver.Optimizer)
     for (key,val) in solver_opts
         set_optimizer_attribute(mdl, key, val)
     end
+    cvx_algo = string(pars.solver)
+    algo = @sprintf("SCvx (backend: %s)", cvx_algo)
 
     sol = missing # No solution associated yet with the subproblem
 
@@ -220,9 +224,9 @@ function SCvxSubproblem(pbm::SCPProblem,
     ph = @variable(mdl, [1:np], base_name="ph")
 
     # Physical decision variables
-    x = pbm.common.scale.Sx*xh.+pbm.common.scale.cx
-    u = pbm.common.scale.Su*uh.+pbm.common.scale.cu
-    p = pbm.common.scale.Sp*ph.+pbm.common.scale.cp
+    x = scale.Sx*xh.+scale.cx
+    u = scale.Su*uh.+scale.cu
+    p = scale.Sp*ph.+scale.cp
     vd = @variable(mdl, [1:size(_E, 2), 1:N-1], base_name="vd")
     vs = T_RealMatrix(undef, 0, N)
     vic = T_RealVector(undef, 0)
@@ -232,16 +236,8 @@ function SCvxSubproblem(pbm::SCPProblem,
     P = @variable(mdl, [1:N], base_name="P")
     Pf = @variable(mdl, [1:2], base_name="Pf")
 
-    # Uninitialized parameters
-    A = T_RealTensor(undef, nx, nx, N-1)
-    Bm = T_RealTensor(undef, nx, nu, N-1)
-    Bp = T_RealTensor(undef, nx, nu, N-1)
-    F = T_RealTensor(undef, nx, np, N-1)
-    r = T_RealMatrix(undef, nx, N-1)
-    E = T_RealTensor(undef, size(_E)..., N-1)
-
-    spbm = SCvxSubproblem(iter, mdl, pbm, sol, ref, L, L_pen, L_aug, xh, uh,
-                          ph, x, u, p, vd, vs, vic, vtc, P, Pf, η)
+    spbm = SCvxSubproblem(iter, mdl, algo, pbm, η, sol, ref, L, L_pen, L_aug,
+                          xh, uh, ph, x, u, p, vd, vs, vic, vtc, P, Pf)
 
     return spbm
 end
@@ -467,6 +463,11 @@ function _scvx__add_convex_state_constraints!(
     if !isnothing(traj_pbm.X)
         for k = 1:N
             xk_in_X = traj_pbm.X(@k(x))
+            if typeof(xk_in_X)!=Vector{T_ConvexConeConstraint}
+                msg = string("ERROR: input constraint must be in conic form.")
+                err = SCPError(k, SCP_BAD_ARGUMENT, msg)
+                throw(err)
+            end
             add_conic_constraints!(spbm.mdl, xk_in_X)
         end
     end
@@ -929,13 +930,13 @@ Args:
 Returns:
     next_ref: reference trajectory for the next iteration.
     next_η: trust region radius for the next iteration. =#
-function _scvx__update_rule(spbm::SCvxSubproblem)::Tuple{
-                                SCvxSubproblemSolution,
-                                T_Real}
+function _scvx__update_rule(
+    spbm::SCvxSubproblem)::Tuple{SCvxSubproblemSolution,
+                                 T_Real}
     # Extract relevant data
     pars = spbm.def.pars
     sol = spbm.sol
-    iter = spbm.iter
+    ref = spbm.ref
     ρ = sol.ρ
     ρ0 = pars.ρ_0
     ρ1 = pars.ρ_1
@@ -952,25 +953,25 @@ function _scvx__update_rule(spbm::SCvxSubproblem)::Tuple{
     if ρ<ρ0
         # Very poor prediction
         next_η = max(η_lb, η/β_sh)
-        next_ref = spbm.ref
+        next_ref = ref
         sol.tr_update = "S"
         sol.reject = true
     elseif ρ0<=ρ && ρ<ρ1
         # Mediocre prediction
         next_η = max(η_lb, η/β_sh)
-        next_ref = spbm.sol
+        next_ref = sol
         sol.tr_update = "S"
         sol.reject = false
     elseif ρ1<=ρ && ρ<ρ2
         # Good prediction
         next_η = η
-        next_ref = spbm.sol
+        next_ref = sol
         sol.tr_update = ""
         sol.reject = false
     else
         # Excellent prediction
         next_η = min(η_ub, β_gr*η)
-        next_ref = spbm.sol
+        next_ref = sol
         sol.tr_update = "G"
         sol.reject = false
     end

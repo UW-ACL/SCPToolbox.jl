@@ -17,6 +17,7 @@ You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 using ECOS
+using Plots
 
 include("models/quadrotor.jl")
 include("core/problem.jl")
@@ -247,8 +248,8 @@ iter_max = 20
 ω = 10.0
 λ_init = 13e3
 λ_max = 1e9
-ρ_0 = 5.0
-ρ_1 = 20.0
+ρ_0 = 0.5
+ρ_1 = 2.0
 β_sh = 2.0
 β_gr = 2.0
 γ_fail = 5.0
@@ -273,3 +274,14 @@ pars = GuSTOParameters(N, Nsub, iter_max, ω, λ_init, λ_max, ρ_0, ρ_1, β_sh
 
 gusto_pbm = GuSTOProblem(pars, pbm)
 sol, history = gusto_solve(gusto_pbm)
+
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+pyplot()
+plot_trajectory_history(mdl, history)
+plot_final_trajectory(mdl, sol)
+plot_input_norm(mdl, sol)
+plot_tilt_angle(mdl, sol)
+plot_convergence(mdl, history)

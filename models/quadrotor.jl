@@ -185,6 +185,7 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
     cmap = cgrad(:thermal; rev = true)
     cmap_offset = 0.1
     alph_offset = 0.3
+    algo = history.subproblems[1].algo
 
     plot(show=false,
          aspect_ratio=:equal,
@@ -225,7 +226,7 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
               markeralpha=alph)
     end
 
-    savefig("figures/scvx_quadrotor_traj_iters.pdf")
+    save_figure("quadrotor_traj_iters", history.subproblems[1].algo)
 
     return nothing
 end
@@ -313,8 +314,7 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
           color=cmap[1.0],
           markeralpha=1.0)
 
-
-    savefig("figures/scvx_quadrotor_final_traj.pdf")
+    save_figure("quadrotor_final_traj", sol.algo)
 
     return nothing
 end
@@ -334,6 +334,7 @@ function plot_input_norm(mdl::QuadrotorProblem,
     ct_res = 500
     ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
     cmap = cgrad(:thermal; rev = true)
+    algo = sol.algo
 
     plot(xlabel=L"\mathrm{Time~[s]}",
          ylabel=L"\mathrm{Acceleration~[m/s}^2\mathrm{]}",
@@ -390,7 +391,7 @@ function plot_input_norm(mdl::QuadrotorProblem,
           color="#f1d46a",
           markeralpha=1.0)
 
-    savefig("figures/scvx_quadrotor_input.pdf")
+    save_figure("quadrotor_input", sol.algo)
 
     return nothing
 end
@@ -449,7 +450,7 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
           color=cmap[1.0],
           markeralpha=1.0)
 
-    savefig("figures/scvx_quadrotor_tilt.pdf")
+    save_figure("quadrotor_tilt", sol.algo)
 
     return nothing
 end
@@ -500,7 +501,7 @@ function plot_convergence(mdl::QuadrotorProblem, #nowarn
           markeralpha=1.0,
           linewidth=2)
 
-    savefig("figures/scvx_quadrotor_convergence.pdf")
+    save_figure("quadrotor_convergence", history.subproblems[1].algo)
 
     return nothing
 end

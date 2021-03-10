@@ -313,8 +313,10 @@ The supported cones are:
     :geom   for constraints z=(t, x), geomean(x)>=t.
     :exp    for constraints z=(x, y, w), y*exp(x/y)<=w, y>0. =#
 struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
-    z::T_OptiVar # The expression to be constrained in the cone.
-    K::T         # The cone set.
+    z::T_OptiVar   # The expression to be constrained in the cone
+    K::T           # The cone set
+    dim::T_Int     # Cone admbient space dimension
+    kind::T_Symbol # The kind of cone (:nonpos, :l1, etc.)
 
     #= Basic constructor.
 
@@ -353,12 +355,11 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
             K = MOI.ExponentialCone()
         end
 
-        constraint = new{typeof(K)}(z, K)
+        constraint = new{typeof(K)}(z, K, dim, kind)
 
         return constraint
     end
 end
-const T_ConvexSet = Union{Nothing, Vector{T_ConvexConeConstraint}}
 
 #= Discrete-time linear time-varying system, with virtual control. =#
 mutable struct T_DLTV

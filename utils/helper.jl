@@ -114,7 +114,7 @@ Args:
 Returns:
     constraint: the conic constraint reference. =#
 function add_conic_constraint!(
-    pbm::Model, cone::T)::T_Constraint where {T<:T_ConvexConeConstraint}
+    pbm::Model, cone::T_ConvexConeConstraint)::T_Constraint
 
     constraint = @constraint(pbm, cone.z in cone.K)
 
@@ -131,7 +131,7 @@ Returns:
     constraints: the conic constraint references. =#
 function add_conic_constraints!(
     pbm::Model,
-    cones::Vector{T})::T_ConstraintVector where {T<:T_ConvexConeConstraint}
+    cones::Vector{T_ConvexConeConstraint})::T_ConstraintVector
 
     constraints = T_ConstraintVector(undef, 0)
 
@@ -140,6 +140,77 @@ function add_conic_constraints!(
     end
 
     return constraints
+end
+
+function fixed_cone(cone::T_ConvexConeConstraint)::T_Bool
+    z_real = typeof(cone.z)<:Array{T} where {T<:Real}
+    return typeof(cone.z)==T_RealVector
+end
+
+#= Generate a vector which indicates conic constraint satisfaction.
+
+Consider the cone K which defines the constraint x∈K. Let K⊂R^n, an
+n-dimensional ambient space. Let q∈R^n be an n-dimensional indicator vector,
+such that q<=0 implies x∈K. Furthermore, we formulate q such that if x∈K, then
+it is feasible to set q<=0. Hence, effectively, we have a bidirectional
+relationship: q<=0 if and only if x∈K.
+
+Args:
+    pbm: the optimization problem structure.
+    cone: the conic constraint structure.
+
+Returns:
+    q: the indicator vector. =#
+function get_conic_constraint_indicator!(
+    pbm::Model,
+    cone::T_ConvexConeConstraint)::T_OptiVar
+
+    # Parameters
+    mode = (fixed_cone(cone)) ? :numerical : :jump
+    C = T_ConvexConeConstraint
+    acc! = add_conic_constraint!
+
+    # Compute the indicator
+    if mode==:numerical
+        z = cone.z
+        if cone.kind==:nonpos
+            q = z
+        elseif cone.kind in (:l1, :soc, :linf)
+            t = z[1]
+            x = z[2:end]
+            nrm = Dict(:l1 => 1, :soc => 2, :linf => Inf)
+            q = norm(x, nrm[cone.kind])-t
+        elseif cone.kind==:geom
+            t, x = z[1], z[2:end]
+            dim = cone.dim-1
+            q = t-exp(1/dim*sum(log.(x)))
+        elseif cone.kind==:exp
+            x, y, w = z
+            q = y*exp(x/y)-w
+        end
+    else
+        z = cone.z
+        if cone.kind==:nonpos
+            q = @variable(pbm, [1:cone.dim], base_name="q")
+            acc!(pbm, C(z-q, cone.kind))
+        else
+            q = @variable(pbm, base_name="q")
+            if cone.kind in (:l1, :soc, :linf)
+                t = z[1]
+                x = z[2:end]
+                acc!(pbm, C(vcat(t+q, x), cone.kind))
+            elseif cone.kind==:geom
+                t, x = z[1], z[2:end]
+                acc!(pbm, C(vcat(x, t-q), cone.kind))
+            elseif cone.kind==:exp
+                x, y, w = z
+                acc!(pbm, C(vcat(x, y, w+q), cone.kind))
+            end
+            q = [q]
+        end
+    end
+
+    return q
 end
 
 #= Linear interpolation on a grid.
@@ -826,6 +897,21 @@ function plot_prisms!(H::Vector{T_Hyperrectangle},
               linewidth=1,
               linecolor="#427d77")
     end
+    return nothing
+end
+
+#= Save the current figure to a PDF file.
+
+The filename is prepended with the name of the SCP algorithm used for the
+solution.
+
+Args:
+    filename: the filename of the figure.
+    algo: the SCP algorithm string (format
+        "<SCP_ALGO> (backend: <CVX_ALGO>)"). =#
+function save_figure(filename::T_String, algo::T_String)::Nothing
+    algo = lowercase(split(algo, " "; limit=2)[1])
+    savefig(@sprintf("figures/%s_%s.pdf", algo, filename))
     return nothing
 end
 

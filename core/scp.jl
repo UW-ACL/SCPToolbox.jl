@@ -112,6 +112,7 @@ returns. =#
 struct SCPSolution
     # >> Properties <<
     status::T_String  # Solution status (success? failure?)
+    algo::T_String    # Which algorithm was used to obtain this solution
     iterations::T_Int # Number of SCP iterations that occurred
     cost::T_Real      # The original convex cost function
     # >> Discrete-time trajectory <<
@@ -198,6 +199,7 @@ This is what the SCP algorithm returns in the end to the user.
 
 Args:
     history: SCP iteration history.
+    scp_algo: name of the SCP algorithm used.
 
 Returns:
     sol: the trajectory solution. =#
@@ -216,6 +218,7 @@ function SCPSolution(history::SCPHistory)::SCPSolution
     nu = pbm.traj.nu
     np = pbm.traj.np
     τd = pbm.common.τ_grid
+    algo = last_spbm.algo
 
     if _scp__unsafe_solution(last_sol)
         # SCP failed :(
@@ -245,10 +248,10 @@ function SCPSolution(history::SCPHistory)::SCPSolution
                       actions=pbm.traj.integ_actions)
         xc = T_ContinuousTimeTrajectory(τc, xc_vals, :linear)
 
-        cost = last_sol.L
+        cost = last_sol.J_aug
     end
 
-    sol = SCPSolution(status, num_iters, cost, τd, xd, ud, p, xc, uc)
+    sol = SCPSolution(status, algo, num_iters, cost, τd, xd, ud, p, xc, uc)
 
     return sol
 end
@@ -402,7 +405,6 @@ Args:
     V: the current concatenated vector.
     k: the discrete time grid interval.
     pbm: the SCP problem definition.
-    idcs: indexing arrays into V.
     ref: the reference trajectory.
 
 Returns:
@@ -466,11 +468,13 @@ function _scp__discretize!(
     ref::T, pbm::SCPProblem)::Nothing where {T<:SCPSubproblemSolution}
 
     # Parameters
-    nx = pbm.traj.nx
-    nu = pbm.traj.nu
-    np = pbm.traj.np
+    traj = pbm.traj
+    nx = traj.nx
+    nu = traj.nu
+    np = traj.np
     N = pbm.pars.N
     Nsub = pbm.pars.Nsub
+    τ_grid = pbm.common.τ_grid
     sz_E = size(pbm.common.E)
 
     # Initialization
@@ -486,9 +490,8 @@ function _scp__discretize!(
 
         # Integrate
         f = (τ, V) -> _scp__derivs(τ, V, k, pbm, ref)
-        τ_subgrid = T_RealVector(
-            LinRange(pbm.common.τ_grid[k], pbm.common.τ_grid[k+1], Nsub))
-        V = rk4(f, V0, τ_subgrid; actions=pbm.traj.integ_actions)
+        τ_subgrid = T_RealVector(LinRange(@k(τ_grid), @kp1(τ_grid), Nsub))
+        V = rk4(f, V0, τ_subgrid; actions=traj.integ_actions)
 
         # Get the raw RK4 results
         xV = V[idcs.x]
@@ -572,6 +575,11 @@ function _scp__add_convex_input_constraints!(
     if !isnothing(traj_pbm.U)
         for k = 1:N
             uk_in_U = traj_pbm.U(@k(u))
+            if typeof(uk_in_U)!=Vector{T_ConvexConeConstraint}
+                msg = string("ERROR: input constraint must be in conic form.")
+                err = SCPError(k, SCP_BAD_ARGUMENT, msg)
+                throw(err)
+            end
             add_conic_constraints!(spbm.mdl, uk_in_U)
         end
     end
