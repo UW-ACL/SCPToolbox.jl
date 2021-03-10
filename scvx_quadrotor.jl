@@ -37,7 +37,7 @@ problem_set_dims!(pbm, 6, 4, 1)
 # >> Variable scaling <<
 tdil_min = mdl.traj.tf_min
 tdil_max = mdl.traj.tf_max
-tdil_max_adj = tdil_min+0.1*(tdil_max-tdil_min)
+tdil_max_adj = tdil_min+1.0*(tdil_max-tdil_min)
 problem_advise_scale!(pbm, :parameter, mdl.vehicle.id_t,
                       (tdil_min, tdil_max_adj))
 

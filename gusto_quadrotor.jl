@@ -37,6 +37,13 @@ problem_set_dims!(pbm, 6, 4, 1)
 # >> Initial trajectory guess <<
 quadrotor_set_initial_guess!(pbm)
 
+# >> Variable scaling <<
+tdil_min = mdl.traj.tf_min
+tdil_max = mdl.traj.tf_max
+tdil_max_adj = tdil_min+1.0*(tdil_max-tdil_min)
+problem_advise_scale!(pbm, :parameter, mdl.vehicle.id_t,
+                      (tdil_min, tdil_max_adj))
+
 # >> Cost to be minimized <<
 problem_set_terminal_cost!(pbm, (x, p, pbm) -> begin
                            veh = pbm.mdl.vehicle
@@ -259,7 +266,7 @@ iter_max = 20
 ε_abs = 1e-3
 ε_rel = 0.01/100
 feas_tol = 1e-3
-pen = :softplus
+pen = :quad
 hom = 100.0
 q_tr = Inf
 q_exit = Inf
