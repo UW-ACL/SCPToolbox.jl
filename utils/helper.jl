@@ -114,8 +114,7 @@ Args:
 Returns:
     constraint: the conic constraint reference. =#
 function add_conic_constraint!(
-    pbm::Model, cone::T_ConvexConeConstraint{T})::T_Constraint where {
-        T<:MOI.AbstractSet}
+    pbm::Model, cone::T_ConvexConeConstraint)::T_Constraint
 
     constraint = @constraint(pbm, cone.z in cone.K)
 
@@ -132,8 +131,7 @@ Returns:
     constraints: the conic constraint references. =#
 function add_conic_constraints!(
     pbm::Model,
-    cones::Vector{T_ConvexConeConstraint{T}})::T_ConstraintVector where {
-        T<:MOI.AbstractSet}
+    cones::Vector{T_ConvexConeConstraint})::T_ConstraintVector
 
     constraints = T_ConstraintVector(undef, 0)
 
