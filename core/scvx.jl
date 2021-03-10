@@ -548,32 +548,23 @@ function _scvx__add_trust_region!(spbm::SCvxSubproblem)::Nothing
     dp = ph-ph_ref
 
     # Trust region constraint
+    q2cone = Dict(1 => :l1, 2 => :soc, 4 => :soc, Inf => :linf)
+    cone = q2cone[q]
     C = T_ConvexConeConstraint
     acc! = add_conic_constraint!
-    if q==2
-        dx_l2 = @variable(spbm.mdl, [1:N], base_name="dx_l2")
-        du_l2 = @variable(spbm.mdl, [1:N], base_name="du_l2")
-        dp_l2 = @variable(spbm.mdl, base_name="dp_l2")
-        acc!(spbm.mdl, C(vcat(dp_l2, dp), :soc))
-    end
+    dx_lq = @variable(spbm.mdl, [1:N], base_name="dx_lq")
+    du_lq = @variable(spbm.mdl, [1:N], base_name="du_lq")
+    dp_lq = @variable(spbm.mdl, base_name="dp_lq")
+    acc!(spbm.mdl, C(vcat(dp_lq, dp), cone))
     for k = 1:N
-        if q==1
-            # 1-norm
-            tr_cone = C(vcat(η, @k(dx), @k(du), dp), :l1)
-            add_conic_constraint!(spbm.mdl, tr_cone)
-        elseif q==2
-            # 2-norm
-            acc!(spbm.mdl, C(vcat(@k(dx_l2), @k(dx)), :soc))
-            acc!(spbm.mdl, C(vcat(@k(du_l2), @k(du)), :soc))
-            @constraint(spbm.mdl, @k(dx_l2)+@k(du_l2)+dp_l2 <= η)
-        elseif q==4
-            # 2-norm squared
-            tr_cone = C(vcat(sqrt_η, @k(dx), @k(du), dp), :soc)
-            add_conic_constraint!(spbm.mdl, tr_cone)
+        acc!(spbm.mdl, C(vcat(@k(dx_lq), @k(dx)), cone))
+        acc!(spbm.mdl, C(vcat(@k(du_lq), @k(du)), cone))
+        if q==4
+            w = @variable(spbm.mdl, base_name="w")
+            acc!(spbm.mdl, C(vcat(w, @k(dx_lq), @k(du_lq), dp_lq), :soc))
+            acc!(spbm.mdl, C(vcat(w, η, 1), :geom))
         else
-            # Infinity-norm
-            tr_cone = C(vcat(η, @k(dx), @k(du), dp), :linf)
-            add_conic_constraint!(spbm.mdl, tr_cone)
+            @constraint(spbm.mdl, @k(dx_lq)+@k(du_lq)+dp_lq <= η)
         end
     end
 
