@@ -223,7 +223,7 @@ problem_set_bc!(pbm, :tc,
 N = 30
 Nsub = 15
 iter_max = 50
-λ = 30.0
+λ = 10.0
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7
@@ -232,7 +232,7 @@ iter_max = 50
 η_init = 1.0
 η_lb = 1e-3
 η_ub = 10.0
-ε_abs = 0.0#1e-4
+ε_abs = 1e-5
 ε_rel = 0.01/100
 feas_tol = 1e-3
 q_tr = Inf

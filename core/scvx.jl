@@ -622,7 +622,9 @@ function _scvx__check_stopping_criterion!(spbm::SCvxSubproblem)::T_Bool
     pre_improv_rel = sol.pre_improv/abs(J_ref)
 
     # Compute stopping criterion
-    stop = (spbm.iter>1) && (pre_improv_rel<=ε_rel || sol.deviation<=ε_abs)
+    stop = ((spbm.iter>1) &&
+            ((sol.feas && (pre_improv_rel<=ε_rel ||
+                           sol.deviation<=ε_abs))))
 
     return stop
 end

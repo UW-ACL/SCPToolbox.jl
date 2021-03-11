@@ -250,7 +250,7 @@ problem_set_bc!(pbm, :tc,
 
 N = 30
 Nsub = 15
-iter_max = 30
+iter_max = 50
 ω = 500.0
 λ_init = 13e3
 λ_max = 1e9
@@ -259,7 +259,7 @@ iter_max = 30
 β_sh = 2.0
 β_gr = 2.0
 γ_fail = 5.0
-η_init = 1.0
+η_init = 3.0
 η_lb = 1e-3
 η_ub = 10.0
 ε_abs = 1e-5

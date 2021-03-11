@@ -901,7 +901,9 @@ function _gusto__check_stopping_criterion!(spbm::GuSTOSubproblem)::T_Bool
     infeas = λ>λ_max
 
     # Compute stopping criterion
-    stop = (spbm.iter>1) && (ΔJ<=ε_rel || sol.deviation<=ε_abs || infeas)
+    stop = ((spbm.iter>1) &&
+            ((sol.feas && (ΔJ<=ε_rel || sol.deviation<=ε_abs)) ||
+             infeas))
 
     return stop
 end
@@ -960,7 +962,6 @@ function _gusto__update_trust_region!(
     end
     dynamics_error = trapz(Δf, τ_grid)
     dynamics_nrml = trapz(dxdt, τ_grid)
-
 
     # Convexification performance metric
     normalization_term = cost_nrml+dynamics_nrml
@@ -1089,6 +1090,9 @@ function _gusto__update_rule(
             sol.λ_update = ""
         end
     end
+
+    # TODO about the only way I can reliable convergence:
+    next_η = 0.9*η
 
     return next_ref, next_η, next_λ
 end
