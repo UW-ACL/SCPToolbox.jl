@@ -50,7 +50,7 @@ problem_set_terminal_cost!(pbm, (x, p, pbm) -> begin
                            tdil = p[veh.id_t]
                            tdil_max = traj.tf_max
                            γ = traj.γ
-                           return γ*tdil/tdil_max
+                           return γ*(tdil/tdil_max)^2
                            end)
 
 problem_set_running_cost!(pbm, (x, u, p, pbm) -> begin
@@ -223,7 +223,7 @@ problem_set_bc!(pbm, :tc,
 N = 30
 Nsub = 15
 iter_max = 50
-λ = 10.0
+λ = 30.0
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7

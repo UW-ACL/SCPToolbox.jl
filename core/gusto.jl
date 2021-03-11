@@ -762,7 +762,6 @@ nonconvex mode computes the fully nonlinear cost.
 
 Args:
     x: the discrete-time state trajectory.
-    u: the discrete-time input trajectory.
     p: the parameter vector.
     spbm: the subproblem structure.
     mode: (optional) either :convex (default) or :nonconvex.
@@ -843,20 +842,14 @@ end
 
 #= Compute the virtual control penalty.
 
-This function has two "modes": the (default) convex mode computes the convex
-version of the cost (where all non-convexity has been convexified), while the
-nonconvex mode computes the fully nonlinear cost.
-
 Args:
     vd: the discrete-time dynamics virtual control trajectory.
     spbm: the subproblem structure.
-    mode: (optional) either :convex (default) or :nonconvex.
 
 Returns:
     cost_vc: the virtual control penalty cost. =#
 function _gusto__virtual_control_cost(vd::T_OptiVarMatrix,
-                                      spbm::GuSTOSubproblem,
-                                      mode::T_Symbol=:convex)::T_Objective
+                                      spbm::GuSTOSubproblem)::T_Objective
 
     # Parameters
     pars = spbm.def.pars
@@ -864,23 +857,15 @@ function _gusto__virtual_control_cost(vd::T_OptiVarMatrix,
     N = pars.N
     τ_grid = spbm.def.common.τ_grid
     E = spbm.ref.dyn.E
-    if mode==:convex
-        vc_l1 = @variable(spbm.mdl, [1:N-1], base_name="vc_l1")
-    end
+    vc_l1 = @variable(spbm.mdl, [1:N-1], base_name="vc_l1")
 
     # Integrated running cost
     cost_vc_integrand = Vector{T_Objective}(undef, N)
     cost_vc_integrand[end] = 0.0
     for k = 1:N-1
-        if mode==:convex
-            # Evaluation using virtual control in an optimization subproblem
-            vck_l1 = @k(vc_l1)
-            C = T_ConvexConeConstraint(vcat(vck_l1, @k(E)*@k(vd)), :l1)
-            add_conic_constraint!(spbm.mdl, C)
-        else
-            # Evaluation using nonlinear propagation defects
-            vck_l1 = norm(@k(E)*@k(vd), 1)
-        end
+        vck_l1 = @k(vc_l1)
+        C = T_ConvexConeConstraint(vcat(vck_l1, @k(E)*@k(vd)), :l1)
+        add_conic_constraint!(spbm.mdl, C)
         @k(cost_vc_integrand) = ω*vck_l1
     end
     cost_vc = trapz(cost_vc_integrand, τ_grid)
@@ -956,84 +941,35 @@ function _gusto__update_trust_region!(
     # Cost error
     J, L = sol.J_aug, sol.L_aug
     cost_error = abs(J-L)
+    cost_nrml = abs(L)
 
     # Dynamics error
-    dynamics_error = 0.0
-    integ_dxdt = 0.0
-    V0 = zeros(2*traj.nx+2) # = [x_ref; x_sol; ∫dyn_err; ∫nrm_dxdt]
-    for k = 1:N-1
-        # Set initial value
-        V0[1:traj.nx] = @k(ref.xd)
-        V0[traj.nx+1:2*traj.nx] = @k(sol.xd)
-
-        # Integrate
-        f = (τ, V) -> _gusto__dyn_err_derivs(τ, V, k, spbm)
-        τ_subgrid = T_RealVector(LinRange(@k(τ_grid), @kp1(τ_grid), Nsub))
-        V = rk4(f, V0, τ_subgrid; actions=traj.integ_actions)
-
-        # Add the integrated results
-        dynamics_error += V[end-1]
-        integ_dxdt += V[end]
+    Δf = T_RealVector(undef, N)
+    dxdt = T_RealVector(undef, N)
+    for k = 1:N
+        f = traj.f(@k(xb), @k(ub), pb)
+        A = traj.A(@k(xb), @k(ub), pb)
+        B = traj.B(@k(xb), @k(ub), pb)
+        F = traj.F(@k(xb), @k(ub), pb)
+        r = f-A*@k(xb)-B*@k(ub)-F*pb
+        vdk = (k<N) ? @k(vd) : zeros(nv)
+        f_lin = A*@k(x)+B*@k(u)+F*p+r#+E*vdk
+        f_nl = traj.f(@k(x), @k(u), p)
+        @k(Δf) = norm(f_nl-f_lin)
+        @k(dxdt) = norm(f_lin)
     end
+    dynamics_error = trapz(Δf, τ_grid)
+    dynamics_nrml = trapz(dxdt, τ_grid)
+
 
     # Convexification performance metric
-    normalization_term = abs(L)+integ_dxdt
+    normalization_term = cost_nrml+dynamics_nrml
     sol.ρ = (cost_error+dynamics_error)/normalization_term
 
     # Apply update rule
     next_ref, next_η, next_λ = _gusto__update_rule(spbm)
 
     return next_ref, next_η, next_λ
-end
-
-#= Compute concatenated time derivative vector for dynamics error computation.
-
-Args:
-    τ: the time.
-    V: the current concatenated vector.
-    k: the discrete time grid interval.
-    spbm: the subproblem structure.
-
-Returns:
-    dVdt: the time derivative of V. =#
-function _gusto__dyn_err_derivs(τ::T_Real,
-                                V::T_RealVector,
-                                k::T_Int,
-                                spbm::GuSTOSubproblem)::T_RealVector
-
-    # Parameters
-    pbm = spbm.def
-    traj = pbm.traj
-    sol = spbm.sol
-    ref = spbm.ref
-    τ_span = @k(pbm.common.τ_grid, k, k+1)
-    E = pbm.common.E
-
-    # Get current values
-    xb = V[1:traj.nx]
-    ub = linterp(τ, @k(ref.ud, k, k+1), τ_span)
-    pb = ref.p
-    x = V[traj.nx+1:2*traj.nx]
-    u = linterp(τ, @k(sol.ud, k, k+1), τ_span)
-    p = sol.p
-    vd = @k(sol.vd)
-
-    # Compute the state time derivative
-    dxbdt = pbm.traj.f(xb, ub, pb)
-    A = pbm.traj.A(xb, ub, pb)
-    B = pbm.traj.B(xb, ub, pb)
-    F = pbm.traj.F(xb, ub, pb)
-    r = dxbdt-A*xb-B*ub-F*pb
-    dxdt = A*x+B*u+F*p+r+E*vd
-    f = pbm.traj.f(x, u, p)
-
-    # Compute the dynamics error time derivative
-    dyn_err = norm(f-dxdt)
-    nrm_dxdt = norm(dxdt)
-
-    dVdt = [dxbdt; dxdt; dyn_err; nrm_dxdt]
-
-    return dVdt
 end
 
 #= Apply the low-level GuSTO trust region update rule.
