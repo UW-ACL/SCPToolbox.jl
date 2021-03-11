@@ -17,7 +17,6 @@ You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 using ECOS
-using Plots
 
 include("models/quadrotor.jl")
 include("core/problem.jl")
@@ -255,7 +254,6 @@ sol, history = scvx_solve(scvx_pbm)
 # :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-pyplot()
 plot_trajectory_history(mdl, history)
 plot_final_trajectory(mdl, sol)
 plot_input_norm(mdl, sol)

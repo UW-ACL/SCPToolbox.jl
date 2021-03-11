@@ -19,7 +19,8 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 using LinearAlgebra
 using JuMP
 using Printf
-using Plots
+using PyPlot
+using Colors
 
 import Base: vec, adjoint, *
 
@@ -813,12 +814,14 @@ end
 Supposedly to show a minimum or a maximum of a quantity on a time history plot.
 
 Args:
+    ax: the figure axis object.
     x_min: the left-most value.
     x_max: the right-most value.
     y_bnd: the bound value.
     height: the "thickness" of the keep-out slab on the plot.
     subplot: (optional) which subplot to plot on. =#
-function plot_timeseries_bound!(x_min::T_Real,
+function plot_timeseries_bound!(ax::PyPlot.PyObject,
+                                x_min::T_Real,
                                 x_max::T_Real,
                                 y_bnd::T_Real,
                                 height::T_Real;
@@ -827,25 +830,20 @@ function plot_timeseries_bound!(x_min::T_Real,
     y_other = y_bnd+height
     x = [x_min, x_max, x_max, x_min, x_min]
     y = [y_bnd, y_bnd, y_other, y_other, y_bnd]
-    infeas_region = Shape(x, y)
 
-    plot!(infeas_region;
-          subplot=subplot,
-          reuse=true,
-          legend=false,
-          seriestype=:shape,
-          color="#db6245",
-          fillopacity=0.5,
-          linewidth=0)
+    fc = parse(RGB, "#db6245")
+    ax.fill(x, y,
+            facecolor=(fc.r, fc.g, fc.b, 0.5),
+            edgecolor="none")
 
-    plot!([x_min, x_max], [y_bnd, y_bnd];
-          subplot=subplot,
-          reuse=true,
-          legend=false,
-          seriestype=:line,
-          color="#db6245",
-          linewidth=1.75,
-          linestyle=:dash)
+    ax.plot([x_min, x_max],
+            [y_bnd, y_bnd],
+            color="#db6245",
+            linewidth=1.75,
+            linestyle="--",
+            dashes=(2, 3),
+            solid_capstyle="round",
+            dash_capstyle="round")
 
     return nothing
 end
@@ -853,24 +851,23 @@ end
 #= Draw ellipsoids on the currently active plot.
 
 Args:
+    ax: the figure axis object.
     E: array of ellipsoids.
     axes: (optional) which 2 axes to project onto. =#
-function plot_ellipsoids!(E::Vector{T_Ellipsoid},
+function plot_ellipsoids!(ax::PyPlot.PyObject,
+                          E::Vector{T_Ellipsoid},
                           axes::T_IntVector=[1, 2])::Nothing
     θ = LinRange(0.0, 2*pi, 100)
     circle = hcat(cos.(θ), sin.(θ))'
     for i = 1:length(E)
         Ep = project(E[i], axes)
         vertices = Ep.H\circle.+Ep.c
-        ellipse = Shape(vertices[1, :], vertices[2, :])
-        plot!(ellipse;
-              reuse=true,
-              legend=false,
-              seriestype=:shape,
-              color="#db6245",
-              fillopacity=0.5,
-              linewidth=1,
-              linecolor="#26415d")
+        x, y = vertices[1, :], vertices[2, :]
+        fc = parse(RGB, "#db6245")
+        ax.fill(x, y,
+                facecolor=(fc.r, fc.g, fc.b, 0.5),
+                edgecolor="#26415d",
+                linewidth=1)
     end
     return nothing
 end
@@ -900,6 +897,48 @@ function plot_prisms!(H::Vector{T_Hyperrectangle},
     return nothing
 end
 
+#= Get a plotting colormap.
+
+The colormap is normalized to the [0, 1] interval.
+
+Returns:
+    cmap: a colormap object that can be queried for RGB color. =#
+function get_colormap()::PyPlot.PyObject
+    cmap = plt.get_cmap("inferno_r")
+    nrm = matplotlib.colors.Normalize(vmin=0, vmax=1)
+    clr_query = matplotlib.cm.ScalarMappable(norm=nrm, cmap=cmap)
+    cmap = (f::T_Real) -> clr_query.to_rgba(f)[1:3]
+    return cmap
+end
+
+#= Create an empty figure for plotting.
+
+Args:
+    size: the figure size (width, height).
+
+Returns:
+    fig: the figure object. =#
+function create_figure(size::Tuple{T, V})::Figure where {T<:Real, V<:Real}
+
+    # Set plot parameters
+    rcParams = PyPlot.PyDict(PyPlot.matplotlib."rcParams")
+    rcParams["text.usetex"] = true
+    rcParams["font.family"] = "sans-serif"
+    rcParams["axes.labelsize"] = 10
+    rcParams["xtick.labelsize"] = 8
+    rcParams["ytick.labelsize"] = 8
+    rcParams["text.latex.preamble"] = string("\\usepackage{sansmath}",
+                                             "\\sansmath")
+
+    plt.ioff()
+
+    fig = plt.figure(figsize=size)
+
+    plt.clf()
+
+    return fig
+end
+
 #= Save the current figure to a PDF file.
 
 The filename is prepended with the name of the SCP algorithm used for the
@@ -911,7 +950,10 @@ Args:
         "<SCP_ALGO> (backend: <CVX_ALGO>)"). =#
 function save_figure(filename::T_String, algo::T_String)::Nothing
     algo = lowercase(split(algo, " "; limit=2)[1])
-    savefig(@sprintf("figures/%s_%s.pdf", algo, filename))
+    plt.tight_layout()
+    plt.savefig(@sprintf("figures/%s_%s.pdf", algo, filename),
+                bbox_inches="tight", facecolor=zeros(4))
+    plt.close()
     return nothing
 end
 

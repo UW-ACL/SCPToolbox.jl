@@ -16,8 +16,8 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-using Plots
-using LaTeXStrings
+using PyPlot
+using Colors
 
 include("../utils/types.jl")
 include("../core/problem.jl")
@@ -182,51 +182,53 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
 
     # Common values
     num_iter = length(history.subproblems)
-    cmap = cgrad(:thermal; rev = true)
+    algo = history.subproblems[1].algo
+    cmap = get_colormap()
     cmap_offset = 0.1
     alph_offset = 0.3
-    algo = history.subproblems[1].algo
 
-    plot(show=false,
-         aspect_ratio=:equal,
-         xlabel=L"\mathrm{East~position~[m]}",
-         ylabel=L"\mathrm{North~position~[m]}",
-         tickfontsize=10,
-         labelfontsize=10,
-         size=(280, 400))
+    fig = create_figure((3, 4))
+    ax = fig.add_subplot()
 
-    plot_ellipsoids!(mdl.env.obs)
+    ax.axis("equal")
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
 
-    # @ Draw the trajectories @
+    ax.set_xlabel("East position [m]")
+    ax.set_ylabel("North position [m]")
+
+    plot_ellipsoids!(ax, mdl.env.obs)
+
+    # ..:: Draw the trajectories ::..
     for i = 0:num_iter
-
         # Extract values for the trajectory at iteration i
         if i==0
             trj = history.subproblems[1].ref
-            clr = "#356397"
             alph = alph_offset
-            shp = :xcross
+            clr = parse(RGB, "#356397")
+            clr = (clr.r, clr.g, clr.b, alph)
+            shp = "X"
         else
             trj = history.subproblems[i].sol
-            clr = cmap[(i-1)/(num_iter-1)*(1-cmap_offset)+cmap_offset]
-            alph = (i-1)/(num_iter-1)*(1-alph_offset)+alph_offset
-            shp = :circle
+            f = (off) -> (i-1)/(num_iter-1)*(1-off)+off
+            alph = f(alph_offset)
+            clr = (cmap(f(cmap_offset))..., alph)
+            shp = "o"
         end
         pos = trj.xd[mdl.vehicle.id_r, :]
+        x, y = pos[1, :], pos[2, :]
 
-        plot!(pos[1, :], pos[2, :];
-              reuse=true,
-              legend=false,
-              seriestype=:scatter,
-              markershape=shp,
-              markersize=6,
-              markerstrokecolor="white",
-              markerstrokewidth=0.3,
-              color=clr,
-              markeralpha=alph)
+        ax.plot(x, y,
+                linestyle="none",
+                marker=shp,
+                markersize=5,
+                markerfacecolor=clr,
+                markeredgecolor=(1, 1, 1, alph),
+                markeredgewidth=0.3)
     end
 
-    save_figure("quadrotor_traj_iters", history.subproblems[1].algo)
+    save_figure("quadrotor_traj_iters", algo)
 
     return nothing
 end
@@ -240,25 +242,38 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
                                sol::SCPSolution)::Nothing
 
     # Common values
-    cmap = cgrad(:thermal; rev = true)
-    cmap_vel = cgrad(:thermal)
-    ct_res = 500
-    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
+    algo = sol.algo
+    dt_clr = get_colormap()(1.0)
+    N = size(sol.xd, 2)
+    speed = [norm(@k(sol.xd[mdl.vehicle.id_v, :])) for k=1:N]
+    v_cmap = plt.get_cmap("inferno")
+    v_nrm = matplotlib.colors.Normalize(vmin=minimum(speed),
+                                        vmax=maximum(speed))
+    v_cmap = matplotlib.cm.ScalarMappable(norm=v_nrm, cmap=v_cmap)
     u_scale = 0.2
 
-    plot(aspect_ratio=:equal,
-         xlabel=L"\mathrm{East~position~[m]}",
-         ylabel=L"\mathrm{North~position~[m]}",
-         tickfontsize=10,
-         labelfontsize=10,
-         size=(280, 400),
-         colorbar=:right,
-         colorbar_title=L"\mathrm{Velocity~[m/s]}")
+    fig = create_figure((3, 4))
+    ax = fig.add_subplot()
 
-    plot_ellipsoids!(mdl.env.obs)
+    ax.axis("equal")
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
 
-    # @ Draw the final continuous-time position trajectory @
+    ax.set_xlabel("East position [m]")
+    ax.set_ylabel("North position [m]")
+
+    # Colorbar for velocity norm
+    plt.colorbar(v_cmap,
+                 aspect=40,
+                 label="Velocity [m/s]")
+
+    plot_ellipsoids!(ax, mdl.env.obs)
+
+    # ..:: Draw the final continuous-time position trajectory ::..
     # Collect the continuous-time trajectory data
+    ct_res = 500
+    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
     ct_pos = T_RealMatrix(undef, 2, ct_res)
     ct_speed = T_RealVector(undef, ct_res)
     for k = 1:ct_res
@@ -266,55 +281,57 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
         @k(ct_pos) = xk[mdl.vehicle.id_r[1:2]]
         @k(ct_speed) = norm(xk[mdl.vehicle.id_v])
     end
-    max_speed = maximum(ct_speed)
 
     # Plot the trajectory
     for k = 1:ct_res-1
-        pos_beg, pos_end = @k(ct_pos), @kp1(ct_pos)
-        speed_beg, speed_end = @k(ct_speed), @kp1(ct_speed)
-        speed_av = 0.5*(speed_beg+speed_end)
-        x = [pos_beg[1], pos_end[1]]
-        y = [pos_beg[2], pos_end[2]]
-
-        plot!(x, y;
-              reuse=true,
-              seriestpe=:line,
-              linewidth=2,
-              color=cmap_vel,
-              line_z=speed_av,
-              clims=(0.0, max_speed))
+        r, v = @k(ct_pos), @k(ct_speed)
+        x, y = r[1], r[2]
+        ax.plot(x, y,
+                linestyle="none",
+                marker="o",
+                markersize=3,
+                markerfacecolor=v_cmap.to_rgba(v),
+                markeredgecolor="none")
     end
 
-    # @ Draw the thrust vectors @
+    # ..:: Draw the acceleration vector ::..
     acc = sol.ud[mdl.vehicle.id_u, :]
     pos = sol.xd[mdl.vehicle.id_r, :]
-    N = size(acc, 2)
     for k = 1:N
         base = pos[1:2, k]
         tip = base+u_scale*acc[1:2, k]
         x = [base[1], tip[1]]
         y = [base[2], tip[2]]
-        plot!(x, y;
-              reuse=true,
-              legend=false,
-              seriestype=:line,
-              linecolor="#db6245",
-              linewidth=1.5)
+        ax.plot(x, y,
+                color="#db6245",
+                linewidth=1.5,
+                solid_capstyle="round")
     end
 
-    # @ Draw the final discrete-time position trajectory @
-    plot!(pos[1, :], pos[2, :];
-          reuse=true,
-          legend=false,
-          seriestype=:scatter,
-          markershape=:circle,
-          markersize=4,
-          markerstrokecolor="white",
-          markerstrokewidth=0.3,
-          color=cmap[1.0],
-          markeralpha=1.0)
 
-    save_figure("quadrotor_final_traj", sol.algo)
+    # ..:: Draw the discrete-time positions trajectory ::..
+    pos = sol.xd[mdl.vehicle.id_r, :]
+    x, y = pos[1, :], pos[2, :]
+    ax.plot(x, y,
+            linestyle="none",
+            marker="o",
+            markersize=5,
+            markerfacecolor=dt_clr,
+            markeredgecolor="white",
+            markeredgewidth=0.3)
+    # # @ Draw the final discrete-time position trajectory @
+    # plot!(pos[1, :], pos[2, :];
+    #       reuse=true,
+    #       legend=false,
+    #       seriestype=:scatter,
+    #       markershape=:circle,
+    #       markersize=4,
+    #       markerstrokecolor="white",
+    #       markerstrokewidth=0.3,
+    #       color=cmap[1.0],
+    #       markeralpha=1.0)
+
+    save_figure("quadrotor_final_traj", algo)
 
     return nothing
 end
@@ -328,68 +345,59 @@ function plot_input_norm(mdl::QuadrotorProblem,
                          sol::SCPSolution)::Nothing
 
     # Common
+    algo = sol.algo
+    clr = get_colormap()(1.0)
     tf = sol.p[mdl.vehicle.id_t]
     y_top = 25.0
     y_bot = 0.0
+
+    fig = create_figure((5, 2.5))
+    ax = fig.add_subplot()
+
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.autoscale(tight=true)
+
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Acceleration [m/s\$^2\$]")
+
+    # ..:: Acceleration bounds ::..
+    bnd_max = mdl.vehicle.u_max
+    bnd_min = mdl.vehicle.u_min
+    plot_timeseries_bound!(ax, 0.0, tf, bnd_max, y_top-bnd_max)
+    plot_timeseries_bound!(ax, 0.0, tf, bnd_min, y_bot-bnd_min)
+
+    # ..:: Norm of acceleration vector (continuous-time) ::..
     ct_res = 500
     ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
-    cmap = cgrad(:thermal; rev = true)
-    algo = sol.algo
-
-    plot(xlabel=L"\mathrm{Time~[s]}",
-         ylabel=L"\mathrm{Acceleration~[m/s}^2\mathrm{]}",
-         tickfontsize=10,
-         labelfontsize=10,
-         xlims=(0.0, tf),
-         ylims=(y_bot, y_top),
-         size=(500, 250))
-
-    # @ Acceleration upper bound @
-    bnd = mdl.vehicle.u_max
-    plot_timeseries_bound!(0.0, tf, bnd, y_top-bnd)
-
-    # @ Acceleration lower bound @
-    bnd = mdl.vehicle.u_min
-    plot_timeseries_bound!(0.0, tf, bnd, y_bot-bnd)
-
-    # @ Norm of acceleration vector (continuous-time) @
     ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
     ct_acc_vec = hcat([sample(sol.uc, τ)[mdl.vehicle.id_u] for τ in ct_τ]...)
     ct_acc_nrm = T_RealVector([norm(@k(ct_acc_vec)) for k in 1:ct_res])
-    plot!(ct_time, ct_acc_nrm;
-          reuse=true,
-          legend=false,
-          seriestype=:line,
-          linewidth=2,
-          linecolor=cmap[1.0])
+    ax.plot(ct_time, ct_acc_nrm,
+            color=clr,
+            linewidth=2)
 
-    # @ Norm of acceleration vector (discrete-time) @
+    # ..:: Norm of acceleration vector (discrete-time) ::..
     time = sol.τd*sol.p[mdl.vehicle.id_t]
     acc_vec = sol.ud[mdl.vehicle.id_u, :]
     acc_nrm = T_RealVector([norm(@k(acc_vec)) for k in 1:size(acc_vec, 2)])
-    plot!(time, acc_nrm;
-          reuse=true,
-          legend=false,
-          seriestype=:scatter,
-          markershape=:circle,
-          markersize=6,
-          markerstrokecolor="white",
-          markerstrokewidth=0.3,
-          color=cmap[1.0],
-          markeralpha=1.0)
+    ax.plot(time, acc_nrm,
+            linestyle="none",
+            marker="o",
+            markersize=5,
+            markeredgewidth=0,
+            markerfacecolor=clr)
 
-    # @ Slack input (discrete-time) @
+    # ..:: Slack input (discrete-time) ::..
     σ = sol.ud[mdl.vehicle.id_σ, :]
-    plot!(time, σ;
-          reuse=true,
-          legend=false,
-          seriestype=:scatter,
-          markershape=:hexagon,
-          markersize=3,
-          markerstrokecolor="white",
-          markerstrokewidth=0.3,
-          color="#f1d46a",
-          markeralpha=1.0)
+    ax.plot(time, σ,
+            linestyle="none",
+            marker="h",
+            markersize=2.5,
+            markeredgecolor="white",
+            markeredgewidth=0.3,
+            markerfacecolor="#f1d46a")
 
     save_figure("quadrotor_input", sol.algo)
 
@@ -405,50 +413,48 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
                          sol::SCPSolution)::Nothing
 
     # Common
+    algo = sol.algo
+    clr = get_colormap()(1.0)
     tf = sol.p[mdl.vehicle.id_t]
     y_top = 70.0
+
+    fig = create_figure((5, 2.5))
+    ax = fig.add_subplot()
+
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.autoscale(tight=true)
+    ax.set_ylim((0, y_top))
+
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Tilt angle [\$^\\circ\$]")
+
+    # ..:: Tilt angle bounds ::..
+    bnd_max = rad2deg(mdl.vehicle.tilt_max)
+    plot_timeseries_bound!(ax, 0.0, tf, bnd_max, y_top-bnd_max)
+
+    # ..:: Tilt angle (continuous-time) ::..
     ct_res = 500
     ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
-    cmap = cgrad(:thermal; rev = true)
-
-    plot(xlabel=L"\mathrm{Time~[s]}",
-         ylabel=L"\mathrm{Tilt angle [}^\circ\mathrm{]}",
-         tickfontsize=10,
-         labelfontsize=10,
-         xlims=(0.0, tf),
-         ylims=(0.0, y_top),
-         size=(500, 250))
-
-    # @ Tilt angle upper bound @
-    bnd = rad2deg(mdl.vehicle.tilt_max)
-    plot_timeseries_bound!(0.0, tf, bnd, y_top-bnd)
-
-    # @ Tilt angle (continuous-time) @
     ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
     _u = hcat([sample(sol.uc, τ)[mdl.vehicle.id_u] for τ in ct_τ]...)
     ct_tilt = T_RealVector([acosd(@k(_u)[3]/norm(@k(_u))) for k in 1:ct_res])
-    plot!(ct_time, ct_tilt;
-          reuse=true,
-          legend=false,
-          seriestype=:line,
-          linewidth=2,
-          linecolor=cmap[1.0])
+    ax.plot(ct_time, ct_tilt,
+            color=clr,
+            linewidth=2)
 
-    # @ Norm of acceleration vector (discrete-time) @
+    # ..:: Tilt angle (discrete-time) ::..
     time = sol.τd*sol.p[mdl.vehicle.id_t]
     _u = sol.ud[mdl.vehicle.id_u, :]
-    acc_nrm = T_RealVector([acosd(@k(_u)[3]/norm(@k(_u)))
-                            for k in 1:size(_u, 2)])
-    plot!(time, acc_nrm;
-          reuse=true,
-          legend=false,
-          seriestype=:scatter,
-          markershape=:circle,
-          markersize=6,
-          markerstrokecolor="white",
-          markerstrokewidth=0.3,
-          color=cmap[1.0],
-          markeralpha=1.0)
+    tilt = T_RealVector([acosd(@k(_u)[3]/norm(@k(_u)))
+                         for k in 1:size(_u, 2)])
+    ax.plot(time, tilt,
+            linestyle="none",
+            marker="o",
+            markersize=5,
+            markeredgewidth=0,
+            markerfacecolor=clr)
 
     save_figure("quadrotor_tilt", sol.algo)
 
@@ -464,7 +470,7 @@ function plot_convergence(mdl::QuadrotorProblem, #nowarn
                           history::SCPHistory)::Nothing
 
     # Common values
-    cmap = cgrad(:thermal; rev = true)
+    clr = get_colormap()(1.0)
 
     # Compute concatenated solution vectors at each iteration
     num_iter = length(history.subproblems)
@@ -481,25 +487,25 @@ function plot_convergence(mdl::QuadrotorProblem, #nowarn
     DX = T_RealVector([norm(X[:, i]-X[:, end]) for i=1:(num_iter-1)])
     iters = T_IntVector(1:(num_iter-1))
 
-    plot(show=false,
-         xlabel=L"\mathrm{Iteration}",
-         ylabel=L"Distance from solution, $\Vert X^i-X^*\Vert_2$",
-         tickfontsize=10,
-         labelfontsize=10,
-         yaxis=:log,
-         size=(400, 300))
+    fig = create_figure((4, 3))
+    ax = fig.add_subplot()
 
-    plot!(iters, DX;
-          reuse=true,
-          legend=false,
-          seriestype=:line,
-          markershape=:circle,
-          markersize=6,
-          markerstrokecolor="white",
-          markerstrokewidth=0.3,
-          color=cmap[1.0],
-          markeralpha=1.0,
-          linewidth=2)
+    ax.set_yscale("log")
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.autoscale(tight=true, axis="x")
+    ax.margins(x=0.04, y=0.04)
+
+    ax.set_xlabel("Iteration number")
+    ax.set_ylabel("Distance from solution, \$\\|X^i-X^*\\|_2\$")
+
+    ax.plot(iters, DX,
+            color=clr,
+            linewidth=2,
+            marker="o",
+            markersize=6,
+            markeredgewidth=0)
 
     save_figure("quadrotor_convergence", history.subproblems[1].algo)
 
