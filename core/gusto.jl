@@ -934,7 +934,6 @@ function _gusto__update_trust_region!(
     N = pbm.pars.N
     Nsub = pbm.pars.Nsub
     τ_grid = pbm.common.τ_grid
-    E = pbm.common.E
     sol = spbm.sol
     ref = spbm.ref
     xb = ref.xd
@@ -943,8 +942,6 @@ function _gusto__update_trust_region!(
     x = sol.xd
     u = sol.ud
     p = sol.p
-    vd = sol.vd
-    nv = size(E, 2)
 
     # Cost error
     J, L = sol.J_aug, sol.L_aug
@@ -960,8 +957,7 @@ function _gusto__update_trust_region!(
         B = traj.B(@k(xb), @k(ub), pb)
         F = traj.F(@k(xb), @k(ub), pb)
         r = f-A*@k(xb)-B*@k(ub)-F*pb
-        vdk = (k<N) ? @k(vd) : zeros(nv)
-        f_lin = A*@k(x)+B*@k(u)+F*p+r#+E*vdk
+        f_lin = A*@k(x)+B*@k(u)+F*p+r
         f_nl = traj.f(@k(x), @k(u), p)
         @k(Δf) = norm(f_nl-f_lin)
         @k(dxdt) = norm(f_lin)
