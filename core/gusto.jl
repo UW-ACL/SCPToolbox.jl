@@ -42,6 +42,8 @@ struct GuSTOParameters <: SCPParameters
     η_init::T_Real    # Initial trust region radius
     η_lb::T_Real      # Minimum trust region radius
     η_ub::T_Real      # Maximum trust region radius
+    μ::T_Real         # Exponential shrink rate for trust region
+    iter_μ::T_Real    # Iteration at which to apply trust region shrink
     ε_abs::T_Real     # Absolute convergence tolerance
     ε_rel::T_Real     # Relative convergence tolerance
     feas_tol::T_Real  # Dynamic feasibility tolerance
@@ -96,6 +98,7 @@ mutable struct GuSTOSubproblem <: SCPSubproblem
     def::SCPProblem              # The GuSTO algorithm definition
     λ::T_Real                    # Soft penalty weight
     η::T_Real                    # Trust region radius
+    κ::T_Real                    # Trust region shrinking multiplier
     # >> Reference and solution trajectories <<
     sol::Union{T_GuSTOSubSol, Missing} # Solution trajectory
     ref::Union{T_GuSTOSubSol, Missing} # Reference trajectory
@@ -229,7 +232,10 @@ function GuSTOSubproblem(pbm::SCPProblem,
     p = scale.Sp*ph.+scale.cp
     vd = @variable(mdl, [1:size(_E, 2), 1:N-1], base_name="vd")
 
-    spbm = GuSTOSubproblem(iter, mdl, algo, pbm, λ, η, sol, ref, L, L_st,
+    # Trust region shrink factor
+    κ = (iter < pars.iter_μ) ? 1.0 : pars.μ^(iter-pars.iter_μ)
+
+    spbm = GuSTOSubproblem(iter, mdl, algo, pbm, λ, η, κ, sol, ref, L, L_st,
                            L_tr, L_vc, L_aug, xh, uh, ph, x, u, p, vd)
 
     return spbm
@@ -942,7 +948,7 @@ function _gusto__update_trust_region!(
 
     # Cost error
     J, L = sol.J_aug, sol.L_aug
-    cost_error = abs(J-L)
+    sol.cost_error = abs(J-L)
     cost_nrml = abs(L)
 
     # Dynamics error
@@ -960,12 +966,12 @@ function _gusto__update_trust_region!(
         @k(Δf) = norm(f_nl-f_lin)
         @k(dxdt) = norm(f_lin)
     end
-    dynamics_error = trapz(Δf, τ_grid)
+    sol.dyn_error = trapz(Δf, τ_grid)
     dynamics_nrml = trapz(dxdt, τ_grid)
 
     # Convexification performance metric
     normalization_term = cost_nrml+dynamics_nrml
-    sol.ρ = (cost_error+dynamics_error)/normalization_term
+    sol.ρ = (sol.cost_error+sol.dyn_error)/normalization_term
 
     # Apply update rule
     next_ref, next_η, next_λ = _gusto__update_rule(spbm)
@@ -998,6 +1004,7 @@ function _gusto__update_rule(
     ρ = sol.ρ
     η = spbm.η
     λ = spbm.λ
+    κ = spbm.κ
     ρ0 = pars.ρ_0
     ρ1 = pars.ρ_1
     λ_init = pars.λ_init
@@ -1091,8 +1098,16 @@ function _gusto__update_rule(
         end
     end
 
-    # TODO about the only way I can reliable convergence:
-    next_η = 0.9*η
+    # Ensure that the trust region sequence goes to zero
+    if κ < 1
+        next_η *= κ
+        # Use a * to indicate that shrinking is going on
+        if length(sol.tr_update)==0
+            sol.tr_update = " *"
+        else
+            sol.tr_update = sol.tr_update * "*"
+        end
+    end
 
     return next_ref, next_η, next_λ
 end

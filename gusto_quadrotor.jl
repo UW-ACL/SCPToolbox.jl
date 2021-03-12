@@ -259,9 +259,11 @@ iter_max = 50
 β_sh = 2.0
 β_gr = 2.0
 γ_fail = 5.0
-η_init = 3.0
+η_init = 1.0
 η_lb = 1e-3
 η_ub = 10.0
+μ = 0.8
+iter_μ = 5
 ε_abs = 1e-5
 ε_rel = 0.01/100
 feas_tol = 1e-3
@@ -272,8 +274,8 @@ q_exit = Inf
 solver = ECOS
 solver_options = Dict("verbose"=>0)
 pars = GuSTOParameters(N, Nsub, iter_max, ω, λ_init, λ_max, ρ_0, ρ_1, β_sh,
-                       β_gr, γ_fail, η_init, η_lb, η_ub, ε_abs, ε_rel,
-                       feas_tol, pen, hom, q_tr, q_exit, solver,
+                       β_gr, γ_fail, η_init, η_lb, η_ub, μ, iter_μ, ε_abs,
+                       ε_rel, feas_tol, pen, hom, q_tr, q_exit, solver,
                        solver_options)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::

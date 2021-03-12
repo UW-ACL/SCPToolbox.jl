@@ -122,7 +122,7 @@ function QuadrotorProblem()::QuadrotorProblem
     vf = zeros(3)
     tf_min = 0.0
     tf_max = 2.5
-    γ = 0.5
+    γ = 0.0
     traj = QuadrotorTrajectoryParameters(r0, rf, v0, vf, tf_min, tf_max, γ)
 
     mdl = QuadrotorProblem(quad, env, traj)
