@@ -1014,7 +1014,7 @@ function _gusto__update_rule(
     # Tolerances for checking trust region and soft-penalized constraint
     # satisfaction
     tr_buffer = 1e-3
-    c_buffer = 1e-5
+    c_buffer = 1e-3
 
     # Compute trust region constraint satisfaction
     tr = _gusto__trust_region_cost(sol.xd, sol.p, spbm, :nonconvex; raw=true)
@@ -1029,8 +1029,8 @@ function _gusto__update_rule(
                 for k = 1:N
                     xk_in_X = traj.X(@k(sol.xd))
                     for cone in xk_in_X
-                        ρ = get_conic_constraint_indicator!(spbm.mdl, cone)
-                        if ρ>c_buffer
+                        ind = get_conic_constraint_indicator!(spbm.mdl, cone)
+                        if ind>c_buffer
                             error("Convex state constraint violated")
                         end
                     end
@@ -1145,8 +1145,13 @@ function _gusto__print_info(spbm::GuSTOSubproblem,
             ΔJ = ""
         else
             ΔJ = (ref.J_aug-sol.J_aug)/abs(ref.J_aug)*100
-            ΔJ = (sol.reject) ? "" : @sprintf("%.2f", ΔJ)
-            ΔJ = (length(ΔJ)>8) ? @sprintf("%.2e", ΔJ) : ΔJ
+            _ΔJ = (sol.reject) ? "" : @sprintf("%.2f", ΔJ)
+            if length(_ΔJ)>8
+                fmt = string("%.", (ΔJ>0) ? 2 : 1, "e")
+                ΔJ = @eval @sprintf($fmt, $ΔJ)
+            else
+                ΔJ = _ΔJ
+            end
         end
 
         # Associate values with columns

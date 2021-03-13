@@ -16,12 +16,13 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
+using LinearAlgebra
 using ECOS
 
-include("models/freeflyer.jl")
+include("utils/helper.jl")
 include("core/problem.jl")
 include("core/gusto.jl")
-include("utils/helper.jl")
+include("models/freeflyer.jl")
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
@@ -40,7 +41,7 @@ for i in veh.id_r
     max_pos = max(traj.r0[i], traj.rf[i])
     problem_advise_scale!(pbm, :state, i, (min_pos, max_pos))
 end
-problem_advise_scale!(pbm, :parameter, veh.id_pt, (traj.tf_min, traj.tf_max))
+problem_advise_scale!(pbm, :parameter, veh.id_t, (traj.tf_min, traj.tf_max))
 
 # >> Special numerical integration <<
 
@@ -55,9 +56,12 @@ freeflyer_set_initial_guess!(pbm)
 
 # >> Cost to be minimized <<
 problem_set_terminal_cost!(pbm, (x, p, pbm) -> begin
-                           traj = pbm.mdl.traj
                            veh = pbm.mdl.vehicle
-                           return traj.γ*p[veh.id_pt]/traj.tf_max
+                           traj = pbm.mdl.traj
+                           tdil = p[veh.id_t]
+                           tdil_max = traj.tf_max
+                           γ = traj.γ
+                           return γ*(tdil/tdil_max)^2
                            end)
 
 problem_set_running_cost!(pbm,
@@ -69,8 +73,8 @@ problem_set_running_cost!(pbm,
                           M_max_sq = veh.M_max^2
                           γ = traj.γ
                           S = zeros(pbm.nu, pbm.nu)
-                          S[veh.id_T, veh.id_T] = (1-γ)*1/T_max_sq
-                          S[veh.id_M, veh.id_M] = (1-γ)*1/M_max_sq
+                          S[veh.id_T, veh.id_T] = (1-γ)*I(3)/T_max_sq
+                          S[veh.id_M, veh.id_M] = (1-γ)*I(3)/M_max_sq
                           return S
                           end,
                           # Jacobian dS/dp
@@ -92,8 +96,26 @@ problem_set_running_cost!(pbm,
 
 # The input-affine dynamics function
 _gusto_freeflyer__f = (x, p, pbm) -> begin
-    # TODO
-    # return f
+    veh = pbm.mdl.vehicle
+    v = x[veh.id_v]
+    q = T_Quaternion(x[veh.id_q])
+    ω = x[veh.id_ω]
+    tdil = p[veh.id_t]
+    f = [zeros(pbm.nx) for i=1:pbm.nu+1]
+    f[1][veh.id_r] = v
+    f[1][veh.id_q] = 0.5*vec(q*ω)
+    iJ = veh.J\I(3)
+    f[1][veh.id_ω] = -iJ*cross(ω, veh.J*ω)
+    for j = 1:3
+        # ---
+        iT = veh.id_T[j]
+        iM = veh.id_M[j]
+        f[iT+1][veh.id_v[j]] = 1/veh.m
+        f[iM+1][veh.id_ω] = iJ[:, j]
+        # ---
+    end
+    f = [_f*tdil for _f in f]
+    return f
 end
 
 problem_set_dynamics!(pbm,
@@ -103,8 +125,21 @@ problem_set_dynamics!(pbm,
                       end,
                       # Jacobian df/dx
                       (x, p, pbm) -> begin
-                      # TODO
-                      # return A
+                      veh = pbm.mdl.vehicle
+                      tdil = p[veh.id_t]
+                      v = x[veh.id_v]
+	              q = T_Quaternion(x[veh.id_q])
+	              ω = x[veh.id_ω]
+                      dfqdq = 0.5*skew(T_Quaternion(ω), :R)
+	              dfqdω = 0.5*skew(q)
+	              dfωdω = -veh.J\(skew(ω)*veh.J-skew(veh.J*ω))
+                      A = [zeros(pbm.nx, pbm.nx) for i=1:pbm.nu+1]
+                      A[1][veh.id_r, veh.id_v] = I(3)
+                      A[1][veh.id_q, veh.id_q] = dfqdq
+                      A[1][veh.id_q, veh.id_ω] = dfqdω[:, 1:3]
+                      A[1][veh.id_ω, veh.id_ω] = dfωdω
+                      A = [_A*tdil for _A in A]
+                      return A
                       end,
                       # Jacobian df/dp
                       (x, p, pbm) -> begin
@@ -206,7 +241,6 @@ problem_set_bc!(pbm, :ic,
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
                 traj = pbm.mdl.traj
-                tdil = p[veh.id_pt]
                 rhs = zeros(pbm.nx)
                 rhs[veh.id_r] = traj.r0
                 rhs[veh.id_v] = traj.v0
@@ -233,7 +267,6 @@ problem_set_bc!(pbm, :tc,
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
                 traj = pbm.mdl.traj
-                tdil = p[veh.id_pt]
                 rhs = zeros(pbm.nx)
                 rhs[veh.id_r] = traj.rf
                 rhs[veh.id_v] = traj.vf
@@ -258,10 +291,10 @@ problem_set_bc!(pbm, :tc,
 # :: GuSTO algorithm parameters :::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-N = 30
+N = 50
 Nsub = 15
 iter_max = 50
-ω = 500.0
+ω = 1e3
 λ_init = 13e3
 λ_max = 1e9
 ρ_0 = 0.1
@@ -273,12 +306,12 @@ iter_max = 50
 η_lb = 1e-3
 η_ub = 10.0
 μ = 0.8
-iter_μ = 5
-ε_abs = 1e-5
+iter_μ = 15
+ε_abs = 1e-6
 ε_rel = 0.01/100
 feas_tol = 1e-3
 pen = :quad
-hom = 100.0
+hom = 500.0
 q_tr = Inf
 q_exit = Inf
 solver = ECOS
@@ -299,4 +332,8 @@ sol, history = gusto_solve(gusto_pbm)
 # :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-# TODO
+plot_trajectory_history(mdl, history)
+plot_final_trajectory(mdl, sol)
+plot_timeseries(mdl, sol)
+plot_obstacle_constraints(mdl, sol)
+plot_convergence(history, "freeflyer")

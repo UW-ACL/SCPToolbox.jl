@@ -217,7 +217,6 @@ problem_set_bc!(pbm, :ic,
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
                 traj = pbm.mdl.traj
-                tdil = p[veh.id_t]
                 rhs = zeros(pbm.nx)
                 rhs[veh.id_r] = traj.r0
                 rhs[veh.id_v] = traj.v0
@@ -244,7 +243,6 @@ problem_set_bc!(pbm, :tc,
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
                 traj = pbm.mdl.traj
-                tdil = p[veh.id_t]
                 rhs = zeros(pbm.nx)
                 rhs[veh.id_r] = traj.rf
                 rhs[veh.id_v] = traj.vf
@@ -276,12 +274,12 @@ iter_max = 50
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7
-β_sh = 4.0
-β_gr = 1.6
+β_sh = 2.0
+β_gr = 2.0
 η_init = 1.0
-η_lb = 1e-4
+η_lb = 1e-3
 η_ub = 10.0
-ε_abs = 1e-5
+ε_abs = 1e-6
 ε_rel = 0.01/100
 feas_tol = 1e-3
 q_tr = Inf
