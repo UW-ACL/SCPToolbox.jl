@@ -575,7 +575,9 @@ function _scp__add_convex_input_constraints!(
     if !isnothing(traj_pbm.U)
         for k = 1:N
             uk_in_U = traj_pbm.U(@k(u))
-            if typeof(uk_in_U)!=Vector{T_ConvexConeConstraint}
+            correct_type = typeof(uk_in_U)<:(
+                Vector{T} where {T<:T_ConvexConeConstraint})
+            if !correct_type
                 msg = string("ERROR: input constraint must be in conic form.")
                 err = SCPError(k, SCP_BAD_ARGUMENT, msg)
                 throw(err)

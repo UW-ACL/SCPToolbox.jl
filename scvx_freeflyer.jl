@@ -17,8 +17,7 @@ You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 using LinearAlgebra
-using JuMP
-using Plots
+using ECOS
 
 include("utils/helper.jl")
 include("core/problem.jl")
@@ -26,184 +25,55 @@ include("core/scvx.jl")
 include("models/freeflyer.jl")
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Trajectory problem data ::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-# >> Free-flyer <<
-id_r = 1:3
-id_v = 4:6
-id_q = 7:10
-id_ω = 11:13
-id_xt = 14
-id_T = 1:3
-id_M = 4:6
-id_pt = 1
-v_max = 0.4
-ω_max = deg2rad(1)
-T_max = 20e-3
-M_max = 1e-4
-mass = 7.2
-J = diagm([0.1083, 0.1083, 0.1083])
-fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_xt, id_T, id_M, id_pt,
-                             v_max, ω_max, T_max, M_max, mass, J)
-
-# >> Environment <<
-obs_shape = diagm([1.0; 1.0; 1.0]/0.3)
-z_iss = 4.75
-obs = [T_Ellipsoid(copy(obs_shape), [8.5; -0.15; 5.0]),
-       T_Ellipsoid(copy(obs_shape), [11.2; 1.84; 5.0]),
-       T_Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8])]
-iss_rooms = [T_Hyperrectangle([6.0; 0.0; z_iss],
-                              1.0, 1.0, 1.5;
-                              pitch=90.0),
-             T_Hyperrectangle([7.5; 0.0; z_iss],
-                              2.0, 2.0, 4.0;
-                              pitch=90.0),
-             T_Hyperrectangle([11.5; 0.0; z_iss],
-                              1.25, 1.25, 0.5;
-                              pitch=90.0),
-             T_Hyperrectangle([10.75; -1.0; z_iss],
-                              1.5, 1.5, 1.5;
-                              yaw=-90.0, pitch=90.0),
-             T_Hyperrectangle([10.75; 1.0; z_iss],
-                              1.5, 1.5, 1.5;
-                              yaw=90.0, pitch=90.0),
-             T_Hyperrectangle([10.75; 2.5; z_iss],
-                              2.5, 2.5, 4.5;
-                              yaw=90.0, pitch=90.0)]
-env = FreeFlyerEnvironmentParameters(iss_rooms, obs)
-
-# >> Trajectory <<
-r0 = [6.5; -0.2; 5.0]
-v0 = [0.035; 0.035; 0.0]
-q0 = T_Quaternion(deg2rad(-40), [0.0; 1.0; 1.0])
-ω0 = zeros(3)
-rf = [11.3; 6.0; 4.5]
-vf = zeros(3)
-qf = T_Quaternion(deg2rad(0), [0.0; 0.0; 1.0])
-ωf = zeros(3)
-tf_min = 60.0
-tf_max = 200.0
-wt = 0.0
-hom = 40.0
-sdf_pwr = 0.25
-traj = FreeFlyerTrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min,
-                                     tf_max, wt, hom, sdf_pwr)
-
-mdl = FreeFlyerProblem(fflyer, env, traj)
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
+mdl = FreeFlyerProblem()
 pbm = TrajectoryProblem(mdl)
 
-# Variable dimensions
+# >> Variable dimensions <<
 problem_set_dims!(pbm, 14, 6, 1)
 
-# Variable scaling
-for i in id_r
-    min_pos = min(r0[i], rf[i])
-    max_pos = max(r0[i], rf[i])
+# >> Variable scaling <<
+veh, traj = mdl.vehicle, mdl.traj
+for i in veh.id_r
+    min_pos = min(traj.r0[i], traj.rf[i])
+    max_pos = max(traj.r0[i], traj.rf[i])
     problem_advise_scale!(pbm, :state, i, (min_pos, max_pos))
 end
-problem_advise_scale!(pbm, :parameter, id_pt, (tf_min, tf_max))
+problem_advise_scale!(pbm, :parameter, veh.id_pt, (traj.tf_min, traj.tf_max))
+
+# >> Special numerical integration <<
 
 # Quaternion re-normalization on numerical integration step
-problem_set_integration_action!(pbm, id_q, (x, pbm) -> begin
+problem_set_integration_action!(pbm, veh.id_q, (x, pbm) -> begin
                                 xn = x/norm(x)
                                 return xn
                                 end)
 
-# Initial trajectory guess
-problem_set_guess!(pbm,
-                   (N, pbm) -> begin
-                   veh = pbm.mdl.vehicle
-                   traj = pbm.mdl.traj
-                   # No existing reference provided - make a new guess
-                   # >> Parameter guess <<
-                   p = zeros(pbm.np)
-                   flight_time = 0.5*(traj.tf_min+traj.tf_max)
-                   p[veh.id_pt] = flight_time
-                   # >> State guess <<
-                   x = T_RealMatrix(undef, pbm.nx, N)
-                   x[veh.id_xt, :] = straightline_interpolate(
-                       [flight_time], [flight_time], N)
-                   # @ Position/velocity L-shape trajectory @
-                   Δτ = flight_time/(N-1)
-                   speed = norm(traj.rf-traj.r0, 1)/flight_time
-                   times = straightline_interpolate([0.0], [flight_time], N)
-                   flight_time_leg = abs.(traj.rf-traj.r0)/speed
-                   flight_time_leg_cumul = cumsum(flight_time_leg)
-                   r = view(x, veh.id_r, :)
-                   v = view(x, veh.id_v, :)
-                   for k = 1:N
-                   # --- for k
-                   tk = @k(times)[1]
-                   for i = 1:3
-                   # -- for i
-                   if tk <= flight_time_leg_cumul[i]
-                   # - if tk
-                   # Current node is in i-th leg of the trajectory
-                   # Endpoint times
-                   t0 = (i>1) ? flight_time_leg_cumul[i-1] : 0.0
-                   tf = flight_time_leg_cumul[i]
-                   # Endpoint positions
-                   r0 = copy(traj.r0)
-                   r0[1:i-1] = traj.rf[1:i-1]
-                   rf = copy(r0)
-                   rf[i] = traj.rf[i]
-                   @k(r) = linterp(tk, hcat(r0, rf), [t0, tf])
-                   # Velocity
-                   dir_vec = rf-r0
-                   dir_vec /= norm(dir_vec)
-                   v_leg = speed*dir_vec
-                   @k(v) = v_leg
-                   break
-                   # - if tk
-                   end
-                   # -- for i
-                   end
-                   # --- for k
-                   end
-                   # @ Quaternion SLERP interpolation @
-                   x[veh.id_q, :] = T_RealMatrix(undef, 4, N)
-                   for k = 1:N
-                   mix = (k-1)/(N-1)
-                   @k(view(x, veh.id_q, :)) = vec(slerp_interpolate(
-                       traj.q0, traj.qf, mix))
-                   end
-                   # @ Constant angular velocity @
-                   rot_ang, rot_ax = Log(traj.qf*traj.q0')
-                   rot_speed = rot_ang/flight_time
-                   ang_vel = rot_speed*rot_ax
-                   x[veh.id_ω, :] = straightline_interpolate(
-                       ang_vel, ang_vel, N)
-                   # >> Input guess <<
-                   idle = zeros(pbm.nu)
-                   u = straightline_interpolate(idle, idle, N)
-                   return x, u, p
-                   end)
+# >> Initial trajectory guess <<
+freeflyer_set_initial_guess!(pbm)
 
-# Cost to be minimized
-problem_set_cost!(pbm,
-                  # Terminal cost
-                  (x, p, pbm) -> begin
-                  traj = pbm.mdl.traj
-                  veh = pbm.mdl.vehicle
-                  return traj.wt*p[veh.id_pt]/traj.tf_max
-                  end,
-                  # Running cost
-                  (x, u, p, pbm) -> begin
-                  veh = pbm.mdl.vehicle
-                  T_max_sq = veh.T_max^2
-                  M_max_sq = veh.M_max^2
-                  T = u[veh.id_T]
-                  M = u[veh.id_M]
-                  return (T'*T)/T_max_sq+(M'*M)/M_max_sq
-                  end)
+# >> Cost to be minimized <<
+problem_set_terminal_cost!(pbm, (x, p, pbm) -> begin
+                           traj = pbm.mdl.traj
+                           veh = pbm.mdl.vehicle
+                           γ = traj.γ
+                           return γ*p[veh.id_pt]/traj.tf_max
+                           end)
 
-# Dynamics constraint
+problem_set_running_cost!(pbm, (x, u, p, pbm) -> begin
+                          traj = pbm.mdl.traj
+                          veh = pbm.mdl.vehicle
+                          T_max_sq = veh.T_max^2
+                          M_max_sq = veh.M_max^2
+                          T = u[veh.id_T]
+                          M = u[veh.id_M]
+                          γ = traj.γ
+                          return (1-γ)*((T'*T)/T_max_sq+(M'*M)/M_max_sq)
+                          end)
+
+# >> Dynamics constraint <<
 problem_set_dynamics!(pbm,
                       # Dynamics f
                       (x, u, p, pbm) -> begin
@@ -231,7 +101,7 @@ problem_set_dynamics!(pbm,
 	              ω = x[veh.id_ω]
                       dfqdq = 0.5*skew(T_Quaternion(ω), :R)
 	              dfqdω = 0.5*skew(q)
-	              dfωdω = -veh.J\(skew(ω)*J-skew(veh.J*ω))
+	              dfωdω = -veh.J\(skew(ω)*veh.J-skew(veh.J*ω))
                       A = zeros(pbm.nx, pbm.nx)
                       A[veh.id_r, veh.id_v] = I(3)
                       A[veh.id_q, veh.id_q] = dfqdq
@@ -259,30 +129,28 @@ problem_set_dynamics!(pbm,
                       return F
                       end)
 
-# Convex path constraints on the state
-problem_set_X!(pbm, (x, mdl, pbm) -> begin
+# >> Convex path constraints on the state <<
+problem_set_X!(pbm, (x, pbm) -> begin
                traj = pbm.mdl.traj
                veh = pbm.mdl.vehicle
-               X = [@constraint(mdl,
-                                traj.tf_min <= x[veh.id_xt] <= traj.tf_max),
-                    @constraint(mdl, vcat(veh.v_max, x[veh.id_v])
-                                in MOI.SecondOrderCone(4)),
-                    @constraint(mdl, vcat(veh.ω_max, x[veh.id_ω])
-                                in MOI.SecondOrderCone(4))]
+               C = T_ConvexConeConstraint
+               X = [C(x[veh.id_xt]-traj.tf_max, :nonpos),
+                    C(traj.tf_min-x[veh.id_xt], :nonpos),
+                    C(vcat(veh.v_max, x[veh.id_v]), :soc),
+                    C(vcat(veh.ω_max, x[veh.id_ω]), :soc)]
                return X
                end)
 
-# Convex path constraints on the input
-problem_set_U!(pbm, (u, mdl, pbm) -> begin
+# >> Convex path constraints on the input <<
+problem_set_U!(pbm, (u, pbm) -> begin
                veh = pbm.mdl.vehicle
-               U = [@constraint(mdl, vcat(veh.T_max, u[veh.id_T])
-                                in MOI.SecondOrderCone(4)),
-                    @constraint(mdl, vcat(veh.M_max, u[veh.id_M])
-                                in MOI.SecondOrderCone(4))]
+               C = T_ConvexConeConstraint
+               U = [C(vcat(veh.T_max, u[veh.id_T]), :soc),
+                    C(vcat(veh.M_max, u[veh.id_M]), :soc)]
                return U
                end)
 
-# Nonconvex path inequality constraints
+# >> Nonconvex path inequality constraints <<
 problem_set_s!(pbm,
                # Constraint s
                (x, u, p, pbm) -> begin
@@ -333,7 +201,7 @@ problem_set_s!(pbm,
                return G
                end)
 
-# Initial boundary conditions
+# >> Initial boundary conditions <<
 problem_set_bc!(pbm, :ic,
                 # Constraint g
                 (x, p, pbm) -> begin
@@ -362,7 +230,7 @@ problem_set_bc!(pbm, :ic,
                 return K
                 end)
 
-# Terminal boundary conditions
+# >> Terminal boundary conditions <<
 problem_set_bc!(pbm, :tc,
                 # Constraint g
                 (x, p, pbm) -> begin
@@ -398,16 +266,16 @@ problem_set_bc!(pbm, :tc,
 N = 50
 Nsub = 15
 iter_max = 30
-λ = 1e4
+λ = 2e4
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7
 β_sh = 4.0
-β_gr = 1.2
+β_gr = 1.4
 η_init = 1.0
 η_lb = 1e-4
 η_ub = 10.0
-ε_abs = 0#1e-3
+ε_abs = 1e-5
 ε_rel = 0.01/100
 feas_tol = 1e-3
 q_tr = Inf
@@ -429,9 +297,8 @@ sol, history = scvx_solve(scvx_pbm)
 # :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-pyplot()
 plot_trajectory_history(mdl, history)
-plot_final_trajectory(mdl, sol)
-plot_timeseries(mdl, sol)
-plot_obstacle_constraints(mdl, sol)
-plot_convergence(mdl, history)
+# plot_final_trajectory(mdl, sol)
+# plot_timeseries(mdl, sol)
+# plot_obstacle_constraints(mdl, sol)
+# plot_convergence(mdl, history)

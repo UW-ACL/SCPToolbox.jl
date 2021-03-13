@@ -115,7 +115,7 @@ Args:
 Returns:
     constraint: the conic constraint reference. =#
 function add_conic_constraint!(
-    pbm::Model, cone::T_ConvexConeConstraint)::T_Constraint
+    pbm::Model, cone::T)::T_Constraint where {T<:T_ConvexConeConstraint}
 
     constraint = @constraint(pbm, cone.z in cone.K)
 
@@ -132,7 +132,7 @@ Returns:
     constraints: the conic constraint references. =#
 function add_conic_constraints!(
     pbm::Model,
-    cones::Vector{T_ConvexConeConstraint})::T_ConstraintVector
+    cones::Vector{T})::T_ConstraintVector where {T<:T_ConvexConeConstraint}
 
     constraints = T_ConstraintVector(undef, 0)
 
@@ -875,24 +875,27 @@ end
 #= Draw rectangular prisms on the current active plot.
 
 Args:
+    ax: the figure axis object.
     H: array of 3D hyperrectangle sets.
     axes: (optional) which 2 axes to project onto. =#
-function plot_prisms!(H::Vector{T_Hyperrectangle},
+function plot_prisms!(ax::PyPlot.PyObject,
+                      H::Vector{T_Hyperrectangle},
                       axes::T_IntVector=[1, 2])::Nothing
     for i = 1:length(H)
         Hi = H[i]
         x, y = axes
         vertices = T_RealMatrix([Hi.l[x] Hi.u[x] Hi.u[x] Hi.l[x] Hi.l[x];
                                  Hi.l[y] Hi.l[y] Hi.u[y] Hi.u[y] Hi.l[y]])
-        prism = Shape(vertices[1, :], vertices[2, :])
-        plot!(prism;
-              reuse=true,
-              legend=false,
-              seriestype=:shape,
-              color="#5da9a1",
-              fillopacity=0.5,
-              linewidth=1,
-              linecolor="#427d77")
+        x, y = vertices[1, :], vertices[2, :]
+        fc = parse(RGB, "#5da9a1")
+        ax.fill(x, y,
+                facecolor=(fc.r, fc.g, fc.b, 0.5),
+                linewidth=0)
+        ax.plot(x, y,
+                color="#427d77",
+                solid_joinstyle="round",
+                solid_capstyle="round",
+                linewidth=1)
     end
     return nothing
 end

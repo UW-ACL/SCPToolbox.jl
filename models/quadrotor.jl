@@ -90,7 +90,7 @@ function QuadrotorEnvironmentParameters(
     return env
 end
 
-#= Constructor the quadrotor problem.
+#= Constructor for the quadrotor problem.
 
 Returns:
     mdl: the quadrotor problem. =#
@@ -289,7 +289,8 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
         ax.plot(x, y,
                 linestyle="none",
                 marker="o",
-                markersize=3,
+                markersize=4,
+                alpha=0.2,
                 markerfacecolor=v_cmap.to_rgba(v),
                 markeredgecolor="none")
     end
@@ -315,21 +316,10 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
     ax.plot(x, y,
             linestyle="none",
             marker="o",
-            markersize=5,
+            markersize=3,
             markerfacecolor=dt_clr,
             markeredgecolor="white",
             markeredgewidth=0.3)
-    # # @ Draw the final discrete-time position trajectory @
-    # plot!(pos[1, :], pos[2, :];
-    #       reuse=true,
-    #       legend=false,
-    #       seriestype=:scatter,
-    #       markershape=:circle,
-    #       markersize=4,
-    #       markerstrokecolor="white",
-    #       markerstrokewidth=0.3,
-    #       color=cmap[1.0],
-    #       markeralpha=1.0)
 
     save_figure("quadrotor_final_traj", algo)
 
@@ -491,11 +481,13 @@ function plot_convergence(mdl::QuadrotorProblem, #nowarn
     ax = fig.add_subplot()
 
     ax.set_yscale("log")
-    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.grid(linewidth=0.3, alpha=0.5, axis="y", which="major")
+    ax.grid(linewidth=0.2, alpha=0.5, axis="y", which="minor", linestyle="--")
     ax.set_axisbelow(true)
     ax.set_facecolor("white")
     ax.autoscale(tight=true, axis="x")
     ax.margins(x=0.04, y=0.04)
+    ax.set_xticks(1:num_iter)
 
     ax.set_xlabel("Iteration number")
     ax.set_ylabel("Distance from solution, \$\\|X^i-X^*\\|_2\$")

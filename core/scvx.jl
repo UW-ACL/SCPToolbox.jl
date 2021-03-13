@@ -463,7 +463,9 @@ function _scvx__add_convex_state_constraints!(
     if !isnothing(traj_pbm.X)
         for k = 1:N
             xk_in_X = traj_pbm.X(@k(x))
-            if typeof(xk_in_X)!=Vector{T_ConvexConeConstraint}
+            correct_type = typeof(xk_in_X)<:(
+                Vector{T} where {T<:T_ConvexConeConstraint})
+            if !correct_type
                 msg = string("ERROR: input constraint must be in conic form.")
                 err = SCPError(k, SCP_BAD_ARGUMENT, msg)
                 throw(err)

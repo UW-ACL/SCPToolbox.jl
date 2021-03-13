@@ -16,8 +16,7 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-using Plots
-using LaTeXStrings
+using PyPlot
 using Colors
 
 include("../utils/types.jl")
@@ -64,7 +63,7 @@ mutable struct FreeFlyerTrajectoryParameters
     ωf::T_RealVector # Terminal angular velocity
     tf_min::T_Real   # Minimum flight time
     tf_max::T_Real   # Maximum flight time
-    wt::T_Real       # Tradeoff weight terminal vs. running cost
+    γ::T_Real        # Tradeoff weight terminal vs. running cost
     hom::T_Real      # Homotopy parameter for signed-distance function
     sdf_pwr::T_Real  # Exponent used in signed-distance function
 end
@@ -100,9 +99,164 @@ function FreeFlyerEnvironmentParameters(
     return env
 end
 
+#= Constructor for the 6-DoF free-flyer problem.
+
+Returns:
+    mdl: the free-flyer problem. =#
+function FreeFlyerProblem()::FreeFlyerProblem
+
+    # >> Free-flyer <<
+    id_r = 1:3
+    id_v = 4:6
+    id_q = 7:10
+    id_ω = 11:13
+    id_xt = 14
+    id_T = 1:3
+    id_M = 4:6
+    id_pt = 1
+    v_max = 0.4
+    ω_max = deg2rad(1)
+    T_max = 20e-3
+    M_max = 1e-4
+    mass = 7.2
+    J = diagm([0.1083, 0.1083, 0.1083])
+    fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_xt, id_T, id_M, id_pt,
+                                 v_max, ω_max, T_max, M_max, mass, J)
+
+    # >> Environment <<
+    obs_shape = diagm([1.0; 1.0; 1.0]/0.3)
+    z_iss = 4.75
+    obs = [T_Ellipsoid(copy(obs_shape), [8.5; -0.15; 5.0]),
+           T_Ellipsoid(copy(obs_shape), [11.2; 1.84; 5.0]),
+           T_Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8])]
+    iss_rooms = [T_Hyperrectangle([6.0; 0.0; z_iss],
+                                  1.0, 1.0, 1.5;
+                                  pitch=90.0),
+                 T_Hyperrectangle([7.5; 0.0; z_iss],
+                                  2.0, 2.0, 4.0;
+                                  pitch=90.0),
+                 T_Hyperrectangle([11.5; 0.0; z_iss],
+                                  1.25, 1.25, 0.5;
+                                  pitch=90.0),
+                 T_Hyperrectangle([10.75; -1.0; z_iss],
+                                  1.5, 1.5, 1.5;
+                                  yaw=-90.0, pitch=90.0),
+                 T_Hyperrectangle([10.75; 1.0; z_iss],
+                                  1.5, 1.5, 1.5;
+                                  yaw=90.0, pitch=90.0),
+                 T_Hyperrectangle([10.75; 2.5; z_iss],
+                                  2.5, 2.5, 4.5;
+                                  yaw=90.0, pitch=90.0)]
+    env = FreeFlyerEnvironmentParameters(iss_rooms, obs)
+
+    # >> Trajectory <<
+    r0 = [6.5; -0.2; 5.0]
+    v0 = [0.035; 0.035; 0.0]
+    q0 = T_Quaternion(deg2rad(-40), [0.0; 1.0; 1.0])
+    ω0 = zeros(3)
+    rf = [11.3; 6.0; 4.5]
+    vf = zeros(3)
+    qf = T_Quaternion(deg2rad(0), [0.0; 0.0; 1.0])
+    ωf = zeros(3)
+    tf_min = 60.0
+    tf_max = 200.0
+    γ = 0.0
+    hom = 50.0
+    sdf_pwr = 0.5
+    traj = FreeFlyerTrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min,
+                                         tf_max, γ, hom, sdf_pwr)
+
+    mdl = FreeFlyerProblem(fflyer, env, traj)
+
+    return mdl
+end
+
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+#= Compute the initial discrete-time trajectory guess.
+
+Use an L-shaped axis-aligned position trajectory, a corresponding velocity
+trajectory, a SLERP interpolation for the quaternion attitude and a
+corresponding constant-speed angular velocity.
+
+Args:
+    pbm: the trajectory problem definition. =#
+function freeflyer_set_initial_guess!(pbm::TrajectoryProblem)::Nothing
+
+    problem_set_guess!(pbm,
+                       (N, pbm) -> begin
+                       veh = pbm.mdl.vehicle
+                       traj = pbm.mdl.traj
+                       # No existing reference provided - make a new guess
+                       # >> Parameter guess <<
+                       p = zeros(pbm.np)
+                       flight_time = 0.5*(traj.tf_min+traj.tf_max)
+                       p[veh.id_pt] = flight_time
+                       # >> State guess <<
+                       x = T_RealMatrix(undef, pbm.nx, N)
+                       x[veh.id_xt, :] = straightline_interpolate(
+                           [flight_time], [flight_time], N)
+                       # @ Position/velocity L-shape trajectory @
+                       Δτ = flight_time/(N-1)
+                       speed = norm(traj.rf-traj.r0, 1)/flight_time
+                       times = straightline_interpolate([0.0], [flight_time],
+                                                        N)
+                       flight_time_leg = abs.(traj.rf-traj.r0)/speed
+                       flight_time_leg_cumul = cumsum(flight_time_leg)
+                       r = view(x, veh.id_r, :)
+                       v = view(x, veh.id_v, :)
+                       for k = 1:N
+                       # --- for k
+                       tk = @k(times)[1]
+                       for i = 1:3
+                       # -- for i
+                       if tk <= flight_time_leg_cumul[i]
+                       # - if tk
+                       # Current node is in i-th leg of the trajectory
+                       # Endpoint times
+                       t0 = (i>1) ? flight_time_leg_cumul[i-1] : 0.0
+                       tf = flight_time_leg_cumul[i]
+                       # Endpoint positions
+                       r0 = copy(traj.r0)
+                       r0[1:i-1] = traj.rf[1:i-1]
+                       rf = copy(r0)
+                       rf[i] = traj.rf[i]
+                       @k(r) = linterp(tk, hcat(r0, rf), [t0, tf])
+                       # Velocity
+                       dir_vec = rf-r0
+                       dir_vec /= norm(dir_vec)
+                       v_leg = speed*dir_vec
+                       @k(v) = v_leg
+                       break
+                       # - if tk
+                       end
+                       # -- for i
+                       end
+                       # --- for k
+                       end
+                       # @ Quaternion SLERP interpolation @
+                       x[veh.id_q, :] = T_RealMatrix(undef, 4, N)
+                       for k = 1:N
+                       mix = (k-1)/(N-1)
+                       @k(view(x, veh.id_q, :)) = vec(slerp_interpolate(
+                           traj.q0, traj.qf, mix))
+                       end
+                       # @ Constant angular velocity @
+                       rot_ang, rot_ax = Log(traj.qf*traj.q0')
+                       rot_speed = rot_ang/flight_time
+                       ang_vel = rot_speed*rot_ax
+                       x[veh.id_ω, :] = straightline_interpolate(
+                           ang_vel, ang_vel, N)
+                       # >> Input guess <<
+                       idle = zeros(pbm.nu)
+                       u = straightline_interpolate(idle, idle, N)
+                       return x, u, p
+                       end)
+
+    return nothing
+end
 
 #= Plot the trajectory evolution through SCvx iterations.
 
@@ -114,73 +268,77 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
 
     # Common values
     num_iter = length(history.subproblems)
-    cmap = cgrad(:thermal; rev = true)
+    algo = history.subproblems[1].algo
+    cmap = get_colormap()
     cmap_offset = 0.1
     alph_offset = 0.3
 
-    plot(show=false,
-         aspect_ratio=:equal,
-         xlabel=L"\mathrm{East~position~[m]}",
-         ylabel=L"\mathrm{North~position~[m]}",
-         tickfontsize=10,
-         labelfontsize=10,
-         size=(280, 400))
+    fig = create_figure((3, 4))
+    ax = fig.add_subplot()
 
-    plot_prisms!(mdl.env.iss)
-    plot_ellipsoids!(mdl.env.obs)
+    ax.axis("equal")
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.set_xlim((5.5, 12.5))
 
-    # @ Plot the signed distance function zero-level set @
-    xlims = (6, 12)
-    ylims = (-2.5, 7)
+    ax.set_xlabel("\$x_{\\mathcal I}\$ [m]")
+    ax.set_ylabel("\$y_{\\mathcal I}\$ [m]")
+
+    plot_prisms!(ax, mdl.env.iss)
+    plot_ellipsoids!(ax, mdl.env.obs)
+
+    # ..:: Signed distance function zero-level set ::..
+    xlims = (5.9, 12.1)
+    ylims = (-2.6, 7.1)
     res = 100
     z_iss = @first(history.subproblems[end].sol.xd[mdl.vehicle.id_r, :])[3]
     x = T_RealVector(LinRange(xlims..., res))
     y = T_RealVector(LinRange(ylims..., res))
     X = repeat(reshape(x, 1, :), length(y), 1)
     Y = repeat(y, 1, length(x))
-    f = (x, y) -> signed_distance(mdl.env.iss, [x; y; z_iss];
-                                  t=mdl.traj.hom, a=mdl.traj.sdf_pwr)[1]
+    f = (x, y) -> round(
+        signed_distance(mdl.env.iss, [x; y; z_iss];
+                        t=mdl.traj.hom,
+                        a=mdl.traj.sdf_pwr)[1], digits=9)
     Z = map(f, X, Y)
 
-    contour!(x, y, Z,
-             levels=[0],
-             linecolor="#f1d46a",
-             linewidth=1,
-             colorbar=false)
+    ax.contour(x, y, Z, [0.0],
+               colors="#f1d46a",
+               linewidths=1,
+               linestyles="solid",
+               zorder=10)
 
-    # @ Draw the trajectories @
+    # ..:: Draw the trajectories ::..
     for i = 0:num_iter
-
         # Extract values for the trajectory at iteration i
         if i==0
             trj = history.subproblems[1].ref
-            clr = "#356397"
             alph = alph_offset
-            shp = :xcross
+            clr = parse(RGB, "#356397")
+            clr = (clr.r, clr.g, clr.b, alph)
+            shp = "X"
         else
             trj = history.subproblems[i].sol
-            clr = cmap[(i-1)/(num_iter-1)*(1-cmap_offset)+cmap_offset]
-            alph = (i-1)/(num_iter-1)*(1-alph_offset)+alph_offset
-            shp = :circle
+            f = (off) -> (i-1)/(num_iter-1)*(1-off)+off
+            alph = f(alph_offset)
+            clr = (cmap(f(cmap_offset))..., alph)
+            shp = "o"
         end
         pos = trj.xd[mdl.vehicle.id_r, :]
+        x, y = pos[1, :], pos[2, :]
 
-        plot!(pos[1, :], pos[2, :];
-              reuse=true,
-              legend=false,
-              seriestype=:scatter,
-              markershape=shp,
-              markersize=6,
-              markerstrokecolor="white",
-              markerstrokewidth=0.3,
-              color=clr,
-              markeralpha=alph)
+        ax.plot(x, y,
+                linestyle="none",
+                marker=shp,
+                markersize=5,
+                markerfacecolor=clr,
+                markeredgecolor=(1, 1, 1, alph),
+                markeredgewidth=0.3,
+                zorder=20)
     end
 
-    plot!(xlims=xlims,
-          ylims=ylims)
-
-    savefig("figures/scvx_freeflyer_traj_iters.pdf")
+    save_figure("freeflyer_traj_iters", algo)
 
     return nothing
 end
@@ -194,45 +352,61 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
                                sol::SCPSolution)::Nothing
 
     # Common values
-    cmap = cgrad(:thermal; rev = true)
-    cmap_vel = cgrad(:thermal)
-    ct_res = 500
-    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
-    u_scale = 5e1
+    algo = sol.algo
+    dt_clr = get_colormap()(1.0)
+    N = size(sol.xd, 2)
+    speed = [norm(@k(sol.xd[mdl.vehicle.id_v, :])) for k=1:N]
+    v_cmap = plt.get_cmap("inferno")
+    v_nrm = matplotlib.colors.Normalize(vmin=minimum(speed),
+                                        vmax=maximum(speed))
+    v_cmap = matplotlib.cm.ScalarMappable(norm=v_nrm, cmap=v_cmap)
+    u_scale = 8e1
 
-    plot(aspect_ratio=:equal,
-         xlabel=L"$x_{\mathcal{I}}$ [m]",
-         ylabel=L"$y_{\mathcal{I}}$ [m]",
-         tickfontsize=10,
-         labelfontsize=10,
-         size=(280, 320),
-         colorbar=:right,
-         colorbar_title=L"$\Vert v_{\mathcal{I}}\Vert$ [m/s]")
+    fig = create_figure((3, 4))
+    ax = fig.add_subplot()
 
-    plot_prisms!(mdl.env.iss)
-    plot_ellipsoids!(mdl.env.obs)
+    ax.axis("equal")
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.set_xlim((5.5, 12.5))
 
-    # @ Plot the signed distance function zero-level set @
-    xlims = (6, 12)
-    ylims = (-2.5, 7)
+    ax.set_xlabel("\$x_{\\mathcal I}\$ [m]")
+    ax.set_ylabel("\$y_{\\mathcal I}\$ [m]")
+
+    # Colorbar for velocity norm
+    plt.colorbar(v_cmap,
+                 aspect=40,
+                 label="Velocity [m/s]")
+
+    plot_prisms!(ax, mdl.env.iss)
+    plot_ellipsoids!(ax, mdl.env.obs)
+
+    # ..:: Signed distance function zero-level set ::..
+    xlims = (5.9, 12.1)
+    ylims = (-2.6, 7.1)
     res = 100
     z_iss = @first(sol.xd[mdl.vehicle.id_r, :])[3]
     x = T_RealVector(LinRange(xlims..., res))
     y = T_RealVector(LinRange(ylims..., res))
     X = repeat(reshape(x, 1, :), length(y), 1)
     Y = repeat(y, 1, length(x))
-    f = (x, y) -> signed_distance(mdl.env.iss, [x; y; z_iss];
-                                  t=mdl.traj.hom, a=mdl.traj.sdf_pwr)[1]
+    f = (x, y) -> round(
+        signed_distance(mdl.env.iss, [x; y; z_iss];
+                        t=mdl.traj.hom,
+                        a=mdl.traj.sdf_pwr)[1], digits=9)
     Z = map(f, X, Y)
 
-    contour!(x, y, Z,
-             levels=[0],
-             linecolor="#f1d46a",
-             linewidth=1,
-             colorbar=false)
+    ax.contour(x, y, Z, [0.0],
+               colors="#f1d46a",
+               linewidths=1,
+               linestyles="solid",
+               zorder=10)
 
-    # @ Draw the final continuous-time position trajectory @
+    # ..:: Draw the final continuous-time position trajectory ::..
     # Collect the continuous-time trajectory data
+    ct_res = 500
+    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
     ct_pos = T_RealMatrix(undef, 2, ct_res)
     ct_speed = T_RealVector(undef, ct_res)
     for k = 1:ct_res
@@ -240,58 +414,49 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
         @k(ct_pos) = xk[mdl.vehicle.id_r[1:2]]
         @k(ct_speed) = norm(xk[mdl.vehicle.id_v])
     end
-    max_speed = maximum(ct_speed)
 
     # Plot the trajectory
     for k = 1:ct_res-1
-        pos_beg, pos_end = @k(ct_pos), @kp1(ct_pos)
-        speed_beg, speed_end = @k(ct_speed), @kp1(ct_speed)
-        speed_av = 0.5*(speed_beg+speed_end)
-        x = [pos_beg[1], pos_end[1]]
-        y = [pos_beg[2], pos_end[2]]
-
-        plot!(x, y;
-              reuse=true,
-              seriestpe=:line,
-              linewidth=2,
-              color=cmap_vel,
-              line_z=speed_av,
-              clims=(0.0, max_speed))
+        r, v = @k(ct_pos), @k(ct_speed)
+        x, y = r[1], r[2]
+        ax.plot(x, y,
+                linestyle="none",
+                marker="o",
+                markersize=3,
+                markerfacecolor=v_cmap.to_rgba(v),
+                markeredgecolor="none",
+                alpha=0.2,
+                zorder=20)
     end
 
-    # @ Draw the thrust vectors @
+    # ..:: Draw the thrust vector ::..
     thrust = sol.ud[mdl.vehicle.id_T, :]
     pos = sol.xd[mdl.vehicle.id_r, :]
-    N = size(thrust, 2)
     for k = 1:N
         base = pos[1:2, k]
         tip = base+u_scale*thrust[1:2, k]
         x = [base[1], tip[1]]
         y = [base[2], tip[2]]
-        plot!(x, y;
-              reuse=true,
-              legend=false,
-              seriestype=:line,
-              linecolor="#db6245",
-              linewidth=1.5)
+        ax.plot(x, y,
+                color="#db6245",
+                linewidth=1.2,
+                solid_capstyle="round",
+                zorder=20)
     end
 
-    # @ Draw the final discrete-time position trajectory @
-    plot!(pos[1, :], pos[2, :];
-          reuse=true,
-          legend=false,
-          seriestype=:scatter,
-          markershape=:circle,
-          markersize=4,
-          markerstrokecolor="white",
-          markerstrokewidth=0.3,
-          color=cmap[1.0],
-          markeralpha=1.0)
+    # ..:: Draw the discrete-time positions trajectory ::..
+    pos = sol.xd[mdl.vehicle.id_r, :]
+    x, y = pos[1, :], pos[2, :]
+    ax.plot(x, y,
+            linestyle="none",
+            marker="o",
+            markersize=2,
+            markerfacecolor=dt_clr,
+            markeredgecolor="white",
+            markeredgewidth=0.3,
+            zorder=20)
 
-    plot!(xlims=xlims,
-          ylims=ylims)
-
-    savefig("figures/scvx_freeflyer_final_traj.pdf")
+    save_figure("freeflyer_final_traj", algo)
 
     return nothing
 end
