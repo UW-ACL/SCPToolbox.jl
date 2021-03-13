@@ -56,10 +56,12 @@ freeflyer_set_initial_guess!(pbm)
 
 # >> Cost to be minimized <<
 problem_set_terminal_cost!(pbm, (x, p, pbm) -> begin
-                           traj = pbm.mdl.traj
                            veh = pbm.mdl.vehicle
+                           traj = pbm.mdl.traj
+                           tdil = p[veh.id_t]
+                           tdil_max = traj.tf_max
                            γ = traj.γ
-                           return γ*p[veh.id_t]/traj.tf_max
+                           return γ*(tdil/tdil_max)^2
                            end)
 
 problem_set_running_cost!(pbm, (x, u, p, pbm) -> begin
@@ -279,7 +281,7 @@ iter_max = 50
 η_init = 1.0
 η_lb = 1e-4
 η_ub = 10.0
-ε_abs = -Inf#1e-5
+ε_abs = 1e-5
 ε_rel = 0.01/100
 feas_tol = 1e-3
 q_tr = Inf

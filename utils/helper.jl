@@ -921,7 +921,8 @@ function plot_convergence(history, name::T_String)::Nothing
     for i = 1:num_iter
         X[:, i] = vcat(xd[i], ud[i], p[i])
     end
-    DX = T_RealVector([norm(X[:, i]-X[:, end]) for i=1:(num_iter-1)])
+    DX = T_RealVector([norm(X[:, i]-X[:, end])
+                       for i=1:(num_iter-1)])
     iters = T_IntVector(1:(num_iter-1))
 
     fig = create_figure((4, 3))
