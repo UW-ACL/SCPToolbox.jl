@@ -32,10 +32,9 @@ struct FreeFlyerParameters
     id_v::T_IntRange # Velocity indices of the state vector
     id_q::T_IntRange # Quaternion indices of the state vector
     id_ω::T_IntRange # Angular velocity indices of the state vector
-    id_xt::T_Int     # Index of time dilation state
     id_T::T_IntRange # Thrust indices of the input vector
     id_M::T_IntRange # Torque indicates of the input vector
-    id_pt::T_Int     # Index of time dilation
+    id_t::T_Int      # Index of time dilation
     v_max::T_Real    # [m/s] Maximum velocity
     ω_max::T_Real    # [rad/s] Maximum angular velocity
     T_max::T_Real    # [N] Maximum thrust
@@ -110,17 +109,16 @@ function FreeFlyerProblem()::FreeFlyerProblem
     id_v = 4:6
     id_q = 7:10
     id_ω = 11:13
-    id_xt = 14
     id_T = 1:3
     id_M = 4:6
-    id_pt = 1
+    id_t = 1
     v_max = 0.4
     ω_max = deg2rad(1)
     T_max = 20e-3
     M_max = 1e-4
     mass = 7.2
     J = diagm([0.1083, 0.1083, 0.1083])
-    fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_xt, id_T, id_M, id_pt,
+    fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_T, id_M, id_t,
                                  v_max, ω_max, T_max, M_max, mass, J)
 
     # >> Environment <<
@@ -193,11 +191,9 @@ function freeflyer_set_initial_guess!(pbm::TrajectoryProblem)::Nothing
                        # >> Parameter guess <<
                        p = zeros(pbm.np)
                        flight_time = 0.5*(traj.tf_min+traj.tf_max)
-                       p[veh.id_pt] = flight_time
+                       p[veh.id_t] = flight_time
                        # >> State guess <<
                        x = T_RealMatrix(undef, pbm.nx, N)
-                       x[veh.id_xt, :] = straightline_interpolate(
-                           [flight_time], [flight_time], N)
                        # @ Position/velocity L-shape trajectory @
                        Δτ = flight_time/(N-1)
                        speed = norm(traj.rf-traj.r0, 1)/flight_time
@@ -289,25 +285,8 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
     plot_ellipsoids!(ax, mdl.env.obs)
 
     # ..:: Signed distance function zero-level set ::..
-    xlims = (5.9, 12.1)
-    ylims = (-2.6, 7.1)
-    res = 100
     z_iss = @first(history.subproblems[end].sol.xd[mdl.vehicle.id_r, :])[3]
-    x = T_RealVector(LinRange(xlims..., res))
-    y = T_RealVector(LinRange(ylims..., res))
-    X = repeat(reshape(x, 1, :), length(y), 1)
-    Y = repeat(y, 1, length(x))
-    f = (x, y) -> round(
-        signed_distance(mdl.env.iss, [x; y; z_iss];
-                        t=mdl.traj.hom,
-                        a=mdl.traj.sdf_pwr)[1], digits=9)
-    Z = map(f, X, Y)
-
-    ax.contour(x, y, Z, [0.0],
-               colors="#f1d46a",
-               linewidths=1,
-               linestyles="solid",
-               zorder=10)
+    plot_zero_levelset(ax, mdl, z_iss)
 
     # ..:: Draw the trajectories ::..
     for i = 0:num_iter
@@ -316,7 +295,7 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
             trj = history.subproblems[1].ref
             alph = alph_offset
             clr = parse(RGB, "#356397")
-            clr = (clr.r, clr.g, clr.b, alph)
+            clr = rgb2pyplot(clr, a=alph)
             shp = "X"
         else
             trj = history.subproblems[i].sol
@@ -335,7 +314,8 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
                 markerfacecolor=clr,
                 markeredgecolor=(1, 1, 1, alph),
                 markeredgewidth=0.3,
-                zorder=20)
+                clip_on=false,
+                zorder=100)
     end
 
     save_figure("freeflyer_traj_iters", algo)
@@ -383,25 +363,8 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
     plot_ellipsoids!(ax, mdl.env.obs)
 
     # ..:: Signed distance function zero-level set ::..
-    xlims = (5.9, 12.1)
-    ylims = (-2.6, 7.1)
-    res = 100
     z_iss = @first(sol.xd[mdl.vehicle.id_r, :])[3]
-    x = T_RealVector(LinRange(xlims..., res))
-    y = T_RealVector(LinRange(ylims..., res))
-    X = repeat(reshape(x, 1, :), length(y), 1)
-    Y = repeat(y, 1, length(x))
-    f = (x, y) -> round(
-        signed_distance(mdl.env.iss, [x; y; z_iss];
-                        t=mdl.traj.hom,
-                        a=mdl.traj.sdf_pwr)[1], digits=9)
-    Z = map(f, X, Y)
-
-    ax.contour(x, y, Z, [0.0],
-               colors="#f1d46a",
-               linewidths=1,
-               linestyles="solid",
-               zorder=10)
+    plot_zero_levelset(ax, mdl, z_iss)
 
     # ..:: Draw the final continuous-time position trajectory ::..
     # Collect the continuous-time trajectory data
@@ -426,7 +389,8 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
                 markerfacecolor=v_cmap.to_rgba(v),
                 markeredgecolor="none",
                 alpha=0.2,
-                zorder=20)
+                clip_on=false,
+                zorder=100)
     end
 
     # ..:: Draw the thrust vector ::..
@@ -454,7 +418,8 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
             markerfacecolor=dt_clr,
             markeredgecolor="white",
             markeredgewidth=0.3,
-            zorder=20)
+            clip_on=false,
+            zorder=100)
 
     save_figure("freeflyer_final_traj", algo)
 
@@ -470,165 +435,150 @@ function plot_timeseries(mdl::FreeFlyerProblem,
                          sol::SCPSolution)::Nothing
 
     # Common values
+    algo = sol.algo
     veh = mdl.vehicle
     ct_res = 500
     ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
-    tf = sol.p[veh.id_pt]
+    tf = sol.p[veh.id_t]
     dt_time = sol.τd*tf
     ct_time = ct_τ*tf
-    cmap = cgrad(:thermal; rev = true)
+    clr = get_colormap()(1.0)
     xyz_clrs = ["#db6245", "#5da9a1", "#356397"]
     marker_darken_factor = 0.2
     top_scale = 1.1
 
-    plot(show=false,
-         tickfontsize=10,
-         labelfontsize=10,
-         size=(500, 500),
-         layout = (2, 2))
+    fig = create_figure((5, 5))
 
     # Plot data
     data = [Dict(:y_top=>top_scale*veh.T_max*1e3,
                  :bnd_max=>veh.T_max,
-                 :ylabel=>L"\mathrm{Thrust~[mN]}",
+                 :ylabel=>"Thrust [mN]",
                  :scale=>(T)->T*1e3,
                  :dt_y=>sol.ud,
                  :ct_y=>sol.uc,
                  :id=>veh.id_T),
             Dict(:y_top=>top_scale*veh.M_max*1e3,
                  :bnd_max=>veh.M_max,
-                 :ylabel=>L"Torque [mN$\cdot$m]",
+                 :ylabel=>"Torque [mN\$\\cdot\$m]",
                  :scale=>(M)->M*1e3,
                  :dt_y=>sol.ud,
                  :ct_y=>sol.uc,
                  :id=>veh.id_M),
             Dict(:y_top=>nothing,
                  :bnd_max=>nothing,
-                 :ylabel=>L"Attitude [$^\circ$]",
+                 :ylabel=>"Attitude [\$^\\circ\$]",
                  :scale=>(q)->rad2deg.(collect(rpy(T_Quaternion(q)))),
                  :dt_y=>sol.xd,
                  :ct_y=>sol.xc,
                  :id=>veh.id_q),
             Dict(:y_top=>top_scale*rad2deg(veh.ω_max),
                  :bnd_max=>veh.ω_max,
-                 :ylabel=>L"Angular velocity [$^\circ$/s]",
+                 :ylabel=>"Angular velocity [\$^\\circ\$/s]",
                  :scale=>(ω)->rad2deg.(ω),
                  :dt_y=>sol.xd,
                  :ct_y=>sol.xc,
                  :id=>veh.id_ω)]
 
     for i = 1:length(data)
+        ax = fig.add_subplot(2, 2, i)
+
+        ax.grid(linewidth=0.3, alpha=0.5)
+        ax.set_axisbelow(true)
+        ax.set_facecolor("white")
+        ax.autoscale(tight=true)
+
+        ax.set_xlabel("Time [s]")
+        ax.set_ylabel(data[i][:ylabel])
+
         y_top = data[i][:y_top]
         y_max = data[i][:bnd_max]
         if !isnothing(y_max)
             y_max = data[i][:scale](y_max)
         end
-        plot!(subplot=i,
-              xlabel=L"\mathrm{Time~[s]}",
-              ylabel=data[i][:ylabel])
+
         if !isnothing(y_max)
-            plot_timeseries_bound!(0.0, tf, y_max, y_top-y_max; subplot=i)
+            plot_timeseries_bound!(ax, 0.0, tf, y_max, y_top-y_max)
         end
-        # @ Continuous-time components @
+
+        # >> Continuous-time components <<
         yc = hcat([data[i][:scale](sample(data[i][:ct_y], τ)[data[i][:id]])
                    for τ in ct_τ]...)
+
         for j = 1:3
-            plot!(ct_time, yc[j, :];
-                  subplot=i,
-                  reuse=true,
-                  legend=false,
-                  seriestype=:line,
-                  linewidth=1,
-                  color=xyz_clrs[j])
+            ax.plot(ct_time, yc[j, :],
+                    color=xyz_clrs[j],
+                    linewidth=1)
         end
-        # @ Discrete-time components @
+
+        # >> Discrete-time components <<
         yd = data[i][:dt_y][data[i][:id], :]
         yd = hcat([data[i][:scale](yd[:, k]) for k=1:size(yd,2)]...)
+
         for j = 1:3
-            clr = weighted_color_mean(1-marker_darken_factor,
-                                      parse(RGB, xyz_clrs[j]),
-                                      colorant"black")
-            plot!(dt_time, yd[j, :];
-                  subplot=i,
-                  reuse=true,
-                  legend=false,
-                  seriestype=:scatter,
-                  markershape=:circle,
-                  markersize=4,
-                  markerstrokewidth=0.0,
-                  color=clr,
-                  markeralpha=1.0)
+            local clr = weighted_color_mean(1-marker_darken_factor,
+                                            parse(RGB, xyz_clrs[j]),
+                                            colorant"black")
+
+            ax.plot(dt_time, yd[j, :],
+                    linestyle="none",
+                    marker="o",
+                    markersize=3,
+                    markeredgewidth=0.0,
+                    markerfacecolor=rgb2pyplot(clr),
+                    clip_on=false,
+                    zorder=100)
         end
-        # @ Continuous-time norm @
+
+        # >> Continuous-time norm <<
         if !isnothing(y_max)
             y_nrm = T_RealVector([norm(@k(yc)) for k in 1:ct_res])
-            plot!(ct_time, y_nrm;
-                  subplot=i,
-                  reuse=true,
-                  legend=false,
-                  seriestype=:line,
-                  linewidth=2,
-                  linestyle=:dash,
-                  color="black")
+            ax.plot(ct_time, y_nrm,
+                    color=clr,
+                    linewidth=2,
+                    linestyle=":",
+                    dash_capstyle="round")
         end
-        plot!(subplot=i,
-              xlims=(0.0, tf),
-              ylims=(minimum(yc),
-                     isnothing(y_top) ? maximum(yc) : y_top))
+
+        ax.set_xlim((0.0, tf))
+        ax.set_ylim((minimum(yc), isnothing(y_top) ? maximum(yc) : y_top))
     end
 
-    savefig("figures/scvx_freeflyer_timeseries.pdf")
+    save_figure("freeflyer_timeseries", algo)
 
     return nothing
 end
 
-#= Optimization algorithm convergence plot.
+#= Plot the signed distance function zero-level set.
+
+This gives a view of the space station flight space boundary that is seen by
+the optimization, for a specific z-height.
 
 Args:
+    ax: the figure axis object.
     mdl: the free-flyer problem parameters.
-    history: SCvx iteration data history. =#
-function plot_convergence(mdl::FreeFlyerProblem, #nowarn
-                          history::SCPHistory)::Nothing
+    z: the z-coordinate at which to evaluate the signed distance function. =#
+function plot_zero_levelset(ax::PyPlot.PyObject,
+                            mdl::FreeFlyerProblem,
+                            z::T_Real)::Nothing
 
-    # Common values
-    cmap = cgrad(:thermal; rev = true)
+    xlims = (5.9, 12.1)
+    ylims = (-2.6, 7.1)
+    res = 100
+    x = T_RealVector(LinRange(xlims..., res))
+    y = T_RealVector(LinRange(ylims..., res))
+    X = repeat(reshape(x, 1, :), length(y), 1)
+    Y = repeat(y, 1, length(x))
+    f = (x, y) -> round(
+        signed_distance(mdl.env.iss, [x; y; z];
+                        t=mdl.traj.hom,
+                        a=mdl.traj.sdf_pwr)[1], digits=9)
+    Z = map(f, X, Y)
 
-    # Compute concatenated solution vectors at each iteration
-    num_iter = length(history.subproblems)
-    xd = [vec(history.subproblems[i].sol.xd) for i=1:num_iter]
-    ud = [vec(history.subproblems[i].sol.ud) for i=1:num_iter]
-    p = [history.subproblems[i].sol.p for i=1:num_iter]
-    Nnx = length(xd[1])
-    Nnu = length(ud[1])
-    np = length(p[1])
-    X = T_RealMatrix(undef, Nnx+Nnu+np, num_iter)
-    for i = 1:num_iter
-        X[:, i] = vcat(xd[i], ud[i], p[i])
-    end
-    DX = max.(T_RealVector([norm(X[:, i]-X[:, end]) for i=1:(num_iter-1)]), eps())
-    iters = T_IntVector(1:(num_iter-1))
-
-    plot(show=false,
-         xlabel=L"\mathrm{Iteration}",
-         ylabel=L"Distance from solution, $\Vert X^i-X^*\Vert_2$",
-         tickfontsize=10,
-         labelfontsize=10,
-         yaxis=:log,
-         size=(400, 300))
-
-    plot!(iters, DX;
-          reuse=true,
-          legend=false,
-          seriestype=:line,
-          markershape=:circle,
-          markersize=6,
-          markerstrokecolor="white",
-          markerstrokewidth=0.3,
-          color=cmap[1.0],
-          markeralpha=1.0,
-          linewidth=2)
-
-    savefig("figures/scvx_freeflyer_convergence.pdf")
+    ax.contour(x, y, Z, [0.0],
+               colors="#f1d46a",
+               linewidths=1,
+               linestyles="solid",
+               zorder=10)
 
     return nothing
 end
@@ -642,105 +592,112 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
                                    sol::SCPSolution)::Nothing
 
     # Common values
+    algo = sol.algo
     veh = mdl.vehicle
     env = mdl.env
     ct_res = 500
     ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
-    tf = sol.p[veh.id_pt]
+    tf = sol.p[veh.id_t]
     dt_time = sol.τd*tf
     ct_time = ct_τ*tf
-    cmap = cgrad(:thermal; rev = true)
+    cmap = get_colormap()
     xyz_clrs = ["#db6245", "#5da9a1", "#356397"]
     marker_darken_factor = 0.2
 
-    plot(show=false,
-         tickfontsize=10,
-         labelfontsize=10,
-         size=(500, 250),
-         layout = (1, 2))
+    fig = create_figure((5, 2.5))
 
     # ..:: Plot ISS flight space constraint ::..
-    y_max = 0.0
-    plot!(subplot=1,
-          xlabel=L"\mathrm{Time~[s]}",
-          ylabel=L"d_{\mathrm{ISS}}(r_{\mathcal{I}}(t))")
+    ax = fig.add_subplot(1, 2, 1)
+
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.autoscale(tight=true)
+
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("\$d_{\\mathrm{ISS}}(r_{\\mathcal{I}}(t))\$")
+
     # >> Continuous-time components <<
     yc = T_RealVector([signed_distance(env.iss,
                                        sample(sol.xc, τ)[veh.id_r];
                                        t=mdl.traj.hom, a=mdl.traj.sdf_pwr)[1]
                        for τ in ct_τ])
     y_top = max(0.1, maximum(yc))
-    plot_timeseries_bound!(0.0, tf, y_max, y_top-y_max; subplot=1)
-    plot!(ct_time, yc;
-          subplot=1,
-          reuse=true,
-          legend=false,
-          seriestype=:line,
-          linewidth=1,
-          color=cmap[1.0])
+    plot_timeseries_bound!(ax, 0.0, tf, 0.0, y_top)
+
+    ax.plot(ct_time, yc,
+            color=cmap(1.0),
+            linewidth=1)
+
     # >> Discrete-time components <<
     yd = sol.xd[veh.id_r, :]
     yd = T_RealVector([signed_distance(env.iss, @k(yd); t=mdl.traj.hom,
                                        a=mdl.traj.sdf_pwr)[1]
                        for k=1:size(yd, 2)])
-    plot!(dt_time, yd;
-          subplot=1,
-          reuse=true,
-          legend=false,
-          seriestype=:scatter,
-          markershape=:circle,
-          markersize=4,
-          markerstrokewidth=0.0,
-          color=cmap[1.0],
-          markeralpha=1.0)
-    plot!(subplot=1,
-          xlims=(0.0, tf),
-          ylims=(minimum(yc), y_top))
+    ax.plot(dt_time, yd,
+            linestyle="none",
+            marker="o",
+            markersize=3,
+            markeredgewidth=0.0,
+            markerfacecolor=cmap(1.0),
+            clip_on=false,
+            zorder=100)
+
+    ax.set_xlim((0.0, tf))
+    ax.set_ylim((minimum(yc), y_top))
 
     # ..:: Plot ellipsoid obstacle constraints ::..
+    ax = fig.add_subplot(1, 2, 2)
+
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.autoscale(tight=true)
+
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("\$\\| H_j(r_{\\mathcal{I}}(t)-c_j)\\|_2\$")
+
     clr_offset = 0.4
-    clr_map = (j) -> (env.n_obs==1) ? 1.0 :
+    cval = (j) -> (env.n_obs==1) ? 1.0 :
         (j-1)/(env.n_obs-1)*(1-clr_offset)+clr_offset
-    y_min = 1.0
-    y_bot = 0.0
-    plot!(subplot=2,
-          xlabel=L"\mathrm{Time~[s]}",
-          ylabel=L"\Vert H_j(r_{\mathcal{I}}(t)-c_j)\Vert_2")
-    plot_timeseries_bound!(0.0, tf, y_min, y_bot-y_min; subplot=2)
+
+    plot_timeseries_bound!(ax, 0.0, tf, 1.0, -1.0)
+
     # >> Continuous-time components <<
     for j = 1:env.n_obs
         yc = T_RealVector([env.obs[j](sample(sol.xc, τ)[veh.id_r])
                            for τ in ct_τ])
-        plot!(ct_time, yc;
-              subplot=2,
-              reuse=true,
-              legend=false,
-              seriestype=:line,
-              linewidth=1,
-              color=cmap[clr_map(j)])
+
+        ax.plot(ct_time, yc,
+                color=cmap(cval(j)),
+                linewidth=1)
     end
+
     # >> Discrete-time components <<
     y_top = -Inf
     for j = 1:env.n_obs
         yd = sol.xd[veh.id_r, :]
         yd = T_RealVector([env.obs[j](@k(yd)) for k=1:size(yd, 2)])
         y_top = max(y_top, maximum(yd))
-        plot!(dt_time, yd;
-              subplot=2,
-              reuse=true,
-              legend=false,
-              seriestype=:scatter,
-              markershape=:circle,
-              markersize=4,
-              markerstrokewidth=0.0,
-              color=cmap[clr_map(j)],
-              markeralpha=1.0)
-    end
-    plot!(subplot=2,
-          xlims=(0.0, tf),
-          ylims=(y_bot, y_top))
 
-    savefig("figures/scvx_freeflyer_obstacles.pdf")
+        local clr = weighted_color_mean(1-marker_darken_factor,
+                                        RGB(cmap(cval(j))...),
+                                        colorant"black")
+
+        ax.plot(dt_time, yd,
+                linestyle="none",
+                marker="o",
+                markersize=3,
+                markeredgewidth=0.0,
+                markerfacecolor=rgb2pyplot(clr),
+                clip_on=false,
+                zorder=100)
+    end
+
+    ax.set_xlim((0.0, tf))
+    ax.set_ylim((0.0, y_top))
+
+    save_figure("freeflyer_obstacles", algo)
 
     return nothing
 end

@@ -32,7 +32,7 @@ mdl = FreeFlyerProblem()
 pbm = TrajectoryProblem(mdl)
 
 # >> Variable dimensions <<
-problem_set_dims!(pbm, 14, 6, 1)
+problem_set_dims!(pbm, 13, 6, 1)
 
 # >> Variable scaling <<
 veh, traj = mdl.vehicle, mdl.traj
@@ -41,7 +41,7 @@ for i in veh.id_r
     max_pos = max(traj.r0[i], traj.rf[i])
     problem_advise_scale!(pbm, :state, i, (min_pos, max_pos))
 end
-problem_advise_scale!(pbm, :parameter, veh.id_pt, (traj.tf_min, traj.tf_max))
+problem_advise_scale!(pbm, :parameter, veh.id_t, (traj.tf_min, traj.tf_max))
 
 # >> Special numerical integration <<
 
@@ -59,7 +59,7 @@ problem_set_terminal_cost!(pbm, (x, p, pbm) -> begin
                            traj = pbm.mdl.traj
                            veh = pbm.mdl.vehicle
                            γ = traj.γ
-                           return γ*p[veh.id_pt]/traj.tf_max
+                           return γ*p[veh.id_t]/traj.tf_max
                            end)
 
 problem_set_running_cost!(pbm, (x, u, p, pbm) -> begin
@@ -78,7 +78,7 @@ problem_set_dynamics!(pbm,
                       # Dynamics f
                       (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
-                      tdil = p[veh.id_pt] # Time dilation
+                      tdil = p[veh.id_t] # Time dilation
                       v = x[veh.id_v]
                       q = T_Quaternion(x[veh.id_q])
                       ω = x[veh.id_ω]
@@ -95,7 +95,7 @@ problem_set_dynamics!(pbm,
                       # Jacobian df/dx
                       (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
-                      tdil = p[veh.id_pt]
+                      tdil = p[veh.id_t]
                       v = x[veh.id_v]
 	              q = T_Quaternion(x[veh.id_q])
 	              ω = x[veh.id_ω]
@@ -113,7 +113,7 @@ problem_set_dynamics!(pbm,
                       # Jacobian df/du
                       (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
-                      tdil = p[veh.id_pt]
+                      tdil = p[veh.id_t]
                       B = zeros(pbm.nx, pbm.nu)
                       B[veh.id_v, veh.id_T] = (1.0/veh.m)*I(3)
                       B[veh.id_ω, veh.id_M] = veh.J\I(3)
@@ -123,9 +123,9 @@ problem_set_dynamics!(pbm,
                       # Jacobian df/dp
                       (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
-                      tdil = p[veh.id_pt]
+                      tdil = p[veh.id_t]
                       F = zeros(pbm.nx, pbm.np)
-                      F[:, veh.id_pt] = pbm.f(x, u, p)/tdil
+                      F[:, veh.id_t] = pbm.f(x, u, p)/tdil
                       return F
                       end)
 
@@ -134,9 +134,7 @@ problem_set_X!(pbm, (x, pbm) -> begin
                traj = pbm.mdl.traj
                veh = pbm.mdl.vehicle
                C = T_ConvexConeConstraint
-               X = [C(x[veh.id_xt]-traj.tf_max, :nonpos),
-                    C(traj.tf_min-x[veh.id_xt], :nonpos),
-                    C(vcat(veh.v_max, x[veh.id_v]), :soc),
+               X = [C(vcat(veh.v_max, x[veh.id_v]), :soc),
                     C(vcat(veh.ω_max, x[veh.id_ω]), :soc)]
                return X
                end)
@@ -158,16 +156,21 @@ problem_set_s!(pbm,
                veh = pbm.mdl.vehicle
                traj = pbm.mdl.traj
                r = x[veh.id_r]
-               s = zeros(env.n_obs+1)
+               s = zeros(env.n_obs+3)
+               # Ellipsoidal obstacles
                for i = 1:env.n_obs
                # ---
                E = env.obs[i]
                s[i] = 1-E(r)
                # ---
                end
+               # Space station flight space
                d_iss, _ = signed_distance(env.iss, r; t=traj.hom,
                                           a=traj.sdf_pwr)
-               s[end] = d_iss
+               s[end-2] = d_iss
+               # Flight time
+               s[end-1] = p[veh.id_t]-traj.tf_max
+               s[end] = traj.tf_min-p[veh.id_t]
                return s
                end,
                # Jacobian ds/dx
@@ -176,28 +179,33 @@ problem_set_s!(pbm,
                veh = pbm.mdl.vehicle
                traj = pbm.mdl.traj
                r = x[veh.id_r]
-               C = zeros(env.n_obs+1, pbm.nx)
+               C = zeros(env.n_obs+3, pbm.nx)
+               # Ellipsoidal obstacles
                for i = 1:env.n_obs
                # ---
                E = env.obs[i]
                C[i, veh.id_r] = -∇(E, r)
                # ---
                end
+               # Space station flight space
                _, ∇d_iss = signed_distance(env.iss, r; t=traj.hom,
                                            a=traj.sdf_pwr)
-               C[end, veh.id_r] = ∇d_iss
+               C[end-2, veh.id_r] = ∇d_iss
                return C
                end,
                # Jacobian ds/du
                (x, u, p, pbm) -> begin
                env = pbm.mdl.env
-               D = zeros(env.n_obs+1, pbm.nu)
+               D = zeros(env.n_obs+3, pbm.nu)
                return D
                end,
                # Jacobian ds/dp
                (x, u, p, pbm) -> begin
+               veh = pbm.mdl.vehicle
                env = pbm.mdl.env
-               G = zeros(env.n_obs+1, pbm.np)
+               G = zeros(env.n_obs+3, pbm.np)
+               G[end-1, veh.id_t] = 1.0
+               G[end, veh.id_t] = -1.0
                return G
                end)
 
@@ -207,13 +215,12 @@ problem_set_bc!(pbm, :ic,
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
                 traj = pbm.mdl.traj
-                tdil = p[veh.id_pt]
+                tdil = p[veh.id_t]
                 rhs = zeros(pbm.nx)
                 rhs[veh.id_r] = traj.r0
                 rhs[veh.id_v] = traj.v0
                 rhs[veh.id_q] = vec(traj.q0)
                 rhs[veh.id_ω] = traj.ω0
-                rhs[veh.id_xt] = tdil
                 g = x-rhs
                 return g
                 end,
@@ -226,7 +233,6 @@ problem_set_bc!(pbm, :ic,
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
                 K = zeros(pbm.nx, pbm.np)
-                K[veh.id_xt, veh.id_pt] = -1.0
                 return K
                 end)
 
@@ -236,13 +242,12 @@ problem_set_bc!(pbm, :tc,
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
                 traj = pbm.mdl.traj
-                tdil = p[veh.id_pt]
+                tdil = p[veh.id_t]
                 rhs = zeros(pbm.nx)
                 rhs[veh.id_r] = traj.rf
                 rhs[veh.id_v] = traj.vf
                 rhs[veh.id_q] = vec(traj.qf)
                 rhs[veh.id_ω] = traj.ωf
-                rhs[veh.id_xt] = tdil
                 g = x-rhs
                 return g
                 end,
@@ -255,7 +260,6 @@ problem_set_bc!(pbm, :tc,
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
                 K = zeros(pbm.nx, pbm.np)
-                K[veh.id_xt, veh.id_pt] = -1.0
                 return K
                 end)
 
@@ -265,17 +269,17 @@ problem_set_bc!(pbm, :tc,
 
 N = 50
 Nsub = 15
-iter_max = 30
-λ = 2e4
+iter_max = 50
+λ = 1e3
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7
 β_sh = 4.0
-β_gr = 1.4
+β_gr = 1.6
 η_init = 1.0
 η_lb = 1e-4
 η_ub = 10.0
-ε_abs = 1e-5
+ε_abs = -Inf#1e-5
 ε_rel = 0.01/100
 feas_tol = 1e-3
 q_tr = Inf
@@ -298,7 +302,7 @@ sol, history = scvx_solve(scvx_pbm)
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 plot_trajectory_history(mdl, history)
-# plot_final_trajectory(mdl, sol)
-# plot_timeseries(mdl, sol)
-# plot_obstacle_constraints(mdl, sol)
-# plot_convergence(mdl, history)
+plot_final_trajectory(mdl, sol)
+plot_timeseries(mdl, sol)
+plot_obstacle_constraints(mdl, sol)
+plot_convergence(history, "freeflyer")

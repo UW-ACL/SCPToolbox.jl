@@ -818,14 +818,12 @@ Args:
     x_min: the left-most value.
     x_max: the right-most value.
     y_bnd: the bound value.
-    height: the "thickness" of the keep-out slab on the plot.
-    subplot: (optional) which subplot to plot on. =#
+    height: the "thickness" of the keep-out slab on the plot. =#
 function plot_timeseries_bound!(ax::PyPlot.PyObject,
                                 x_min::T_Real,
                                 x_max::T_Real,
                                 y_bnd::T_Real,
-                                height::T_Real;
-                                subplot::T_Int=1)::Nothing
+                                height::T_Real)::Nothing
 
     y_other = y_bnd+height
     x = [x_min, x_max, x_max, x_min, x_min]
@@ -833,7 +831,7 @@ function plot_timeseries_bound!(ax::PyPlot.PyObject,
 
     fc = parse(RGB, "#db6245")
     ax.fill(x, y,
-            facecolor=(fc.r, fc.g, fc.b, 0.5),
+            facecolor=rgb2pyplot(fc, a=0.5),
             edgecolor="none")
 
     ax.plot([x_min, x_max],
@@ -865,7 +863,7 @@ function plot_ellipsoids!(ax::PyPlot.PyObject,
         x, y = vertices[1, :], vertices[2, :]
         fc = parse(RGB, "#db6245")
         ax.fill(x, y,
-                facecolor=(fc.r, fc.g, fc.b, 0.5),
+                facecolor=rgb2pyplot(fc, a=0.5),
                 edgecolor="#26415d",
                 linewidth=1)
     end
@@ -889,7 +887,7 @@ function plot_prisms!(ax::PyPlot.PyObject,
         x, y = vertices[1, :], vertices[2, :]
         fc = parse(RGB, "#5da9a1")
         ax.fill(x, y,
-                facecolor=(fc.r, fc.g, fc.b, 0.5),
+                facecolor=rgb2pyplot(fc, a=0.5),
                 linewidth=0)
         ax.plot(x, y,
                 color="#427d77",
@@ -897,6 +895,61 @@ function plot_prisms!(ax::PyPlot.PyObject,
                 solid_capstyle="round",
                 linewidth=1)
     end
+    return nothing
+end
+
+#= Optimization algorithm convergence plot.
+
+Args:
+    history: SCP iteration data history.
+    name: the example name. =#
+function plot_convergence(history, name::T_String)::Nothing
+
+    # Common values
+    algo = history.subproblems[1].algo
+    clr = get_colormap()(1.0)
+
+    # Compute concatenated solution vectors at each iteration
+    num_iter = length(history.subproblems)
+    xd = [vec(history.subproblems[i].sol.xd) for i=1:num_iter]
+    ud = [vec(history.subproblems[i].sol.ud) for i=1:num_iter]
+    p = [history.subproblems[i].sol.p for i=1:num_iter]
+    Nnx = length(xd[1])
+    Nnu = length(ud[1])
+    np = length(p[1])
+    X = T_RealMatrix(undef, Nnx+Nnu+np, num_iter)
+    for i = 1:num_iter
+        X[:, i] = vcat(xd[i], ud[i], p[i])
+    end
+    DX = T_RealVector([norm(X[:, i]-X[:, end]) for i=1:(num_iter-1)])
+    iters = T_IntVector(1:(num_iter-1))
+
+    fig = create_figure((4, 3))
+    ax = fig.add_subplot()
+
+    ax.set_yscale("log")
+    ax.grid(linewidth=0.3, alpha=0.5, axis="y", which="major")
+    ax.grid(linewidth=0.2, alpha=0.5, axis="y", which="minor", linestyle="--")
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.autoscale(tight=true, axis="x")
+    ax.margins(x=0.04, y=0.04)
+    ax.set_xticks(1:num_iter)
+
+    ax.set_xlabel("Iteration number")
+    ax.set_ylabel("Distance from solution, \$\\|X^i-X^*\\|_2\$")
+
+    ax.plot(iters, DX,
+            color=clr,
+            linewidth=2,
+            marker="o",
+            markersize=6,
+            markeredgewidth=0,
+            clip_on=false,
+            zorder=100)
+
+    save_figure(@sprintf("%s_convergence", name), algo)
+
     return nothing
 end
 
@@ -912,6 +965,21 @@ function get_colormap()::PyPlot.PyObject
     clr_query = matplotlib.cm.ScalarMappable(norm=nrm, cmap=cmap)
     cmap = (f::T_Real) -> clr_query.to_rgba(f)[1:3]
     return cmap
+end
+
+#= Convert RGB color object to a tuple that PyPlot accepts.
+
+Args:
+    c: the RGB color object.
+    a: (optional) the alpha (opacity) channel value.
+
+Returns:
+    t: a 4-tuple (R, G, B, A) for PyPlot. =#
+function rgb2pyplot(c::T; a::Real=1)::Tuple{Real, Real,
+                                            Real, Real} where {T<:RGB}
+    r, g, b = T_Real(c.r), T_Real(c.g), T_Real(c.b)
+    t = (r, g, b, a)
+    return t
 end
 
 #= Create an empty figure for plotting.

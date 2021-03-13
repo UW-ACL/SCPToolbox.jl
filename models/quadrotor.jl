@@ -207,7 +207,7 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
             trj = history.subproblems[1].ref
             alph = alph_offset
             clr = parse(RGB, "#356397")
-            clr = (clr.r, clr.g, clr.b, alph)
+            clr = rgb2pyplot(clr, a=alph)
             shp = "X"
         else
             trj = history.subproblems[i].sol
@@ -225,7 +225,9 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
                 markersize=5,
                 markerfacecolor=clr,
                 markeredgecolor=(1, 1, 1, alph),
-                markeredgewidth=0.3)
+                markeredgewidth=0.3,
+                clip_on=false,
+                zorder=100)
     end
 
     save_figure("quadrotor_traj_iters", algo)
@@ -292,7 +294,9 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
                 markersize=4,
                 alpha=0.2,
                 markerfacecolor=v_cmap.to_rgba(v),
-                markeredgecolor="none")
+                markeredgecolor="none",
+                clip_on=false,
+                zorder=100)
     end
 
     # ..:: Draw the acceleration vector ::..
@@ -319,7 +323,9 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
             markersize=3,
             markerfacecolor=dt_clr,
             markeredgecolor="white",
-            markeredgewidth=0.3)
+            markeredgewidth=0.3,
+            clip_on=false,
+            zorder=100)
 
     save_figure("quadrotor_final_traj", algo)
 
@@ -377,7 +383,9 @@ function plot_input_norm(mdl::QuadrotorProblem,
             marker="o",
             markersize=5,
             markeredgewidth=0,
-            markerfacecolor=clr)
+            markerfacecolor=clr,
+            clip_on=false,
+            zorder=100)
 
     # ..:: Slack input (discrete-time) ::..
     σ = sol.ud[mdl.vehicle.id_σ, :]
@@ -387,9 +395,11 @@ function plot_input_norm(mdl::QuadrotorProblem,
             markersize=2.5,
             markeredgecolor="white",
             markeredgewidth=0.3,
-            markerfacecolor="#f1d46a")
+            markerfacecolor="#f1d46a",
+            clip_on=false,
+            zorder=100)
 
-    save_figure("quadrotor_input", sol.algo)
+    save_figure("quadrotor_input", algo)
 
     return nothing
 end
@@ -444,62 +454,11 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
             marker="o",
             markersize=5,
             markeredgewidth=0,
-            markerfacecolor=clr)
+            markerfacecolor=clr,
+            clip_on=false,
+            zorder=100)
 
-    save_figure("quadrotor_tilt", sol.algo)
-
-    return nothing
-end
-
-#= Optimization algorithm convergence plot.
-
-Args:
-    mdl: the quadrotor problem parameters.
-    history: SCvx iteration data history. =#
-function plot_convergence(mdl::QuadrotorProblem, #nowarn
-                          history::SCPHistory)::Nothing
-
-    # Common values
-    clr = get_colormap()(1.0)
-
-    # Compute concatenated solution vectors at each iteration
-    num_iter = length(history.subproblems)
-    xd = [vec(history.subproblems[i].sol.xd) for i=1:num_iter]
-    ud = [vec(history.subproblems[i].sol.ud) for i=1:num_iter]
-    p = [history.subproblems[i].sol.p for i=1:num_iter]
-    Nnx = length(xd[1])
-    Nnu = length(ud[1])
-    np = length(p[1])
-    X = T_RealMatrix(undef, Nnx+Nnu+np, num_iter)
-    for i = 1:num_iter
-        X[:, i] = vcat(xd[i], ud[i], p[i])
-    end
-    DX = T_RealVector([norm(X[:, i]-X[:, end]) for i=1:(num_iter-1)])
-    iters = T_IntVector(1:(num_iter-1))
-
-    fig = create_figure((4, 3))
-    ax = fig.add_subplot()
-
-    ax.set_yscale("log")
-    ax.grid(linewidth=0.3, alpha=0.5, axis="y", which="major")
-    ax.grid(linewidth=0.2, alpha=0.5, axis="y", which="minor", linestyle="--")
-    ax.set_axisbelow(true)
-    ax.set_facecolor("white")
-    ax.autoscale(tight=true, axis="x")
-    ax.margins(x=0.04, y=0.04)
-    ax.set_xticks(1:num_iter)
-
-    ax.set_xlabel("Iteration number")
-    ax.set_ylabel("Distance from solution, \$\\|X^i-X^*\\|_2\$")
-
-    ax.plot(iters, DX,
-            color=clr,
-            linewidth=2,
-            marker="o",
-            markersize=6,
-            markeredgewidth=0)
-
-    save_figure("quadrotor_convergence", history.subproblems[1].algo)
+    save_figure("quadrotor_tilt", algo)
 
     return nothing
 end
