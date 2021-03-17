@@ -923,7 +923,14 @@ function plot_convergence(history, name::T_String)::Nothing
     end
     DX = T_RealVector([norm(X[:, i]-X[:, end])
                        for i=1:(num_iter-1)])
-    iters = T_IntVector(1:(num_iter-1))
+    no_change = findfirst((dx) -> dx==0, DX)
+    if !isnothing(no_change)
+        num_iter = no_change-1
+        DX = DX[1:num_iter]
+    else
+        num_iter -= 1
+    end
+    iters = T_IntVector(1:num_iter)
 
     fig = create_figure((4, 3))
     ax = fig.add_subplot()
@@ -935,7 +942,7 @@ function plot_convergence(history, name::T_String)::Nothing
     ax.set_facecolor("white")
     ax.autoscale(tight=true, axis="x")
     ax.margins(x=0.04, y=0.04)
-    ax.set_xticks(1:num_iter)
+    ax.set_xticks(T_Int.(round.(LinRange(1, num_iter, 10))))
 
     ax.set_xlabel("Iteration number")
     ax.set_ylabel("Distance from solution, \$\\|X^i-X^*\\|_2\$")

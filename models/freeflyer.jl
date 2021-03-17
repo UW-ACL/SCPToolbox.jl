@@ -405,7 +405,7 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
                 color="#db6245",
                 linewidth=1.2,
                 solid_capstyle="round",
-                zorder=20)
+                zorder=100)
     end
 
     # ..:: Draw the discrete-time positions trajectory ::..

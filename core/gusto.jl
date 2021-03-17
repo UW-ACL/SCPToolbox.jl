@@ -985,7 +985,8 @@ Args:
 
 Returns:
     next_ref: reference trajectory for the next iteration.
-    next_η: trust region radius for the next iteration. =#
+    next_η: trust region radius for the next iteration.
+    next_λ: soft penalty weight for the next iteration. =#
 function _gusto__update_rule(
     spbm::GuSTOSubproblem)::Tuple{GuSTOSubproblemSolution,
                                   T_Real,

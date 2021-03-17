@@ -310,7 +310,8 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
         ax.plot(x, y,
                 color="#db6245",
                 linewidth=1.5,
-                solid_capstyle="round")
+                solid_capstyle="round",
+                zorder=100)
     end
 
 
