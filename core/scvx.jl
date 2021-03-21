@@ -511,7 +511,7 @@ function _scvx__add_nonconvex_constraints!(spbm::SCvxSubproblem)::Nothing
                 spbm.vs = @variable(spbm.mdl, [1:ns, 1:N], base_name="vs")
             end
 
-            @constraint(spbm.mdl, lhs+@k(spbm.vs) .<= 0.0)
+            @constraint(spbm.mdl, lhs .<= @k(spbm.vs))
         else
             spbm.vs = @variable(spbm.mdl, [1:0, 1:N], base_name="vs")
             break
