@@ -33,14 +33,15 @@ struct StarshipParameters
     id_v::T_IntRange # Velocity indices of the state vector
     id_θ::T_Int      # Tilt angle index of the state vector
     id_ω::T_Int      # Tilt rate index of the state vector
-    id_δ::T_Int      # Gimbal angle index of the state vector
+    id_γ::T_Int      # Delayed gimbal angle index of the state vector
     id_T::T_Int      # Thrust index of the input vector
-    id_α::T_Int      # Gimbal rate index of the input vector
+    id_δ::T_Int      # Gimbal angle index of the input vector
     id_t::T_Int      # Index of time dilation
     T_max::T_Real    # [N] Maximum thrust
     T_min::T_Real    # [N] Minimum thrust
     δ_max::T_Real    # [rad] Maximum gimbal angle
     α_max::T_Real    # [rad/s] Maximum gimbal rate
+    δ_delay::T_Real  # [s] Approximate gimbal angle delay for rate constraint
     m::T_Real        # [kg] Vehicle mass
     J::T_Real        # [kg*m^2] Vehicle moment of inertia
     lg::T_Real       # [m] Distance from CG to engine gimbal
@@ -89,9 +90,9 @@ function StarshipProblem()::StarshipProblem
     id_v = 3:4
     id_θ = 5
     id_ω = 6
-    id_δ = 7
+    id_γ = 7
     id_T = 1
-    id_α = 2
+    id_δ = 2
     id_t = 1
     # >> Thrust bounds <<
     ne = 3 # Number of engines
@@ -101,7 +102,8 @@ function StarshipProblem()::StarshipProblem
     T_min = T_min1
     # >> Gimbal bounds <<
     δ_max = deg2rad(10.0)
-    α_max = 2*δ_max
+    α_max = δ_max
+    δ_delay = 0.1
     # >> Mechanical properties <<
     H = 50.0 # [m] Stage height
     m = 120.0e3
@@ -111,8 +113,8 @@ function StarshipProblem()::StarshipProblem
     ei = [1.0; 0.0]
     ej = [0.0; 1.0]
 
-    starship = StarshipParameters(id_r, id_v, id_θ, id_ω, id_δ, id_T,
-                                  id_α, id_t, T_max, T_min, δ_max, α_max,
+    starship = StarshipParameters(id_r, id_v, id_θ, id_ω, id_γ, id_T, id_δ,
+                                  id_t, T_max, T_min, δ_max, α_max, δ_delay,
                                   m, J, lg, ei, ej)
 
     # ..:: Environment ::..
@@ -170,14 +172,13 @@ function starship_set_initial_guess!(pbm::TrajectoryProblem)::Nothing
                        xf[veh.id_θ] = 0.0
                        x0[veh.id_ω] = ω_cst
                        xf[veh.id_ω] = ω_cst
-                       x0[veh.id_δ] = 0.0
-                       xf[veh.id_δ] = 0.0
+                       xf[veh.id_γ] = 0.0
                        x = straightline_interpolate(x0, xf, N)
 
                        # Input guess
                        hover = zeros(pbm.nu)
                        hover[veh.id_T] = norm(veh.m*env.g)
-                       hover[veh.id_α] = 0.0
+                       hover[veh.id_δ] = 0.0
                        u = straightline_interpolate(hover, hover, N)
 
                        return x, u, p
@@ -259,8 +260,8 @@ function plot_final_trajectory(mdl::StarshipProblem,
 
     # ..:: Draw the acceleration vector ::..
     T = sol.ud[mdl.vehicle.id_T, :]
-    δ = sol.xd[mdl.vehicle.id_δ, :]
     θ = sol.xd[mdl.vehicle.id_θ, :]
+    δ = sol.ud[mdl.vehicle.id_δ[1], :]
     pos = sol.xd[mdl.vehicle.id_r, :]
     u_nrml = maximum(T)
     r_span = norm(mdl.traj.r0)
@@ -389,66 +390,124 @@ function plot_gimbal(mdl::StarshipProblem,
     clr = get_colormap()(1.0)
     tf = sol.p[mdl.vehicle.id_t]
     scale = 180/pi
-    y_top = mdl.vehicle.δ_max*scale+2.0
-    y_bot = -y_top
 
     fig = create_figure((5, 5))
 
-    # Plot data
-    data = [Dict(:bnd=>mdl.vehicle.δ_max,
-                 :pad=>2.0,
-                 :ylabel=>"Gimbal angle [\$^\\circ\$]",
-                 :dt_y=>sol.xd,
-                 :ct_y=>sol.xc,
-                 :id=>mdl.vehicle.id_δ),
-            Dict(:bnd=>mdl.vehicle.α_max,
-                 :pad=>2.0,
-                 :ylabel=>"Gimbal rate [\$^\\circ/s\$]",
-                 :dt_y=>sol.ud,
-                 :ct_y=>sol.uc,
-                 :id=>mdl.vehicle.id_α)]
+    ct_res = 500
+    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
+    ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
+    dt_time = sol.τd*sol.p[mdl.vehicle.id_t]
 
-    for i = 1:length(data)
-        ax = fig.add_subplot(2, 1, i)
+    # ..:: Gimbal angle timeseries ::..
+    ax = fig.add_subplot(211)
 
-        ax.grid(linewidth=0.3, alpha=0.5)
-        ax.set_axisbelow(true)
-        ax.set_facecolor("white")
-        ax.autoscale(tight=true)
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.autoscale(tight=true)
 
-        ax.set_xlabel("Time [s]")
-        ax.set_ylabel(data[i][:ylabel])
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Gimbal angle [\$^\\circ\$]")
 
-        # ..:: Acceleration bounds ::..
-        bnd_max = data[i][:bnd]*scale
-        bnd_min = -data[i][:bnd]*scale
-        y_top = bnd_max+data[i][:pad]
-        y_bot = bnd_min-data[i][:pad]
-        plot_timeseries_bound!(ax, 0.0, tf, bnd_max, y_top-bnd_max)
-        plot_timeseries_bound!(ax, 0.0, tf, bnd_min, y_bot-bnd_min)
+    # >> Gimbal angle bounds <<
+    pad = 2.0
+    bnd_max = mdl.vehicle.δ_max*scale
+    bnd_min = -mdl.vehicle.δ_max*scale
+    y_top = bnd_max+pad
+    y_bot = bnd_min-pad
+    plot_timeseries_bound!(ax, 0.0, tf, bnd_max, y_top-bnd_max)
+    plot_timeseries_bound!(ax, 0.0, tf, bnd_min, y_bot-bnd_min)
 
-        # ..:: Thrust value (continuous-time) ::..
-        ct_res = 500
-        ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
-        ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
-        ct_gimbal = T_RealVector([
-            sample(data[i][:ct_y], τ)[data[i][:id]]*scale for τ in ct_τ])
-        ax.plot(ct_time, ct_gimbal,
-                color=clr,
-                linewidth=2)
+    # >> Delayed gimbal angle (continuous-time) <<
+    ct_gimbal_delayed = T_RealVector([
+        sample(sol.xc, τ)[mdl.vehicle.id_γ]*scale for τ in ct_τ])
+    ax.plot(ct_time, ct_gimbal_delayed,
+            color="#db6245",
+            linestyle="--",
+            linewidth=1,
+            dash_capstyle="round")
 
-        # ..:: Thrust value (discrete-time) ::..
-        dt_time = sol.τd*sol.p[mdl.vehicle.id_t]
-        dt_gimbal = data[i][:dt_y][data[i][:id], :]*scale
-        ax.plot(dt_time, dt_gimbal,
-                linestyle="none",
-                marker="o",
-                markersize=5,
-                markeredgewidth=0,
-                markerfacecolor=clr,
-                clip_on=false,
-                zorder=100)
-    end
+    # >> Delayed gimbal angle (discrete-time) <<
+    dt_gimbal_delayed = sol.xd[mdl.vehicle.id_γ, :]*scale
+    ax.plot(dt_time, dt_gimbal_delayed,
+            linestyle="none",
+            marker="o",
+            markersize=3,
+            markeredgewidth=0,
+            markerfacecolor="#db6245",
+            clip_on=false)
+
+    # >> Gimbal angle (continuous-time) <<
+    ct_gimbal = T_RealVector([
+        sample(sol.uc, τ)[mdl.vehicle.id_δ]*scale for τ in ct_τ])
+    ax.plot(ct_time, ct_gimbal,
+            color=clr,
+            linewidth=2)
+
+    # >> Gimbal angle (discrete-time) <<
+    dt_gimbal = sol.ud[mdl.vehicle.id_δ, :]*scale
+    ax.plot(dt_time, dt_gimbal,
+            linestyle="none",
+            marker="o",
+            markersize=5,
+            markeredgewidth=0,
+            markerfacecolor=clr,
+            clip_on=false,
+            zorder=100)
+
+    # ..:: Gimbal rate timeseris ::..
+    ax = fig.add_subplot(212)
+
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.autoscale(tight=true)
+
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Gimbal rate [\$^\\circ/s\$]")
+
+    # >> Gimbal rate bounds <<
+    pad = 2.0
+    bnd_max = mdl.vehicle.α_max*scale
+    bnd_min = -mdl.vehicle.α_max*scale
+    y_top = bnd_max+pad
+    y_bot = bnd_min-pad
+    plot_timeseries_bound!(ax, 0.0, tf, bnd_max, y_top-bnd_max)
+    plot_timeseries_bound!(ax, 0.0, tf, bnd_min, y_bot-bnd_min)
+
+    # >> Actual gimbal rate (discrete-time) <<
+    δ = sol.ud[mdl.vehicle.id_δ, 1:end-1]
+    δn = sol.ud[mdl.vehicle.id_δ, 2:end]
+    dt_α = (δn-δ)./diff(dt_time)
+    ax.plot(dt_time[2:end], dt_α*scale,
+            linestyle="none",
+            marker="o",
+            markersize=5,
+            markeredgewidth=0,
+            markerfacecolor=clr,
+            clip_on=false,
+            zorder=100)
+
+    # >> Actual gimbal rate (continuous-time) <<
+    α = T_ContinuousTimeTrajectory(sol.τd[1:end-1], dt_α, :zoh)
+    ct_α = T_RealVector([sample(α, τ)*scale for τ in ct_τ])
+    ax.plot(ct_time, ct_α,
+            color=clr,
+            linewidth=2,
+            zorder=100)
+
+    # >> Constraint (approximate) gimbal rate (discrete-time) <<
+    δ = sol.xd[mdl.vehicle.id_γ, :]
+    δn = sol.ud[mdl.vehicle.id_δ, :]
+    dt_α = (δn-δ)./mdl.vehicle.δ_delay
+    ax.plot(dt_time, dt_α*scale,
+            linestyle="none",
+            marker="o",
+            markersize=3,
+            markeredgewidth=0,
+            markerfacecolor="#db6245",
+            clip_on=false,
+            zorder=110)
 
     save_figure("starship_gimbal", algo)
 

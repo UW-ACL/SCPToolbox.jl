@@ -337,8 +337,8 @@ function _scp__compute_scaling(
                     if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
                         # Nominal case
                         def[:bbox][i, j] = objective_value(mdl)
-                    else !(status == MOI.DUAL_INFEASIBLE ||
-                           status == MOI.NUMERICAL_ERROR)
+                    elseif !(status == MOI.DUAL_INFEASIBLE ||
+                             status == MOI.NUMERICAL_ERROR)
                         msg = "Solver failed during variable scaling (%s)"
                         err = SCPError(0, SCP_SCALING_FAILED,
                                        @eval @sprintf($msg, $status))

@@ -406,6 +406,7 @@ struct T_ContinuousTimeTrajectory
     x::T_RealArray   # The trajectory values at the corresponding times
     # Interpolation type between time nodes, possible values are:
     #   :linear (linear interpolation)
+    #   :zoh (zeroth-order hold interpolation)
     interp::T_Symbol
 
     #= Constructor.
@@ -422,7 +423,7 @@ struct T_ContinuousTimeTrajectory
         x::T_RealArray,
         interp::T_Symbol)
 
-        if !(interp in [:linear])
+        if !(interp in [:linear, :zoh])
             err = ArgumentError("ERROR: unknown trajectory interpolation type.")
             throw(err)
         end

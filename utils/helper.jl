@@ -229,11 +229,38 @@ Returns:
     f_t: the function value at time t.=#
 function linterp(t::T_Real,
                  f_cps::T_RealArray,
-                 t_grid::T_RealVector)::T_RealArray
+                 t_grid::T_RealVector)::Union{T_Real,
+                                              T_RealArray}
     t = max(t_grid[1], min(t_grid[end], t)) # Saturate to time grid
     k = _helper__get_interval(t, t_grid)
     c = (@kp1(t_grid)-t)/(@kp1(t_grid)-@k(t_grid))
     f_t = c*@k(f_cps) + (1-c)*@kp1(f_cps)
+    return f_t
+end
+
+#= Zeroth-order hold interpolation on a grid.
+
+Previous neighbor interpolation. The interpolated value at a query point is the
+value at the previous sample grid point.
+
+Args:
+    t: the time at which to get the function value.
+    f_cps: the control points of the function, stored as columns of a matrix.
+    t_grid: the discrete time nodes.
+
+Returns:
+    f_t: the function value at time t.=#
+function zohinterp(t::T_Real,
+                   f_cps::T_RealArray,
+                   t_grid::T_RealVector)::Union{T_Real,
+                                                T_RealArray}
+    if t>=t_grid[end]
+        k = length(t_grid)
+    else
+        t = max(t_grid[1], min(t_grid[end], t)) # Saturate to time grid
+        k = _helper__get_interval(t, t_grid)
+    end
+    f_t = @k(f_cps)
     return f_t
 end
 
@@ -313,10 +340,13 @@ Args:
 Returns:
     x: the trajectory value at time t. =#
 function sample(traj::T_ContinuousTimeTrajectory,
-                t::T_Real)::T_RealArray
+                t::T_Real)::Union{T_Real,
+                                  T_RealArray}
 
     if traj.interp==:linear
         x = linterp(t, traj.x, traj.t)
+    elseif traj.interp==:zoh
+        x = zohinterp(t, traj.x, traj.t)
     end
 
     return x
