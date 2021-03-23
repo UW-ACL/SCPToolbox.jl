@@ -31,7 +31,7 @@ mdl = StarshipProblem()
 pbm = TrajectoryProblem(mdl)
 
 # >> Variable dimensions <<
-problem_set_dims!(pbm, 6, 2, 1)
+problem_set_dims!(pbm, 7, 2, 1)
 
 # >> Variable scaling <<
 # Parameters
@@ -40,8 +40,8 @@ problem_advise_scale!(pbm, :parameter, mdl.vehicle.id_t,
 # Inputs
 problem_advise_scale!(pbm, :input, mdl.vehicle.id_T,
                       (mdl.vehicle.T_min, mdl.vehicle.T_max))
-problem_advise_scale!(pbm, :input, mdl.vehicle.id_δ,
-                      (-mdl.vehicle.δ_max, mdl.vehicle.δ_max))
+problem_advise_scale!(pbm, :input, mdl.vehicle.id_α,
+                      (-mdl.vehicle.α_max, mdl.vehicle.α_max))
 # States
 problem_advise_scale!(pbm, :state, mdl.vehicle.id_r[1],
                       (-100.0, 100.0))
@@ -55,6 +55,8 @@ problem_advise_scale!(pbm, :state, mdl.vehicle.id_θ,
                       (0.0, mdl.traj.θ0))
 problem_advise_scale!(pbm, :state, mdl.vehicle.id_ω,
                       (-deg2rad(10.0), deg2rad(10.0)))
+problem_advise_scale!(pbm, :state, mdl.vehicle.id_δ,
+                      (-mdl.vehicle.δ_max, mdl.vehicle.δ_max))
 
 # >> Initial trajectory guess <<
 starship_set_initial_guess!(pbm)
@@ -64,9 +66,14 @@ problem_set_running_cost!(pbm, (x, u, p, pbm) -> begin
                           veh = pbm.mdl.vehicle
                           env = pbm.mdl.env
                           traj = pbm.mdl.traj
+                          r = x[veh.id_r]
+                          θ = x[veh.id_θ]
                           T = u[veh.id_T]
+                          rx = dot(r, env.ex)
                           hover = norm(veh.m*env.g)
-                          return (T/hover)^2
+                          θ_nrml = abs(traj.θ0)
+                          # return (T/hover)^2+5.0*(θ/θ_nrml)^2
+                          return (T/hover)^2# +(rx/50)^2
                           end)
 
 # >> Dynamics constraint <<
@@ -78,16 +85,17 @@ problem_set_dynamics!(pbm,
                       v = x[veh.id_v]
                       θ = x[veh.id_θ]
                       ω = x[veh.id_ω]
+                      δ = x[veh.id_δ]
                       T = u[veh.id_T]
-                      δ = u[veh.id_δ]
+                      α = u[veh.id_α]
                       tdil = p[veh.id_t]
-                      ex = [1.0; 0.0]
-                      ey = [0.0; 1.0]
                       f = zeros(pbm.nx)
                       f[veh.id_r] = v
-                      f[veh.id_v] = T/veh.m*(cos(θ+δ)*ey-sin(θ+δ)*ex)+env.g
+                      f[veh.id_v] = T/veh.m*(cos(θ+δ)*veh.ej-
+                                             sin(θ+δ)*veh.ei)+env.g
                       f[veh.id_θ] = ω
                       f[veh.id_ω] = -veh.lg/veh.J*T*sin(δ)
+                      f[veh.id_δ] = α
                       f *= tdil
                       return f
                       end,
@@ -95,16 +103,17 @@ problem_set_dynamics!(pbm,
                       (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
                       θ = x[veh.id_θ]
+                      δ = x[veh.id_δ]
                       T = u[veh.id_T]
-                      δ = u[veh.id_δ]
                       tdil = p[veh.id_t]
-                      ex = [1.0; 0.0]
-                      ey = [0.0; 1.0]
                       A = zeros(pbm.nx, pbm.nx)
                       A[veh.id_r, veh.id_v] = I(2)
-                      A[veh.id_v, veh.id_θ] = -T/veh.m*(sin(θ+δ)*ey+
-                                                        cos(θ+δ)*ex)
+                      A[veh.id_v, veh.id_θ] = -T/veh.m*(sin(θ+δ)*veh.ej+
+                                                        cos(θ+δ)*veh.ei)
+                      A[veh.id_v, veh.id_δ] = -T/veh.m*(sin(θ+δ)*veh.ej+
+                                                        cos(θ+δ)*veh.ei)
                       A[veh.id_θ, veh.id_ω] = 1.0
+                      A[veh.id_ω, veh.id_δ] = -veh.lg/veh.J*T*cos(δ)
                       A *= tdil
                       return A
                       end,
@@ -112,17 +121,15 @@ problem_set_dynamics!(pbm,
                       (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
                       θ = x[veh.id_θ]
+                      δ = x[veh.id_δ]
                       T = u[veh.id_T]
-                      δ = u[veh.id_δ]
-                      ex = [1.0; 0.0]
-                      ey = [0.0; 1.0]
                       tdil = p[veh.id_t]
                       B = zeros(pbm.nx, pbm.nu)
-                      B[veh.id_v, veh.id_T] = (cos(θ+δ)*ey-sin(θ+δ)*ex)/veh.m
-                      B[veh.id_v, veh.id_δ] = -T/veh.m*(sin(θ+δ)*ey+
-                                                        cos(θ+δ)*ex)
+                      B[veh.id_v, veh.id_T] = (cos(θ+δ)*veh.ej-
+                                               sin(θ+δ)*veh.ei)/veh.m
+
                       B[veh.id_ω, veh.id_T] = -veh.lg/veh.J*sin(δ)
-                      B[veh.id_ω, veh.id_δ] = -veh.lg/veh.J*T*cos(δ)
+                      B[veh.id_δ, veh.id_α] = 1.0
                       B *= tdil
                       return B
                       end,
@@ -135,18 +142,28 @@ problem_set_dynamics!(pbm,
                       return F
                       end)
 
+# >> Convex path constraints on the state <<
+problem_set_X!(pbm, (x, pbm) -> begin
+               traj = pbm.mdl.traj
+               env = pbm.mdl.env
+               veh = pbm.mdl.vehicle
+               r = x[veh.id_r]
+               δ = x[veh.id_δ]
+               C = T_ConvexConeConstraint
+               X = [C(vcat(veh.δ_max, δ), :l1),
+                    C(vcat(dot(r, env.ey)/cos(traj.γ_gs), r), :soc)]
+               return X
+               end)
+
 # >> Convex path constraints on the input <<
 problem_set_U!(pbm, (u, pbm) -> begin
                veh = pbm.mdl.vehicle
-               traj = pbm.mdl.traj
                T = u[veh.id_T]
-               δ = u[veh.id_δ]
+               α = u[veh.id_α]
                C = T_ConvexConeConstraint
                U = [C(veh.T_min-T, :nonpos),
                     C(T-veh.T_max, :nonpos),
-                    C(δ-veh.δ_max, :nonpos),
-                    C(-veh.δ_max-δ, :nonpos),
-                    ]
+                    C(vcat(veh.α_max, α), :l1)]
                return U
                end)
 

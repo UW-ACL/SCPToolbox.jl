@@ -33,20 +33,26 @@ struct StarshipParameters
     id_v::T_IntRange # Velocity indices of the state vector
     id_θ::T_Int      # Tilt angle index of the state vector
     id_ω::T_Int      # Tilt rate index of the state vector
+    id_δ::T_Int      # Gimbal angle index of the state vector
     id_T::T_Int      # Thrust index of the input vector
-    id_δ::T_Int      # Gimbal angle index of the input vector
+    id_α::T_Int      # Gimbal rate index of the input vector
     id_t::T_Int      # Index of time dilation
     T_max::T_Real    # [N] Maximum thrust
     T_min::T_Real    # [N] Minimum thrust
     δ_max::T_Real    # [rad] Maximum gimbal angle
+    α_max::T_Real    # [rad/s] Maximum gimbal rate
     m::T_Real        # [kg] Vehicle mass
     J::T_Real        # [kg*m^2] Vehicle moment of inertia
     lg::T_Real       # [m] Distance from CG to engine gimbal
+    ei::T_RealVector # Lateral body axis
+    ej::T_RealVector # Longitudinal body axis
 end
 
 #= Starship flight environment. =#
 struct StarshipEnvironmentParameters
-    g::T_RealVector # [m/s^2] Gravity vector
+    ex::T_RealVector # Horizontal "along" axis
+    ey::T_RealVector # Vertical "up" axis
+    g::T_RealVector  # [m/s^2] Gravity vector
 end
 
 #= Trajectory parameters. =#
@@ -57,6 +63,7 @@ struct StarshipTrajectoryParameters
     θ0::T_Real       # [rad] Initial tilt angle
     tf_min::T_Real   # Minimum flight time
     tf_max::T_Real   # Maximum flight time
+    γ_gs::T_Real     # [rad] Maximum glideslope (measured from vertical)
 end
 
 #= Starship trajectory optimization problem parameters all in one. =#
@@ -82,8 +89,9 @@ function StarshipProblem()::StarshipProblem
     id_v = 3:4
     id_θ = 5
     id_ω = 6
+    id_δ = 7
     id_T = 1
-    id_δ = 2
+    id_α = 2
     id_t = 1
     # >> Thrust bounds <<
     ne = 3 # Number of engines
@@ -93,27 +101,35 @@ function StarshipProblem()::StarshipProblem
     T_min = T_min1
     # >> Gimbal bounds <<
     δ_max = deg2rad(10.0)
+    α_max = 2*δ_max
     # >> Mechanical properties <<
     H = 50.0 # [m] Stage height
     m = 120.0e3
     J = m/12*H^2
     lg = 0.5*H
+    # >> Body frame <<
+    ei = [1.0; 0.0]
+    ej = [0.0; 1.0]
 
-    starship = StarshipParameters(id_r, id_v, id_θ, id_ω, id_T, id_δ, id_t,
-                                  T_max, T_min, δ_max, m, J, lg)
+    starship = StarshipParameters(id_r, id_v, id_θ, id_ω, id_δ, id_T,
+                                  id_α, id_t, T_max, T_min, δ_max, α_max,
+                                  m, J, lg, ei, ej)
 
     # ..:: Environment ::..
-    g = [0.0; -9.81]
-    env = StarshipEnvironmentParameters(g)
+    ex = [1.0; 0.0]
+    ey = [0.0; 1.0]
+    g = -9.81*ey
+    env = StarshipEnvironmentParameters(ex, ey, g)
 
     # ..:: Trajectory ::..
-    r0 = [0.0; 600.0]
-    v0 = [0.0; -75.0]
-    vf = [0.0; 0.0]
+    r0 = 100.0*ex+600.0*ey
+    v0 = -75.0*ey
+    vf = 0.0*ey
     θ0 = deg2rad(90.0)
     tf_min = 0.0
     tf_max = 60.0
-    traj = StarshipTrajectoryParameters(r0, v0, vf, θ0, tf_min, tf_max)
+    γ_gs = deg2rad(27.0)
+    traj = StarshipTrajectoryParameters(r0, v0, vf, θ0, tf_min, tf_max, γ_gs)
 
     mdl = StarshipProblem(starship, env, traj)
 
@@ -154,12 +170,14 @@ function starship_set_initial_guess!(pbm::TrajectoryProblem)::Nothing
                        xf[veh.id_θ] = 0.0
                        x0[veh.id_ω] = ω_cst
                        xf[veh.id_ω] = ω_cst
+                       x0[veh.id_δ] = 0.0
+                       xf[veh.id_δ] = 0.0
                        x = straightline_interpolate(x0, xf, N)
 
                        # Input guess
                        hover = zeros(pbm.nu)
                        hover[veh.id_T] = norm(veh.m*env.g)
-                       hover[veh.id_δ] = 0.0
+                       hover[veh.id_α] = 0.0
                        u = straightline_interpolate(hover, hover, N)
 
                        return x, u, p
@@ -202,6 +220,16 @@ function plot_final_trajectory(mdl::StarshipProblem,
                  aspect=40,
                  label="Velocity [m/s]")
 
+    # ..:: Draw the glide slope constraint ::..
+    alt = 200.0 # [m] Altitude of glide slope "triangle" visualization
+    x_gs = alt*tan(mdl.traj.γ_gs)
+    ax.plot([-x_gs, 0, x_gs], [alt, 0, alt],
+            color="#5da9a1",
+            linestyle="--",
+            solid_capstyle="round",
+            dash_capstyle="round",
+            zorder=90)
+
     # ..:: Draw the final continuous-time position trajectory ::..
     # Collect the continuous-time trajectory data
     ct_res = 500
@@ -231,7 +259,7 @@ function plot_final_trajectory(mdl::StarshipProblem,
 
     # ..:: Draw the acceleration vector ::..
     T = sol.ud[mdl.vehicle.id_T, :]
-    δ = sol.ud[mdl.vehicle.id_δ, :]
+    δ = sol.xd[mdl.vehicle.id_δ, :]
     θ = sol.xd[mdl.vehicle.id_θ, :]
     pos = sol.xd[mdl.vehicle.id_r, :]
     u_nrml = maximum(T)
@@ -252,17 +280,22 @@ function plot_final_trajectory(mdl::StarshipProblem,
 
     # ..:: Draw the fuselage ::..
     b_scale = r_span*0.1
+    num_draw = 6 # Number of instances to draw
+    K = T_IntVector(1:(N÷num_draw):N)
     for k = 1:N
-        base = pos[1:2, k]
-        nose = [-sin(θ[k]); cos(θ[k])]
-        tip = base+b_scale*nose
-        x = [base[1], tip[1]]
-        y = [base[2], tip[2]]
-        ax.plot(x, y,
-                color="#26415d",
-                linewidth=1.5,
-                solid_capstyle="round",
-                zorder=100)
+        altitude = dot(@k(pos), mdl.env.ey)
+        if altitude>100 || k==N || k in K
+            base = pos[1:2, k]
+            nose = [-sin(θ[k]); cos(θ[k])]
+            tip = base+b_scale*nose
+            x = [base[1], tip[1]]
+            y = [base[2], tip[2]]
+            ax.plot(x, y,
+                    color="#26415d",
+                    linewidth=1.5,
+                    solid_capstyle="round",
+                    zorder=100)
+        end
     end
 
     # ..:: Draw the discrete-time positions trajectory ::..
@@ -359,44 +392,63 @@ function plot_gimbal(mdl::StarshipProblem,
     y_top = mdl.vehicle.δ_max*scale+2.0
     y_bot = -y_top
 
-    fig = create_figure((5, 2.5))
-    ax = fig.add_subplot()
+    fig = create_figure((5, 5))
 
-    ax.grid(linewidth=0.3, alpha=0.5)
-    ax.set_axisbelow(true)
-    ax.set_facecolor("white")
-    ax.autoscale(tight=true)
+    # Plot data
+    data = [Dict(:bnd=>mdl.vehicle.δ_max,
+                 :pad=>2.0,
+                 :ylabel=>"Gimbal angle [\$^\\circ\$]",
+                 :dt_y=>sol.xd,
+                 :ct_y=>sol.xc,
+                 :id=>mdl.vehicle.id_δ),
+            Dict(:bnd=>mdl.vehicle.α_max,
+                 :pad=>2.0,
+                 :ylabel=>"Gimbal rate [\$^\\circ/s\$]",
+                 :dt_y=>sol.ud,
+                 :ct_y=>sol.uc,
+                 :id=>mdl.vehicle.id_α)]
 
-    ax.set_xlabel("Time [s]")
-    ax.set_ylabel("Gimbal [\$^\\circ\$]")
+    for i = 1:length(data)
+        ax = fig.add_subplot(2, 1, i)
 
-    # ..:: Acceleration bounds ::..
-    bnd_max = mdl.vehicle.δ_max*scale
-    bnd_min = -mdl.vehicle.δ_max*scale
-    plot_timeseries_bound!(ax, 0.0, tf, bnd_max, y_top-bnd_max)
-    plot_timeseries_bound!(ax, 0.0, tf, bnd_min, y_bot-bnd_min)
+        ax.grid(linewidth=0.3, alpha=0.5)
+        ax.set_axisbelow(true)
+        ax.set_facecolor("white")
+        ax.autoscale(tight=true)
 
-    # ..:: Thrust value (continuous-time) ::..
-    ct_res = 500
-    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
-    ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
-    ct_gimbal = T_RealVector([sample(sol.uc, τ)[mdl.vehicle.id_δ]*scale
-                              for τ in ct_τ])
-    ax.plot(ct_time, ct_gimbal,
-            color=clr,
-            linewidth=2)
+        ax.set_xlabel("Time [s]")
+        ax.set_ylabel(data[i][:ylabel])
 
-    # ..:: Thrust value (discrete-time) ::..
-    dt_time = sol.τd*sol.p[mdl.vehicle.id_t]
-    dt_gimbal = sol.ud[mdl.vehicle.id_δ, :]*scale
-    ax.plot(dt_time, dt_gimbal,
-            linestyle="none",
-            marker="o",
-            markersize=5,
-            markeredgewidth=0,
-            markerfacecolor=clr,
-            clip_on=false,
-            zorder=100)
+        # ..:: Acceleration bounds ::..
+        bnd_max = data[i][:bnd]*scale
+        bnd_min = -data[i][:bnd]*scale
+        y_top = bnd_max+data[i][:pad]
+        y_bot = bnd_min-data[i][:pad]
+        plot_timeseries_bound!(ax, 0.0, tf, bnd_max, y_top-bnd_max)
+        plot_timeseries_bound!(ax, 0.0, tf, bnd_min, y_bot-bnd_min)
+
+        # ..:: Thrust value (continuous-time) ::..
+        ct_res = 500
+        ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
+        ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
+        ct_gimbal = T_RealVector([
+            sample(data[i][:ct_y], τ)[data[i][:id]]*scale for τ in ct_τ])
+        ax.plot(ct_time, ct_gimbal,
+                color=clr,
+                linewidth=2)
+
+        # ..:: Thrust value (discrete-time) ::..
+        dt_time = sol.τd*sol.p[mdl.vehicle.id_t]
+        dt_gimbal = data[i][:dt_y][data[i][:id], :]*scale
+        ax.plot(dt_time, dt_gimbal,
+                linestyle="none",
+                marker="o",
+                markersize=5,
+                markeredgewidth=0,
+                markerfacecolor=clr,
+                clip_on=false,
+                zorder=100)
+    end
 
     save_figure("starship_gimbal", algo)
 
