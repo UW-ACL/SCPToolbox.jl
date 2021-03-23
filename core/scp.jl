@@ -310,36 +310,35 @@ function _scp__compute_scaling(
     for def in defs
         for j = 1:2 # 1:min, 2:max
             for i = 1:def[:dim]
-                # Initialize JuMP model
-                mdl = Model()
-                set_optimizer(mdl, solver.Optimizer)
-                for (key,val) in solver_opts
-                    set_optimizer_attribute(mdl, key, val)
-                end
-                # Variables
-                var = @variable(mdl, [1:def[:dim]])
-                # Constraints
-                if !isnothing(def[:set])
-                    add_conic_constraints!(mdl, def[:set](var))
-                end
-                # Cost
-                set_objective_function(mdl, var[i])
-                set_objective_sense(mdl, (j==1) ? MOI.MIN_SENSE :
-                                    MOI.MAX_SENSE)
-                # Solve
-                optimize!(mdl)
-                # Record the solution
-                status = termination_status(mdl)
-                if (status == MOI.DUAL_INFEASIBLE ||
-                    status == MOI.NUMERICAL_ERROR)
-                    if !isnothing(getfield(traj, def[:advice])[i])
-                        # Take user scaling advice
-                        def[:bbox][i, j] = getfield(traj, def[:advice])[i][j]
-                    end
+                if !isnothing(getfield(traj, def[:advice])[i])
+                    # Take user scaling advice
+                    def[:bbox][i, j] = getfield(traj, def[:advice])[i][j]
                 else
+                    # Initialize JuMP model
+                    mdl = Model()
+                    set_optimizer(mdl, solver.Optimizer)
+                    for (key,val) in solver_opts
+                        set_optimizer_attribute(mdl, key, val)
+                    end
+                    # Variables
+                    var = @variable(mdl, [1:def[:dim]])
+                    # Constraints
+                    if !isnothing(def[:set])
+                        add_conic_constraints!(mdl, def[:set](var))
+                    end
+                    # Cost
+                    set_objective_function(mdl, var[i])
+                    set_objective_sense(mdl, (j==1) ? MOI.MIN_SENSE :
+                                        MOI.MAX_SENSE)
+                    # Solve
+                    optimize!(mdl)
+                    # Record the solution
+                    status = termination_status(mdl)
                     if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
+                        # Nominal case
                         def[:bbox][i, j] = objective_value(mdl)
-                    else
+                    else !(status == MOI.DUAL_INFEASIBLE ||
+                           status == MOI.NUMERICAL_ERROR)
                         msg = "Solver failed during variable scaling (%s)"
                         err = SCPError(0, SCP_SCALING_FAILED,
                                        @eval @sprintf($msg, $status))

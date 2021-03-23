@@ -254,11 +254,11 @@ function freeflyer_set_initial_guess!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-#= Plot the trajectory evolution through SCvx iterations.
+#= Plot the trajectory evolution through SCP iterations.
 
 Args:
     mdl: the free-flyer problem parameters.
-    history: SCvx iteration data history. =#
+    history: SCP iteration data history. =#
 function plot_trajectory_history(mdl::FreeFlyerProblem,
                                  history::SCPHistory)::Nothing
 
@@ -327,7 +327,7 @@ end
 
 Args:
     mdl: the free-flyer problem parameters.
-    sol: the trajectory solution output by SCvx. =#
+    sol: the trajectory solution. =#
 function plot_final_trajectory(mdl::FreeFlyerProblem,
                                sol::SCPSolution)::Nothing
 
@@ -426,11 +426,11 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
     return nothing
 end
 
-#= Optimization algorithm convergence plot.
+#= Timeseries signal plots.
 
 Args:
     mdl: the free-flyer problem parameters.
-    sol: the trajectory solution output by SCvx. =#
+    sol: the trajectory solution. =#
 function plot_timeseries(mdl::FreeFlyerProblem,
                          sol::SCPSolution)::Nothing
 
@@ -587,7 +587,7 @@ end
 
 Args:
     mdl: the free-flyer problem parameters.
-    sol: the trajectory solution output by SCvx. =#
+    sol: the trajectory solution. =#
 function plot_obstacle_constraints(mdl::FreeFlyerProblem,
                                    sol::SCPSolution)::Nothing
 

@@ -59,7 +59,9 @@ mutable struct PTRSubproblemSolution <: SCPSubproblemSolution
     J_vc::T_Real         # The virtual control penalty
     J_aug::T_Real        # Overall cost
     # >> Trajectory properties <<
-    η::T_RealVector      # Trust region radii
+    ηx::T_RealVector     # State trust region radii
+    ηu::T_RealVector     # Input trust region radii
+    ηp::T_Real           # Parameter trust region radii
     status::T_ExitStatus # Numerical optimizer exit status
     feas::T_Bool         # Dynamic feasibility flag
     defect::T_RealMatrix # "Defect" linearization accuracy metric
@@ -97,7 +99,9 @@ mutable struct PTRSubproblem <: SCPSubproblem
     vic::T_OptiVarVector # Initial conditions virtual control
     vtc::T_OptiVarVector # Terminal conditions virtual control
     # >> Trust region <<
-    η::T_OptiVarVector   # Trust region radii
+    ηx::T_OptiVarVector  # State trust region radii
+    ηu::T_OptiVarVector  # Input trust region radii
+    ηp::T_OptiVar        # Parameter trust region radii
 end
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -140,8 +144,12 @@ function PTRProblem(pars::PTRParameters,
         (:δ, "δ", "%.0e", 5),
         # Dynamic feasibility flag (true or false)
         (:dynfeas, "dyn", "%s", 3),
-        # Maximum trust region size
-        (:tr_max, "η", "%.2f", 5)])
+        # Maximum state trust region size
+        (:trx_max, "ηx", "%.2f", 5),
+        # Maximum input trust region size
+        (:tru_max, "ηu", "%.2f", 5),
+        # Parameter trust region size
+        (:trp, "ηp", "%.2f", 5)])
 
     pbm = SCPProblem(pars, traj, table)
 
@@ -207,10 +215,13 @@ function PTRSubproblem(pbm::SCPProblem,
     vtc = T_RealVector(undef, 0)
 
     # Trust region radii
-    η = @variable(mdl, [1:N], base_name="η")
+    ηx = @variable(mdl, [1:N], base_name="ηx")
+    ηu = @variable(mdl, [1:N], base_name="ηu")
+    ηp = @variable(mdl, base_name="ηp")
 
     spbm = PTRSubproblem(iter, mdl, algo, pbm, sol, ref, J, J_tr, J_vc,
-                         J_aug, xh, uh, ph, x, u, p, vd, vs, vic, vtc, η)
+                         J_aug, xh, uh, ph, x, u, p, vd, vs, vic, vtc,
+                         ηx, ηu, ηp)
 
     return spbm
 end
@@ -244,7 +255,9 @@ function PTRSubproblemSolution(
     nv = size(pbm.common.E, 2)
 
     # Uninitialized parts
-    η = fill(NaN, N)
+    ηx = fill(NaN, N)
+    ηu = fill(NaN, N)
+    ηp = NaN
     status = MOI.OPTIMIZE_NOT_CALLED
     feas = false
     defect = fill(NaN, nx, N-1)
@@ -264,8 +277,8 @@ function PTRSubproblemSolution(
     J_aug = NaN
 
     subsol = PTRSubproblemSolution(iter, x, u, p, vd, vs, vic, vtc, J,
-                                   J_tr, J_vc, J_aug, η, status, feas, defect,
-                                   deviation, unsafe, dyn)
+                                   J_tr, J_vc, J_aug, ηx, ηu, ηp, status,
+                                   feas, defect, deviation, unsafe, dyn)
 
     # Compute the DLTV dynamics around this solution
     _scp__discretize!(subsol, pbm)
@@ -305,7 +318,9 @@ function PTRSubproblemSolution(spbm::PTRSubproblem)::PTRSubproblemSolution
     sol.J_aug = value(spbm.J_aug)
 
     # Save the solution status
-    sol.η = value.(spbm.η)
+    sol.ηx = value.(spbm.ηx)
+    sol.ηu = value.(spbm.ηu)
+    sol.ηp = value(spbm.ηp)
     sol.status = termination_status(spbm.mdl)
 
     return sol
@@ -423,7 +438,9 @@ function _ptr__add_trust_region!(spbm::PTRSubproblem)::Nothing
     nx = traj_pbm.nx
     nu = traj_pbm.nu
     np = traj_pbm.np
-    η = spbm.η
+    ηx = spbm.ηx
+    ηu = spbm.ηu
+    ηp = spbm.ηp
     xh = spbm.xh
     uh = spbm.uh
     ph = spbm.ph
@@ -436,24 +453,43 @@ function _ptr__add_trust_region!(spbm::PTRSubproblem)::Nothing
     du = uh-uh_ref
     dp = ph-ph_ref
 
-    # Trust region constraint
+    # >> Trust region constraint <<
     q2cone = Dict(1 => :l1, 2 => :soc, 4 => :soc, Inf => :linf)
     cone = q2cone[q]
     C = T_ConvexConeConstraint
     acc! = add_conic_constraint!
-    dx_lq = @variable(spbm.mdl, [1:N], base_name="dx_lq")
-    du_lq = @variable(spbm.mdl, [1:N], base_name="du_lq")
+
+    # Parameter trust region
     dp_lq = @variable(spbm.mdl, base_name="dp_lq")
     acc!(spbm.mdl, C(vcat(dp_lq, dp), cone))
+    if q==4
+        wp = @variable(spbm.mdl, base_name="wp")
+        acc!(spbm.mdl, C(vcat(wp, dp_lq), :soc))
+        acc!(spbm.mdl, C(vcat(wp, ηp, 1), :geom))
+    else
+        @constraint(spbm.mdl, dp_lq <= ηp)
+    end
+
+    # State and input trust regions
+    dx_lq = @variable(spbm.mdl, [1:N], base_name="dx_lq")
+    du_lq = @variable(spbm.mdl, [1:N], base_name="du_lq")
     for k = 1:N
         acc!(spbm.mdl, C(vcat(@k(dx_lq), @k(dx)), cone))
         acc!(spbm.mdl, C(vcat(@k(du_lq), @k(du)), cone))
         if q==4
-            w = @variable(spbm.mdl, base_name="w")
-            acc!(spbm.mdl, C(vcat(w, @k(dx_lq), @k(du_lq), dp_lq), :soc))
-            acc!(spbm.mdl, C(vcat(w, @k(η), 1), :geom))
+            # State
+            wx = @variable(spbm.mdl, base_name="wx")
+            acc!(spbm.mdl, C(vcat(wx, @k(dx_lq)), :soc))
+            acc!(spbm.mdl, C(vcat(wx, @k(ηx), 1), :geom))
+            # Input
+            wu = @variable(spbm.mdl, base_name="wu")
+            acc!(spbm.mdl, C(vcat(wu, @k(du_lq)), :soc))
+            acc!(spbm.mdl, C(vcat(wu, @k(ηu), 1), :geom))
         else
-            @constraint(spbm.mdl, @k(dx_lq)+@k(du_lq)+dp_lq <= @k(η))
+            # State
+            @constraint(spbm.mdl, @k(dx_lq) <= @k(ηx))
+            # Input
+            @constraint(spbm.mdl, @k(du_lq) <= @k(ηu))
         end
     end
 
@@ -495,9 +531,13 @@ function _ptr__compute_trust_region_penalty!(spbm::PTRSubproblem)::Nothing
     # Variables and parameters
     τ_grid = spbm.def.common.τ_grid
     wtr = spbm.def.pars.wtr
-    η = spbm.η
+    ηx = spbm.ηx
+    ηu = spbm.ηu
+    ηp = spbm.ηp
 
-    spbm.J_tr = wtr*trapz(η, τ_grid)
+    spbm.J_tr = wtr*(trapz(ηx, τ_grid)+
+                     trapz(ηu, τ_grid)+
+                     ηp)
 
     return nothing
 end
@@ -602,7 +642,9 @@ function _ptr__print_info(spbm::PTRSubproblem,
         status = @sprintf "%s" sol.status
         status = status[1:min(8, length(status))]
         ΔJ = cost_improvement_percent(sol.J_aug, ref.J_aug)
-        η_max = maximum(sol.η)
+        ηx_max = maximum(sol.ηx)
+        ηu_max = maximum(sol.ηu)
+        ηp = sol.ηp
 
         # Associate values with columns
         assoc = Dict(:iter => spbm.iter,
@@ -617,7 +659,9 @@ function _ptr__print_info(spbm::PTRSubproblem,
                      :dp => max_dph,
                      :δ => sol.deviation,
                      :dynfeas => sol.feas ? "T" : "F",
-                     :tr_max => η_max)
+                     :trx_max => ηx_max,
+                     :tru_max => ηu_max,
+                     :trp => ηp)
 
         print(assoc, table)
     end

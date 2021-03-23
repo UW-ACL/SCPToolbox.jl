@@ -172,7 +172,7 @@ function quadrotor_set_initial_guess!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-#= Plot the trajectory evolution through SCvx iterations.
+#= Plot the trajectory evolution through SCP iterations.
 
 Args:
     mdl: the quadrotor problem parameters.
@@ -239,7 +239,7 @@ end
 
 Args:
     mdl: the quadrotor problem parameters.
-    sol: the trajectory solution output by SCvx. =#
+    sol: the trajectory solution. =#
 function plot_final_trajectory(mdl::QuadrotorProblem,
                                sol::SCPSolution)::Nothing
 
@@ -337,7 +337,7 @@ end
 
 Args:
     mdl: the quadrotor problem parameters.
-    sol: the trajectory solution output by SCvx. =#
+    sol: the trajectory solution. =#
 function plot_input_norm(mdl::QuadrotorProblem,
                          sol::SCPSolution)::Nothing
 
@@ -409,7 +409,7 @@ end
 
 Args:
     mdl: the quadrotor problem parameters.
-    sol: the trajectory solution output by SCvx. =#
+    sol: the trajectory solution. =#
 function plot_tilt_angle(mdl::QuadrotorProblem,
                          sol::SCPSolution)::Nothing
 
