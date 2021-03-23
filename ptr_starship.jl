@@ -101,8 +101,7 @@ problem_set_U!(pbm, (u, pbm) -> begin
                traj = pbm.mdl.traj
                T = u[veh.id_T]
                C = T_ConvexConeConstraint
-               U = [C(vcat(veh.T_max, T), :soc),
-                    C(vcat(T[2]/cos(veh.tilt_max), T), :soc)]
+               U = [C(vcat(veh.T_max, T), :soc)]
                return U
                end)
 
@@ -196,8 +195,8 @@ problem_set_bc!(pbm, :tc,
 N = 30
 Nsub = 15
 iter_max = 50
-wvc = 1e2
-wtr = 0.1
+wvc = 100.0
+wtr = 0.05
 ε_abs = 1e-5
 ε_rel = 0.01/100
 feas_tol = 1e-3

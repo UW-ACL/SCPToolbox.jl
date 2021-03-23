@@ -36,7 +36,6 @@ struct StarshipParameters
     T_max::T_Real    # [N] Maximum thrust
     T_min::T_Real    # [N] Minimum thrust
     m::T_Real        # [kg] Vehicle mass
-    tilt_max::T_Real # [rad] Maximum tilt
 end
 
 #= Starship flight environment. =#
@@ -71,29 +70,35 @@ Returns:
     mdl: the problem definition object. =#
 function StarshipProblem()::StarshipProblem
 
-    # >> Starship <<
+    # ..:: Starship ::..
+    # >> Indices <<
     id_r = 1:2
     id_v = 3:4
     id_T = 1:2
     id_t = 1
-    T_max = 230.0
-    T_min = 6.0
-    m = 2.0
-    tilt_max = deg2rad(60)
-    starship = StarshipParameters(id_r, id_v, id_T, id_t, T_max, T_min,
-                                  m, tilt_max)
+    # >> Thrust bounds <<
+    ne = 3 # Number of engines
+    T_min1 = 880e3 # [N] One engine min thrust
+    T_max1 = 2210e3 # [N] One engine max thrust
+    T_max = ne*T_max1
+    T_min = T_min1
+    # >> Mechanical properties <<
+    m = 120.0e3
 
-    # >> Environment <<
+    starship = StarshipParameters(id_r, id_v, id_T, id_t, T_max, T_min,
+                                  m)
+
+    # ..:: Environment ::..
     g = [0.0; -9.81]
     env = StarshipEnvironmentParameters(g)
 
-    # >> Trajectory <<
-    r0 = [2.0; 6.0]
+    # ..:: Trajectory ::..
+    r0 = [0.0; 600.0]
     rf = [0.0; 0.0]
-    v0 = [1.0; 0.0]
+    v0 = [0.0; -75.0]
     vf = zeros(2)
     tf_min = 0.0
-    tf_max = 30.0
+    tf_max = 60.0
     traj = StarshipTrajectoryParameters(r0, rf, v0, vf, tf_min, tf_max)
 
     mdl = StarshipProblem(starship, env, traj)
@@ -123,12 +128,13 @@ function starship_set_initial_guess!(pbm::TrajectoryProblem)::Nothing
                        p[veh.id_t] = 0.5*(traj.tf_min+traj.tf_max)
 
                        # State guess
+                       v_cst = (traj.rf-traj.r0)/p[veh.id_t]
                        x0 = zeros(pbm.nx)
                        xf = zeros(pbm.nx)
                        x0[veh.id_r] = traj.r0
                        xf[veh.id_r] = traj.rf
-                       x0[veh.id_v] = traj.v0
-                       xf[veh.id_v] = traj.vf
+                       x0[veh.id_v] = v_cst
+                       xf[veh.id_v] = v_cst
                        x = straightline_interpolate(x0, xf, N)
 
                        # Input guess
