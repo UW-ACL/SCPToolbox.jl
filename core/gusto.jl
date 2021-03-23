@@ -1142,18 +1142,8 @@ function _gusto__print_info(spbm::GuSTOSubproblem,
         status = status[1:min(8, length(status))]
         ρ = !isnan(sol.ρ) ? @sprintf("%.2f", sol.ρ) : ""
         ρ = (length(ρ)>8) ? @sprintf("%.1e", sol.ρ) : ρ
-        if isnan(ref.J_aug)
-            ΔJ = ""
-        else
-            ΔJ = (ref.J_aug-sol.J_aug)/abs(ref.J_aug)*100
-            _ΔJ = (sol.reject) ? "" : @sprintf("%.2f", ΔJ)
-            if length(_ΔJ)>8
-                fmt = string("%.", (ΔJ>0) ? 2 : 1, "e")
-                ΔJ = @eval @sprintf($fmt, $ΔJ)
-            else
-                ΔJ = _ΔJ
-            end
-        end
+        ΔJ = (!isnan(ref.J_aug) && sol.reject) ? "" :
+            cost_improvement_percent(sol.J_aug, ref.J_aug)
 
         # Associate values with columns
         assoc = Dict(:iter => spbm.iter,

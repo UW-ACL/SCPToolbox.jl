@@ -560,6 +560,35 @@ function _scp__add_dynamics!(
     return nothing
 end
 
+#= Add convex state constraints.
+
+Args:
+    spbm: the subproblem definition. =#
+function _scp__add_convex_state_constraints!(
+    spbm::T)::Nothing where {T<:SCPSubproblem}
+
+    # Variables and parameters
+    N = spbm.def.pars.N
+    traj_pbm = spbm.def.traj
+    x = spbm.x
+
+    if !isnothing(traj_pbm.X)
+        for k = 1:N
+            xk_in_X = traj_pbm.X(@k(x))
+            correct_type = typeof(xk_in_X)<:(
+                Vector{T} where {T<:T_ConvexConeConstraint})
+            if !correct_type
+                msg = string("ERROR: input constraint must be in conic form.")
+                err = SCPError(k, SCP_BAD_ARGUMENT, msg)
+                throw(err)
+            end
+            add_conic_constraints!(spbm.mdl, xk_in_X)
+        end
+    end
+
+    return nothing
+end
+
 #= Add convex input constraints.
 
 Args:
@@ -587,6 +616,89 @@ function _scp__add_convex_input_constraints!(
     end
 
     return nothing
+end
+
+#= Add non-convex state, input, and parameter constraints.
+
+Args:
+    spbm: the subproblem definition. =#
+function _scp__add_nonconvex_constraints!(
+    spbm::T)::Nothing where {T<:SCPSubproblem}
+
+    # Variables and parameters
+    N = spbm.def.pars.N
+    traj_pbm = spbm.def.traj
+    nx = traj_pbm.nx
+    nu = traj_pbm.nu
+    np = traj_pbm.np
+    xb = spbm.ref.xd
+    ub = spbm.ref.ud
+    pb = spbm.ref.p
+    x = spbm.x
+    u = spbm.u
+    p = spbm.p
+
+    # Problem-specific convex constraints
+    for k = 1:N
+        if !isnothing(traj_pbm.s)
+            xup = (@k(xb), @k(ub), pb)
+            s = traj_pbm.s(xup...)
+            ns = length(s)
+            C = !isnothing(traj_pbm.C) ? traj_pbm.C(xup...) : zeros(ns, nx)
+            D = !isnothing(traj_pbm.D) ? traj_pbm.D(xup...) : zeros(ns, nu)
+            G = !isnothing(traj_pbm.G) ? traj_pbm.G(xup...) : zeros(ns, np)
+            r = s-C*@k(xb)-D*@k(ub)-G*pb
+            lhs = C*@k(x)+D*@k(u)+G*p+r
+
+            if k==1
+                spbm.vs = @variable(spbm.mdl, [1:ns, 1:N], base_name="vs")
+            end
+
+            @constraint(spbm.mdl, lhs .<= @k(spbm.vs))
+        else
+            spbm.vs = @variable(spbm.mdl, [1:0, 1:N], base_name="vs")
+            break
+        end
+    end
+
+    return nothing
+end
+
+#= Compute the original problem cost function.
+
+Args:
+    x: the discrete-time state trajectory.
+    u: the discrete-time input trajectory.
+    p: the parameter vector.
+    pbm: the SCP problem definition.
+
+Returns:
+    cost: the original cost. =#
+function _scp__original_cost(
+    x::T_OptiVarMatrix,
+    u::T_OptiVarMatrix,
+    p::T_OptiVarVector,
+    pbm::SCPProblem)::T_Objective
+
+    # Parameters
+    N = pbm.pars.N
+    τ_grid = pbm.common.τ_grid
+    traj_pbm = pbm.traj
+
+    # Terminal cost
+    xf = @last(x)
+    J_term = isnothing(pbm.traj.φ) ? 0.0 : pbm.traj.φ(xf, p)
+
+    # Integrated running cost
+    J_run = Vector{T_Objective}(undef, N)
+    for k = 1:N
+        @k(J_run) = isnothing(pbm.traj.Γ) ? 0.0 : pbm.traj.Γ(@k(x), @k(u), p)
+    end
+    integ_J_run = trapz(J_run, τ_grid)
+
+    cost = J_term+integ_J_run
+
+    return cost
 end
 
 #= Add boundary condition constraints to the problem.

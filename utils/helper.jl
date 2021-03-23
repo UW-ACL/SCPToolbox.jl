@@ -798,6 +798,31 @@ function print(row::Dict{T_Symbol, T}, table::T_Table)::Nothing where {T}
     return nothing
 end
 
+#= Compute the relative cost improvement (as a string to be put into a table).
+
+Args:
+    J_new: next cost.
+    J_old: old cost.
+
+Returns:
+    ΔJ: the relative cost improvement. =#
+function cost_improvement_percent(J_new::T_Real, J_old::T_Real)::T_String
+    if isnan(J_old)
+        ΔJ = ""
+    else
+        ΔJ = (J_old-J_new)/abs(J_old)*100
+        _ΔJ = @sprintf("%.2f", ΔJ)
+        if length(_ΔJ)>8
+            fmt = string("%.", (ΔJ>0) ? 2 : 1, "e")
+            ΔJ = @eval @sprintf($fmt, $ΔJ)
+        else
+            ΔJ = _ΔJ
+        end
+    end
+
+    return ΔJ
+end
+
 #= Reset table printing.
 
 This will make the columnd headings be printed again.

@@ -1,4 +1,4 @@
-#= Starship landing flip maneuver example using SCvx.
+#= Starship landing flip maneuver example using PTR.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
@@ -20,7 +20,7 @@ using ECOS
 
 include("models/starship.jl")
 include("core/problem.jl")
-include("core/scvx.jl")
+include("core/ptr.jl")
 include("utils/helper.jl")
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -31,14 +31,13 @@ mdl = StarshipProblem()
 pbm = TrajectoryProblem(mdl)
 
 # >> Variable dimensions <<
-problem_set_dims!(pbm, 4, 3, 1)
+problem_set_dims!(pbm, 4, 2, 1)
 
 # >> Variable scaling <<
 tdil_min = mdl.traj.tf_min
 tdil_max = mdl.traj.tf_max
-tdil_max_adj = tdil_min+1.0*(tdil_max-tdil_min)
 problem_advise_scale!(pbm, :parameter, mdl.vehicle.id_t,
-                      (tdil_min, tdil_max_adj))
+                      (tdil_min, tdil_max))
 
 # >> Initial trajectory guess <<
 starship_set_initial_guess!(pbm)
@@ -48,24 +47,24 @@ problem_set_running_cost!(pbm, (x, u, p, pbm) -> begin
                           veh = pbm.mdl.vehicle
                           env = pbm.mdl.env
                           traj = pbm.mdl.traj
-                          σ = u[veh.id_σ]
-                          hover = norm(env.g)
-                          γ = traj.γ
-                          return (σ/hover)^2
+                          T = u[veh.id_T]
+                          hover = norm(veh.m*env.g)
+                          T_nrml_sq = hover^2
+                          return T'*T/T_nrml_sq
                           end)
 
 # >> Dynamics constraint <<
 problem_set_dynamics!(pbm,
                       # Dynamics f
                       (x, u, p, pbm) -> begin
-                      g = pbm.mdl.env.g
                       veh = pbm.mdl.vehicle
+                      env = pbm.mdl.env
                       v = x[veh.id_v]
-                      uu = u[veh.id_u]
+                      T = u[veh.id_T]
                       tdil = p[veh.id_t]
                       f = zeros(pbm.nx)
                       f[veh.id_r] = v
-                      f[veh.id_v] = uu+g
+                      f[veh.id_v] = T/veh.m+env.g
                       f *= tdil
                       return f
                       end,
@@ -83,7 +82,7 @@ problem_set_dynamics!(pbm,
                       veh = pbm.mdl.vehicle
                       tdil = p[veh.id_t]
                       B = zeros(pbm.nx, pbm.nu)
-                      B[veh.id_v, veh.id_u] = I(2)
+                      B[veh.id_v, veh.id_T] = I(2)/veh.m
                       B *= tdil
                       return B
                       end,
@@ -100,13 +99,10 @@ problem_set_dynamics!(pbm,
 problem_set_U!(pbm, (u, pbm) -> begin
                veh = pbm.mdl.vehicle
                traj = pbm.mdl.traj
-               uu = u[veh.id_u]
-               σ = u[veh.id_σ]
+               T = u[veh.id_T]
                C = T_ConvexConeConstraint
-               U = [C(veh.u_min-σ, :nonpos),
-                    C(σ-veh.u_max, :nonpos),
-                    C(vcat(σ, uu), :soc),
-                    C(σ*cos(veh.tilt_max)-uu[2], :nonpos)]
+               U = [C(vcat(veh.T_max, T), :soc),
+                    C(vcat(T[2]/cos(veh.tilt_max), T), :soc)]
                return U
                end)
 
@@ -200,15 +196,8 @@ problem_set_bc!(pbm, :tc,
 N = 30
 Nsub = 15
 iter_max = 50
-λ = 30.0
-ρ_0 = 0.0
-ρ_1 = 0.1
-ρ_2 = 0.7
-β_sh = 2.0
-β_gr = 2.0
-η_init = 1.0
-η_lb = 1e-3
-η_ub = 10.0
+wvc = 1e2
+wtr = 0.1
 ε_abs = 1e-5
 ε_rel = 0.01/100
 feas_tol = 1e-3
@@ -216,16 +205,15 @@ q_tr = Inf
 q_exit = Inf
 solver = ECOS
 solver_options = Dict("verbose"=>0)
-pars = SCvxParameters(N, Nsub, iter_max, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
-                      η_init, η_lb, η_ub, ε_abs, ε_rel, feas_tol, q_tr,
-                      q_exit, solver, solver_options)
+pars = PTRParameters(N, Nsub, iter_max, wvc, wtr, ε_abs, ε_rel, feas_tol,
+                     q_tr, q_exit, solver, solver_options)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Solve trajectory generation problem ::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-scvx_pbm = SCvxProblem(pars, pbm)
-sol, history = scvx_solve(scvx_pbm)
+ptr_pbm = PTRProblem(pars, pbm)
+sol, history = ptr_solve(ptr_pbm)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::

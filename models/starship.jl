@@ -31,11 +31,11 @@ include("../core/scp.jl")
 struct StarshipParameters
     id_r::T_IntRange # Position indices of the state vector
     id_v::T_IntRange # Velocity indices of the state vector
-    id_u::T_IntRange # Indices of the thrust input vector
-    id_σ::T_Int      # Index of the slack input
+    id_T::T_IntRange # Indices of the thrust input vector
     id_t::T_Int      # Index of time dilation
-    u_max::T_Real    # [N] Maximum thrust
-    u_min::T_Real    # [N] Minimum thrust
+    T_max::T_Real    # [N] Maximum thrust
+    T_min::T_Real    # [N] Minimum thrust
+    m::T_Real        # [kg] Vehicle mass
     tilt_max::T_Real # [rad] Maximum tilt
 end
 
@@ -52,7 +52,6 @@ struct StarshipTrajectoryParameters
     vf::T_RealVector # Terminal velocity
     tf_min::T_Real   # Minimum flight time
     tf_max::T_Real   # Maximum flight time
-    γ::T_Real        # Minimum-time vs. minimum-energy tradeoff
 end
 
 #= Starship trajectory optimization problem parameters all in one. =#
@@ -73,31 +72,29 @@ Returns:
 function StarshipProblem()::StarshipProblem
 
     # >> Starship <<
-    id_r = 1:3
-    id_v = 4:6
-    id_u = 1:3
-    id_σ = 4
+    id_r = 1:2
+    id_v = 3:4
+    id_T = 1:2
     id_t = 1
-    u_max = 23.2
-    u_min = 0.6
+    T_max = 230.0
+    T_min = 6.0
+    m = 2.0
     tilt_max = deg2rad(60)
-    starship = StarshipParameters(id_r, id_v, id_u, id_σ, id_t,
-                                  u_max, u_min, tilt_max)
+    starship = StarshipParameters(id_r, id_v, id_T, id_t, T_max, T_min,
+                                  m, tilt_max)
 
     # >> Environment <<
-    g = [0; 0; -9.81]
+    g = [0.0; -9.81]
     env = StarshipEnvironmentParameters(g)
 
     # >> Trajectory <<
-    r0 = zeros(3)
-    rf = zeros(3)
-    rf[1:2] = [2.5; 6.0]
-    v0 = zeros(3)
-    vf = zeros(3)
+    r0 = [2.0; 6.0]
+    rf = [0.0; 0.0]
+    v0 = [1.0; 0.0]
+    vf = zeros(2)
     tf_min = 0.0
-    tf_max = 2.5
-    γ = 0.0
-    traj = StarshipTrajectoryParameters(r0, rf, v0, vf, tf_min, tf_max, γ)
+    tf_max = 30.0
+    traj = StarshipTrajectoryParameters(r0, rf, v0, vf, tf_min, tf_max)
 
     mdl = StarshipProblem(starship, env, traj)
 
@@ -136,8 +133,7 @@ function starship_set_initial_guess!(pbm::TrajectoryProblem)::Nothing
 
                        # Input guess
                        hover = zeros(pbm.nu)
-                       hover[veh.id_u] = -g
-                       hover[veh.id_σ] = norm(g)
+                       hover[veh.id_T] = -veh.m*g
                        u = straightline_interpolate(hover, hover, N)
 
                        return x, u, p
@@ -163,7 +159,6 @@ function plot_final_trajectory(mdl::StarshipProblem,
     v_nrm = matplotlib.colors.Normalize(vmin=minimum(speed),
                                         vmax=maximum(speed))
     v_cmap = matplotlib.cm.ScalarMappable(norm=v_nrm, cmap=v_cmap)
-    u_scale = 0.2
 
     fig = create_figure((3, 4))
     ax = fig.add_subplot()
@@ -209,11 +204,13 @@ function plot_final_trajectory(mdl::StarshipProblem,
     end
 
     # ..:: Draw the acceleration vector ::..
-    acc = sol.ud[mdl.vehicle.id_u, :]
+    thr = sol.ud[mdl.vehicle.id_T, :]
     pos = sol.xd[mdl.vehicle.id_r, :]
+    u_hover = norm(mdl.vehicle.m*mdl.env.g)
+    u_scale = 1/u_hover*(maximum(pos[2, :])-minimum(pos[2, :]))*0.1
     for k = 1:N
         base = pos[1:2, k]
-        tip = base+u_scale*acc[1:2, k]
+        tip = base+u_scale*thr[1:2, k]
         x = [base[1], tip[1]]
         y = [base[2], tip[2]]
         ax.plot(x, y,
