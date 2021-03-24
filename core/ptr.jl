@@ -131,7 +131,7 @@ function PTRProblem(pars::PTRParameters,
         # Maximum boundary conditions virtual control element
         (:maxvbc, "vbc", "%.0e", 5),
         # Overall cost (including penalties)
-        (:cost, "J", "%.2e", 8),
+        (:cost, "J", "%.2e", 9),
         # Cost improvement (percent)
         (:ΔJ, "ΔJ %", "%s", 8),
         # Maximum deviation in state

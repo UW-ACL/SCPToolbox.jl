@@ -31,7 +31,7 @@ mdl = StarshipProblem()
 pbm = TrajectoryProblem(mdl)
 
 # >> Variable dimensions <<
-problem_set_dims!(pbm, 7, 2, 1)
+problem_set_dims!(pbm, 8, 2, 1)
 
 # >> Variable scaling <<
 # Parameters
@@ -55,6 +55,9 @@ problem_advise_scale!(pbm, :state, mdl.vehicle.id_θ,
                       (0.0, mdl.traj.θ0))
 problem_advise_scale!(pbm, :state, mdl.vehicle.id_ω,
                       (-deg2rad(10.0), deg2rad(10.0)))
+mw = mdl.vehicle.m_wet
+mf = mw+10*mdl.vehicle.αe*mdl.vehicle.T_max
+problem_advise_scale!(pbm, :state, mdl.vehicle.id_m, (mf, mw))
 problem_advise_scale!(pbm, :state, mdl.vehicle.id_γ,
                       (-mdl.vehicle.δ_max, mdl.vehicle.δ_max))
 
@@ -62,19 +65,12 @@ problem_advise_scale!(pbm, :state, mdl.vehicle.id_γ,
 starship_set_initial_guess!(pbm)
 
 # >> Cost to be minimized <<
-problem_set_running_cost!(pbm, (x, u, p, pbm) -> begin
-                          veh = pbm.mdl.vehicle
-                          env = pbm.mdl.env
-                          traj = pbm.mdl.traj
-                          r = x[veh.id_r]
-                          θ = x[veh.id_θ]
-                          T = u[veh.id_T]
-                          rx = dot(r, env.ex)
-                          hover = norm(veh.m*env.g)
-                          θ_nrml = abs(traj.θ0)
-                          # return (T/hover)^2+5.0*(θ/θ_nrml)^2
-                          return (T/hover)^2# +(rx/50)^2
-                          end)
+problem_set_terminal_cost!(pbm, (x, p, pbm) -> begin
+                           veh = pbm.mdl.vehicle
+                           m = x[veh.id_m]
+                           m_nrml = veh.m_wet
+                           return -m/m_nrml
+                           end)
 
 # >> Dynamics constraint <<
 problem_set_dynamics!(pbm,
@@ -91,10 +87,11 @@ problem_set_dynamics!(pbm,
                       tdil = p[veh.id_t]
                       f = zeros(pbm.nx)
                       f[veh.id_r] = v
-                      f[veh.id_v] = T/veh.m*(cos(θ+δ)*veh.ej-
-                                             sin(θ+δ)*veh.ei)+env.g
+                      f[veh.id_v] = T/veh.m_wet*(cos(θ+δ)*veh.ej-
+                                                 sin(θ+δ)*veh.ei)+env.g
                       f[veh.id_θ] = ω
                       f[veh.id_ω] = -veh.lg/veh.J*T*sin(δ)
+                      f[veh.id_m] = veh.αe*T
                       f[veh.id_γ] = (δ-γ)/veh.δ_delay
                       f *= tdil
                       return f
@@ -108,8 +105,8 @@ problem_set_dynamics!(pbm,
                       tdil = p[veh.id_t]
                       A = zeros(pbm.nx, pbm.nx)
                       A[veh.id_r, veh.id_v] = I(2)
-                      A[veh.id_v, veh.id_θ] = -T/veh.m*(sin(θ+δ)*veh.ej+
-                                                        cos(θ+δ)*veh.ei)
+                      A[veh.id_v, veh.id_θ] = -T/veh.m_wet*(sin(θ+δ)*veh.ej+
+                                                            cos(θ+δ)*veh.ei)
                       A[veh.id_θ, veh.id_ω] = 1.0
                       A[veh.id_γ, veh.id_γ] = -1.0/veh.δ_delay
                       A *= tdil
@@ -124,11 +121,12 @@ problem_set_dynamics!(pbm,
                       tdil = p[veh.id_t]
                       B = zeros(pbm.nx, pbm.nu)
                       B[veh.id_v, veh.id_T] = (cos(θ+δ)*veh.ej-
-                                               sin(θ+δ)*veh.ei)/veh.m
-                      B[veh.id_v, veh.id_δ] = -T/veh.m*(sin(θ+δ)*veh.ej+
-                                                        cos(θ+δ)*veh.ei)
+                                               sin(θ+δ)*veh.ei)/veh.m_wet
+                      B[veh.id_v, veh.id_δ] = -T/veh.m_wet*(sin(θ+δ)*veh.ej+
+                                                            cos(θ+δ)*veh.ei)
                       B[veh.id_ω, veh.id_T] = -veh.lg/veh.J*sin(δ)
                       B[veh.id_ω, veh.id_δ] = -veh.lg/veh.J*T*cos(δ)
+                      B[veh.id_m, veh.id_T] = veh.αe
                       B[veh.id_γ, veh.id_δ] = 1.0/veh.δ_delay
                       B *= tdil
                       return B
@@ -174,8 +172,8 @@ problem_set_s!(pbm,
                γ = x[veh.id_γ]
                δ = u[veh.id_δ]
                s = zeros(4)
-               s[1] = δ-γ-veh.α_max*veh.δ_delay
-               s[2] = -veh.α_max*veh.δ_delay-δ+γ
+               s[1] = δ-γ-veh.β_max*veh.δ_delay
+               s[2] = -veh.β_max*veh.δ_delay-δ+γ
                s[3] = p[veh.id_t]-traj.tf_max
                s[4] = traj.tf_min-p[veh.id_t]
                return s
@@ -211,28 +209,30 @@ problem_set_bc!(pbm, :ic,
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
                 traj = pbm.mdl.traj
-                rhs = zeros(6)
+                rhs = zeros(7)
                 rhs[veh.id_r] = traj.r0
                 rhs[veh.id_v] = traj.v0
                 rhs[veh.id_θ] = traj.θ0
                 rhs[veh.id_ω] = 0.0
-                g = x[1:6]-rhs
+                rhs[veh.id_m] = veh.m_wet
+                g = x[1:7]-rhs
                 return g
                 end,
                 # Jacobian dg/dx
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
-                H = zeros(6, pbm.nx)
+                H = zeros(7, pbm.nx)
                 H[veh.id_r, veh.id_r] = I(2)
                 H[veh.id_v, veh.id_v] = I(2)
                 H[veh.id_θ, veh.id_θ] = 1.0
                 H[veh.id_ω, veh.id_ω] = 1.0
+                H[veh.id_m, veh.id_m] = 1.0
                 return H
                 end,
                 # Jacobian dg/dp
                 (x, p, pbm) -> begin
                 veh = pbm.mdl.vehicle
-                K = zeros(6, pbm.np)
+                K = zeros(7, pbm.np)
                 return K
                 end)
 
