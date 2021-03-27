@@ -46,7 +46,9 @@ struct StarshipParameters
     αe::T_Real       # [s/m] Mass depletion propotionality constant
     m_wet::T_Real    # [kg] Vehicle wet mass
     J::T_Real        # [kg*m^2] Vehicle moment of inertia
-    lg::T_Real       # [m] Distance from CG to engine gimbal
+    CD::T_Real       # [kg/m] Drag coefficient (combined)
+    lg::T_Real       # [m] Distance from CG to engine gimbal (back)
+    lcp::T_Real      # [m] Distance from CG to center of pressure (front)
     ei::T_RealVector # Lateral body axis
     ej::T_RealVector # Longitudinal body axis
 end
@@ -111,17 +113,26 @@ function StarshipProblem()::StarshipProblem
     β_max = δ_max
     δ_delay = 0.1
     # >> Mechanical properties <<
+    R = 4.5 # [m] Stage diameter
     H = 50.0 # [m] Stage height
     m_wet = 120.0e3
-    J = m_wet/12*H^2
-    lg = 0.5*H
+    lmid = 0.5*H
+    lg = 0.3*H
+    J = m_wet/12*H^2+m_wet*(lmid-lg)^2
+    # >> Aerodynamic properties <<
+    lcp = 0.15*H
+    ρ = 1.225 # [kg/m^3] Density of air for US std. atmo. at SL
+    Sref = 2*R*H # [m^2] Reference area (cylinder front-on)
+    cd = 1.0 # [-] Drag coefficient for a cylinder at high Reynolds number
+    CD = 0.1*ρ*Sref*cd
+    CD *= 0.8 # Fudge factor
     # >> Body frame <<
     ei = [1.0; 0.0]
     ej = [0.0; 1.0]
 
     starship = StarshipParameters(id_r, id_v, id_θ, id_ω, id_m, id_γ, id_T,
                                   id_δ, id_t, T_max, T_min, δ_max, β_max,
-                                  δ_delay, αe, m_wet, J, lg, ei, ej)
+                                  δ_delay, αe, m_wet, J, CD, lg, lcp, ei, ej)
 
     # ..:: Environment ::..
     ex = [1.0; 0.0]

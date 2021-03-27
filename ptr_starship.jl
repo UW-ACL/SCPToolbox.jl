@@ -85,12 +85,16 @@ problem_set_dynamics!(pbm,
                       T = u[veh.id_T]
                       δ = u[veh.id_δ]
                       tdil = p[veh.id_t]
+                      ih = cos(θ)*env.ex+sin(θ)*env.ey
+                      D = -veh.CD*norm(v)*v
                       f = zeros(pbm.nx)
                       f[veh.id_r] = v
-                      f[veh.id_v] = T/veh.m_wet*(cos(θ+δ)*veh.ej-
-                                                 sin(θ+δ)*veh.ei)+env.g
+                      f[veh.id_v] = (T/veh.m_wet*(cos(θ+δ)*veh.ej-
+                                                  sin(θ+δ)*veh.ei)+
+                                     D/veh.m_wet+env.g)
                       f[veh.id_θ] = ω
-                      f[veh.id_ω] = -veh.lg/veh.J*T*sin(δ)
+                      f[veh.id_ω] = (-veh.lg/veh.J*T*sin(δ)-
+                                      veh.lcp/veh.J*dot(D, ih))
                       f[veh.id_m] = veh.αe*T
                       f[veh.id_γ] = (δ-γ)/veh.δ_delay
                       f *= tdil
@@ -99,15 +103,25 @@ problem_set_dynamics!(pbm,
                       # Jacobian df/dx
                       (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
+                      env = pbm.mdl.env
+                      v = x[veh.id_v]
                       θ = x[veh.id_θ]
                       T = u[veh.id_T]
                       δ = u[veh.id_δ]
                       tdil = p[veh.id_t]
+                      v2 = norm(v)
+                      ∇v2v = v2*I(2)+v*v'/v2
+                      ih = cos(θ)*env.ex+sin(θ)*env.ey
+                      jh = -sin(θ)*env.ex+cos(θ)*env.ey
                       A = zeros(pbm.nx, pbm.nx)
                       A[veh.id_r, veh.id_v] = I(2)
+                      A[veh.id_v, veh.id_v] = -veh.CD/veh.m_wet*∇v2v
                       A[veh.id_v, veh.id_θ] = -T/veh.m_wet*(sin(θ+δ)*veh.ej+
                                                             cos(θ+δ)*veh.ei)
                       A[veh.id_θ, veh.id_ω] = 1.0
+                      A[veh.id_ω, veh.id_v] = veh.lcp*veh.CD/veh.J*∇v2v*ih
+                      A[veh.id_ω, veh.id_θ] = (veh.lcp*veh.CD/veh.J*
+                                               v2*dot(v, jh))
                       A[veh.id_γ, veh.id_γ] = -1.0/veh.δ_delay
                       A *= tdil
                       return A
@@ -282,7 +296,7 @@ feas_tol = 1e-3
 q_tr = Inf
 q_exit = Inf
 solver = ECOS
-solver_options = Dict("verbose"=>0)
+solver_options = Dict("verbose"=>0, "maxit"=>1000)
 pars = PTRParameters(N, Nsub, iter_max, wvc, wtr, ε_abs, ε_rel, feas_tol,
                      q_tr, q_exit, solver, solver_options)
 
