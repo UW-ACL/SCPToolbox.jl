@@ -146,11 +146,10 @@ problem_set_U!(pbm, (u, pbm) -> begin
 # >> Nonconvex path inequality constraints <<
 problem_set_s!(pbm,
                # Constraint s
-               (x, u, p, pbm) -> begin
+               (x, p, pbm) -> begin
                env = pbm.mdl.env
                veh = pbm.mdl.vehicle
                traj = pbm.mdl.traj
-               # s = zeros(2)
                s = zeros(env.n_obs+2)
                for i = 1:env.n_obs
                # ---
@@ -164,10 +163,9 @@ problem_set_s!(pbm,
                return s
                end,
                # Jacobian ds/dx
-               (x, u, p, pbm) -> begin
+               (x, p, pbm) -> begin
                env = pbm.mdl.env
                veh = pbm.mdl.vehicle
-               # C = zeros(2, pbm.nx)
                C = zeros(env.n_obs+2, pbm.nx)
                for i = 1:env.n_obs
                # ---
@@ -178,18 +176,10 @@ problem_set_s!(pbm,
                end
                return C
                end,
-               # Jacobian ds/du
-               (x, u, p, pbm) -> begin
-               env = pbm.mdl.env
-               # D = zeros(2, pbm.nu)
-               D = zeros(env.n_obs+2, pbm.nu)
-               return D
-               end,
                # Jacobian ds/dp
-               (x, u, p, pbm) -> begin
+               (x, p, pbm) -> begin
                env = pbm.mdl.env
                veh = pbm.mdl.vehicle
-               # G = zeros(2, pbm.np)
                G = zeros(env.n_obs+2, pbm.np)
                G[end-1, veh.id_t] = 1.0
                G[end, veh.id_t] = -1.0

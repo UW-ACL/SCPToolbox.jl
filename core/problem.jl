@@ -456,7 +456,7 @@ function problem_set_U!(pbm::TrajectoryProblem,
     return nothing
 end
 
-#= Define the nonconvex inequality path constraints.
+#= Define the nonconvex inequality path constraints (SCvx version).
 
 Function signature: f(x, u, p, pbm), where:
   - x (T_RealVector): the state vector.
@@ -486,6 +486,35 @@ function problem_set_s!(pbm::TrajectoryProblem,
     pbm.C = !isnothing(C) ? (x, u, p) -> C(x, u, p, pbm) : nothing
     pbm.D = !isnothing(D) ? (x, u, p) -> D(x, u, p, pbm) : nothing
     pbm.G = !isnothing(G) ? (x, u, p) -> G(x, u, p, pbm) : nothing
+    return nothing
+end
+
+#= Define the nonconvex inequality path constraints (GuSTO version).
+
+Function signature: f(x, u, p, pbm), where:
+  - x (T_RealVector): the state vector.
+  - p (T_RealVector): the parameter vector.
+  - pbm (TrajectoryProblem): the trajectory problem structure.
+
+The function s must return a T_RealVector, while C, D, and G must return a
+T_RealMatrix.
+
+Args:
+    pbm: the trajectory problem structure.
+    s: the constraint function.
+    C: Jacobian with respect to the state, ds/dx.
+    G: Jacobian with respect to the parameter, ds/dp. =#
+function problem_set_s!(pbm::TrajectoryProblem,
+                        s::T_Function,
+                        C::T_Function,
+                        G::T_Function)::Nothing
+    if isnothing(s)
+        err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: must at least provide s.")
+        throw(err)
+    end
+    pbm.s = (x, p) -> s(x, p, pbm)
+    pbm.C = !isnothing(C) ? (x, p) -> C(x, p, pbm) : nothing
+    pbm.G = !isnothing(G) ? (x, p) -> G(x, p, pbm) : nothing
     return nothing
 end
 

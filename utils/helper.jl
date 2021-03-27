@@ -976,7 +976,7 @@ function plot_convergence(history, name::T_String)::Nothing
     for i = 1:num_iter
         X[:, i] = vcat(xd[i], ud[i], p[i])
     end
-    DX = T_RealVector([norm(X[:, i]-X[:, end])
+    DX = T_RealVector([norm(X[:, i]-X[:, end])/norm(X[:, end])
                        for i=1:(num_iter-1)])
     no_change = findfirst((dx) -> dx==0, DX)
     if !isnothing(no_change)
@@ -1000,7 +1000,9 @@ function plot_convergence(history, name::T_String)::Nothing
     ax.set_xticks(T_Int.(round.(LinRange(1, num_iter, 10))))
 
     ax.set_xlabel("Iteration number")
-    ax.set_ylabel("Distance from solution, \$\\|X^i-X^*\\|_2\$")
+    ax.set_ylabel(string("Relative distance from solution, ",
+                         "\$\\frac{\\|X^i-X^*\\|_2}{",
+                         "\\|X^*\\|_2}\$"))
 
     ax.plot(iters, DX,
             color=clr,

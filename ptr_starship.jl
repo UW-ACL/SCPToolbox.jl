@@ -273,7 +273,7 @@ problem_set_bc!(pbm, :tc,
 
 N = 30
 Nsub = 15
-iter_max = 50
+iter_max = 10
 wvc = 1e5
 wtr = 1e1
 ε_abs = 1e-5
@@ -300,3 +300,4 @@ sol, history = ptr_solve(ptr_pbm)
 plot_final_trajectory(mdl, sol)
 plot_thrust(mdl, sol)
 plot_gimbal(mdl, sol)
+plot_convergence(history, "starship")

@@ -330,7 +330,7 @@ function GuSTOSubproblemSolution(spbm::GuSTOSubproblem)::T_GuSTOSubSol
 
     # Save the optimal cost values
     sol.J = _gusto__original_cost(x, u, p, spbm, :nonconvex)
-    sol.J_st = _gusto__state_penalty_cost(x, u, p, spbm, :nonconvex)
+    sol.J_st = _gusto__state_penalty_cost(x, p, spbm, :nonconvex)
     sol.J_tr = value.(spbm.L_tr)
     sol.J_vc = value.(spbm.L_vc)
     sol.J_aug = sol.J+sol.J_st+sol.J_tr+sol.J_vc
@@ -596,7 +596,6 @@ Args:
 Returns:
     cost_st: the original cost. =#
 function _gusto__state_penalty_cost(x::T_OptiVarMatrix,
-                                    u::T_OptiVarMatrix,
                                     p::T_OptiVarVector,
                                     spbm::GuSTOSubproblem,
                                     mode::T_Symbol=:convex)::T_Objective
@@ -608,15 +607,12 @@ function _gusto__state_penalty_cost(x::T_OptiVarMatrix,
     N = pars.N
     τ_grid = pbm.common.τ_grid
     nx = traj.nx
-    nu = traj.nu
     np = traj.np
     if mode==:convex
         ref = spbm.ref
         xb = ref.xd
-        ub = ref.ud
         pb = ref.p
         dx = x-xb
-        du = u-ub
         dp = p-pb
     end
 
@@ -644,19 +640,17 @@ function _gusto__state_penalty_cost(x::T_OptiVarMatrix,
         for k = 1:N
             cost_soft_s[k] = 0.0
             if mode==:convex
-                xup = (@k(xb), @k(ub), pb)
-                s = traj.s(xup...)
+                xp = (@k(xb), pb)
+                s = traj.s(xp...)
                 ns = length(s)
-                dsdx = !isnothing(traj.C) ? traj.C(xup...) : zeros(ns, nx)
-                dsdu = !isnothing(traj.D) ? traj.D(xup...) : zeros(ns, nu)
-                dsdp = !isnothing(traj.G) ? traj.G(xup...) : zeros(ns, np)
+                dsdx = !isnothing(traj.C) ? traj.C(xp...) : zeros(ns, nx)
+                dsdp = !isnothing(traj.G) ? traj.G(xp...) : zeros(ns, np)
                 for i = 1:ns
                     cost_soft_s[k] += _gusto__soft_penalty(
-                        spbm, s[i], dsdx[i, :], dsdu[i, :], dsdp[i, :],
-                        @k(dx), @k(du), dp)
+                        spbm, s[i], dsdx[i, :], dsdp[i, :], @k(dx), dp)
                 end
             else
-                s = traj.s(@k(x), @k(u), p)
+                s = traj.s(@k(x), p)
                 ns = length(s)
                 for i = 1:ns
                     cost_soft_s[k] += _gusto__soft_penalty(spbm, s[i])
@@ -675,17 +669,15 @@ Basic idea: the penalty is zero if quantity f<0, else the penalty is positive
 (and grows as f becomes more positive).
 
 If the Jacobian values are passed in, a linearized version of the penalty
-function is computed. If a Jacobians (e.g. d/dx, d/du or d/dp) is zero, then
+function is computed. If a Jacobians (e.g. d/dx, or d/dp) is zero, then
 you can pass `nothing` in its place.
 
 Args:
     spbm: the subproblem structure.
     f: the quantity to be penalized.
     dfdx: (optional) Jacobian of f wrt state.
-    dfdu: (optional) Jacobian of f wrt input.
     dfdp: (optional) Jacobian of f wrt parameter vector.
     dx: (optional) state vector deviation from reference.
-    du: (optional) input vector deviation from reference.
     dp: (optional) parameter vector deviation from reference.
 
 Returns:
@@ -694,10 +686,8 @@ function _gusto__soft_penalty(
     spbm::GuSTOSubproblem,
     f::T_OptiVar,
     dfdx::Union{T_OptiVar, Nothing}=nothing,
-    dfdu::Union{T_OptiVar, Nothing}=nothing,
     dfdp::Union{T_OptiVar, Nothing}=nothing,
     dx::Union{T_OptiVar, Nothing}=nothing,
-    du::Union{T_OptiVar, Nothing}=nothing,
     dp::Union{T_OptiVar, Nothing}=nothing)::T_Objective
 
     # Parameters
@@ -706,21 +696,18 @@ function _gusto__soft_penalty(
     penalty = pars.pen
     hom = pars.hom
     λ = spbm.λ
-    linearized = !isnothing(dfdx) || !isnothing(dfdu) || !isnothing(dfdp)
+    linearized = !isnothing(dfdx) || !isnothing(dfdp)
     mode = (typeof(f)!=T_Real ||
             (linearized && (typeof(dx)!=T_RealVector ||
-                            typeof(du)!=T_RealVector ||
                             typeof(dp)!=T_RealVector))) ? :jump : :numerical
 
     # Get linearized version of the quantity being penalized, if applicable
     if linearized
         dfdx = !isnothing(dfdx) ? dfdx : zeros(traj.nx)
-        dfdu = !isnothing(dfdu) ? dfdu : zeros(traj.nu)
         dfdp = !isnothing(dfdp) ? dfdp : zeros(traj.np)
         dx = !isnothing(dx) ? dx : zeros(traj.nx)
-        du = !isnothing(du) ? du : zeros(traj.nu)
         dp = !isnothing(dp) ? dp : zeros(traj.np)
-        f = f+dfdx'*dx+dfdu'*du+dfdp'*dp
+        f = f+dfdx'*dx+dfdp'*dp
     end
 
     # Compute the function value
