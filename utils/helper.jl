@@ -864,7 +864,7 @@ function reset(table::T_Table)::Nothing
     return nothing
 end
 
-#= Plot a y-value bound keep-out zone of a timeseries.
+#= Plot a constant y-value bound keep-out zone of a timeseries.
 
 Supposedly to show a minimum or a maximum of a quantity on a time history plot.
 
@@ -891,6 +891,41 @@ function plot_timeseries_bound!(ax::PyPlot.PyObject,
 
     ax.plot([x_min, x_max],
             [y_bnd, y_bnd],
+            color="#db6245",
+            linewidth=1.75,
+            linestyle="--",
+            dashes=(2, 3),
+            solid_capstyle="round",
+            dash_capstyle="round")
+
+    return nothing
+end
+
+#= Plot a variable y-value bound keep-out zone of a timeseries.
+
+Supposedly to show a minimum or a maximum of a quantity on a time history plot.
+
+Args:
+    ax: the figure axis object.
+    x_bnd: the x-axis values.
+    y_bnd: the bound values.
+    height: the "thickness" of the keep-out slab on the plot. Above max(y) if
+        positive or below min(y) if negative. =#
+function plot_timeseries_bound!(ax::PyPlot.PyObject,
+                                x_bnd::T_RealVector,
+                                y_bnd::T_RealVector,
+                                height::T_Real)::Nothing
+
+    bnd_top = (height>=0) ? maximum(y_bnd)+height : minimum(y_bnd)+height
+    X = vcat(x_bnd, reverse(x_bnd))
+    Y = vcat(y_bnd, fill(bnd_top, length(y_bnd)))
+
+    fc = parse(RGB, "#db6245")
+    ax.fill(X, Y,
+            facecolor=rgb2pyplot(fc, a=0.5),
+            edgecolor="none")
+
+    ax.plot(x_bnd, y_bnd,
             color="#db6245",
             linewidth=1.75,
             linestyle="--",
