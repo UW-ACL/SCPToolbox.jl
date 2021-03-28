@@ -475,6 +475,7 @@ function _scp__discretize!(
     Nsub = pbm.pars.Nsub
     τ_grid = pbm.common.τ_grid
     sz_E = size(pbm.common.E)
+    iSx = pbm.common.scale.iSx
 
     # Initialization
     idcs = pbm.common.id
@@ -521,7 +522,7 @@ function _scp__discretize!(
         # later for the trust region update
         x_next = @kp1(ref.xd)
         @k(ref.defect) = x_next-xV
-        if norm(@k(ref.defect)) > pbm.pars.feas_tol
+        if norm(iSx*@k(ref.defect), Inf) > pbm.pars.feas_tol
             ref.feas = false
         end
 

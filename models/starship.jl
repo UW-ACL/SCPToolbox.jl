@@ -23,7 +23,6 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 using PyPlot
 using Colors
-using Printf # TODO remove
 
 include("../utils/types.jl")
 include("../core/problem.jl")
@@ -42,8 +41,10 @@ struct StarshipParameters
     id_ω::T_Int      # Tilt rate index of the state vector
     id_m::T_Int      # Mass index of the state vector
     id_γ::T_Int      # Delayed gimbal angle index of the state vector
+    id_ψ::T_Int      # Delayed fin area index of the state vector
     id_T::T_Int      # Thrust index of the input vector
     id_δ::T_Int      # Gimbal angle index of the input vector
+    id_φ::T_Int      # Fin control index of the input vector
     id_t::T_Int      # Index of time dilation
     # ..:: Body axes ::..
     ei::T_RealVector # Lateral body axis
@@ -74,7 +75,8 @@ struct StarshipParameters
     αe::T_Real       # [s/m] Mass depletion propotionality constant
     δ_max::T_Real    # [rad] Maximum gimbal angle
     β_max::T_Real    # [rad/s] Maximum gimbal rate
-    δ_delay::T_Real  # [s] Approximate gimbal angle delay for rate constraint
+    α_max::T_Real    # [m^2/s] Maximum fin area rate
+    rate_delay::T_Real # [s] Delay for approximate rate constraint
 end
 
 #= Starship flight environment. =#
@@ -120,8 +122,10 @@ function StarshipProblem()::StarshipProblem
     id_ω = 6
     id_m = 7
     id_γ = 8
+    id_ψ = 9
     id_T = 1
     id_δ = 2
+    id_φ = 3
     id_t = 1
     # >> Body axes <<
     ei = [1.0; 0.0]
@@ -170,14 +174,16 @@ function StarshipProblem()::StarshipProblem
     T_max = ne*T_max1
     T_min = T_min1
     αe = 1/((1+σ)*Isp*g0)
-    δ_max = deg2rad(10.0)
+    δ_max = deg2rad(8.0)
     β_max = δ_max
-    δ_delay = 0.1
+    α_max = Afin/2
+    rate_delay = 0.1
 
     starship = StarshipParameters(
-        id_r, id_v, id_θ, id_ω, id_m, id_γ, id_T, id_δ, id_t, ei, ej, ls,
-        le, lCH4, lO2, lf, lcp, me, ms, mO2, mCH4, mwet, Js0, Afin, CDfin,
-        CDs0, CDs1, vterm, σ, T_max, T_min, αe, δ_max, β_max, δ_delay)
+        id_r, id_v, id_θ, id_ω, id_m, id_γ, id_ψ, id_T, id_δ, id_φ, id_t, ei,
+        ej, ls, le, lCH4, lO2, lf, lcp, me, ms, mO2, mCH4, mwet, Js0, Afin,
+        CDfin, CDs0, CDs1, vterm, σ, T_max, T_min, αe, δ_max, β_max, α_max,
+        rate_delay)
 
     # ..:: Environment ::..
     ex = [1.0; 0.0]
@@ -240,12 +246,15 @@ function starship_set_initial_guess!(pbm::TrajectoryProblem)::Nothing
                        xf[veh.id_m] = fuel_consum
                        x0[veh.id_γ] = 0.0
                        xf[veh.id_γ] = 0.0
+                       x0[veh.id_ψ] = 0.0
+                       xf[veh.id_ψ] = 0.0
                        x = straightline_interpolate(x0, xf, N)
 
                        # Input guess
                        hover = zeros(pbm.nu)
                        hover[veh.id_T] = T_cst
                        hover[veh.id_δ] = 0.0
+                       hover[veh.id_φ] = 0.0
                        u = straightline_interpolate(hover, hover, N)
 
                        return x, u, p
@@ -522,7 +531,7 @@ function plot_gimbal(mdl::StarshipProblem,
             clip_on=false,
             zorder=100)
 
-    # ..:: Gimbal rate timeseris ::..
+    # ..:: Gimbal rate timeseries ::..
     ax = fig.add_subplot(212)
 
     ax.grid(linewidth=0.3, alpha=0.5)
@@ -566,7 +575,7 @@ function plot_gimbal(mdl::StarshipProblem,
     # >> Constraint (approximate) gimbal rate (discrete-time) <<
     δ = sol.xd[mdl.vehicle.id_γ, :]
     δn = sol.ud[mdl.vehicle.id_δ, :]
-    dt_β = (δn-δ)./mdl.vehicle.δ_delay
+    dt_β = (δn-δ)./mdl.vehicle.rate_delay
     ax.plot(dt_time, dt_β*scale,
             linestyle="none",
             marker="o",
@@ -577,6 +586,143 @@ function plot_gimbal(mdl::StarshipProblem,
             zorder=110)
 
     save_figure("starship_gimbal", algo)
+
+    return nothing
+end
+
+#= Plot the fin control (wind-facing area) trajectory.
+
+Args:
+    mdl: the starship problem parameters.
+    sol: the trajectory solution. =#
+function plot_fin(mdl::StarshipProblem,
+                  sol::SCPSolution)::Nothing
+
+    # Common values
+    algo = sol.algo
+    clr = get_colormap()(1.0)
+    tf = sol.p[mdl.vehicle.id_t]
+    scale = 1.0
+
+    fig = create_figure((5, 5))
+
+    ct_res = 500
+    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
+    ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
+    dt_time = sol.τd*sol.p[mdl.vehicle.id_t]
+
+    # ..:: Area timeseries ::..
+    ax = fig.add_subplot(211)
+
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.autoscale(tight=true)
+
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Front fin area [m\$^2\$]")
+
+    # >> Area bounds <<
+    pad = 2.0
+    bnd_max = 2*mdl.vehicle.Afin*scale
+    bnd_min = 0.0
+    y_top = bnd_max+pad
+    y_bot = bnd_min-pad
+    plot_timeseries_bound!(ax, 0.0, tf, bnd_max, y_top-bnd_max)
+    plot_timeseries_bound!(ax, 0.0, tf, bnd_min, y_bot-bnd_min)
+
+    # >> Delayed area (continuous-time) <<
+    ct_area_delayed = T_RealVector([
+        2*sample(sol.xc, τ)[mdl.vehicle.id_ψ]*scale for τ in ct_τ])
+    ax.plot(ct_time, ct_area_delayed,
+            color="#db6245",
+            linestyle="--",
+            linewidth=1,
+            dash_capstyle="round")
+
+    # >> Delayed area (discrete-time) <<
+    dt_area_delayed = 2*sol.xd[mdl.vehicle.id_ψ, :]*scale
+    ax.plot(dt_time, dt_area_delayed,
+            linestyle="none",
+            marker="o",
+            markersize=3,
+            markeredgewidth=0,
+            markerfacecolor="#db6245",
+            clip_on=false)
+
+    # >> Area (continuous-time) <<
+    ct_area = T_RealVector([
+        2*sample(sol.uc, τ)[mdl.vehicle.id_φ]*scale for τ in ct_τ])
+    ax.plot(ct_time, ct_area,
+            color=clr,
+            linewidth=2)
+
+    # >> Area (discrete-time) <<
+    dt_area = 2*sol.ud[mdl.vehicle.id_φ, :]*scale
+    ax.plot(dt_time, dt_area,
+            linestyle="none",
+            marker="o",
+            markersize=5,
+            markeredgewidth=0,
+            markerfacecolor=clr,
+            clip_on=false,
+            zorder=100)
+
+    # ..:: Area rate timeseries ::..
+    ax = fig.add_subplot(212)
+
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.autoscale(tight=true)
+
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Area change rate [m\$^2\$/s]")
+
+    # >> Area bounds <<
+    pad = 2.0
+    bnd_max = mdl.vehicle.α_max*scale
+    bnd_min = -mdl.vehicle.α_max*scale
+    y_top = bnd_max+pad
+    y_bot = bnd_min-pad
+    plot_timeseries_bound!(ax, 0.0, tf, bnd_max, y_top-bnd_max)
+    plot_timeseries_bound!(ax, 0.0, tf, bnd_min, y_bot-bnd_min)
+
+    # >> Actual area (discrete-time) <<
+    A = sol.ud[mdl.vehicle.id_φ, 1:end-1]
+    An = sol.ud[mdl.vehicle.id_φ, 2:end]
+    dt_α = (An-A)./diff(dt_time)
+    ax.plot(dt_time[2:end], dt_α*scale,
+            linestyle="none",
+            marker="o",
+            markersize=5,
+            markeredgewidth=0,
+            markerfacecolor=clr,
+            clip_on=false,
+            zorder=100)
+
+    # >> Actual area (continuous-time) <<
+    α = T_ContinuousTimeTrajectory(sol.τd[1:end-1], dt_α, :zoh)
+    ct_α = T_RealVector([sample(α, τ)*scale for τ in ct_τ])
+    ax.plot(ct_time, ct_α,
+            color=clr,
+            linewidth=2,
+            zorder=100)
+
+    # >> Constraint (approximate) area (discrete-time) <<
+    A = sol.xd[mdl.vehicle.id_ψ, :]
+    An = sol.ud[mdl.vehicle.id_φ, :]
+    dt_α = (An-A)./mdl.vehicle.rate_delay
+    ax.plot(dt_time, dt_α*scale,
+            linestyle="none",
+            marker="o",
+            markersize=3,
+            markeredgewidth=0,
+            markerfacecolor="#db6245",
+            clip_on=false,
+            zorder=110)
+
+    save_figure("starship_fin", algo)
 
     return nothing
 end
