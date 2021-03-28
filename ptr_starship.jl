@@ -1,5 +1,10 @@
 #= Starship landing flip maneuver example using PTR.
 
+Disclaimer: the data in this example is obtained entirely from publicly
+available information, e.g. on reddit.com/r/spacex, nasaspaceflight.com, and
+spaceflight101.com. No SpaceX engineers were involved in the creation of this
+code.
+
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
                    and Autonomous Systems Laboratory (Stanford University)
@@ -55,9 +60,8 @@ problem_advise_scale!(pbm, :state, mdl.vehicle.id_θ,
                       (0.0, mdl.traj.θ0))
 problem_advise_scale!(pbm, :state, mdl.vehicle.id_ω,
                       (-deg2rad(10.0), deg2rad(10.0)))
-mw = mdl.vehicle.m_wet
-mf = mw+10*mdl.vehicle.αe*mdl.vehicle.T_max
-problem_advise_scale!(pbm, :state, mdl.vehicle.id_m, (mf, mw))
+problem_advise_scale!(pbm, :state, mdl.vehicle.id_m,
+                      (0.0, mdl.vehicle.mCH4))
 problem_advise_scale!(pbm, :state, mdl.vehicle.id_γ,
                       (-mdl.vehicle.δ_max, mdl.vehicle.δ_max))
 
@@ -68,11 +72,54 @@ starship_set_initial_guess!(pbm)
 problem_set_terminal_cost!(pbm, (x, p, pbm) -> begin
                            veh = pbm.mdl.vehicle
                            m = x[veh.id_m]
-                           m_nrml = veh.m_wet
-                           return -m/m_nrml
+                           m_nrml = veh.mCH4
+                           return m/m_nrml
                            end)
 
 # >> Dynamics constraint <<
+
+# Total mass
+mtot = (m, pbm) -> begin
+    veh = pbm.mdl.vehicle
+    return veh.mwet#-(1+veh.σ)*m
+end
+
+# Center of mass position as a function of fuel mass consumed.
+x_cg = (m, pbm) -> begin
+    veh = pbm.mdl.vehicle
+    num = (veh.me*veh.le+veh.ms*veh.ls/2+
+           veh.mO2*veh.lO2+veh.mCH4*veh.lCH4)
+    den = veh.mwet
+    x_cg = num/den
+    return x_cg
+end
+
+# Moment of inertia as a function of fuel mass consumed.
+JJ = (m, lcg, pbm) -> begin
+    veh = pbm.mdl.vehicle
+    Je = veh.me*(veh.le-lcg)^2
+    JCH4 = veh.mCH4*(veh.lCH4-lcg)^2
+    JO2 = veh.mO2*(veh.lO2-lcg)^2
+    Js = veh.Js0+veh.ms*(veh.ls/2-lcg)^2
+    J = Je+JCH4+JO2+Js
+    return J
+end
+
+# Drag term, returns the value and the gradients
+drag = (cd, v, nh, ∇nh, l, ih, jh, diff=false) -> begin
+    D = -cd*v*dot(v, nh)
+    MD = -dot(D, ih)*l
+    if !diff
+        return D, MD
+    end
+    ∇v_D = -cd*(dot(v, nh)*I(2)+v*nh')
+    ∇θ_D = -cd*v*dot(v, ∇nh)
+    ∇v_M = -∇v_D'*ih*l
+    ∇θ_M = -(dot(∇θ_D, ih)+dot(D, jh))*l
+
+    return D, MD, ∇v_D, ∇θ_D, ∇v_M, ∇θ_M
+end
+
 problem_set_dynamics!(pbm,
                       # Dynamics f
                       (x, u, p, pbm) -> begin
@@ -81,22 +128,36 @@ problem_set_dynamics!(pbm,
                       v = x[veh.id_v]
                       θ = x[veh.id_θ]
                       ω = x[veh.id_ω]
+                      m = x[veh.id_m]
                       γ = x[veh.id_γ]
                       T = u[veh.id_T]
                       δ = u[veh.id_δ]
                       tdil = p[veh.id_t]
+
+                      lcg = x_cg(m, pbm)
+                      J = JJ(m, lcg, pbm)
+                      mm = mtot(m, pbm)
+                      arm_e = veh.le-lcg
                       ih = cos(θ)*env.ex+sin(θ)*env.ey
-                      D = -veh.CD*norm(v)*v
+                      jh = -sin(θ)*env.ex+cos(θ)*env.ey
+                      Ds0, MDs0 = drag(veh.CDs0, v, -jh, ih, veh.lcp-lcg,
+                                       ih, jh, false)
+                      Ds1, MDs1 = drag(veh.CDs1, v, -ih, -jh, veh.lcp-lcg,
+                                       ih, jh, false)
+
                       f = zeros(pbm.nx)
                       f[veh.id_r] = v
-                      f[veh.id_v] = (T/veh.m_wet*(cos(θ+δ)*veh.ej-
-                                                  sin(θ+δ)*veh.ei)+
-                                     D/veh.m_wet+env.g)
+                      f[veh.id_v] = (T*(-sin(δ)*ih+cos(δ)*jh)+
+                                     Ds0+
+                                     Ds1+
+                                     mm*env.g)/mm
                       f[veh.id_θ] = ω
-                      f[veh.id_ω] = (-veh.lg/veh.J*T*sin(δ)-
-                                      veh.lcp/veh.J*dot(D, ih))
+                      f[veh.id_ω] = (arm_e*T*sin(δ)+
+                                     MDs0+
+                                     MDs1)/J
                       f[veh.id_m] = veh.αe*T
                       f[veh.id_γ] = (δ-γ)/veh.δ_delay
+
                       f *= tdil
                       return f
                       end,
@@ -106,23 +167,33 @@ problem_set_dynamics!(pbm,
                       env = pbm.mdl.env
                       v = x[veh.id_v]
                       θ = x[veh.id_θ]
+                      m = x[veh.id_m]
                       T = u[veh.id_T]
                       δ = u[veh.id_δ]
                       tdil = p[veh.id_t]
-                      v2 = norm(v)
-                      ∇v2v = v2*I(2)+v*v'/v2
+
+                      lcg = x_cg(m, pbm)
+                      J = JJ(m, lcg, pbm)
+                      mm = mtot(m, pbm)
                       ih = cos(θ)*env.ex+sin(θ)*env.ey
                       jh = -sin(θ)*env.ex+cos(θ)*env.ey
+                      Ds0, MDs0, ∇v_Ds0, ∇θ_Ds0, ∇v_MDs0, ∇θ_MDs0 = drag(
+                          veh.CDs0, v, -jh, ih, veh.lcp-lcg, ih, jh, true)
+                      Ds1, MDs1, ∇v_Ds1, ∇θ_Ds1, ∇v_MDs1, ∇θ_MDs1 = drag(
+                          veh.CDs1, v, -ih, -jh, veh.lcp-lcg, ih, jh, true)
+
                       A = zeros(pbm.nx, pbm.nx)
                       A[veh.id_r, veh.id_v] = I(2)
-                      A[veh.id_v, veh.id_v] = -veh.CD/veh.m_wet*∇v2v
-                      A[veh.id_v, veh.id_θ] = -T/veh.m_wet*(sin(θ+δ)*veh.ej+
-                                                            cos(θ+δ)*veh.ei)
+                      A[veh.id_v, veh.id_v] = (∇v_Ds0+
+                                               ∇v_Ds1)/mm
+                      A[veh.id_v, veh.id_θ] = (-T*(sin(δ)*jh+cos(δ)*ih)+
+                                               ∇θ_Ds0+
+                                               ∇θ_Ds1)/mm
                       A[veh.id_θ, veh.id_ω] = 1.0
-                      A[veh.id_ω, veh.id_v] = veh.lcp*veh.CD/veh.J*∇v2v*ih
-                      A[veh.id_ω, veh.id_θ] = (veh.lcp*veh.CD/veh.J*
-                                               v2*dot(v, jh))
+                      A[veh.id_ω, veh.id_v] = (∇v_MDs0+∇v_MDs1)/J
+                      A[veh.id_ω, veh.id_θ] = (∇θ_MDs0+∇θ_MDs1)/J
                       A[veh.id_γ, veh.id_γ] = -1.0/veh.δ_delay
+
                       A *= tdil
                       return A
                       end,
@@ -130,18 +201,25 @@ problem_set_dynamics!(pbm,
                       (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
                       θ = x[veh.id_θ]
+                      m = x[veh.id_m]
                       T = u[veh.id_T]
                       δ = u[veh.id_δ]
                       tdil = p[veh.id_t]
+
+                      lcg = x_cg(m, pbm)
+                      J = JJ(m, lcg, pbm)
+                      arm_e = veh.le-lcg
+
                       B = zeros(pbm.nx, pbm.nu)
                       B[veh.id_v, veh.id_T] = (cos(θ+δ)*veh.ej-
-                                               sin(θ+δ)*veh.ei)/veh.m_wet
-                      B[veh.id_v, veh.id_δ] = -T/veh.m_wet*(sin(θ+δ)*veh.ej+
-                                                            cos(θ+δ)*veh.ei)
-                      B[veh.id_ω, veh.id_T] = -veh.lg/veh.J*sin(δ)
-                      B[veh.id_ω, veh.id_δ] = -veh.lg/veh.J*T*cos(δ)
+                                               sin(θ+δ)*veh.ei)/veh.mwet
+                      B[veh.id_v, veh.id_δ] = -T/veh.mwet*(sin(θ+δ)*veh.ej+
+                                                           cos(θ+δ)*veh.ei)
+                      B[veh.id_ω, veh.id_T] = arm_e/J*sin(δ)
+                      B[veh.id_ω, veh.id_δ] = arm_e/J*T*cos(δ)
                       B[veh.id_m, veh.id_T] = veh.αe
                       B[veh.id_γ, veh.id_δ] = 1.0/veh.δ_delay
+
                       B *= tdil
                       return B
                       end,
@@ -228,7 +306,7 @@ problem_set_bc!(pbm, :ic,
                 rhs[veh.id_v] = traj.v0
                 rhs[veh.id_θ] = traj.θ0
                 rhs[veh.id_ω] = 0.0
-                rhs[veh.id_m] = veh.m_wet
+                rhs[veh.id_m] = 0.0
                 g = x[1:7]-rhs
                 return g
                 end,

@@ -1,5 +1,10 @@
 #= Starship landing flip maneuver data structures and custom methods.
 
+Disclaimer: the data in this example is obtained entirely from publicly
+available information, e.g. on reddit.com/r/spacex, nasaspaceflight.com, and
+spaceflight101.com. No SpaceX engineers were involved in the creation of this
+code.
+
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
                    and Autonomous Systems Laboratory (Stanford University)
@@ -18,6 +23,7 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 using PyPlot
 using Colors
+using Printf # TODO remove
 
 include("../utils/types.jl")
 include("../core/problem.jl")
@@ -29,6 +35,7 @@ include("../core/scp.jl")
 
 #= Starship vehicle parameters. =#
 struct StarshipParameters
+    # ..:: Indices ::..
     id_r::T_IntRange # Position indices of the state vector
     id_v::T_IntRange # Velocity indices of the state vector
     id_θ::T_Int      # Tilt angle index of the state vector
@@ -38,19 +45,36 @@ struct StarshipParameters
     id_T::T_Int      # Thrust index of the input vector
     id_δ::T_Int      # Gimbal angle index of the input vector
     id_t::T_Int      # Index of time dilation
+    # ..:: Body axes ::..
+    ei::T_RealVector # Lateral body axis
+    ej::T_RealVector # Longitudinal body axis
+    # ..:: Mechanical parameters ::..
+    ls::T_Real       # [m] Total height
+    le::T_Real       # [m] Length base to engine web
+    lCH4::T_Real     # [m] Length base to CH4 header tank
+    lO2::T_Real      # [m] Length base to O2 header tank
+    lf::T_Real       # [m] Length base to fin center of pressure
+    lcp::T_Real      # [m] Length base to fuselage center of pressure
+    me::T_Real       # [kg] Engine web mass
+    ms::T_Real       # [kg] Structure dry mass
+    mO2::T_Real      # [kg] Initial O2 header tank total weight
+    mCH4::T_Real     # [kg] Initial CH4 header tank total weight
+    mwet::T_Real     # [kg] Vehicle wet mass
+    Js0::T_Real      # [kg*m^2] Fuselage moment of inertia about center
+    Afin::T_Real     # [m^2] Maximum wind-facing front fin area
+    # ..:: Aerodynamic parameters ::..
+    CDfin::T_Real    # [kg/m^2] 0.5*ρ*CD for one fin
+    CDs0::T_Real     # [kg/m^2] 0.5*ρ*CD*A for fuselage cylinder end-on
+    CDs1::T_Real     # [kg/m^2] 0.5*ρ*CD*A for fuselage cylinder front-on
+    vterm::T_Real    # [m/s] Terminal velocity (during freefall)
+    # ..:: Propulsion parameters ::..
+    σ::T_Real        # [-] Mass combustion ratio
     T_max::T_Real    # [N] Maximum thrust
     T_min::T_Real    # [N] Minimum thrust
+    αe::T_Real       # [s/m] Mass depletion propotionality constant
     δ_max::T_Real    # [rad] Maximum gimbal angle
     β_max::T_Real    # [rad/s] Maximum gimbal rate
     δ_delay::T_Real  # [s] Approximate gimbal angle delay for rate constraint
-    αe::T_Real       # [s/m] Mass depletion propotionality constant
-    m_wet::T_Real    # [kg] Vehicle wet mass
-    J::T_Real        # [kg*m^2] Vehicle moment of inertia
-    CD::T_Real       # [kg/m] Drag coefficient (combined)
-    lg::T_Real       # [m] Distance from CG to engine gimbal (back)
-    lcp::T_Real      # [m] Distance from CG to center of pressure (front)
-    ei::T_RealVector # Lateral body axis
-    ej::T_RealVector # Longitudinal body axis
 end
 
 #= Starship flight environment. =#
@@ -99,40 +123,61 @@ function StarshipProblem()::StarshipProblem
     id_T = 1
     id_δ = 2
     id_t = 1
-    # >> Rocket engine properties <<
+    # >> Body axes <<
+    ei = [1.0; 0.0]
+    ej = [0.0; 1.0]
+    # >> Mechanical parameters <<
+    rs = 4.5 # [m] Fuselage radius
+    ls = 50.0
+    le = 3.19
+    lCH4 = 16.05
+    lO2 = 48.05
+    lf = 25.21
+    lcp = ls*0.5
+    me = 25e3
+    ms = 65e3
+    mO2s = 600 # [kg] O2 header tank structure weight
+    mCH4s = 600 # [kg] CH4 header tank structure weight
+    VO2 = 18.67 # [m^3] O2 header tank volume
+    VCH4 = 16.21 # [m^3] CH4 header tank volume
+    ρO2 = 1230 # [kg/m^3] Liquid O2 density
+    ρCH4 = 451 # [kg/m^3] Liquid CH4 density
+    mO2 = ρO2*VO2+mO2s
+    mCH4 = ρCH4*VCH4+mCH4s
+    mwet = me+ms+mO2+mCH4
+    Js0 = 1/12*ms*(6*rs^2+ls^2)
+    Afin = 27.0
+    # >> Aerodynamic parameters <<
+    g0 = 9.81 # [m/s^2] Gravitational acceleration
+    ρa = 1.225 # [kg/m^3] Air density
+    Sref0 = pi*rs^2 # [m^2] End-on cylinder fuselage area
+    Sref1 = 2*rs*ls # [m^2] Front-on cylinder fuselage area
+    vterm = 75
+    _CDfin = 1.28
+    _CDs0 = 0.8
+    _CDs1 = 2*mwet*g0/(ρa*Sref1*vterm^2)
+    CDfin = 0.5*ρa*_CDfin
+    CDs0 = 0.5*ρa*_CDs0*Sref0
+    CDs1 = 0.5*ρa*_CDs1*Sref1
+    # >> Propulsion parameters <<
     ne = 3 # Number of engines
     g0 = 9.81 # [m/s^2] Acceleration due to gravity at sea level
     Isp = 330 # [s] Specific impulse
+    σ_vol = 3.8 # [-] Volume cobustion ratio O2:CH4
+    σ = ρO2*σ_vol/ρCH4
     T_min1 = 880e3 # [N] One engine min thrust
     T_max1 = 2210e3 # [N] One engine max thrust
     T_max = ne*T_max1
     T_min = T_min1
-    αe = -1/(Isp*g0)
-    # >> Gimbal bounds <<
+    αe = 1/((1+σ)*Isp*g0)
     δ_max = deg2rad(10.0)
     β_max = δ_max
     δ_delay = 0.1
-    # >> Mechanical properties <<
-    R = 4.5 # [m] Stage diameter
-    H = 50.0 # [m] Stage height
-    m_wet = 120.0e3
-    lmid = 0.5*H
-    lg = 0.3*H
-    J = m_wet/12*H^2+m_wet*(lmid-lg)^2
-    # >> Aerodynamic properties <<
-    lcp = 0.15*H
-    ρ = 1.225 # [kg/m^3] Density of air for US std. atmo. at SL
-    Sref = 2*R*H # [m^2] Reference area (cylinder front-on)
-    cd = 1.0 # [-] Drag coefficient for a cylinder at high Reynolds number
-    CD = 0.1*ρ*Sref*cd
-    CD *= 0.8 # Fudge factor
-    # >> Body frame <<
-    ei = [1.0; 0.0]
-    ej = [0.0; 1.0]
 
-    starship = StarshipParameters(id_r, id_v, id_θ, id_ω, id_m, id_γ, id_T,
-                                  id_δ, id_t, T_max, T_min, δ_max, β_max,
-                                  δ_delay, αe, m_wet, J, CD, lg, lcp, ei, ej)
+    starship = StarshipParameters(
+        id_r, id_v, id_θ, id_ω, id_m, id_γ, id_T, id_δ, id_t, ei, ej, ls,
+        le, lCH4, lO2, lf, lcp, me, ms, mO2, mCH4, mwet, Js0, Afin, CDfin,
+        CDs0, CDs1, vterm, σ, T_max, T_min, αe, δ_max, β_max, δ_delay)
 
     # ..:: Environment ::..
     ex = [1.0; 0.0]
@@ -142,7 +187,7 @@ function StarshipProblem()::StarshipProblem
 
     # ..:: Trajectory ::..
     r0 = 100.0*ex+600.0*ey
-    v0 = -75.0*ey
+    v0 = -vterm*ey
     vf = 0.0*ey
     θ0 = deg2rad(90.0)
     tf_min = 0.0
@@ -179,7 +224,7 @@ function starship_set_initial_guess!(pbm::TrajectoryProblem)::Nothing
                        # State guess
                        v_cst = -traj.r0/p[veh.id_t]
                        ω_cst = -traj.θ0/p[veh.id_t]
-                       T_cst = norm(veh.m_wet*env.g) # [N] Hover thrust
+                       T_cst = norm(veh.mwet*env.g) # [N] Hover thrust
                        fuel_consum = p[veh.id_t]*veh.αe*T_cst
                        x0 = zeros(pbm.nx)
                        xf = zeros(pbm.nx)
@@ -191,8 +236,8 @@ function starship_set_initial_guess!(pbm::TrajectoryProblem)::Nothing
                        xf[veh.id_θ] = 0.0
                        x0[veh.id_ω] = ω_cst
                        xf[veh.id_ω] = ω_cst
-                       x0[veh.id_m] = veh.m_wet
-                       xf[veh.id_m] = veh.m_wet+fuel_consum
+                       x0[veh.id_m] = 0.0
+                       xf[veh.id_m] = fuel_consum
                        x0[veh.id_γ] = 0.0
                        xf[veh.id_γ] = 0.0
                        x = straightline_interpolate(x0, xf, N)
@@ -307,7 +352,7 @@ function plot_final_trajectory(mdl::StarshipProblem,
     K = T_IntVector(1:(N÷num_draw):N)
     for k = 1:N
         altitude = dot(@k(pos), mdl.env.ey)
-        if altitude>100 || k==N || k in K
+        if altitude>=0 || k==N || k in K
             base = pos[1:2, k]
             nose = [-sin(θ[k]); cos(θ[k])]
             tip = base+b_scale*nose
