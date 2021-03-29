@@ -457,7 +457,7 @@ function _gusto__add_cost!(spbm::GuSTOSubproblem)::Nothing
 
     # Compute the cost components
     spbm.L = _gusto__original_cost(x, u, p, spbm)
-    spbm.L_st = _gusto__state_penalty_cost(x, u, p, spbm)
+    spbm.L_st = _gusto__state_penalty_cost(x, p, spbm)
     spbm.L_tr = _gusto__trust_region_cost(x, p, spbm)
     spbm.L_vc = _gusto__virtual_control_cost(vd, spbm)
 

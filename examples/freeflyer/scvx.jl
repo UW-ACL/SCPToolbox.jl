@@ -1,4 +1,4 @@
-#= 6-Degree of Freedom free-flyer example using GuSTO.
+#= 6-Degree of Freedom free-flyer example using SCvx.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
@@ -19,10 +19,10 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 using LinearAlgebra
 using ECOS
 
-include("utils/helper.jl")
-include("core/problem.jl")
-include("core/gusto.jl")
-include("models/freeflyer.jl")
+include("../../utils/helper.jl")
+include("../../core/problem.jl")
+include("../../core/scvx.jl")
+include("../../models/freeflyer.jl")
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
@@ -64,67 +64,38 @@ problem_set_terminal_cost!(pbm, (x, p, pbm) -> begin
                            return γ*(tdil/tdil_max)^2
                            end)
 
-problem_set_running_cost!(pbm,
-                          # Input quadratic penalty S
-                          (p, pbm) -> begin
+problem_set_running_cost!(pbm, (x, u, p, pbm) -> begin
                           traj = pbm.mdl.traj
                           veh = pbm.mdl.vehicle
                           T_max_sq = veh.T_max^2
                           M_max_sq = veh.M_max^2
+                          T = u[veh.id_T]
+                          M = u[veh.id_M]
                           γ = traj.γ
-                          S = zeros(pbm.nu, pbm.nu)
-                          S[veh.id_T, veh.id_T] = (1-γ)*I(3)/T_max_sq
-                          S[veh.id_M, veh.id_M] = (1-γ)*I(3)/M_max_sq
-                          return S
-                          end,
-                          # Jacobian dS/dp
-                          nothing,
-                          # Input-affine penalty ℓ
-                          nothing,
-                          # Jacobian dℓ/dx
-                          nothing,
-                          # Jacobian dℓ/dp
-                          nothing,
-                          # Additive penalty g
-                          nothing,
-                          # Jacobian dg/dx
-                          nothing,
-                          # Jacobian dg/dp
-                          nothing)
+                          return (1-γ)*((T'*T)/T_max_sq+(M'*M)/M_max_sq)
+                          end)
 
 # >> Dynamics constraint <<
-
-# The input-affine dynamics function
-_gusto_freeflyer__f = (x, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    v = x[veh.id_v]
-    q = T_Quaternion(x[veh.id_q])
-    ω = x[veh.id_ω]
-    tdil = p[veh.id_t]
-    f = [zeros(pbm.nx) for i=1:pbm.nu+1]
-    f[1][veh.id_r] = v
-    f[1][veh.id_q] = 0.5*vec(q*ω)
-    iJ = veh.J\I(3)
-    f[1][veh.id_ω] = -iJ*cross(ω, veh.J*ω)
-    for j = 1:3
-        # ---
-        iT = veh.id_T[j]
-        iM = veh.id_M[j]
-        f[iT+1][veh.id_v[j]] = 1/veh.m
-        f[iM+1][veh.id_ω] = iJ[:, j]
-        # ---
-    end
-    f = [_f*tdil for _f in f]
-    return f
-end
-
 problem_set_dynamics!(pbm,
                       # Dynamics f
-                      (x, p, pbm) -> begin
-                      return _gusto_freeflyer__f(x, p, pbm)
+                      (x, u, p, pbm) -> begin
+                      veh = pbm.mdl.vehicle
+                      tdil = p[veh.id_t] # Time dilation
+                      v = x[veh.id_v]
+                      q = T_Quaternion(x[veh.id_q])
+                      ω = x[veh.id_ω]
+                      T = u[veh.id_T]
+                      M = u[veh.id_M]
+                      f = zeros(pbm.nx)
+                      f[veh.id_r] = v
+                      f[veh.id_v] = T/veh.m
+                      f[veh.id_q] = 0.5*vec(q*ω)
+                      f[veh.id_ω] = veh.J\(M-cross(ω, veh.J*ω))
+                      f *= tdil
+                      return f
                       end,
                       # Jacobian df/dx
-                      (x, p, pbm) -> begin
+                      (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
                       tdil = p[veh.id_t]
                       v = x[veh.id_v]
@@ -133,25 +104,30 @@ problem_set_dynamics!(pbm,
                       dfqdq = 0.5*skew(T_Quaternion(ω), :R)
 	              dfqdω = 0.5*skew(q)
 	              dfωdω = -veh.J\(skew(ω)*veh.J-skew(veh.J*ω))
-                      A = [zeros(pbm.nx, pbm.nx) for i=1:pbm.nu+1]
-                      A[1][veh.id_r, veh.id_v] = I(3)
-                      A[1][veh.id_q, veh.id_q] = dfqdq
-                      A[1][veh.id_q, veh.id_ω] = dfqdω[:, 1:3]
-                      A[1][veh.id_ω, veh.id_ω] = dfωdω
-                      A = [_A*tdil for _A in A]
+                      A = zeros(pbm.nx, pbm.nx)
+                      A[veh.id_r, veh.id_v] = I(3)
+                      A[veh.id_q, veh.id_q] = dfqdq
+                      A[veh.id_q, veh.id_ω] = dfqdω[:, 1:3]
+	              A[veh.id_ω, veh.id_ω] = dfωdω
+                      A *= tdil
                       return A
                       end,
-                      # Jacobian df/dp
-                      (x, p, pbm) -> begin
+                      # Jacobian df/du
+                      (x, u, p, pbm) -> begin
                       veh = pbm.mdl.vehicle
                       tdil = p[veh.id_t]
-                      F = [zeros(pbm.nx, pbm.np) for i=1:pbm.nu+1]
-                      _f = _gusto_freeflyer__f(x, p, pbm)
-                      for i = 1:pbm.nu+1
-                      # ---
-                      F[i][:, veh.id_t] = _f[i]/tdil
-                      # ---
-                      end
+                      B = zeros(pbm.nx, pbm.nu)
+                      B[veh.id_v, veh.id_T] = (1.0/veh.m)*I(3)
+                      B[veh.id_ω, veh.id_M] = veh.J\I(3)
+                      B *= tdil
+                      return B
+                      end,
+                      # Jacobian df/dp
+                      (x, u, p, pbm) -> begin
+                      veh = pbm.mdl.vehicle
+                      tdil = p[veh.id_t]
+                      F = zeros(pbm.nx, pbm.np)
+                      F[:, veh.id_t] = pbm.f(x, u, p)/tdil
                       return F
                       end)
 
@@ -177,7 +153,7 @@ problem_set_U!(pbm, (u, pbm) -> begin
 # >> Nonconvex path inequality constraints <<
 problem_set_s!(pbm,
                # Constraint s
-               (x, p, pbm) -> begin
+               (x, u, p, pbm) -> begin
                env = pbm.mdl.env
                veh = pbm.mdl.vehicle
                traj = pbm.mdl.traj
@@ -200,7 +176,7 @@ problem_set_s!(pbm,
                return s
                end,
                # Jacobian ds/dx
-               (x, p, pbm) -> begin
+               (x, u, p, pbm) -> begin
                env = pbm.mdl.env
                veh = pbm.mdl.vehicle
                traj = pbm.mdl.traj
@@ -219,8 +195,14 @@ problem_set_s!(pbm,
                C[end-2, veh.id_r] = ∇d_iss
                return C
                end,
+               # Jacobian ds/du
+               (x, u, p, pbm) -> begin
+               env = pbm.mdl.env
+               D = zeros(env.n_obs+3, pbm.nu)
+               return D
+               end,
                # Jacobian ds/dp
-               (x, p, pbm) -> begin
+               (x, u, p, pbm) -> begin
                veh = pbm.mdl.vehicle
                env = pbm.mdl.env
                G = zeros(env.n_obs+3, pbm.np)
@@ -282,45 +264,38 @@ problem_set_bc!(pbm, :tc,
                 end)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: GuSTO algorithm parameters :::::::::::::::::::::::::::::::::::::::::::::::
+# :: SCvx algorithm parameters ::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 N = 50
 Nsub = 15
 iter_max = 50
-ω = 1e3
-λ_init = 13e3
-λ_max = 1e9
-ρ_0 = 0.1
-ρ_1 = 0.5
+λ = 1e3
+ρ_0 = 0.0
+ρ_1 = 0.1
+ρ_2 = 0.7
 β_sh = 2.0
 β_gr = 2.0
-γ_fail = 5.0
 η_init = 1.0
 η_lb = 1e-3
 η_ub = 10.0
-μ = 0.8
-iter_μ = 15
 ε_abs = 1e-6
 ε_rel = 0.01/100
 feas_tol = 1e-3
-pen = :quad
-hom = 500.0
 q_tr = Inf
 q_exit = Inf
 solver = ECOS
 solver_options = Dict("verbose"=>0)
-pars = GuSTOParameters(N, Nsub, iter_max, ω, λ_init, λ_max, ρ_0, ρ_1, β_sh,
-                       β_gr, γ_fail, η_init, η_lb, η_ub, μ, iter_μ, ε_abs,
-                       ε_rel, feas_tol, pen, hom, q_tr, q_exit, solver,
-                       solver_options)
+pars = SCvxParameters(N, Nsub, iter_max, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
+                      η_init, η_lb, η_ub, ε_abs, ε_rel, feas_tol, q_tr,
+                      q_exit, solver, solver_options)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Solve trajectory generation problem ::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-gusto_pbm = GuSTOProblem(pars, pbm)
-sol, history = gusto_solve(gusto_pbm)
+scvx_pbm = SCvxProblem(pars, pbm)
+sol, history = scvx_solve(scvx_pbm)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::

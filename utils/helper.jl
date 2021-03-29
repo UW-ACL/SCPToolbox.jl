@@ -1122,7 +1122,7 @@ Args:
 function save_figure(filename::T_String, algo::T_String)::Nothing
     algo = lowercase(split(algo, " "; limit=2)[1])
     plt.tight_layout()
-    plt.savefig(@sprintf("figures/%s_%s.pdf", algo, filename),
+    plt.savefig(@sprintf("../../figures/%s_%s.pdf", algo, filename),
                 bbox_inches="tight", facecolor=zeros(4))
     plt.close()
     return nothing
