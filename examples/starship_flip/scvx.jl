@@ -40,15 +40,15 @@ define_problem!(pbm)
 
 N = 30
 Nsub = 25
-iter_max = 50
-λ = 3e2
+iter_max = 100
+λ = 5e2
 ρ_0 = 0.0
 ρ_1 = 0.1
 ρ_2 = 0.7
 β_sh = 2.0
 β_gr = 2.0
 η_init = 1.0
-η_lb = 1e-4
+η_lb = 1e-8
 η_ub = 10.0
 ε_abs = 1e-5
 ε_rel = 0.01/100

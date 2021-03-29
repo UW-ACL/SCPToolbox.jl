@@ -146,7 +146,7 @@ function SCvxProblem(pars::SCvxParameters,
         # Maximum boundary conditions virtual control element
         (:maxvbc, "vbc", "%.0e", 5),
         # Overall cost (including penalties)
-        (:cost, "J", "%.2e", 8),
+        (:cost, "J", "%.2e", 9),
         # Maximum deviation in state
         (:dx, "Δx", "%.0e", 5),
         # Maximum deviation in input
@@ -160,9 +160,9 @@ function SCvxProblem(pars::SCvxParameters,
         # Trust region size
         (:tr, "η", "%.2f", 5),
         # Convexification performance metric
-        (:ρ, "ρ", "%s", 8),
+        (:ρ, "ρ", "%s", 9),
         # Predicted cost improvement (percent)
-        (:pre_improv, "J-L %", "%.2f", 8),
+        (:pre_improv, "J-L %", "%.2f", 9),
         # Update direction for trust region radius (grow? shrink?)
         (:dtr, "Δη", "%s", 3),
         # Reject solution indicator

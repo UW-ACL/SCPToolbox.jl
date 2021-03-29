@@ -32,17 +32,7 @@ pbm = TrajectoryProblem(mdl)
 
 define_problem!(pbm)
 
-# >> Cost to be minimized <<
-problem_set_terminal_cost!(
-    pbm, (x, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    traj = pbm.mdl.traj
-    tdil = p[veh.id_t]
-    tdil_max = traj.tf_max
-    γ = traj.γ
-    return γ*(tdil/tdil_max)^2
-    end)
-
+# >> Running cost to be minimized <<
 problem_set_running_cost!(
     pbm,
     # Input quadratic penalty S

@@ -143,7 +143,7 @@ function GuSTOProblem(pars::GuSTOParameters,
         # Maximum dynamics virtual control element
         (:maxvd, "vd", "%.0e", 5),
         # Overall cost (including penalties)
-        (:cost, "J", "%.2e", 8),
+        (:cost, "J", "%.2e", 9),
         # Maximum deviation in state
         (:dx, "Δx", "%.0e", 5),
         # Maximum deviation in input
@@ -157,9 +157,9 @@ function GuSTOProblem(pars::GuSTOParameters,
         # Soft penalty weight
         (:soft, "λ", "%.0e", 5),
         # Convexification performance metric
-        (:ρ, "ρ", "%s", 8),
+        (:ρ, "ρ", "%s", 9),
         # Cost improvement (percent)
-        (:cost_improv, "ΔJ %", "%s", 8),
+        (:cost_improv, "ΔJ %", "%s", 9),
         # Update direction for trust region radius (grow? shrink?)
         (:dtr, "Δη", "%s", 3),
         # Update direction for soft penalty weight (grow? shrink?)
@@ -1028,7 +1028,7 @@ function _gusto__update_rule(
             # Check with respect to the nonconvex path constraints
             if !isnothing(traj.s)
                 for k = 1:N
-                    s = traj.s(@k(sol.xd), @k(sol.ud), sol.p)
+                    s = traj.s(@k(sol.xd), sol.p)
                     if any(s.>c_buffer)
                         error("Nonconvex path constraint violated")
                     end

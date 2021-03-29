@@ -133,7 +133,7 @@ function PTRProblem(pars::PTRParameters,
         # Overall cost (including penalties)
         (:cost, "J", "%.2e", 9),
         # Cost improvement (percent)
-        (:ΔJ, "ΔJ %", "%s", 8),
+        (:ΔJ, "ΔJ %", "%s", 9),
         # Maximum deviation in state
         (:dx, "Δx", "%.0e", 5),
         # Maximum deviation in input

@@ -134,44 +134,6 @@ end
 # :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Compute the initial discrete-time trajectory guess.
-
-Use straight-line interpolation and a thrust that opposes gravity ("hover").
-
-Args:
-    pbm: the trajectory problem definition. =#
-function quadrotor_set_initial_guess!(pbm::TrajectoryProblem)::Nothing
-
-    problem_set_guess!(pbm, (N, pbm) -> begin
-                       veh = pbm.mdl.vehicle
-                       traj = pbm.mdl.traj
-                       g = pbm.mdl.env.g
-
-                       # Parameter guess
-                       p = zeros(pbm.np)
-                       p[veh.id_t] = 0.5*(traj.tf_min+traj.tf_max)
-
-                       # State guess
-                       x0 = zeros(pbm.nx)
-                       xf = zeros(pbm.nx)
-                       x0[veh.id_r] = traj.r0
-                       xf[veh.id_r] = traj.rf
-                       x0[veh.id_v] = traj.v0
-                       xf[veh.id_v] = traj.vf
-                       x = straightline_interpolate(x0, xf, N)
-
-                       # Input guess
-                       hover = zeros(pbm.nu)
-                       hover[veh.id_u] = -g
-                       hover[veh.id_σ] = norm(g)
-                       u = straightline_interpolate(hover, hover, N)
-
-                       return x, u, p
-                       end)
-
-    return nothing
-end
-
 #= Plot the trajectory evolution through SCP iterations.
 
 Args:
