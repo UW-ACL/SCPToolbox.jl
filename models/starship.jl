@@ -56,10 +56,8 @@ struct StarshipParameters
     # ..:: Aerodynamic parameters ::..
     CD::T_Real         # [kg/m] Overall drag coefficient 0.5*ρ*cd*A
     # ..:: Propulsion parameters ::..
-    T_min1::T_Real     # [N] Minimum thrust of one engine
-    T_min3::T_Real     # [N] Minimum thrust of three engines
-    T_max1::T_Real     # [N] Maximum thrust of one engine
-    T_max3::T_Real     # [N] Maximum thrust of three engines
+    T_min::T_Real      # [N] Minimum thrust
+    T_max::T_Real      # [N] Maximum thrust
     αe::T_Real         # [s/m] Mass depletion propotionality constant
     δ_max::T_Real      # [rad] Maximum gimbal angle
     δdot_max::T_Real   # [rad/s] Maximum gimbal rate
@@ -77,13 +75,12 @@ end
 struct StarshipTrajectoryParameters
     r0::T_RealVector # [m] Initial position
     v0::T_RealVector # [m/s] Initial velocity
-    vf::T_RealVector # [m/s] Terminal velocity
     θ0::T_Real       # [rad] Initial tilt angle
+    vf::T_RealVector # [m/s] Terminal velocity
+    θf::T_Real       # [rad] Terminal tilt angle
     tf_min::T_Real   # Minimum flight time
     tf_max::T_Real   # Maximum flight time
     γ_gs::T_Real     # [rad] Maximum glideslope (measured from vertical)
-    h1::T_Real       # [m] Altitude below which only one engine is allowed
-    kh::T_Real       # [-] Sharpness parameter for thrust upper bound
 end
 
 #= Starship trajectory optimization problem parameters all in one. =#
@@ -133,38 +130,37 @@ function StarshipProblem()::StarshipProblem
     lcp = 0.4*ls
     J = 1/12*m*(6*rs^2+ls^2)
     # >> Aerodynamic parameters <<
-    vterm = 90 # [m/s] Terminal velocity (during freefall)
+    vterm = 75 # [m/s] Terminal velocity (during freefall)
     CD = m*g0/vterm^2
+    CD *= 1.2 # Fudge factor
     # >> Propulsion parameters <<
+    ne = 3 # Number of engines firing
     Isp = 330 # [s] Specific impulse
     T_min1 = 880e3 # [N] One engine min thrust
     T_max1 = 2210e3 # [N] One engine max thrust
-    T_min3 = 3*T_min1
-    T_max3 = 3*T_max1
+    T_min = ne*T_min1
+    T_max = ne*T_max1
     αe = -1/(Isp*g0)
-    δ_max = deg2rad(13.0)
+    δ_max = deg2rad(10.0)
     δdot_max = 2*δ_max
-    rate_delay = 0.1
+    rate_delay = 0.05
 
     starship = StarshipParameters(
         id_r, id_v, id_θ, id_ω, id_m, id_δd, id_T, id_δ, id_δdot, id_t,
-        ei, ej, lcg, lcp, m, J, CD, T_min1, T_min3, T_max1, T_max3, αe,
-        δ_max, δdot_max, rate_delay)
+        ei, ej, lcg, lcp, m, J, CD, T_min, T_max, αe, δ_max, δdot_max,
+        rate_delay)
 
     # ..:: Trajectory ::..
-    r0 = 100.0*ex+600.0*ey
+    r0 = 100.0*ex+550.0*ey
     v0 = -vterm*ey
-    vf = 0.0*ey
+    vf = -5.0*ey
     θ0 = deg2rad(90.0)
+    θf = deg2rad(-10.0)
     tf_min = 0.0
-    tf_max = 60.0
+    tf_max = 30.0
     γ_gs = deg2rad(27.0)
-    h1 = 400.0
-    atol_h = 50.0 # [m] (Absolute) tolerance on height threshold
-    rtol_T = 0.05 # [-] (Relative) tolerance on thrust upper bound
-    kh = log((1-rtol_T)/rtol_T)/atol_h
-    traj = StarshipTrajectoryParameters(r0, v0, vf, θ0, tf_min, tf_max, γ_gs,
-                                        h1, kh)
+    traj = StarshipTrajectoryParameters(r0, v0, θ0, vf, θf, tf_min,
+                                        tf_max, γ_gs)
 
     mdl = StarshipProblem(starship, env, traj)
 
@@ -247,45 +243,87 @@ Args:
 """
 function starship_set_initial_guess!(pbm::TrajectoryProblem)::Nothing
 
+    # Parameters
+    veh = pbm.mdl.vehicle
+    traj = pbm.mdl.traj
+    env = pbm.mdl.env
+
+    # Initial condition
+    X0 = zeros(pbm.nx)
+    X0[veh.id_r] = traj.r0
+    X0[veh.id_v] = traj.v0
+    X0[veh.id_θ] = traj.θ0
+    X0[veh.id_δd] = veh.δ_max
+
+    # Simple guess control strategy
+    # Gimbal bang-bang drive θ0 to θf at min thrust
+    _startship__ac = veh.lcg/veh.J*veh.T_min*sin(veh.δ_max)
+    _startship__ts = sqrt((traj.θ0-traj.θf)/_startship__ac)
+    _startship__control = (t, pbm) -> begin
+        veh = pbm.mdl.vehicle
+        T = veh.T_min
+        ts = _startship__ts
+        if t<=ts
+            δ = veh.δ_max
+        elseif t>ts && t<=2*ts
+            δ = -veh.δ_max
+        else
+            δ = 0.0
+        end
+        u = zeros(pbm.nu)
+        u[veh.id_T] = T
+        u[veh.id_δ] = δ
+        return u
+    end
+
+    # Dynamics with guess control
+    _startship__f_guess = (t, x, pbm) -> begin
+        veh = pbm.mdl.vehicle
+        u = _startship__control(t, pbm)
+        p = zeros(pbm.np)
+        p[veh.id_t] = 1.0
+        dxdt = dynamics(x, u, p, pbm; no_aero_torques=true)
+        return dxdt
+    end
+
     problem_set_guess!(pbm, (N, pbm) -> begin
                        veh = pbm.mdl.vehicle
-                       traj = pbm.mdl.traj
                        env = pbm.mdl.env
+                       traj = pbm.mdl.traj
+
+                       # The guess dynamics
+                       ts = _startship__ts
+                       f = _startship__f_guess
+                       ctrl = _startship__control
+
+                       # Propagate the dynamics under the guess control
+                       t_θcst = 10.0
+                       tf = 2*ts+t_θcst
+                       t = T_RealVector(LinRange(0.0, tf, 5000))
+                       X = rk4((t, x) -> f(t, x, pbm), X0, t; full=true)
+
+                       # Find crossing of terminal vertical velocity
+                       vf = dot(traj.vf, env.ey)
+                       k_0x = findfirst(X[veh.id_v, :]'*env.ey.>=vf)
+                       if isnothing(k_0x)
+                       msg = string("ERROR: no terminal velocity crossing, ",
+                                    "increase time of flight (t_θcst).")
+                       error = ArgumentError(msg)
+                       throw(error)
+                       end
+                       t = @k(t, 1, k_0x)
+                       X = @k(X, 1, k_0x)
+                       tf = t[end]
+
+                       # Convert to discrete-time trajectory
+                       Xc = T_ContinuousTimeTrajectory(t, X, :linear)
+                       td = T_RealVector(LinRange(0.0, t[end], N))
+                       x = hcat([sample(Xc, t) for t in td]...)
+                       u = hcat([ctrl(t, pbm) for t in td]...)
 
                        # Parameter guess
                        p = zeros(pbm.np)
-                       p[veh.id_t] = 0.5*(traj.tf_min+traj.tf_max)
-
-                       # State guess
-                       v_cst = -traj.r0/p[veh.id_t]
-                       ω_cst = -traj.θ0/p[veh.id_t]
-                       T_cst = norm(veh.m*env.g) # [N] Hover thrust
-                       fuel_consum = p[veh.id_t]*veh.αe*T_cst
-                       x0 = zeros(pbm.nx)
-                       xf = zeros(pbm.nx)
-                       x0[veh.id_r] = traj.r0
-                       x0[veh.id_v] = v_cst
-                       xf[veh.id_v] = v_cst
-                       x0[veh.id_θ] = traj.θ0
-                       x0[veh.id_ω] = ω_cst
-                       xf[veh.id_ω] = ω_cst
-                       xf[veh.id_m] = fuel_consum
-                       x = straightline_interpolate(x0, xf, N)
-
-                       # Input guess
-                       hover = zeros(pbm.nu)
-                       hover[veh.id_T] = T_cst
-                       u = straightline_interpolate(hover, hover, N)
-                       # TODO remove:
-                       # for k = 1:N
-                       # # ---
-                       # if dot(@k(view(x, veh.id_r, :)), env.ey)>traj.h1
-                       # @k(view(u, veh.id_T, :)) = veh.T_min1
-                       # else
-                       # @k(view(u, veh.id_T, :)) = veh.T_min1
-                       # end
-                       # # ---
-                       # end
+                       p[veh.id_t] = tf
 
                        return x, u, p
                        end)
@@ -454,12 +492,10 @@ function plot_thrust(mdl::StarshipProblem,
     ax.set_ylabel("Thrust [MN]")
 
     # ..:: Thrust bounds ::..
-    dt_time = sol.τd*sol.p[mdl.vehicle.id_t]
-    σ = [1/(1+exp(-traj.kh*(@k(sol.xd[veh.id_r, :])[2]-traj.h1))) for k=1:N]
-    T_max = [(veh.T_max1+@k(σ)*(veh.T_max3-veh.T_max1))*scale for k=1:N]
-    T_min = [(veh.T_min1+@k(σ)*(veh.T_min3-veh.T_min1))*scale for k=1:N]
-    plot_timeseries_bound!(ax, dt_time, T_max, y_top-maximum(T_max))
-    plot_timeseries_bound!(ax, dt_time, T_min, y_bot-minimum(T_min))
+    bnd_max = veh.T_max*scale
+    bnd_min = veh.T_min*scale
+    plot_timeseries_bound!(ax, 0.0, tf, bnd_max, y_top-bnd_max)
+    plot_timeseries_bound!(ax, 0.0, tf, bnd_min, y_bot-bnd_min)
 
     # ..:: Thrust value (continuous-time) ::..
     ct_res = 500
@@ -472,6 +508,7 @@ function plot_thrust(mdl::StarshipProblem,
             linewidth=2)
 
     # ..:: Thrust value (discrete-time) ::..
+    dt_time = sol.τd*sol.p[mdl.vehicle.id_t]
     dt_thrust = sol.ud[mdl.vehicle.id_T, :]*scale
     ax.plot(dt_time, dt_thrust,
             linestyle="none",
