@@ -83,35 +83,7 @@ problem_set_terminal_cost!(pbm, (x, p, pbm) -> begin
 problem_set_dynamics!(pbm,
                       # Dynamics f
                       (x, u, p, pbm) -> begin
-                      veh = pbm.mdl.vehicle
-                      env = pbm.mdl.env
-                      v = x[veh.id_v]
-                      θ = x[veh.id_θ]
-                      ω = x[veh.id_ω]
-                      m = x[veh.id_m]
-                      δd = x[veh.id_δd]
-                      T = u[veh.id_T]
-                      δ = u[veh.id_δ]
-                      tdil = p[veh.id_t]
-
-                      ℓeng = -veh.lcg
-                      ℓcp = veh.lcp-veh.lcg
-                      ei = veh.ei(θ)
-                      ej = veh.ej(θ)
-                      Tv = T*(-sin(δ)*ei+cos(δ)*ej)
-                      MT = ℓeng*T*sin(δ)
-                      D = -veh.CD*norm(v)*v
-                      MD = -ℓcp*dot(D, ei)
-
-                      f = zeros(pbm.nx)
-                      f[veh.id_r] = v
-                      f[veh.id_v] = (Tv+D)/veh.m+env.g
-                      f[veh.id_θ] = ω
-                      f[veh.id_ω] = (MT+MD)/veh.J
-                      f[veh.id_m] = veh.αe*T
-                      f[veh.id_δd] = (δ-δd)/veh.rate_delay
-
-                      f *= tdil
+                      f = dynamics(x, u, p, pbm)
                       return f
                       end,
                       # Jacobian df/dx
