@@ -35,17 +35,19 @@ include("../core/scp.jl")
 #= Starship vehicle parameters. =#
 struct StarshipParameters
     # ..:: Indices ::..
-    id_r::T_IntRange # Position indices of the state vector
-    id_v::T_IntRange # Velocity indices of the state vector
-    id_θ::T_Int      # Tilt angle index of the state vector
-    id_ω::T_Int      # Tilt rate index of the state vector
-    id_m::T_Int      # Mass index of the state vector
-    id_δd::T_Int     # Delayed gimbal angle index of the state vector
-    id_φd::T_Int     # Delayed fin area index of the state vector
-    id_T::T_Int      # Thrust index of the input vector
-    id_δ::T_Int      # Gimbal angle index of the input vector
-    id_φ::T_Int      # Fin control index of the input vector
-    id_t::T_Int      # Index of time dilation
+    id_r::T_IntRange  # Position indices of the state vector
+    id_v::T_IntRange  # Velocity indices of the state vector
+    id_θ::T_Int       # Tilt angle index of the state vector
+    id_ω::T_Int       # Tilt rate index of the state vector
+    id_m::T_Int       # Mass index of the state vector
+    id_δd::T_Int      # Delayed gimbal angle index of the state vector
+    id_φd::T_Int      # Delayed fin area index of the state vector
+    id_T::T_Int       # Thrust index of the input vector
+    id_δ::T_Int       # Gimbal angle index of the input vector
+    id_δdot::T_Int    # Gimbal rate index of the input vector
+    id_φ::T_Int       # Fin control index of the input vector
+    id_φdot::T_Int    # Fin angle rate index of the input vector
+    id_t::T_Int       # Index of time dilation
     # ..:: Body axes ::..
     ei::T_Function   # Lateral body axis in body or world frame
     ej::T_Function   # Longitudinal body axis in body or world frame
@@ -62,21 +64,22 @@ struct StarshipParameters
     mCH4::T_Real     # [kg] Initial CH4 header tank total weight
     mwet::T_Real     # [kg] Vehicle wet mass
     Js0::T_Real      # [kg*m^2] Fuselage moment of inertia about center
-    Afin::T_Real     # [m^2] Maximum wind-facing front fin area
+    φ_max::T_Real    # [rad] Maximum front fin retraction angle
     # ..:: Aerodynamic parameters ::..
-    CDfin::T_Real    # [kg/m^2] 0.5*ρ*CD for one fin
+    CDfin::T_Real    # [kg/m^2] 0.5*ρ*CD*A for one fin
     CDs0::T_Real     # [kg/m^2] 0.5*ρ*CD*A for fuselage cylinder end-on
     CDs1::T_Real     # [kg/m^2] 0.5*ρ*CD*A for fuselage cylinder front-on
     vterm::T_Real    # [m/s] Terminal velocity (during freefall)
     # ..:: Propulsion parameters ::..
-    σ::T_Real        # [-] Mass combustion ratio
-    T_max1::T_Real   # [N] Maximum thrust of one engine
-    T_max3::T_Real   # [N] Maximum thrust of three engines
-    T_min::T_Real    # [N] Minimum thrust
-    αe::T_Real       # [s/m] Mass depletion propotionality constant
-    δ_max::T_Real    # [rad] Maximum gimbal angle
-    β_max::T_Real    # [rad/s] Maximum gimbal rate
-    α_max::T_Real    # [m^2/s] Maximum fin area rate
+    σ::T_Real          # [-] Mass combustion ratio
+    T_min1::T_Real     # [N] Minimum thrust of one engine
+    T_min3::T_Real     # [N] Minimum thrust of three engines
+    T_max1::T_Real     # [N] Maximum thrust of one engine
+    T_max3::T_Real     # [N] Maximum thrust of three engines
+    αe::T_Real         # [s/m] Mass depletion propotionality constant
+    δ_max::T_Real      # [rad] Maximum gimbal angle
+    δdot_max::T_Real   # [rad/s] Maximum gimbal rate
+    φdot_max::T_Real   # [rad/s] Maximum fin area rate
     rate_delay::T_Real # [s] Delay for approximate rate constraint
 end
 
@@ -135,7 +138,9 @@ function StarshipProblem()::StarshipProblem
     id_φd = 9
     id_T = 1
     id_δ = 2
-    id_φ = 3
+    id_δdot = 3
+    id_φ = 4
+    id_φdot = 5
     id_t = 1
     # >> Body axes <<
     ei = (θ) -> cos(θ)*[1.0; 0.0]+sin(θ)*[0.0; 1.0]
@@ -148,8 +153,8 @@ function StarshipProblem()::StarshipProblem
     lO2 = 48.05
     lf = 25.21
     lcp = ls*0.5
-    me = 25e3
-    ms = 65e3
+    me = 30e3
+    ms = 60e3
     mO2s = 600 # [kg] O2 header tank structure weight
     mCH4s = 600 # [kg] CH4 header tank structure weight
     VO2 = 18.67 # [m^3] O2 header tank volume
@@ -160,18 +165,24 @@ function StarshipProblem()::StarshipProblem
     mCH4 = ρCH4*VCH4+mCH4s
     mwet = me+ms+mO2+mCH4
     Js0 = 1/12*ms*(6*rs^2+ls^2)
+    # Js0 *= 0.8 # Fudge factor
     Afin = 27.0
-    # >> Aerodynamic parameters <<
-    ρa = 1.225 # [kg/m^3] Air density
+    φ_max = pi/2
     Sref0 = pi*rs^2 # [m^2] End-on cylinder fuselage area
     Sref1 = 2*rs*ls # [m^2] Front-on cylinder fuselage area
+    # >> Aerodynamic parameters <<
+    ρa = 1.225 # [kg/m^3] Air density
     vterm = 75
     _CDfin = 1.28
     _CDs0 = 0.8
-    _CDs1 = 2*mwet*g0/(ρa*Sref1*vterm^2)
-    CDfin = 0.5*ρa*_CDfin
+    _CDs1 = 1.0#2*mwet*g0/(ρa*Sref1*vterm^2)
+    CDfin = 0.5*ρa*_CDfin*Afin
     CDs0 = 0.5*ρa*_CDs0*Sref0
     CDs1 = 0.5*ρa*_CDs1*Sref1
+    # Fudge factors
+    CDs1 *= 0.6
+    CDs0 *= 0.6
+    CDfin *= 0.6
     # >> Propulsion parameters <<
     g0 = 9.81 # [m/s^2] Acceleration due to gravity at sea level
     Isp = 330 # [s] Specific impulse
@@ -179,19 +190,19 @@ function StarshipProblem()::StarshipProblem
     σ = ρO2*σ_vol/ρCH4
     T_min1 = 880e3 # [N] One engine min thrust
     T_max1 = 2210e3 # [N] One engine max thrust
+    T_min3 = 3*T_min1
     T_max3 = 3*T_max1
-    T_min = T_min1
     αe = 1/((1+σ)*Isp*g0)
     δ_max = deg2rad(8.0)
-    β_max = 3*δ_max
-    α_max = Afin*2
+    δdot_max = 2*δ_max
+    φdot_max = φ_max/2
     rate_delay = 0.1
 
     starship = StarshipParameters(
-        id_r, id_v, id_θ, id_ω, id_m, id_δd, id_φd, id_T, id_δ, id_φ, id_t,
-        ei, ej, ls, le, lCH4, lO2, lf, lcp, me, ms, mO2, mCH4, mwet, Js0,
-        Afin, CDfin, CDs0, CDs1, vterm, σ, T_max1, T_max3, T_min, αe, δ_max,
-        β_max, α_max, rate_delay)
+        id_r, id_v, id_θ, id_ω, id_m, id_δd, id_φd, id_T, id_δ, id_δdot,
+        id_φ, id_φdot, id_t, ei, ej, ls, le, lCH4, lO2, lf, lcp, me, ms,
+        mO2, mCH4, mwet, Js0, φ_max, CDfin, CDs0, CDs1, vterm, σ, T_min1,
+        T_min3, T_max1, T_max3, αe, δ_max, δdot_max, φdot_max, rate_delay)
 
     # ..:: Trajectory ::..
     r0 = 100.0*ex+600.0*ey
@@ -242,27 +253,27 @@ function starship_set_initial_guess!(pbm::TrajectoryProblem)::Nothing
                        x0 = zeros(pbm.nx)
                        xf = zeros(pbm.nx)
                        x0[veh.id_r] = traj.r0
-                       xf[veh.id_r] = zeros(2)
                        x0[veh.id_v] = v_cst
                        xf[veh.id_v] = v_cst
                        x0[veh.id_θ] = traj.θ0
-                       xf[veh.id_θ] = 0.0
                        x0[veh.id_ω] = ω_cst
                        xf[veh.id_ω] = ω_cst
-                       x0[veh.id_m] = 0.0
                        xf[veh.id_m] = fuel_consum
-                       x0[veh.id_δd] = 0.0
-                       xf[veh.id_δd] = 0.0
-                       x0[veh.id_φd] = 0.0
-                       xf[veh.id_φd] = 0.0
                        x = straightline_interpolate(x0, xf, N)
 
                        # Input guess
                        hover = zeros(pbm.nu)
                        hover[veh.id_T] = T_cst
-                       hover[veh.id_δ] = 0.0
-                       hover[veh.id_φ] = 0.0
                        u = straightline_interpolate(hover, hover, N)
+                       for k = 1:N
+                       # ---
+                       if dot(@k(view(x, veh.id_r, :)), env.ey)>traj.h1
+                       @k(view(u, veh.id_T, :)) = veh.T_min3
+                       else
+                       @k(view(u, veh.id_T, :)) = veh.T_min1
+                       end
+                       # ---
+                       end
 
                        return x, u, p
                        end)
@@ -434,9 +445,9 @@ function plot_thrust(mdl::StarshipProblem,
     dt_time = sol.τd*sol.p[mdl.vehicle.id_t]
     σ = [1/(1+exp(-traj.kh*(@k(sol.xd[veh.id_r, :])[2]-traj.h1))) for k=1:N]
     T_max = [(veh.T_max1+@k(σ)*(veh.T_max3-veh.T_max1))*scale for k=1:N]
-    bnd_min = mdl.vehicle.T_min*scale
+    T_min = [(veh.T_min1+@k(σ)*(veh.T_min1-veh.T_min1))*scale for k=1:N]
     plot_timeseries_bound!(ax, dt_time, T_max, y_top-maximum(T_max))
-    plot_timeseries_bound!(ax, 0.0, tf, bnd_min, y_bot-bnd_min)
+    plot_timeseries_bound!(ax, dt_time, T_min, y_bot-minimum(T_min))
 
     # ..:: Thrust value (continuous-time) ::..
     ct_res = 500
@@ -551,12 +562,12 @@ function plot_gimbal(mdl::StarshipProblem,
     ax.autoscale(tight=true)
 
     ax.set_xlabel("Time [s]")
-    ax.set_ylabel("Gimbal rate [\$^\\circ/s\$]")
+    ax.set_ylabel("Gimbal rate [\$^\\circ\$/s]")
 
     # >> Gimbal rate bounds <<
     pad = 2.0
-    bnd_max = mdl.vehicle.β_max*scale
-    bnd_min = -mdl.vehicle.β_max*scale
+    bnd_max = mdl.vehicle.δdot_max*scale
+    bnd_min = -mdl.vehicle.δdot_max*scale
     y_top = bnd_max+pad
     y_bot = bnd_min-pad
     plot_timeseries_bound!(ax, 0.0, tf, bnd_max, y_top-bnd_max)
@@ -613,7 +624,7 @@ function plot_fin(mdl::StarshipProblem,
     algo = sol.algo
     clr = get_colormap()(1.0)
     tf = sol.p[mdl.vehicle.id_t]
-    scale = 1.0
+    scale = 180/pi
 
     fig = create_figure((5, 5))
 
@@ -622,7 +633,7 @@ function plot_fin(mdl::StarshipProblem,
     ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
     dt_time = sol.τd*sol.p[mdl.vehicle.id_t]
 
-    # ..:: Area timeseries ::..
+    # ..:: Fin angle timeseries ::..
     ax = fig.add_subplot(211)
 
     ax.grid(linewidth=0.3, alpha=0.5)
@@ -631,29 +642,29 @@ function plot_fin(mdl::StarshipProblem,
     ax.autoscale(tight=true)
 
     ax.set_xlabel("Time [s]")
-    ax.set_ylabel("Front fin area [m\$^2\$]")
+    ax.set_ylabel("Fin angle [\$^\\circ\$]")
 
-    # >> Area bounds <<
+    # >> Fin angle bounds <<
     pad = 2.0
-    bnd_max = 2*mdl.vehicle.Afin*scale
+    bnd_max = pi/2*scale
     bnd_min = 0.0
     y_top = bnd_max+pad
     y_bot = bnd_min-pad
     plot_timeseries_bound!(ax, 0.0, tf, bnd_max, y_top-bnd_max)
     plot_timeseries_bound!(ax, 0.0, tf, bnd_min, y_bot-bnd_min)
 
-    # >> Delayed area (continuous-time) <<
-    ct_area_delayed = T_RealVector([
-        2*sample(sol.xc, τ)[mdl.vehicle.id_φd]*scale for τ in ct_τ])
-    ax.plot(ct_time, ct_area_delayed,
+    # >> Delayed fin angle (continuous-time) <<
+    ct_φ_delayed = T_RealVector([
+        sample(sol.xc, τ)[mdl.vehicle.id_φd]*scale for τ in ct_τ])
+    ax.plot(ct_time, ct_φ_delayed,
             color="#db6245",
             linestyle="--",
             linewidth=1,
             dash_capstyle="round")
 
-    # >> Delayed area (discrete-time) <<
-    dt_area_delayed = 2*sol.xd[mdl.vehicle.id_φd, :]*scale
-    ax.plot(dt_time, dt_area_delayed,
+    # >> Delayed fin angle (discrete-time) <<
+    dt_φ_delayed = sol.xd[mdl.vehicle.id_φd, :]*scale
+    ax.plot(dt_time, dt_φ_delayed,
             linestyle="none",
             marker="o",
             markersize=3,
@@ -661,16 +672,16 @@ function plot_fin(mdl::StarshipProblem,
             markerfacecolor="#db6245",
             clip_on=false)
 
-    # >> Area (continuous-time) <<
-    ct_area = T_RealVector([
-        2*sample(sol.uc, τ)[mdl.vehicle.id_φ]*scale for τ in ct_τ])
-    ax.plot(ct_time, ct_area,
+    # >> Fin angle (continuous-time) <<
+    ct_φ = T_RealVector([
+        sample(sol.uc, τ)[mdl.vehicle.id_φ]*scale for τ in ct_τ])
+    ax.plot(ct_time, ct_φ,
             color=clr,
             linewidth=2)
 
-    # >> Area (discrete-time) <<
-    dt_area = 2*sol.ud[mdl.vehicle.id_φ, :]*scale
-    ax.plot(dt_time, dt_area,
+    # >> Fin angle (discrete-time) <<
+    dt_φ = sol.ud[mdl.vehicle.id_φ, :]*scale
+    ax.plot(dt_time, dt_φ,
             linestyle="none",
             marker="o",
             markersize=5,
@@ -679,7 +690,7 @@ function plot_fin(mdl::StarshipProblem,
             clip_on=false,
             zorder=100)
 
-    # ..:: Area rate timeseries ::..
+    # ..:: Fin angle rate timeseries ::..
     ax = fig.add_subplot(212)
 
     ax.grid(linewidth=0.3, alpha=0.5)
@@ -688,22 +699,22 @@ function plot_fin(mdl::StarshipProblem,
     ax.autoscale(tight=true)
 
     ax.set_xlabel("Time [s]")
-    ax.set_ylabel("Area change rate [m\$^2\$/s]")
+    ax.set_ylabel("Fin angle rate [\$^\\circ\$/s]")
 
-    # >> Area bounds <<
+    # >> Fin angle bounds <<
     pad = 2.0
-    bnd_max = mdl.vehicle.α_max*scale
-    bnd_min = -mdl.vehicle.α_max*scale
+    bnd_max = mdl.vehicle.φdot_max*scale
+    bnd_min = -mdl.vehicle.φdot_max*scale
     y_top = bnd_max+pad
     y_bot = bnd_min-pad
     plot_timeseries_bound!(ax, 0.0, tf, bnd_max, y_top-bnd_max)
     plot_timeseries_bound!(ax, 0.0, tf, bnd_min, y_bot-bnd_min)
 
-    # >> Actual area (discrete-time) <<
-    A = sol.ud[mdl.vehicle.id_φ, 1:end-1]
-    An = sol.ud[mdl.vehicle.id_φ, 2:end]
-    dt_α = (An-A)./diff(dt_time)
-    ax.plot(dt_time[2:end], dt_α*scale,
+    # >> Actual fin angle (discrete-time) <<
+    φ = sol.ud[mdl.vehicle.id_φ, 1:end-1]
+    φn = sol.ud[mdl.vehicle.id_φ, 2:end]
+    dt_φdot = (φn-φ)./diff(dt_time)
+    ax.plot(dt_time[2:end], dt_φdot*scale,
             linestyle="none",
             marker="o",
             markersize=5,
@@ -712,19 +723,19 @@ function plot_fin(mdl::StarshipProblem,
             clip_on=false,
             zorder=100)
 
-    # >> Actual area (continuous-time) <<
-    α = T_ContinuousTimeTrajectory(sol.τd[1:end-1], dt_α, :zoh)
-    ct_α = T_RealVector([sample(α, τ)*scale for τ in ct_τ])
-    ax.plot(ct_time, ct_α,
+    # >> Actual fin angle (continuous-time) <<
+    φdot = T_ContinuousTimeTrajectory(sol.τd[1:end-1], dt_φdot, :zoh)
+    ct_φdot = T_RealVector([sample(φdot, τ)*scale for τ in ct_τ])
+    ax.plot(ct_time, ct_φdot,
             color=clr,
             linewidth=2,
             zorder=100)
 
     # >> Constraint (approximate) area (discrete-time) <<
-    A = sol.xd[mdl.vehicle.id_φd, :]
-    An = sol.ud[mdl.vehicle.id_φ, :]
-    dt_α = (An-A)./mdl.vehicle.rate_delay
-    ax.plot(dt_time, dt_α*scale,
+    φ = sol.xd[mdl.vehicle.id_φd, :]
+    φn = sol.ud[mdl.vehicle.id_φ, :]
+    dt_φdot = (φn-φ)./mdl.vehicle.rate_delay
+    ax.plot(dt_time, dt_φdot*scale,
             linestyle="none",
             marker="o",
             markersize=3,
