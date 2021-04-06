@@ -622,7 +622,7 @@ function _gusto__state_penalty_cost(x::T_OptiVarMatrix,
     if !isnothing(traj.X)
         cost_soft_X = Vector{T_Objective}(undef, N)
         for k = 1:N
-            xk_in_X = traj.X(@k(x))
+            xk_in_X = traj.X(@k(τ_grid), @k(x))
             cost_soft_X[k] = 0.0
             for cone in xk_in_X
                 ρ = get_conic_constraint_indicator!(spbm.mdl, cone)

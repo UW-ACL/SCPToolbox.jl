@@ -41,6 +41,7 @@ struct StarshipParameters
     id_ω::T_Int        # Tilt rate index of the state vector
     id_m::T_Int        # Mass index of the state vector
     id_δd::T_Int       # Delayed gimbal angle index of the state vector
+    id_τ::T_Int        # Normalized time index of the state vector
     id_T::T_Int        # Thrust index of the input vector
     id_δ::T_Int        # Gimbal angle index of the input vector
     id_δdot::T_Int     # Gimbal rate index of the input vector
@@ -115,6 +116,7 @@ function StarshipProblem()::StarshipProblem
     id_ω = 6
     id_m = 7
     id_δd = 8
+    id_τ = 9
     id_T = 1
     id_δ = 2
     id_δdot = 3
@@ -146,9 +148,9 @@ function StarshipProblem()::StarshipProblem
     rate_delay = 0.05
 
     starship = StarshipParameters(
-        id_r, id_v, id_θ, id_ω, id_m, id_δd, id_T, id_δ, id_δdot, id_t,
-        ei, ej, lcg, lcp, m, J, CD, T_min, T_max, αe, δ_max, δdot_max,
-        rate_delay)
+        id_r, id_v, id_θ, id_ω, id_m, id_δd, id_τ, id_T, id_δ, id_δdot,
+        id_t, ei, ej, lcg, lcp, m, J, CD, T_min, T_max, αe, δ_max,
+        δdot_max, rate_delay)
 
     # ..:: Trajectory ::..
     r0 = 100.0*ex+550.0*ey
@@ -227,9 +229,11 @@ function dynamics(x::T_RealVector,
     f[veh.id_ω] = (MT+MD)/veh.J
     f[veh.id_m] = veh.αe*T
     f[veh.id_δd] = (δ-δd)/veh.rate_delay
+    f[veh.id_τ] = 1.0
 
     # Scale for time
     f *= tdil
+    f[veh.id_τ] /= tdil
 
     return f
 end

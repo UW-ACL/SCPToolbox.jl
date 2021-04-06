@@ -45,7 +45,7 @@ end
 
 function _common__set_dims!(pbm::TrajectoryProblem)::Nothing
 
-    problem_set_dims!(pbm, 8, 3, 1)
+    problem_set_dims!(pbm, 9, 3, 1)
 
     return nothing
 end
@@ -80,6 +80,8 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
                           (mdl.vehicle.m-1e3, mdl.vehicle.m))
     problem_advise_scale!(pbm, :state, mdl.vehicle.id_δd,
                           (-mdl.vehicle.δ_max, mdl.vehicle.δ_max))
+    problem_advise_scale!(pbm, :state, mdl.vehicle.id_τ,
+                          (0.0, 1.0))
 
     return nothing
 end
@@ -155,8 +157,9 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
                        throw(error)
                        end
                        t = @k(t, 1, k_0x)
-                       X = @k(X, 1, k_0x)
                        tf = t[end]
+                       X = @k(X, 1, k_0x)
+                       X[veh.id_τ, :] /= tf
 
                        # Convert to discrete-time trajectory
                        Xc = T_ContinuousTimeTrajectory(t, X, :linear)
@@ -266,6 +269,7 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
         tdil = p[veh.id_t]
         F = zeros(pbm.nx, pbm.np)
         F[:, veh.id_t] = pbm.f(x, u, p)/tdil
+        F[veh.id_τ, veh.id_t] = 0.0
         return F
         end)
 
@@ -276,7 +280,7 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the state
     problem_set_X!(
-        pbm, (x, pbm) -> begin
+        pbm, (t, x, pbm) -> begin
         traj = pbm.mdl.traj
         env = pbm.mdl.env
         veh = pbm.mdl.vehicle
@@ -290,7 +294,7 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the input
     problem_set_U!(
-        pbm, (u, pbm) -> begin
+        pbm, (t, u, pbm) -> begin
         veh = pbm.mdl.vehicle
         T = u[veh.id_T]
         δ = u[veh.id_δ]
@@ -371,34 +375,37 @@ function _common__set_bcs!(pbm::TrajectoryProblem)::Nothing
         (x, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         traj = pbm.mdl.traj
-        rhs = zeros(7)
+        rhs = zeros(8)
         rhs[1:2] = traj.r0
         rhs[3:4] = traj.v0
         rhs[5] = traj.θ0
         rhs[6] = 0.0
         rhs[7] = 0.0
+        rhs[8] = 0.0
         g = x[vcat(veh.id_r,
                    veh.id_v,
                    veh.id_θ,
                    veh.id_ω,
-                   veh.id_m)]-rhs
+                   veh.id_m,
+                   veh.id_τ)]-rhs
         return g
         end,
         # Jacobian dg/dx
         (x, p, pbm) -> begin
         veh = pbm.mdl.vehicle
-        H = zeros(7, pbm.nx)
+        H = zeros(8, pbm.nx)
         H[1:2, veh.id_r] = I(2)
         H[3:4, veh.id_v] = I(2)
         H[5, veh.id_θ] = 1.0
         H[6, veh.id_ω] = 1.0
         H[7, veh.id_m] = 1.0
+        H[8, veh.id_τ] = 1.0
         return H
         end,
         # Jacobian dg/dp
         (x, p, pbm) -> begin
         veh = pbm.mdl.vehicle
-        K = zeros(7, pbm.np)
+        K = zeros(8, pbm.np)
         return K
         end)
 

@@ -9,10 +9,26 @@ This project contains the code for several SCP algorithms, and several examples
 of using these algorithms for trajectory generation. The examples can be found
 in the `examples/` directory, and include:
 
-- Quadrotor path planning with obtacle avoidance
-- Freeflyer flight inside of a space station environment with obtacles
+- Quadrotor path planning with obstacle avoidance
+- Freeflyer flight inside of a space station environment with obstacles
 - SpaceX Starship landing "flip" maneuver
-- (Bonus) Variable-mass rocket landing using lossless convexification. This
-  does not rely on SCP, but rather on pure convex optimization.
+- Variable-mass rocket landing using lossless convexification. This does not
+  rely on SCP, but rather on pure convex optimization.
 
 More documentation is on its way :books:
+
+# Citing
+
+If you use this code, kindly cite the following associated publication.
+
+```
+@article{SCPTrajOptCSM2021,
+  year	       = {2021},
+  publisher    = {{IEEE}},
+  author       = {Danylo Malyuta and Taylor P. Reynolds and Michael Szmuk
+                  and Thomas Lew and Riccardo Bonalli and Marco Pavone
+                  and Behcet Acikmese},
+  title	       = {Convex Optimization-Based Trajectory Generation},
+  journal      = {{IEEE} Control Systems Magazine (work in progress)}
+}
+```

@@ -570,11 +570,12 @@ function _scp__add_convex_state_constraints!(
     # Variables and parameters
     N = spbm.def.pars.N
     traj_pbm = spbm.def.traj
+    τ = spbm.def.common.τ_grid
     x = spbm.x
 
     if !isnothing(traj_pbm.X)
         for k = 1:N
-            xk_in_X = traj_pbm.X(@k(x))
+            xk_in_X = traj_pbm.X(@k(τ), @k(x))
             correct_type = typeof(xk_in_X)<:(
                 Vector{T} where {T<:T_ConvexConeConstraint})
             if !correct_type
@@ -599,11 +600,12 @@ function _scp__add_convex_input_constraints!(
     # Variables and parameters
     N = spbm.def.pars.N
     traj_pbm = spbm.def.traj
+    τ = spbm.def.common.τ_grid
     u = spbm.u
 
     if !isnothing(traj_pbm.U)
         for k = 1:N
-            uk_in_U = traj_pbm.U(@k(u))
+            uk_in_U = traj_pbm.U(@k(τ), @k(u))
             correct_type = typeof(uk_in_U)<:(
                 Vector{T} where {T<:T_ConvexConeConstraint})
             if !correct_type
