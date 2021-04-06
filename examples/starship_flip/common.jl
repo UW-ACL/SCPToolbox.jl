@@ -60,7 +60,7 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
                           (0.0, mdl.traj.tf_max))
     # Inputs
     problem_advise_scale!(pbm, :input, mdl.vehicle.id_T,
-                          (mdl.vehicle.T_min, mdl.vehicle.T_max))
+                          (mdl.vehicle.T_min1, mdl.vehicle.T_max3))
     problem_advise_scale!(pbm, :input, mdl.vehicle.id_δ,
                           (-mdl.vehicle.δ_max, mdl.vehicle.δ_max))
     problem_advise_scale!(pbm, :input, mdl.vehicle.id_δdot,
@@ -103,12 +103,12 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
     X0[veh.id_δd] = veh.δ_max
 
     # Simple guess control strategy
-    # Gimbal bang-bang drive θ0 to θf at min thrust
-    _startship__ac = veh.lcg/veh.J*veh.T_min*sin(veh.δ_max)
+    # Gimbal bang-bang drive θ0 to θf at min 3-engine thrust
+    _startship__ac = veh.lcg/veh.J*veh.T_min3*sin(veh.δ_max)
     _startship__ts = sqrt((traj.θ0-traj.θf)/_startship__ac)
     _startship__control = (t, pbm) -> begin
         veh = pbm.mdl.vehicle
-        T = veh.T_min
+        T = veh.T_min3
         ts = _startship__ts
         if t<=ts
             δ = veh.δ_max
@@ -190,10 +190,13 @@ function _common__set_cost!(pbm::TrajectoryProblem)::Nothing
                                veh = pbm.mdl.vehicle
                                traj = pbm.mdl.traj
                                env = pbm.mdl.env
-                               r = x[veh.id_r]
-                               alt = dot(r, env.ey)
-                               alt_nrml = dot(traj.r0, env.ey)
-                               return -alt/alt_nrml
+                               # r = x[veh.id_r]
+                               # alt = dot(r, env.ey)
+                               # alt_nrml = dot(traj.r0, env.ey)
+                               # return -alt/alt_nrml
+                               m = x[veh.id_m]
+                               m_nrml = 10e3
+                               return -m/m_nrml
                                end)
 
     return nothing
@@ -295,7 +298,7 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the state
     problem_set_X!(
-        pbm, (t, x, pbm) -> begin
+        pbm, (τ, x, pbm) -> begin
         traj = pbm.mdl.traj
         env = pbm.mdl.env
         veh = pbm.mdl.vehicle
@@ -309,13 +312,17 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the input
     problem_set_U!(
-        pbm, (t, u, pbm) -> begin
+        pbm, (τ, u, pbm) -> begin
         veh = pbm.mdl.vehicle
+        traj = pbm.mdl.traj
         T = u[veh.id_T]
         δ = u[veh.id_δ]
+        flip_phase = τ<=traj.τs
+        T_max = (flip_phase) ? veh.T_max3 : veh.T_max1
+        T_min = (flip_phase) ? veh.T_min3 : veh.T_min1
         C = T_ConvexConeConstraint
-        U = [C(T-veh.T_max, :nonpos),
-             C(veh.T_min-T, :nonpos),
+        U = [C(T-T_max, :nonpos),
+             C(T_min-T, :nonpos),
              C(vcat(veh.δ_max, δ), :l1)]
         return U
         end)

@@ -58,8 +58,10 @@ struct StarshipParameters
     # ..:: Aerodynamic parameters ::..
     CD::T_Real         # [kg/m] Overall drag coefficient 0.5*ρ*cd*A
     # ..:: Propulsion parameters ::..
-    T_min::T_Real      # [N] Minimum thrust
-    T_max::T_Real      # [N] Maximum thrust
+    T_min1::T_Real     # [N] Minimum thrust (one engine)
+    T_max1::T_Real     # [N] Maximum thrust (one engine)
+    T_min3::T_Real     # [N] Minimum thrust (three engines)
+    T_max3::T_Real     # [N] Maximum thrust (three engines)
     αe::T_Real         # [s/m] Mass depletion propotionality constant
     δ_max::T_Real      # [rad] Maximum gimbal angle
     δdot_max::T_Real   # [rad/s] Maximum gimbal rate
@@ -139,12 +141,11 @@ function StarshipProblem()::StarshipProblem
     CD = m*g0/vterm^2
     CD *= 1.2 # Fudge factor
     # >> Propulsion parameters <<
-    ne = 3 # Number of engines firing
     Isp = 330 # [s] Specific impulse
     T_min1 = 880e3 # [N] One engine min thrust
     T_max1 = 2210e3 # [N] One engine max thrust
-    T_min = ne*T_min1
-    T_max = ne*T_max1
+    T_min3 = 3*T_min1
+    T_max3 = 3*T_max1
     αe = -1/(Isp*g0)
     δ_max = deg2rad(10.0)
     δdot_max = 2*δ_max
@@ -152,8 +153,8 @@ function StarshipProblem()::StarshipProblem
 
     starship = StarshipParameters(
         id_r, id_v, id_θ, id_ω, id_m, id_δd, id_τ, id_T, id_δ, id_δdot,
-        id_t1, id_t2, ei, ej, lcg, lcp, m, J, CD, T_min, T_max, αe, δ_max,
-        δdot_max, rate_delay)
+        id_t1, id_t2, ei, ej, lcg, lcp, m, J, CD, T_min1, T_max1, T_min3,
+        T_max3, αe, δ_max, δdot_max, rate_delay)
 
     # ..:: Trajectory ::..
     r0 = 100.0*ex+550.0*ey
@@ -410,10 +411,14 @@ function plot_thrust(mdl::StarshipProblem,
     ax.set_ylabel("Thrust [MN]")
 
     # ..:: Thrust bounds ::..
-    bnd_max = veh.T_max*scale
-    bnd_min = veh.T_min*scale
-    plot_timeseries_bound!(ax, 0.0, tf, bnd_max, y_top-bnd_max)
-    plot_timeseries_bound!(ax, 0.0, tf, bnd_min, y_bot-bnd_min)
+    bnd_min1 = veh.T_min1*scale
+    bnd_max1 = veh.T_max1*scale
+    bnd_min3 = veh.T_min3*scale
+    bnd_max3 = veh.T_max3*scale
+    plot_timeseries_bound!(ax, 0.0, t1, bnd_max3, y_top-bnd_max3)
+    plot_timeseries_bound!(ax, 0.0, t1, bnd_min3, y_bot-bnd_min3)
+    plot_timeseries_bound!(ax, t1, tf, bnd_max1, y_top-bnd_max1)
+    plot_timeseries_bound!(ax, t1, tf, bnd_min1, y_bot-bnd_min1)
 
     # ..:: Thrust value (continuous-time) ::..
     ct_res = 500
