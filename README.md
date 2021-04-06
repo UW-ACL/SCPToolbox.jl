@@ -13,9 +13,9 @@ the following IEEE Control Systems Magazine publication:
 @article{SCPTrajOptCSM2021,
   year	       = {2021},
   publisher    = {{IEEE}},
-  author       = {Danylo Malyuta and Michael Szmuk and Taylor P. Reynolds
-                  and Riccardo Bonalli and Thomas Lew and Behcet Acikmese
-				  and Marco Pavone},
+  author       = {Danylo Malyuta and Taylor P. Reynolds and Michael Szmuk
+                  and Thomas Lew and Riccardo Bonalli and Marco Pavone
+                  and Behcet Acikmese},
   title	       = {Convex Optimization-Based Trajectory Generation},
   journal      = {{IEEE} Control Systems Magazine (work in progress)}
 }
