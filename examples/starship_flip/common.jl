@@ -45,7 +45,7 @@ end
 
 function _common__set_dims!(pbm::TrajectoryProblem)::Nothing
 
-    problem_set_dims!(pbm, 9, 3, 1)
+    problem_set_dims!(pbm, 9, 3, 2)
 
     return nothing
 end
@@ -54,8 +54,10 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
 
     mdl = pbm.mdl
     # Parameters
-    problem_advise_scale!(pbm, :parameter, mdl.vehicle.id_t,
-                          (mdl.traj.tf_min, mdl.traj.tf_max))
+    problem_advise_scale!(pbm, :parameter, mdl.vehicle.id_t1,
+                          (0.0, mdl.traj.tf_max))
+    problem_advise_scale!(pbm, :parameter, mdl.vehicle.id_t2,
+                          (0.0, mdl.traj.tf_max))
     # Inputs
     problem_advise_scale!(pbm, :input, mdl.vehicle.id_T,
                           (mdl.vehicle.T_min, mdl.vehicle.T_max))
@@ -124,9 +126,11 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
     # Dynamics with guess control
     _startship__f_guess = (t, x, pbm) -> begin
         veh = pbm.mdl.vehicle
+        traj = pbm.mdl.traj
         u = _startship__control(t, pbm)
         p = zeros(pbm.np)
-        p[veh.id_t] = 1.0
+        p[veh.id_t1] = traj.τs
+        p[veh.id_t2] = 1-traj.τs
         dxdt = dynamics(x, u, p, pbm; no_aero_torques=true)
         return dxdt
     end
@@ -163,13 +167,16 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
 
                        # Convert to discrete-time trajectory
                        Xc = T_ContinuousTimeTrajectory(t, X, :linear)
-                       td = T_RealVector(LinRange(0.0, t[end], N))
+                       td = T_RealVector(LinRange(0.0, tf, N))
                        x = hcat([sample(Xc, t) for t in td]...)
                        u = hcat([ctrl(t, pbm) for t in td]...)
 
                        # Parameter guess
+                       τ = t/tf
+                       tc = T_ContinuousTimeTrajectory(τ, t, :linear)
                        p = zeros(pbm.np)
-                       p[veh.id_t] = tf
+                       p[veh.id_t1] = sample(tc, traj.τs)
+                       p[veh.id_t2] = tf-p[veh.id_t1]
 
                        return x, u, p
                        end)
@@ -205,12 +212,15 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
         (x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         env = pbm.mdl.env
+        traj = pbm.mdl.traj
         v = x[veh.id_v]
         θ = x[veh.id_θ]
         m = x[veh.id_m]
+        τ = x[veh.id_τ]
         T = u[veh.id_T]
         δ = u[veh.id_δ]
-        tdil = p[veh.id_t]
+        tdil = ((τ<=traj.τs) ? p[veh.id_t1]/traj.τs :
+                p[veh.id_t2]/(1-traj.τs))
 
         ℓcp = veh.lcp-veh.lcg
         ei = veh.ei(θ)
@@ -237,12 +247,15 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
         (x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         env = pbm.mdl.env
+        traj = pbm.mdl.traj
         v = x[veh.id_v]
         θ = x[veh.id_θ]
         m = x[veh.id_m]
+        τ = x[veh.id_τ]
         T = u[veh.id_T]
         δ = u[veh.id_δ]
-        tdil = p[veh.id_t]
+        tdil = ((τ<=traj.τs) ? p[veh.id_t1]/traj.τs :
+                p[veh.id_t2]/(1-traj.τs))
 
         ℓeng = -veh.lcg
         ei = veh.ei(θ)
@@ -266,10 +279,12 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
         # Jacobian df/dp
         (x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
-        tdil = p[veh.id_t]
+        traj = pbm.mdl.traj
+        τ = x[veh.id_τ]
+        id_t = (τ<=traj.τs) ? veh.id_t1 : veh.id_t2
         F = zeros(pbm.nx, pbm.np)
-        F[:, veh.id_t] = pbm.f(x, u, p)/tdil
-        F[veh.id_τ, veh.id_t] = 0.0
+        F[:, id_t] = pbm.f(x, u, p)/p[id_t]
+        F[veh.id_τ, id_t] = 0.0
         return F
         end)
 
@@ -321,11 +336,12 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         δd = x[veh.id_δd]
         δ = u[veh.id_δ]
         δdot = u[veh.id_δdot]
+        tf = p[veh.id_t1]+p[veh.id_t2]
 
         s = zeros(6)
-        s[1] = p[veh.id_t]-traj.tf_max
-        s[2] = traj.tf_min-p[veh.id_t]
-        s[3] = δ-δd-δdot*veh.rate_delay
+        s[1] = tf-traj.tf_max
+        s[2] = traj.tf_min-tf
+        s[3] = (δ-δd)-δdot*veh.rate_delay
         s[4] = δdot*veh.rate_delay-(δ-δd)
         s[5] = δdot-veh.δdot_max
         s[6] = -veh.δdot_max-δdot
@@ -358,8 +374,10 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         (x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         G = zeros(6, pbm.np)
-        G[1, veh.id_t] = 1.0
-        G[2, veh.id_t] = -1.0
+        G[1, veh.id_t1] = 1.0
+        G[1, veh.id_t2] = 1.0
+        G[2, veh.id_t1] = -1.0
+        G[2, veh.id_t2] = -1.0
         return G
         end)
 

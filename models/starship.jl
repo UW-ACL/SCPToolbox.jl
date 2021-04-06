@@ -45,7 +45,8 @@ struct StarshipParameters
     id_T::T_Int        # Thrust index of the input vector
     id_δ::T_Int        # Gimbal angle index of the input vector
     id_δdot::T_Int     # Gimbal rate index of the input vector
-    id_t::T_Int        # Index of time dilation
+    id_t1::T_Int       # First phase duration index of parameter vector
+    id_t2::T_Int       # Second phase duration index of parameter vector
     # ..:: Body axes ::..
     ei::T_Function     # Lateral body axis in body or world frame
     ej::T_Function     # Longitudinal body axis in body or world frame
@@ -82,6 +83,7 @@ struct StarshipTrajectoryParameters
     tf_min::T_Real   # Minimum flight time
     tf_max::T_Real   # Maximum flight time
     γ_gs::T_Real     # [rad] Maximum glideslope (measured from vertical)
+    τs::T_Real       # Normalized time end of first phase
 end
 
 #= Starship trajectory optimization problem parameters all in one. =#
@@ -120,7 +122,8 @@ function StarshipProblem()::StarshipProblem
     id_T = 1
     id_δ = 2
     id_δdot = 3
-    id_t = 1
+    id_t1 = 1
+    id_t2 = 2
     # >> Body axes <<
     ei = (θ) -> cos(θ)*[1.0; 0.0]+sin(θ)*[0.0; 1.0]
     ej = (θ) -> -sin(θ)*[1.0; 0.0]+cos(θ)*[0.0; 1.0]
@@ -149,7 +152,7 @@ function StarshipProblem()::StarshipProblem
 
     starship = StarshipParameters(
         id_r, id_v, id_θ, id_ω, id_m, id_δd, id_τ, id_T, id_δ, id_δdot,
-        id_t, ei, ej, lcg, lcp, m, J, CD, T_min, T_max, αe, δ_max,
+        id_t1, id_t2, ei, ej, lcg, lcp, m, J, CD, T_min, T_max, αe, δ_max,
         δdot_max, rate_delay)
 
     # ..:: Trajectory ::..
@@ -161,8 +164,9 @@ function StarshipProblem()::StarshipProblem
     tf_min = 0.0
     tf_max = 30.0
     γ_gs = deg2rad(27.0)
+    τs = 0.5
     traj = StarshipTrajectoryParameters(r0, v0, θ0, vf, θf, tf_min,
-                                        tf_max, γ_gs)
+                                        tf_max, γ_gs, τs)
 
     mdl = StarshipProblem(starship, env, traj)
 
@@ -196,16 +200,19 @@ function dynamics(x::T_RealVector,
     # Parameters
     veh = pbm.mdl.vehicle
     env = pbm.mdl.env
+    traj = pbm.mdl.traj
 
     # Current (x, u, p) values
     v = x[veh.id_v]
     θ = x[veh.id_θ]
     ω = x[veh.id_ω]
     m = x[veh.id_m]
+    τ = x[veh.id_τ]
     δd = x[veh.id_δd]
     T = u[veh.id_T]
     δ = u[veh.id_δ]
-    tdil = p[veh.id_t]
+    tdil = ((τ<=traj.τs) ? p[veh.id_t1]/traj.τs :
+            p[veh.id_t2]/(1-traj.τs))
 
     # Derived quantities
     ℓeng = -veh.lcg
@@ -381,7 +388,11 @@ function plot_thrust(mdl::StarshipProblem,
     veh = mdl.vehicle
     traj = mdl.traj
     clr = get_colormap()(1.0)
-    tf = sol.p[mdl.vehicle.id_t]
+    t1 = sol.p[veh.id_t1]
+    t2 = sol.p[veh.id_t2]
+    tf = t1+t2
+    τs = mdl.traj.τs
+    τ2t = (τ) -> ((τ<=τs) ? τ/τs*t1 : t1+(τ-τs)/(1-τs)*t2)
     N = size(sol.xd, 2)
     scale = 1e-6
     y_top = 7.0
@@ -407,7 +418,7 @@ function plot_thrust(mdl::StarshipProblem,
     # ..:: Thrust value (continuous-time) ::..
     ct_res = 500
     ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
-    ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
+    ct_time = map(τ2t, ct_τ)
     ct_thrust = T_RealVector([sample(sol.uc, τ)[mdl.vehicle.id_T]*scale
                               for τ in ct_τ])
     ax.plot(ct_time, ct_thrust,
@@ -415,7 +426,7 @@ function plot_thrust(mdl::StarshipProblem,
             linewidth=2)
 
     # ..:: Thrust value (discrete-time) ::..
-    dt_time = sol.τd*sol.p[mdl.vehicle.id_t]
+    dt_time = map(τ2t, sol.τd)
     dt_thrust = sol.ud[mdl.vehicle.id_T, :]*scale
     ax.plot(dt_time, dt_thrust,
             linestyle="none",
@@ -442,15 +453,19 @@ function plot_gimbal(mdl::StarshipProblem,
     # Common values
     algo = sol.algo
     clr = get_colormap()(1.0)
-    tf = sol.p[mdl.vehicle.id_t]
+    t1 = sol.p[mdl.vehicle.id_t1]
+    t2 = sol.p[mdl.vehicle.id_t2]
+    tf = t1+t2
+    τs = mdl.traj.τs
     scale = 180/pi
+    τ2t = (τ) -> ((τ<=τs) ? τ/τs*t1 : t1+(τ-τs)/(1-τs)*t2)
 
     fig = create_figure((5, 5))
 
     ct_res = 500
     ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
-    ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
-    dt_time = sol.τd*sol.p[mdl.vehicle.id_t]
+    ct_time = map(τ2t, ct_τ)
+    dt_time = map(τ2t, sol.τd)
 
     # ..:: Gimbal angle timeseries ::..
     ax = fig.add_subplot(211)
