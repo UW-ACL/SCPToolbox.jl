@@ -142,7 +142,7 @@ function StarshipProblem()::StarshipProblem
     # >> Aerodynamic parameters <<
     vterm = 85 # [m/s] Terminal velocity (during freefall)
     CD = m*g0/vterm^2
-    CD *= 0.9 # Fudge factor
+    CD *= 0.8 # Fudge factor
     # >> Propulsion parameters <<
     Isp = 330 # [s] Specific impulse
     T_min1 = 880e3 # [N] One engine min thrust

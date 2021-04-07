@@ -223,9 +223,21 @@ function _common__set_cost!(pbm::TrajectoryProblem)::Nothing
                                veh = pbm.mdl.vehicle
                                traj = pbm.mdl.traj
                                env = pbm.mdl.env
-                               m = x[veh.id_m]
-                               m_nrml = 10e3
-                               return -m/m_nrml
+                               # Altitude at phase switch
+                               # Goal: maximize it
+                               rs = p[veh.id_xs][veh.id_r]
+                               alt = dot(rs, env.ey)
+                               alt_nrml = 300.0
+                               alt_cost = -alt/alt_nrml
+                               μ = 0.3 # Relative weight to fuel cost
+                               # Fuel consumption
+                               # Goal: minimize it
+                               mf = x[veh.id_m]
+                               Δm = 0.0-mf
+                               Δm_nrml = 10e3
+                               Δm_cost = Δm/Δm_nrml
+                               # Total cost
+                               return μ*alt_cost+Δm_cost
                                end)
 
     return nothing
