@@ -422,7 +422,8 @@ end
 
 #= Define the convex state constraint set.
 
-Function signature: X(x, pbm), where:
+Function signature: X(t, x, pbm), where:
+  - t (T_Real): the current time.
   - x (T_OptiVarVector): the state vector.
   - pbm (TrajectoryProblem): the trajectory problem structure.
 
@@ -434,13 +435,14 @@ Args:
        state set. =#
 function problem_set_X!(pbm::TrajectoryProblem,
                         X::T_Function)::Nothing
-    pbm.X = (x) -> X(x, pbm)
+    pbm.X = (t, x) -> X(t, x, pbm)
     return nothing
 end
 
 #= Define the convex input constraint set.
 
-Function signature: U(u, pbm), where:
+Function signature: U(t, u, pbm), where:
+  - t (T_Real): the current time.
   - u (T_OptiVarVector): the input vector.
   - pbm (TrajectoryProblem): the trajectory problem structure.
 
@@ -452,7 +454,7 @@ Args:
        input set. =#
 function problem_set_U!(pbm::TrajectoryProblem,
                         U::T_Function)::Nothing
-    pbm.U = (u) -> U(u, pbm)
+    pbm.U = (t, u) -> U(t, u, pbm)
     return nothing
 end
 
