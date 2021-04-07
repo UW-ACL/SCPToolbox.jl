@@ -181,10 +181,10 @@ function SCPProblem(
     table::T_Table)::SCPProblem where {T<:SCPParameters}
 
     # Compute the common constant terms
-    τ_grid = LinRange(0.0, 1.0, pars.N)
+    τ_grid = T_RealVector(LinRange(0.0, 1.0, pars.N))
     Δτ = τ_grid[2]-τ_grid[1]
     E = T_RealMatrix(I(traj.nx))
-    scale = _scp__compute_scaling(pars, traj)
+    scale = _scp__compute_scaling(pars, traj, τ_grid)
     idcs = SCPDiscretizationIndices(traj, E)
     consts = SCPCommon(Δτ, τ_grid, E, scale, idcs, table)
 
@@ -275,12 +275,14 @@ end
 Args:
     pars: the SCP algorithm parameters.
     traj: the trajectory problem definition.
+    τ_grid: normalized discrete-time grid.
 
 Returns:
     scale: the scaling structure. =#
 function _scp__compute_scaling(
     pars::T,
-    traj::TrajectoryProblem)::SCPScaling where {T<:SCPParameters}
+    traj::TrajectoryProblem,
+    τ_grid::T_RealVector)::SCPScaling where {T<:SCPParameters}
 
     # Parameters
     nx = traj.nx
@@ -324,7 +326,9 @@ function _scp__compute_scaling(
                     var = @variable(mdl, [1:def[:dim]])
                     # Constraints
                     if !isnothing(def[:set])
-                        add_conic_constraints!(mdl, def[:set](var))
+                        for τ in τ_grid
+                            add_conic_constraints!(mdl, def[:set](τ, var))
+                        end
                     end
                     # Cost
                     set_objective_function(mdl, var[i])
