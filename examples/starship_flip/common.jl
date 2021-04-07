@@ -188,11 +188,14 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
         # >> Phase 2: terminal descent <<
         # >>>>>>>>>>>>>>>><<<<<<<<<<<<<<<
 
-        t2 = 5.0 # Phase 2 duration
+        xs = sample(xc, τ2t(τ_grid[id_phase1][end]))
+        alt_switch = dot(xs[veh.id_r], env.ey)
+        v2 = 40.0 # [m/s] Terminal descent velocity
+        t2 = alt_switch/v2 # Phase 2 duration
         T_hover = norm(veh.m*env.g)
 
         # Straight line interpolate state
-        xs = sample(xc, τ2t(τ_grid[id_phase1][end]))
+        x0 = copy(xs)
         xf = zeros(pbm.nx)
         xf[veh.id_v] = traj.vf
         xf[veh.id_m] = xs[veh.id_m]+veh.αe*T_hover*t2
