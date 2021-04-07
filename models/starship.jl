@@ -80,8 +80,9 @@ struct StarshipTrajectoryParameters
     r0::T_RealVector # [m] Initial position
     v0::T_RealVector # [m/s] Initial velocity
     θ0::T_Real       # [rad] Initial tilt angle
+    vs::T_RealVector # [m/s] Phase switch velocity
+    θs::T_Real       # [rad] Phase switch tilt angle
     vf::T_RealVector # [m/s] Terminal velocity
-    θf::T_Real       # [rad] Terminal tilt angle
     tf_min::T_Real   # Minimum flight time
     tf_max::T_Real   # Maximum flight time
     γ_gs::T_Real     # [rad] Maximum glideslope (measured from vertical)
@@ -133,13 +134,13 @@ function StarshipProblem()::StarshipProblem
     rs = 4.5 # [m] Fuselage radius
     ls = 50.0 # [m] Fuselage height
     m = 120e3
-    lcg = 0.5*ls
-    lcp = 0.4*ls
+    lcg = 0.4*ls
+    lcp = 0.6*ls
     J = 1/12*m*(6*rs^2+ls^2)
     # >> Aerodynamic parameters <<
-    vterm = 75 # [m/s] Terminal velocity (during freefall)
+    vterm = 85 # [m/s] Terminal velocity (during freefall)
     CD = m*g0/vterm^2
-    CD *= 1.2 # Fudge factor
+    CD *= 0.9 # Fudge factor
     # >> Propulsion parameters <<
     Isp = 330 # [s] Specific impulse
     T_min1 = 880e3 # [N] One engine min thrust
@@ -157,16 +158,20 @@ function StarshipProblem()::StarshipProblem
         T_max3, αe, δ_max, δdot_max, rate_delay)
 
     # ..:: Trajectory ::..
-    r0 = 100.0*ex+550.0*ey
+    # Initial values
+    r0 = 100.0*ex+600.0*ey
     v0 = -vterm*ey
-    vf = -5.0*ey
     θ0 = deg2rad(90.0)
-    θf = deg2rad(-10.0)
+    # Phase switch (guess) values
+    θs = deg2rad(-10.0)
+    vs = -10.0*ey
+    # Terminal values
+    vf = -0.1*ey
     tf_min = 0.0
     tf_max = 30.0
     γ_gs = deg2rad(27.0)
     τs = 0.5
-    traj = StarshipTrajectoryParameters(r0, v0, θ0, vf, θf, tf_min,
+    traj = StarshipTrajectoryParameters(r0, v0, θ0, vs, θs, vf, tf_min,
                                         tf_max, γ_gs, τs)
 
     mdl = StarshipProblem(starship, env, traj)

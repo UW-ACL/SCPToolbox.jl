@@ -103,9 +103,9 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
     X0[veh.id_δd] = veh.δ_max
 
     # Simple guess control strategy
-    # Gimbal bang-bang drive θ0 to θf at min 3-engine thrust
+    # Gimbal bang-bang drive θ0 to θs at min 3-engine thrust
     _startship__ac = veh.lcg/veh.J*veh.T_min3*sin(veh.δ_max)
-    _startship__ts = sqrt((traj.θ0-traj.θf)/_startship__ac)
+    _startship__ts = sqrt((traj.θ0-traj.θs)/_startship__ac)
     _startship__control = (t, pbm) -> begin
         veh = pbm.mdl.vehicle
         T = veh.T_min3
@@ -136,24 +136,40 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
     end
 
     problem_set_guess!(pbm, (N, pbm) -> begin
-                       veh = pbm.mdl.vehicle
-                       env = pbm.mdl.env
-                       traj = pbm.mdl.traj
 
-                       # The guess dynamics
+                       # Parameters
+                       veh = pbm.mdl.vehicle
+                       traj = pbm.mdl.traj
+                       env = pbm.mdl.env
+
+                       # Normalized time grid
+                       τ_grid = LinRange(0.0, 1.0, N)
+                       τs = traj.τs
+                       id_phase1 = τ_grid.<=τs
+                       id_phase2 = τ_grid.>τs
+
+                       # Initialize empty trajectory guess
+                       x = T_RealMatrix(undef, pbm.nx, N)
+                       u = T_RealMatrix(undef, pbm.nu, N)
+
+                       # >>>>>>>>><<<<<<<<<<
+                       # >> Phase 1: flip <<
+                       # >>>>>>>>><<<<<<<<<<
+
+                       # The flip guess dynamics
                        ts = _startship__ts
                        f = _startship__f_guess
                        ctrl = _startship__control
 
-                       # Propagate the dynamics under the guess control
+                       # Propagate the flip dynamics under the guess control
                        t_θcst = 10.0
                        tf = 2*ts+t_θcst
                        t = T_RealVector(LinRange(0.0, tf, 5000))
                        X = rk4((t, x) -> f(t, x, pbm), X0, t; full=true)
 
                        # Find crossing of terminal vertical velocity
-                       vf = dot(traj.vf, env.ey)
-                       k_0x = findfirst(X[veh.id_v, :]'*env.ey.>=vf)
+                       vs = dot(traj.vs, env.ey)
+                       k_0x = findfirst(X[veh.id_v, :]'*env.ey.>=vs)
                        if isnothing(k_0x)
                        msg = string("ERROR: no terminal velocity crossing, ",
                                     "increase time of flight (t_θcst).")
@@ -161,22 +177,45 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
                        throw(error)
                        end
                        t = @k(t, 1, k_0x)
-                       tf = t[end]
+                       t1 = t[end]
                        X = @k(X, 1, k_0x)
-                       X[veh.id_τ, :] /= tf
+                       X[veh.id_τ, :] *= traj.τs/t1
 
-                       # Convert to discrete-time trajectory
-                       Xc = T_ContinuousTimeTrajectory(t, X, :linear)
-                       td = T_RealVector(LinRange(0.0, tf, N))
-                       x = hcat([sample(Xc, t) for t in td]...)
-                       u = hcat([ctrl(t, pbm) for t in td]...)
+                       # Populate trajectory guess first phase
+                       τ2t = (τ) -> τ/τs*t1
+                       xc = T_ContinuousTimeTrajectory(t, X, :linear)
+                       @k(x, id_phase1) = hcat([
+                           sample(xc, τ2t(τ)) for τ in τ_grid[id_phase1]]...)
+                       @k(u, id_phase1) = hcat([
+                           ctrl(τ2t(τ), pbm) for τ in τ_grid[id_phase1]]...)
 
-                       # Parameter guess
-                       τ = t/tf
-                       tc = T_ContinuousTimeTrajectory(τ, t, :linear)
-                       p = zeros(pbm.np)
-                       p[veh.id_t1] = sample(tc, traj.τs)
-                       p[veh.id_t2] = tf-p[veh.id_t1]
+                       # >>>>>>>>>>>>>>>><<<<<<<<<<<<<<<
+                       # >> Phase 2: terminal descent <<
+                       # >>>>>>>>>>>>>>>><<<<<<<<<<<<<<<
+
+                       t2 = 5.0 # Phase 2 duration
+                       T_hover = norm(veh.m*env.g)
+
+                       # Straight line interpolate state
+                       xs = sample(xc, τ2t(τ_grid[id_phase1][end]))
+                       xf = zeros(pbm.nx)
+                       xf[veh.id_v] = traj.vf
+                       xf[veh.id_m] = xs[veh.id_m]+veh.αe*T_hover*t2
+                       xf[veh.id_τ] = 1.0
+                       N2 = N-sum(id_phase1)+1
+                       X = straightline_interpolate(xs, xf, N2)
+                       @k(x, id_phase2) = @k(X, 2, N2)
+
+                       # Constant input
+                       u_hov = zeros(pbm.nu)
+                       u_hov[veh.id_T] = T_hover
+                       U = straightline_interpolate(u_hov, u_hov, N2)
+                       @k(u, id_phase2) = @k(U, 2, N2)
+
+                       # >> Parameter guess <<
+                       p = T_RealVector(undef, pbm.np)
+                       p[veh.id_t1] = t1
+                       p[veh.id_t2] = t2
 
                        return x, u, p
                        end)
@@ -190,10 +229,6 @@ function _common__set_cost!(pbm::TrajectoryProblem)::Nothing
                                veh = pbm.mdl.vehicle
                                traj = pbm.mdl.traj
                                env = pbm.mdl.env
-                               # r = x[veh.id_r]
-                               # alt = dot(r, env.ey)
-                               # alt_nrml = dot(traj.r0, env.ey)
-                               # return -alt/alt_nrml
                                m = x[veh.id_m]
                                m_nrml = 10e3
                                return -m/m_nrml
@@ -441,11 +476,13 @@ function _common__set_bcs!(pbm::TrajectoryProblem)::Nothing
         (x, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         traj = pbm.mdl.traj
-        rhs = zeros(4)
-        rhs[1:2] = traj.vf
-        rhs[3] = traj.θf
-        rhs[4] = 0.0
-        g = x[vcat(veh.id_v,
+        rhs = zeros(6)
+        rhs[1:2] = zeros(2)
+        rhs[3:4] = traj.vf
+        rhs[5] = 0.0
+        rhs[6] = 0.0
+        g = x[vcat(veh.id_r,
+                   veh.id_v,
                    veh.id_θ,
                    veh.id_ω)]-rhs
         return g
@@ -453,16 +490,17 @@ function _common__set_bcs!(pbm::TrajectoryProblem)::Nothing
         # Jacobian dg/dx
         (x, p, pbm) -> begin
         veh = pbm.mdl.vehicle
-        H = zeros(4, pbm.nx)
-        H[1:2, veh.id_v] = I(2)
-        H[3, veh.id_θ] = 1.0
-        H[4, veh.id_ω] = 1.0
+        H = zeros(6, pbm.nx)
+        H[1:2, veh.id_r] = I(2)
+        H[3:4, veh.id_v] = I(2)
+        H[5, veh.id_θ] = 1.0
+        H[6, veh.id_ω] = 1.0
         return H
         end,
         # Jacobian dg/dp
         (x, p, pbm) -> begin
         veh = pbm.mdl.vehicle
-        K = zeros(4, pbm.np)
+        K = zeros(6, pbm.np)
         return K
         end)
 
