@@ -113,7 +113,7 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the input
     problem_set_U!(
-        pbm, (u, pbm) -> begin
+        pbm, (τ, u, pbm) -> begin
         veh = pbm.mdl.vehicle
         traj = pbm.mdl.traj
         uu = u[veh.id_u]

@@ -160,7 +160,7 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the state
     problem_set_X!(
-        pbm, (x, pbm) -> begin
+        pbm, (τ, x, pbm) -> begin
         traj = pbm.mdl.traj
         veh = pbm.mdl.vehicle
         C = T_ConvexConeConstraint
@@ -171,7 +171,7 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the input
     problem_set_U!(
-        pbm, (u, pbm) -> begin
+        pbm, (τ, u, pbm) -> begin
         veh = pbm.mdl.vehicle
         C = T_ConvexConeConstraint
         U = [C(vcat(veh.T_max, u[veh.id_T]), :soc),
