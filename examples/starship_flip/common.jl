@@ -340,8 +340,7 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
         r = x[veh.id_r]
         v = x[veh.id_v]
         C = T_ConvexConeConstraint
-        X = [C(vcat(dot(r, env.ey)/cos(traj.γ_gs), r), :soc),
-             C(dot(v, env.ey), :nonpos)]
+        X = [C(dot(v, env.ey), :nonpos)]
         return X
         end)
 
@@ -380,13 +379,14 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         δdot = u[veh.id_δdot]
         tf = p[veh.id_t1]+p[veh.id_t2]
 
-        s = zeros(6)
+        s = zeros(7)
         s[1] = tf-traj.tf_max
         s[2] = traj.tf_min-tf
         s[3] = (δ-δd)-δdot*veh.rate_delay
         s[4] = δdot*veh.rate_delay-(δ-δd)
         s[5] = δdot-veh.δdot_max
         s[6] = -veh.δdot_max-δdot
+        s[7] = norm(r)*cos(traj.γ_gs)-dot(r, env.ey)
         return s
         end,
         # Jacobian ds/dx
@@ -394,16 +394,21 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         veh = pbm.mdl.vehicle
         env = pbm.mdl.env
         traj = pbm.mdl.traj
+        r = x[veh.id_r]
 
-        C = zeros(6, pbm.nx)
+        nrm_r = norm(r)
+        ∇nrm_r = (nrm_r<sqrt(eps())) ? zeros(2) : r/nrm_r
+
+        C = zeros(7, pbm.nx)
         C[3, veh.id_δd] = -1.0
         C[4, veh.id_δd] = 1.0
+        C[7, veh.id_r] = ∇nrm_r*cos(traj.γ_gs)-env.ey
         return C
         end,
         # Jacobian ds/du
         (x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
-        D = zeros(6, pbm.nu)
+        D = zeros(7, pbm.nu)
         D[3, veh.id_δ] = 1.0
         D[3, veh.id_δdot] = -veh.rate_delay
         D[4, veh.id_δ] = -1.0
@@ -415,7 +420,7 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         # Jacobian ds/dp
         (x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
-        G = zeros(6, pbm.np)
+        G = zeros(7, pbm.np)
         G[1, veh.id_t1] = 1.0
         G[1, veh.id_t2] = 1.0
         G[2, veh.id_t1] = -1.0
