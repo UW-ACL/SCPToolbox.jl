@@ -251,6 +251,71 @@ function dynamics(x::T_RealVector,
     return f
 end
 
+""" Plot the trajectory evolution through SCP iterations.
+
+Args:
+    mdl: the quadrotor problem parameters.
+    history: SCP iteration data history.
+"""
+function plot_trajectory_history(mdl::StarshipProblem,
+                                 history::SCPHistory)::Nothing
+
+    # Common values
+    num_iter = length(history.subproblems)
+    algo = history.subproblems[1].algo
+    cmap = get_colormap()
+    cmap_offset = 0.1
+    alph_offset = 0.3
+
+    fig = create_figure((3, 4))
+    ax = fig.add_subplot()
+
+    ax.axis("equal")
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+
+    ax.set_xlabel("Downrange [m]")
+    ax.set_ylabel("Altitude [m]")
+
+    # Draw the glide slope constraint
+    _starship__plot_glideslope(ax, mdl)
+
+    # ..:: Draw the trajectories ::..
+    for i=0:num_iter
+        # Extract values for the trajectory at iteration i
+        if i==0
+            trj = history.subproblems[1].ref
+            alph = alph_offset
+            clr = parse(RGB, "#356397")
+            clr = rgb2pyplot(clr, a=alph)
+            shp = "X"
+        else
+            trj = history.subproblems[i].sol
+            f = (off) -> (i-1)/(num_iter-1)*(1-off)+off
+            alph = f(alph_offset)
+            clr = (cmap(f(cmap_offset))..., alph)
+            shp = "o"
+        end
+        pos = trj.xd[mdl.vehicle.id_r, :]
+        x, y = pos[1, :], pos[2, :]
+
+        ax.plot(x, y,
+                linestyle="none",
+                marker=shp,
+                markersize=5,
+                markerfacecolor=clr,
+                markeredgecolor=(1, 1, 1, alph),
+                markeredgewidth=0.3,
+                clip_on=false,
+                zorder=100)
+    end
+
+    save_figure("starship_traj_iters", algo)
+
+    return nothing
+end
+
 #= Plot the final converged trajectory.
 
 Args:
@@ -285,15 +350,8 @@ function plot_final_trajectory(mdl::StarshipProblem,
                  aspect=40,
                  label="Velocity [m/s]")
 
-    # ..:: Draw the glide slope constraint ::..
-    alt = 200.0 # [m] Altitude of glide slope "triangle" visualization
-    x_gs = alt*tan(mdl.traj.γ_gs)
-    ax.plot([-x_gs, 0, x_gs], [alt, 0, alt],
-            color="#5da9a1",
-            linestyle="--",
-            solid_capstyle="round",
-            dash_capstyle="round",
-            zorder=90)
+    # Draw the glide slope constraint
+    _starship__plot_glideslope(ax, mdl)
 
     # ..:: Draw the final continuous-time position trajectory ::..
     # Collect the continuous-time trajectory data
@@ -590,5 +648,29 @@ function plot_gimbal(mdl::StarshipProblem,
 
     save_figure("starship_gimbal", algo)
 
+    return nothing
+end
+
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+""" Draw the glide slope constraint on an existing plot.
+
+Args:
+    ax: the figure axis object.
+    mdl: the starship problem parameters.
+    alt: (optional) altitude of glide slope "triangle" visualization.
+"""
+function _starship__plot_glideslope(ax::PyPlot.PyObject,
+                                    mdl::StarshipProblem;
+                                    alt::T_Real=200.0)::Nothing
+    x_gs = alt*tan(mdl.traj.γ_gs)
+    ax.plot([-x_gs, 0, x_gs], [alt, 0, alt],
+            color="#5da9a1",
+            linestyle="--",
+            solid_capstyle="round",
+            dash_capstyle="round",
+            zorder=90)
     return nothing
 end
