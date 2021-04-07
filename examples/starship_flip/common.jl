@@ -129,90 +129,91 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
         return dxdt
     end
 
-    problem_set_guess!(pbm, (N, pbm) -> begin
+    problem_set_guess!(
+        pbm, (N, pbm) -> begin
 
-                       # Parameters
-                       veh = pbm.mdl.vehicle
-                       traj = pbm.mdl.traj
-                       env = pbm.mdl.env
+        # Parameters
+        veh = pbm.mdl.vehicle
+        traj = pbm.mdl.traj
+        env = pbm.mdl.env
 
-                       # Normalized time grid
-                       τ_grid = LinRange(0.0, 1.0, N)
-                       τs = traj.τs
-                       id_phase1 = τ_grid.<=τs
-                       id_phase2 = τ_grid.>τs
+        # Normalized time grid
+        τ_grid = LinRange(0.0, 1.0, N)
+        τs = traj.τs
+        id_phase1 = τ_grid.<=τs
+        id_phase2 = τ_grid.>τs
 
-                       # Initialize empty trajectory guess
-                       x = T_RealMatrix(undef, pbm.nx, N)
-                       u = T_RealMatrix(undef, pbm.nu, N)
+        # Initialize empty trajectory guess
+        x = T_RealMatrix(undef, pbm.nx, N)
+        u = T_RealMatrix(undef, pbm.nu, N)
 
-                       # >>>>>>>>><<<<<<<<<<
-                       # >> Phase 1: flip <<
-                       # >>>>>>>>><<<<<<<<<<
+        # >>>>>>>>><<<<<<<<<<
+        # >> Phase 1: flip <<
+        # >>>>>>>>><<<<<<<<<<
 
-                       # The flip guess dynamics
-                       ts = _startship__ts
-                       f = _startship__f_guess
-                       ctrl = _startship__control
+        # The flip guess dynamics
+        ts = _startship__ts
+        f = _startship__f_guess
+        ctrl = _startship__control
 
-                       # Propagate the flip dynamics under the guess control
-                       t_θcst = 10.0
-                       tf = 2*ts+t_θcst
-                       t = T_RealVector(LinRange(0.0, tf, 5000))
-                       X = rk4((t, x) -> f(t, x, pbm), X0, t; full=true)
+        # Propagate the flip dynamics under the guess control
+        t_θcst = 10.0
+        tf = 2*ts+t_θcst
+        t = T_RealVector(LinRange(0.0, tf, 5000))
+        X = rk4((t, x) -> f(t, x, pbm), X0, t; full=true)
 
-                       # Find crossing of terminal vertical velocity
-                       vs = dot(traj.vs, env.ey)
-                       k_0x = findfirst(X[veh.id_v, :]'*env.ey.>=vs)
-                       if isnothing(k_0x)
-                       msg = string("ERROR: no terminal velocity crossing, ",
-                                    "increase time of flight (t_θcst).")
-                       error = ArgumentError(msg)
-                       throw(error)
-                       end
-                       t = @k(t, 1, k_0x)
-                       t1 = t[end]
-                       X = @k(X, 1, k_0x)
-                       X[veh.id_τ, :] *= traj.τs/t1
+        # Find crossing of terminal vertical velocity
+        vs = dot(traj.vs, env.ey)
+        k_0x = findfirst(X[veh.id_v, :]'*env.ey.>=vs)
+        if isnothing(k_0x)
+        msg = string("ERROR: no terminal velocity crossing, ",
+                     "increase time of flight (t_θcst).")
+        error = ArgumentError(msg)
+        throw(error)
+        end
+        t = @k(t, 1, k_0x)
+        t1 = t[end]
+        X = @k(X, 1, k_0x)
+        X[veh.id_τ, :] *= traj.τs/t1
 
-                       # Populate trajectory guess first phase
-                       τ2t = (τ) -> τ/τs*t1
-                       xc = T_ContinuousTimeTrajectory(t, X, :linear)
-                       @k(x, id_phase1) = hcat([
-                           sample(xc, τ2t(τ)) for τ in τ_grid[id_phase1]]...)
-                       @k(u, id_phase1) = hcat([
-                           ctrl(τ2t(τ), pbm) for τ in τ_grid[id_phase1]]...)
+        # Populate trajectory guess first phase
+        τ2t = (τ) -> τ/τs*t1
+        xc = T_ContinuousTimeTrajectory(t, X, :linear)
+        @k(x, id_phase1) = hcat([
+            sample(xc, τ2t(τ)) for τ in τ_grid[id_phase1]]...)
+        @k(u, id_phase1) = hcat([
+            ctrl(τ2t(τ), pbm) for τ in τ_grid[id_phase1]]...)
 
-                       # >>>>>>>>>>>>>>>><<<<<<<<<<<<<<<
-                       # >> Phase 2: terminal descent <<
-                       # >>>>>>>>>>>>>>>><<<<<<<<<<<<<<<
+        # >>>>>>>>>>>>>>>><<<<<<<<<<<<<<<
+        # >> Phase 2: terminal descent <<
+        # >>>>>>>>>>>>>>>><<<<<<<<<<<<<<<
 
-                       t2 = 5.0 # Phase 2 duration
-                       T_hover = norm(veh.m*env.g)
+        t2 = 5.0 # Phase 2 duration
+        T_hover = norm(veh.m*env.g)
 
-                       # Straight line interpolate state
-                       xs = sample(xc, τ2t(τ_grid[id_phase1][end]))
-                       xf = zeros(pbm.nx)
-                       xf[veh.id_v] = traj.vf
-                       xf[veh.id_m] = xs[veh.id_m]+veh.αe*T_hover*t2
-                       xf[veh.id_τ] = 1.0
-                       N2 = N-sum(id_phase1)+1
-                       X = straightline_interpolate(xs, xf, N2)
-                       @k(x, id_phase2) = @k(X, 2, N2)
+        # Straight line interpolate state
+        xs = sample(xc, τ2t(τ_grid[id_phase1][end]))
+        xf = zeros(pbm.nx)
+        xf[veh.id_v] = traj.vf
+        xf[veh.id_m] = xs[veh.id_m]+veh.αe*T_hover*t2
+        xf[veh.id_τ] = 1.0
+        N2 = N-sum(id_phase1)+1
+        X = straightline_interpolate(xs, xf, N2)
+        @k(x, id_phase2) = @k(X, 2, N2)
 
-                       # Constant input
-                       u_hov = zeros(pbm.nu)
-                       u_hov[veh.id_T] = T_hover
-                       U = straightline_interpolate(u_hov, u_hov, N2)
-                       @k(u, id_phase2) = @k(U, 2, N2)
+        # Constant input
+        u_hov = zeros(pbm.nu)
+        u_hov[veh.id_T] = T_hover
+        U = straightline_interpolate(u_hov, u_hov, N2)
+        @k(u, id_phase2) = @k(U, 2, N2)
 
-                       # >> Parameter guess <<
-                       p = T_RealVector(undef, pbm.np)
-                       p[veh.id_t1] = t1
-                       p[veh.id_t2] = t2
+        # >> Parameter guess <<
+        p = T_RealVector(undef, pbm.np)
+        p[veh.id_t1] = t1
+        p[veh.id_t2] = t2
 
-                       return x, u, p
-                       end)
+        return x, u, p
+        end)
 
     return nothing
 end
@@ -229,7 +230,7 @@ function _common__set_cost!(pbm::TrajectoryProblem)::Nothing
                                alt = dot(rs, env.ey)
                                alt_nrml = 300.0
                                alt_cost = -alt/alt_nrml
-                               μ = 0.3 # Relative weight to fuel cost
+                               μ = 0.5 # Relative weight to fuel cost
                                # Fuel consumption
                                # Goal: minimize it
                                mf = x[veh.id_m]
@@ -372,6 +373,7 @@ end
 
 function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
 
+    # Return true if this is the temporal node where phase 1 ends
     _common__phase_switch = (τ, pbm) -> begin
         Δτ = 1/(pbm.scp.N-1)
         τs = pbm.mdl.traj.τs
@@ -379,6 +381,15 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         phase_switch = (τs-Δτ)+tol<=τ && τ<=τs+tol
         return phase_switch
     end
+
+    # Return true if this is a phase 2 temporal node
+    _common__phase2 = (τ, pbm) -> begin
+        τs = pbm.mdl.traj.τs
+        phase2 = _common__phase_switch(τ, pbm) || τ>τs
+        return phase2
+    end
+
+    _common_s_sz = 7+2*pbm.nx+2
 
     problem_set_s!(
         pbm,
@@ -388,13 +399,14 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         env = pbm.mdl.env
         traj = pbm.mdl.traj
         r = x[veh.id_r]
+        θ = x[veh.id_θ]
         δd = x[veh.id_δd]
         τ = x[veh.id_τ]
         δ = u[veh.id_δ]
         δdot = u[veh.id_δdot]
         tf = p[veh.id_t1]+p[veh.id_t2]
 
-        s = zeros(7+2*pbm.nx)
+        s = zeros(_common_s_sz)
         s[1] = tf-traj.tf_max
         s[2] = traj.tf_min-tf
         s[3] = (δ-δd)-δdot*veh.rate_delay
@@ -403,8 +415,12 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         s[6] = -veh.δdot_max-δdot
         s[7] = norm(r)*cos(traj.γ_gs)-dot(r, env.ey)
         if _common__phase_switch(τ, pbm)
-        s[8:(8+pbm.nx-1)] = p[veh.id_xs]-x
-        s[8+pbm.nx:end] = x-p[veh.id_xs]
+        s[(1:pbm.nx).+7] = p[veh.id_xs]-x
+        s[(1:pbm.nx).+(7+pbm.nx)] = x-p[veh.id_xs]
+        end
+        if _common__phase2(τ, pbm)
+        s[end-1] = θ-traj.θmax2
+        s[end] = -traj.θmax2-θ
         end
 
         return s
@@ -420,13 +436,17 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         nrm_r = norm(r)
         ∇nrm_r = (nrm_r<sqrt(eps())) ? zeros(2) : r/nrm_r
 
-        C = zeros(7+2*pbm.nx, pbm.nx)
+        C = zeros(_common_s_sz, pbm.nx)
         C[3, veh.id_δd] = -1.0
         C[4, veh.id_δd] = 1.0
         C[7, veh.id_r] = ∇nrm_r*cos(traj.γ_gs)-env.ey
         if _common__phase_switch(τ, pbm)
-        C[8:(8+pbm.nx-1), :] = -I(pbm.nx)
-        C[8+pbm.nx:end, :] = I(pbm.nx)
+        C[(1:pbm.nx).+7, :] = -I(pbm.nx)
+        C[(1:pbm.nx).+(7+pbm.nx), :] = I(pbm.nx)
+        end
+        if _common__phase2(τ, pbm)
+        C[end-1, veh.id_θ] = 1.0
+        C[end, veh.id_θ] = -1.0
         end
 
         return C
@@ -436,7 +456,7 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         veh = pbm.mdl.vehicle
         τ = x[veh.id_τ]
 
-        D = zeros(7+2*pbm.nx, pbm.nu)
+        D = zeros(_common_s_sz, pbm.nu)
         D[3, veh.id_δ] = 1.0
         D[3, veh.id_δdot] = -veh.rate_delay
         D[4, veh.id_δ] = -1.0
@@ -451,14 +471,14 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         veh = pbm.mdl.vehicle
         τ = x[veh.id_τ]
 
-        G = zeros(7+2*pbm.nx, pbm.np)
+        G = zeros(_common_s_sz, pbm.np)
         G[1, veh.id_t1] = 1.0
         G[1, veh.id_t2] = 1.0
         G[2, veh.id_t1] = -1.0
         G[2, veh.id_t2] = -1.0
         if _common__phase_switch(τ, pbm)
-        G[8:(8+pbm.nx-1), veh.id_xs] = I(pbm.nx)
-        G[8+pbm.nx:end, veh.id_xs] = -I(pbm.nx)
+        G[(1:pbm.nx).+7, veh.id_xs] = I(pbm.nx)
+        G[(1:pbm.nx).+(7+pbm.nx), veh.id_xs] = -I(pbm.nx)
         end
 
         return G

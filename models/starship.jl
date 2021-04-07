@@ -87,6 +87,7 @@ struct StarshipTrajectoryParameters
     tf_min::T_Real   # Minimum flight time
     tf_max::T_Real   # Maximum flight time
     γ_gs::T_Real     # [rad] Maximum glideslope (measured from vertical)
+    θmax2::T_Real    # [rad] Maximum tilt for terminal descent phase
     τs::T_Real       # Normalized time end of first phase
 end
 
@@ -137,12 +138,12 @@ function StarshipProblem()::StarshipProblem
     ls = 50.0 # [m] Fuselage height
     m = 120e3
     lcg = 0.4*ls
-    lcp = 0.6*ls
+    lcp = 0.45*ls
     J = 1/12*m*(6*rs^2+ls^2)
     # >> Aerodynamic parameters <<
     vterm = 85 # [m/s] Terminal velocity (during freefall)
     CD = m*g0/vterm^2
-    CD *= 0.8 # Fudge factor
+    CD *= 1.2 # Fudge factor
     # >> Propulsion parameters <<
     Isp = 330 # [s] Specific impulse
     T_min1 = 880e3 # [N] One engine min thrust
@@ -170,11 +171,12 @@ function StarshipProblem()::StarshipProblem
     # Terminal values
     vf = -0.1*ey
     tf_min = 0.0
-    tf_max = 30.0
+    tf_max = 40.0
     γ_gs = deg2rad(27.0)
+    θmax2 = deg2rad(15.0)
     τs = 0.5
     traj = StarshipTrajectoryParameters(r0, v0, θ0, vs, θs, vf, tf_min,
-                                        tf_max, γ_gs, τs)
+                                        tf_max, γ_gs, θmax2, τs)
 
     mdl = StarshipProblem(starship, env, traj)
 
@@ -441,6 +443,72 @@ function plot_final_trajectory(mdl::StarshipProblem,
     return nothing
 end
 
+#= Plot the velocity trajectory.
+
+Args:
+    mdl: the starship problem parameters.
+    sol: the trajectory solution. =#
+function plot_velocity(mdl::StarshipProblem,
+                       sol::SCPSolution)::Nothing
+
+    # Common values
+    algo = sol.algo
+    veh = mdl.vehicle
+    traj = mdl.traj
+    clr = get_colormap()(1.0)
+    t1 = sol.p[veh.id_t1]
+    t2 = sol.p[veh.id_t2]
+    tf = t1+t2
+    τs = mdl.traj.τs
+    τ2t = (τ) -> ((τ<=τs) ? τ/τs*t1 : t1+(τ-τs)/(1-τs)*t2)
+    xy_clrs = ["#db6245", "#5da9a1"]
+
+    fig = create_figure((5, 2.5))
+    ax = fig.add_subplot()
+
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.autoscale(tight=true)
+
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Velocity [m/s]")
+
+    # ..:: Velocity (continuous-time) ::..
+    ct_res = 500
+    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
+    ct_time = map(τ2t, ct_τ)
+    ct_vel = hcat([
+        sample(sol.xc, τ)[mdl.vehicle.id_v] for τ in ct_τ]...)
+
+    for i=1:2
+        ax.plot(ct_time, ct_vel[i, :],
+                color=xy_clrs[i],
+                linewidth=2)
+    end
+
+    # ..:: Velocity (discrete-time) ::..
+    dt_time = map(τ2t, sol.τd)
+    dt_vel = sol.xd[mdl.vehicle.id_v, :]
+    for i=1:2
+        ax.plot(dt_time, dt_vel[i, :],
+                linestyle="none",
+                marker="o",
+                markersize=5,
+                markeredgewidth=0,
+                markerfacecolor=xy_clrs[i],
+                clip_on=false,
+                zorder=100)
+    end
+
+    # Plot switch time
+    _starship__plot_switch_time(ax, t1)
+
+    save_figure("starship_velocity", algo)
+
+    return nothing
+end
+
 #= Plot the thrust trajectory.
 
 Args:
@@ -506,6 +574,9 @@ function plot_thrust(mdl::StarshipProblem,
             markerfacecolor=clr,
             clip_on=false,
             zorder=100)
+
+    # Plot switch time
+    _starship__plot_switch_time(ax, t1)
 
     save_figure("starship_thrust", algo)
 
@@ -594,6 +665,9 @@ function plot_gimbal(mdl::StarshipProblem,
             clip_on=false,
             zorder=100)
 
+    # Plot switch time
+    _starship__plot_switch_time(ax, t1)
+
     # ..:: Gimbal rate timeseries ::..
     ax = fig.add_subplot(212)
 
@@ -648,6 +722,9 @@ function plot_gimbal(mdl::StarshipProblem,
             clip_on=false,
             zorder=110)
 
+    # Plot switch time
+    _starship__plot_switch_time(ax, t1)
+
     save_figure("starship_gimbal", algo)
 
     return nothing
@@ -674,5 +751,21 @@ function _starship__plot_glideslope(ax::PyPlot.PyObject,
             solid_capstyle="round",
             dash_capstyle="round",
             zorder=90)
+    return nothing
+end
+
+""" Draw the phase switch time on a timeseries plot.
+
+Args:
+    ax: the figure axis object.
+    t1: the duration of phase 1.
+"""
+function _starship__plot_switch_time(ax::PyPlot.PyObject,
+                                     t1::T_Real)::Nothing
+    ax.axvline(x=t1,
+               color="black",
+               linestyle="--",
+               linewidth=1,
+               dash_capstyle="round")
     return nothing
 end

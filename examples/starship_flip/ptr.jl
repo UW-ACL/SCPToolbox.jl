@@ -41,8 +41,8 @@ define_problem!(pbm)
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 N = 31
-Nsub = 40
-iter_max = 20
+Nsub = 50
+iter_max = 15
 wvc = 1e3
 wtr = 0.1
 ε_abs = 1e-5
@@ -68,6 +68,7 @@ sol, history = ptr_solve(ptr_pbm)
 
 plot_trajectory_history(mdl, history)
 plot_final_trajectory(mdl, sol)
+plot_velocity(mdl, sol)
 plot_thrust(mdl, sol)
 plot_gimbal(mdl, sol)
 plot_convergence(history, "starship")
