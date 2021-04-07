@@ -66,6 +66,7 @@ sol, history = ptr_solve(ptr_pbm)
 # :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
+plot_trajectory_history(mdl, history)
 plot_final_trajectory(mdl, sol)
 plot_thrust(mdl, sol)
 plot_gimbal(mdl, sol)

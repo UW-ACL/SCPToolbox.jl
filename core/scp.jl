@@ -99,6 +99,8 @@ struct SCPProblem{T<:SCPParameters}
             throw(err)
         end
 
+        traj.scp = pars # Associate SCP parameters with the problem
+
         pbm = new{typeof(pars)}(pars, traj, common)
 
         return pbm

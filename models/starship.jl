@@ -47,6 +47,7 @@ struct StarshipParameters
     id_δdot::T_Int     # Gimbal rate index of the input vector
     id_t1::T_Int       # First phase duration index of parameter vector
     id_t2::T_Int       # Second phase duration index of parameter vector
+    id_xs::T_IntRange  # State at phase switch indices of parameter vector
     # ..:: Body axes ::..
     ei::T_Function     # Lateral body axis in body or world frame
     ej::T_Function     # Longitudinal body axis in body or world frame
@@ -127,6 +128,7 @@ function StarshipProblem()::StarshipProblem
     id_δdot = 3
     id_t1 = 1
     id_t2 = 2
+    id_xs = 3:(3+id_τ-1)
     # >> Body axes <<
     ei = (θ) -> cos(θ)*[1.0; 0.0]+sin(θ)*[0.0; 1.0]
     ej = (θ) -> -sin(θ)*[1.0; 0.0]+cos(θ)*[0.0; 1.0]
@@ -154,8 +156,8 @@ function StarshipProblem()::StarshipProblem
 
     starship = StarshipParameters(
         id_r, id_v, id_θ, id_ω, id_m, id_δd, id_τ, id_T, id_δ, id_δdot,
-        id_t1, id_t2, ei, ej, lcg, lcp, m, J, CD, T_min1, T_max1, T_min3,
-        T_max3, αe, δ_max, δdot_max, rate_delay)
+        id_t1, id_t2, id_xs, ei, ej, lcg, lcp, m, J, CD, T_min1, T_max1,
+        T_min3, T_max3, αe, δ_max, δdot_max, rate_delay)
 
     # ..:: Trajectory ::..
     # Initial values

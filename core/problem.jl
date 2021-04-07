@@ -79,6 +79,7 @@ mutable struct TrajectoryProblem
     Kf::T_Function    # Jacobian dgtc/dp
     # >> Other <<
     mdl::Any          # Problem-specific data structure
+    scp::Any          # SCP algorithm parameter data structure
 end
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -131,11 +132,12 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     gtc = nothing
     Hf = nothing
     Kf = nothing
+    scp = nothing
 
     pbm = TrajectoryProblem(nx, nu, np, xrg, urg, prg, propag_actions, guess,
                             φ, Γ, S, dSdp, ℓ, dℓdx, dℓdp, g, dgdx, dgdp, S_cvx,
                             ℓ_cvx, g_cvx, f, A, B, F, X, U, s, C, D, G, gic,
-                            H0, K0, gtc, Hf, Kf, mdl)
+                            H0, K0, gtc, Hf, Kf, mdl, scp)
 
     return pbm
 end
