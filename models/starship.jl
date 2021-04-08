@@ -21,6 +21,8 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
+using JuMP
+using ECOS
 using PyPlot
 using Colors
 
@@ -77,7 +79,7 @@ struct StarshipEnvironmentParameters
 end
 
 #= Trajectory parameters. =#
-struct StarshipTrajectoryParameters
+mutable struct StarshipTrajectoryParameters
     r0::T_RealVector # [m] Initial position
     v0::T_RealVector # [m/s] Initial velocity
     θ0::T_Real       # [rad] Initial tilt angle
@@ -89,6 +91,7 @@ struct StarshipTrajectoryParameters
     γ_gs::T_Real     # [rad] Maximum glideslope (measured from vertical)
     θmax2::T_Real    # [rad] Maximum tilt for terminal descent phase
     τs::T_Real       # Normalized time end of first phase
+    hs::T_Real       # [m] Phase switch altitude guess
 end
 
 #= Starship trajectory optimization problem parameters all in one. =#
@@ -175,8 +178,9 @@ function StarshipProblem()::StarshipProblem
     γ_gs = deg2rad(27.0)
     θmax2 = deg2rad(15.0)
     τs = 0.5
+    hs = 100.0
     traj = StarshipTrajectoryParameters(r0, v0, θ0, vs, θs, vf, tf_min,
-                                        tf_max, γ_gs, θmax2, τs)
+                                        tf_max, γ_gs, θmax2, τs, hs)
 
     mdl = StarshipProblem(starship, env, traj)
 
@@ -252,6 +256,337 @@ function dynamics(x::T_RealVector,
     f[veh.id_τ] /= tdil
 
     return f
+end
+
+
+""" Compute the initial trajectory guess.
+
+This uses a simple bang-bang control strategy for the flip maneuver. Once
+Starship is upright, convex optimization is used to find the terminal descent
+trajectory by approximatin Starship as a double-integrator (no attitude, no
+aerodynamics).
+
+Args:
+* `N`: the number of discrete-time grid nodes.
+* `pbm`: the trajectory problem structure.
+
+Returns:
+* `x_guess`: the state trajectory initial guess.
+* `u_guess`: the input trajectory initial guess.
+* `p_guess`: the parameter vector initial guess.
+"""
+function starship_initial_guess(
+    N::T_Int,
+    pbm::TrajectoryProblem)::Tuple{T_RealMatrix,
+                                   T_RealMatrix,
+                                   T_RealVector}
+
+    @printf("Computing initial guess .")
+
+    # Parameters
+    veh = pbm.mdl.vehicle
+    traj = pbm.mdl.traj
+    env = pbm.mdl.env
+
+    # Normalized time grid
+    τ_grid = T_RealVector(LinRange(0.0, 1.0, N))
+    id_phase1 = findall(τ_grid.<=traj.τs)
+    id_phase2 = T_IntVector(id_phase1[end]:N)
+
+    # Initialize empty trajectory guess
+    x_guess = zeros(pbm.nx, N)
+    u_guess = zeros(pbm.nu, N)
+
+    ######################################################
+    # Phase 1: flip ######################################
+    ######################################################
+
+    # Simple guess control strategy
+    # Gimbal bang-bang drive θ0 to θs at min 3-engine thrust
+    flip_ac = veh.lcg/veh.J*veh.T_min3*sin(veh.δ_max)
+    flip_ts = sqrt((traj.θ0-traj.θs)/flip_ac)
+    flip_ctrl = (t, pbm) -> begin
+        veh = pbm.mdl.vehicle
+        T = veh.T_min3
+        ts = flip_ts
+        if t<=ts
+            δ = veh.δ_max
+        elseif t>ts && t<=2*ts
+            δ = -veh.δ_max
+        else
+            δ = 0.0
+        end
+        u = zeros(pbm.nu)
+        u[veh.id_T] = T
+        u[veh.id_δ] = δ
+        return u
+    end
+
+    # Dynamics with guess control
+    flip_f = (t, x, pbm) -> begin
+        veh = pbm.mdl.vehicle
+        traj = pbm.mdl.traj
+        u = flip_ctrl(t, pbm)
+        p = zeros(pbm.np)
+        p[veh.id_t1] = traj.τs
+        p[veh.id_t2] = 1-traj.τs
+        dxdt = dynamics(x, u, p, pbm; no_aero_torques=true)
+        return dxdt
+    end
+
+    # Initial condition
+    x10 = zeros(pbm.nx)
+    x10[veh.id_r] = traj.r0
+    x10[veh.id_v] = traj.v0
+    x10[veh.id_θ] = traj.θ0
+    x10[veh.id_δd] = veh.δ_max
+
+    # Propagate the flip dynamics under the guess control
+    t_θcst = 10.0
+    tf = 2*flip_ts+t_θcst
+    t = T_RealVector(LinRange(0.0, tf, 5000))
+    x1 = rk4((t, x) -> flip_f(t, x, pbm), x10, t; full=true)
+
+    # Find crossing of terminal vertical velocity
+    vs = dot(traj.vs, env.ey)
+    k_0x = findfirst(x1[veh.id_v, :]'*env.ey.>=vs)
+    if isnothing(k_0x)
+        msg = string("ERROR: no terminal velocity crossing, ",
+                     "increase time of flight (t_θcst).")
+        error = ArgumentError(msg)
+        throw(error)
+    end
+    t = @k(t, 1, k_0x)
+    t1 = t[end]
+    x1 = @k(x1, 1, k_0x)
+    x1[veh.id_τ, :] *= traj.τs/t1
+
+    # Populate trajectory guess first phase
+    τ2t = (τ) -> τ/traj.τs*t1
+    x1c = T_ContinuousTimeTrajectory(t, x1, :linear)
+    @k(x_guess, id_phase1) = hcat([
+        sample(x1c, τ2t(τ)) for τ in τ_grid[id_phase1]]...)
+    @k(u_guess, id_phase1) = hcat([
+        flip_ctrl(τ2t(τ), pbm) for τ in τ_grid[id_phase1]]...)
+
+    @printf(".")
+
+    ######################################################
+    # Phase 2: terminal descent ##########################
+    ######################################################
+
+    # Get the transition state
+    xs = sample(x1c, τ2t(τ_grid[id_phase1[end]]))
+    traj.hs = dot(xs[veh.id_r], env.ey)
+
+    # Discrete time grid
+    τ2 = τ_grid[id_phase2].-τ_grid[id_phase2[1]]
+    N2 = length(τ2)
+    tdil = (t2) -> t2/(1-traj.τs) # Time dilation amount
+
+    # State and control dims for simple system
+    nx = 4
+    nu = 2
+
+    # LTI state space matrices
+    A_lti = [zeros(2,2) I(2); zeros(2, 4)]
+    B_lti = [zeros(2,2); I(2)/veh.m]
+    r_lti = [zeros(2); env.g]
+
+    # Matrix indices in concatenated vector
+    idcs_A = (1:nx*nx)
+    idcs_Bm = (1:nx*nu).+idcs_A[end]
+    idcs_Bp = (1:nx*nu).+idcs_Bm[end]
+    idcs_r = (1:nx).+idcs_Bp[end]
+
+    # Concatenated time derivative for propagation
+    derivs = (t, V, Δt, tdil) -> begin
+        # Get current values
+        Phi = reshape(V[idcs_A], (nx, nx))
+        σm = (Δt-t)/Δt
+        σp = t/Δt
+
+        # Apply time dilation to integrate in absolute time
+        _A = tdil*A_lti
+        _B = tdil*B_lti
+        _r = tdil*r_lti
+
+        # Compute derivatives
+        iPhi = Phi\I(nx)
+        dPhidt = _A*Phi
+        dBmdt = iPhi*_B*σm
+        dBpdt = iPhi*_B*σp
+        drdt = iPhi*_r
+
+        dVdt = [vec(dPhidt); vec(dBmdt); vec(dBpdt); drdt]
+
+        return dVdt
+    end
+
+    # Continuous to discrete time dynamics conversion function
+    discretize = (t2) -> begin
+        # Propagate the dynamics over a single time interval
+        Δt = τ2[2]-τ2[1]
+        F = (t, V) -> derivs(t, V, Δt, tdil(t2))
+        t_grid = T_RealVector(LinRange(0, Δt, 100))
+        V0 = zeros(idcs_r[end])
+        V0[idcs_A] = vec(I(nx))
+        V = rk4(F, V0, t_grid)
+
+        # Get the raw RK4 results
+        AV = V[idcs_A]
+        BmV = V[idcs_Bm]
+        BpV = V[idcs_Bp]
+        rV = V[idcs_r]
+
+        # Extract the discrete-time update matrices for this time interval
+        A = reshape(AV, (nx, nx))
+        Bm = A*reshape(BmV, (nx, nu))
+        Bp = A*reshape(BpV, (nx, nu))
+        r = A*rV
+
+        return A, Bm, Bp, r
+    end
+
+    # Variable scaling
+    zero_intvl_tol = sqrt(eps())
+    Tmax_x = veh.T_max1*sin(traj.θmax2)
+
+    update_scale! = (S, c, i, min, max) -> begin
+        if min > max
+            min, max = max, min
+        end
+        if (max-min)>zero_intvl_tol
+            S[i, i] = max-min
+            c[i] = min
+        end
+    end
+
+    Sx, cx = T_RealMatrix(I(nx)), zeros(nx)
+    Su, cu = T_RealMatrix(I(nu)), zeros(nu)
+
+    update_scale!(Sx, cx, 1, 0, xs[veh.id_r[1]])
+    update_scale!(Sx, cx, 2, 0, xs[veh.id_r[2]])
+    update_scale!(Sx, cx, 3, 0, xs[veh.id_v[1]])
+    update_scale!(Sx, cx, 4, 0, xs[veh.id_v[2]])
+    update_scale!(Su, cu, 1, -Tmax_x, Tmax_x)
+    update_scale!(Su, cu, 2, veh.T_min1, veh.T_max1)
+
+    # Solver for a trajectory, given a time of flight
+    solve_trajectory = (t2) -> begin
+        # >> Formulate the convex optimization problem <<
+        cvx = Model()
+        set_optimizer(cvx, ECOS.Optimizer)
+        set_optimizer_attribute(cvx, "verbose", 0)
+
+        # Decision variables
+        xh = @variable(cvx, [1:nx, 1:N2], base_name="xh")
+        uh = @variable(cvx, [1:nu, 1:N2], base_name="uh")
+        x = Sx*xh.+cx
+        u = Su*uh.+cu
+
+        # Boundary conditions
+        x0 = zeros(nx)
+        xf = zeros(nx)
+        x0[1:2] = xs[veh.id_r]
+        x0[3:4] = xs[veh.id_v]
+        xf[3:4] = traj.vf
+        @constraint(cvx, @first(x) .== x0)
+        @constraint(cvx, @last(x) .== xf)
+
+        # Dynamics
+        A, Bm, Bp, r = discretize(t2)
+        for k = 1:N2-1
+            xk, xkp1, uk, ukp1 = @k(x), @kp1(x), @k(u), @kp1(u)
+            @constraint(cvx, xkp1 .== A*xk+Bm*uk+Bp*ukp1+r)
+        end
+
+        # Input constraints
+        C = T_ConvexConeConstraint
+        acc! = add_conic_constraint!
+        for k = 1:N2
+            uk = @k(u)
+            acc!(cvx, C(vcat(veh.T_max1, uk), :soc))
+            acc!(cvx, C(veh.T_min1-dot(uk, env.ey), :nonpos))
+            acc!(cvx, C(vcat(dot(uk, env.ey)/cos(traj.θmax2), uk), :soc))
+        end
+
+        # State constraints
+        for k = 1:N2
+            xk = @k(x)
+            rk = xk[1:2]
+            # acc!(cvx, C(vcat(dot(rk, env.ey)/cos(traj.γ_gs), rk), :soc))
+            @constraint(cvx, dot(rk, env.ey)>=0)
+        end
+
+        # Cost function
+        set_objective_function(cvx, 0.0)
+        set_objective_sense(cvx, MOI.MIN_SENSE)
+
+        # >> Solve <<
+        optimize!(cvx)
+
+        # Return the solution
+        x = value.(x)
+        u = value.(u)
+        status = termination_status(cvx)
+
+        return x, u, status
+    end
+
+    # Find the first (smallest) time that gives a feasible trajectory
+    t2_range = [10.0, 40.0]
+    Δt2 = 1.0 # Amount to increment t2 guess by
+    t2, x2, T2 = t2_range[1], nothing, nothing
+    while true
+        @printf(".")
+        _x, _u, status = solve_trajectory(t2)
+        if status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL
+            x2 = _x
+            T2 = _u
+            break
+        end
+        t2 += Δt2
+        if t2>t2_range[2]
+            msg = string("ERROR: could not find a terminal ",
+                         "descent time of flight.")
+            err = SCPError(0, SCP_BAD_PROBLEM, msg)
+            throw(err)
+        end
+    end
+
+    # Add terminal descent to initial guess
+    x_guess[veh.id_r, id_phase2] = x2[1:2, :]
+    x_guess[veh.id_v, id_phase2] = x2[3:4, :]
+    x_guess[veh.id_τ, id_phase2] = τ2.+traj.τs
+    _tdil = tdil(t2)
+    m20 = x_guess[veh.id_m, id_phase2[1]]
+    for k = 1:N2
+        Tk = @k(T2)
+        j = @k(id_phase2)
+        x_guess[veh.id_θ, j] = -atan(Tk[1], Tk[2])
+        u_guess[veh.id_T, j] = norm(Tk)
+        if k>1
+            # Angular velocity
+            Δθ = x_guess[veh.id_θ, j]-x_guess[veh.id_θ, j-1]
+            Δt = (τ2[k]-τ2[k-1])*_tdil
+            x_guess[veh.id_ω, j-1] = Δθ/Δt
+            # Mass
+            x_guess[veh.id_m, j] = m20+trapz(
+                veh.αe*u_guess[veh.id_T, id_phase2[1:k]],
+                τ2[1:k]*_tdil)
+        end
+    end
+
+    # Parameter guess
+    p_guess = T_RealVector(undef, pbm.np)
+    p_guess[veh.id_t1] = t1
+    p_guess[veh.id_t2] = t2
+    p_guess[veh.id_xs] = xs
+
+    @printf(". done\n")
+
+    return x_guess, u_guess, p_guess
 end
 
 """ Plot the trajectory evolution through SCP iterations.

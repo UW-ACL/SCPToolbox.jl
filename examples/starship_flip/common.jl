@@ -84,139 +84,7 @@ end
 
 function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
 
-    # Parameters
-    veh = pbm.mdl.vehicle
-    traj = pbm.mdl.traj
-    env = pbm.mdl.env
-
-    # Initial condition
-    X0 = zeros(pbm.nx)
-    X0[veh.id_r] = traj.r0
-    X0[veh.id_v] = traj.v0
-    X0[veh.id_θ] = traj.θ0
-    X0[veh.id_δd] = veh.δ_max
-
-    # Simple guess control strategy
-    # Gimbal bang-bang drive θ0 to θs at min 3-engine thrust
-    _startship__ac = veh.lcg/veh.J*veh.T_min3*sin(veh.δ_max)
-    _startship__ts = sqrt((traj.θ0-traj.θs)/_startship__ac)
-    _startship__control = (t, pbm) -> begin
-        veh = pbm.mdl.vehicle
-        T = veh.T_min3
-        ts = _startship__ts
-        if t<=ts
-            δ = veh.δ_max
-        elseif t>ts && t<=2*ts
-            δ = -veh.δ_max
-        else
-            δ = 0.0
-        end
-        u = zeros(pbm.nu)
-        u[veh.id_T] = T
-        u[veh.id_δ] = δ
-        return u
-    end
-
-    # Dynamics with guess control
-    _startship__f_guess = (t, x, pbm) -> begin
-        veh = pbm.mdl.vehicle
-        traj = pbm.mdl.traj
-        u = _startship__control(t, pbm)
-        p = zeros(pbm.np)
-        p[veh.id_t1] = traj.τs
-        p[veh.id_t2] = 1-traj.τs
-        dxdt = dynamics(x, u, p, pbm; no_aero_torques=true)
-        return dxdt
-    end
-
-    problem_set_guess!(
-        pbm, (N, pbm) -> begin
-
-        # Parameters
-        veh = pbm.mdl.vehicle
-        traj = pbm.mdl.traj
-        env = pbm.mdl.env
-
-        # Normalized time grid
-        τ_grid = LinRange(0.0, 1.0, N)
-        τs = traj.τs
-        id_phase1 = τ_grid.<=τs
-        id_phase2 = τ_grid.>τs
-
-        # Initialize empty trajectory guess
-        x = T_RealMatrix(undef, pbm.nx, N)
-        u = T_RealMatrix(undef, pbm.nu, N)
-
-        # >>>>>>>>><<<<<<<<<<
-        # >> Phase 1: flip <<
-        # >>>>>>>>><<<<<<<<<<
-
-        # The flip guess dynamics
-        ts = _startship__ts
-        f = _startship__f_guess
-        ctrl = _startship__control
-
-        # Propagate the flip dynamics under the guess control
-        t_θcst = 10.0
-        tf = 2*ts+t_θcst
-        t = T_RealVector(LinRange(0.0, tf, 5000))
-        X = rk4((t, x) -> f(t, x, pbm), X0, t; full=true)
-
-        # Find crossing of terminal vertical velocity
-        vs = dot(traj.vs, env.ey)
-        k_0x = findfirst(X[veh.id_v, :]'*env.ey.>=vs)
-        if isnothing(k_0x)
-        msg = string("ERROR: no terminal velocity crossing, ",
-                     "increase time of flight (t_θcst).")
-        error = ArgumentError(msg)
-        throw(error)
-        end
-        t = @k(t, 1, k_0x)
-        t1 = t[end]
-        X = @k(X, 1, k_0x)
-        X[veh.id_τ, :] *= traj.τs/t1
-
-        # Populate trajectory guess first phase
-        τ2t = (τ) -> τ/τs*t1
-        xc = T_ContinuousTimeTrajectory(t, X, :linear)
-        @k(x, id_phase1) = hcat([
-            sample(xc, τ2t(τ)) for τ in τ_grid[id_phase1]]...)
-        @k(u, id_phase1) = hcat([
-            ctrl(τ2t(τ), pbm) for τ in τ_grid[id_phase1]]...)
-
-        # >>>>>>>>>>>>>>>><<<<<<<<<<<<<<<
-        # >> Phase 2: terminal descent <<
-        # >>>>>>>>>>>>>>>><<<<<<<<<<<<<<<
-
-        xs = sample(xc, τ2t(τ_grid[id_phase1][end]))
-        alt_switch = dot(xs[veh.id_r], env.ey)
-        v2 = 40.0 # [m/s] Terminal descent velocity
-        t2 = alt_switch/v2 # Phase 2 duration
-        T_hover = norm(veh.m*env.g)
-
-        # Straight line interpolate state
-        x0 = copy(xs)
-        xf = zeros(pbm.nx)
-        xf[veh.id_v] = traj.vf
-        xf[veh.id_m] = xs[veh.id_m]+veh.αe*T_hover*t2
-        xf[veh.id_τ] = 1.0
-        N2 = N-sum(id_phase1)+1
-        X = straightline_interpolate(xs, xf, N2)
-        @k(x, id_phase2) = @k(X, 2, N2)
-
-        # Constant input
-        u_hov = zeros(pbm.nu)
-        u_hov[veh.id_T] = T_hover
-        U = straightline_interpolate(u_hov, u_hov, N2)
-        @k(u, id_phase2) = @k(U, 2, N2)
-
-        # >> Parameter guess <<
-        p = T_RealVector(undef, pbm.np)
-        p[veh.id_t1] = t1
-        p[veh.id_t2] = t2
-
-        return x, u, p
-        end)
+    problem_set_guess!(pbm, starship_initial_guess)
 
     return nothing
 end
@@ -231,7 +99,7 @@ function _common__set_cost!(pbm::TrajectoryProblem)::Nothing
                                # Goal: maximize it
                                rs = p[veh.id_xs][veh.id_r]
                                alt = dot(rs, env.ey)
-                               alt_nrml = 300.0
+                               alt_nrml = traj.hs
                                alt_cost = -alt/alt_nrml
                                μ = 0.5 # Relative weight to fuel cost
                                # Fuel consumption
