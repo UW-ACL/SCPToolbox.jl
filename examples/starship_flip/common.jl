@@ -101,7 +101,7 @@ function _common__set_cost!(pbm::TrajectoryProblem)::Nothing
                                alt = dot(rs, env.ey)
                                alt_nrml = traj.hs
                                alt_cost = -alt/alt_nrml
-                               μ = 0.5 # Relative weight to fuel cost
+                               μ = 0.3 # Relative weight to fuel cost
                                # Fuel consumption
                                # Goal: minimize it
                                mf = x[veh.id_m]

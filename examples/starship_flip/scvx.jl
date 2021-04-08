@@ -38,8 +38,8 @@ define_problem!(pbm)
 # :: PTR algorithm parameters :::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-N = 30
-Nsub = 25
+N = 31
+Nsub = 100
 iter_max = 100
 λ = 5e2
 ρ_0 = 0.0
@@ -72,7 +72,9 @@ sol, history = scvx_solve(scvx_pbm)
 # :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
+plot_trajectory_history(mdl, history)
 plot_final_trajectory(mdl, sol)
+plot_velocity(mdl, sol)
 plot_thrust(mdl, sol)
 plot_gimbal(mdl, sol)
 plot_convergence(history, "starship")
