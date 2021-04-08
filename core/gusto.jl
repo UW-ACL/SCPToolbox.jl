@@ -721,6 +721,8 @@ function _gusto__soft_penalty(
     # The possibilities are:
     #   (:quad)      h(f(x, p)) = λ*(max(0, f(x, p)))^2
     #   (:softplus)  h(f(x, p)) = λ*log(1+exp(hom*f(x, p)))/hom
+    acc! = add_conic_constraint!
+    Cone = T_ConvexConeConstraint
     if penalty==:quad
         # ..:: Quadratic penalty ::..
         if mode==:numerical
@@ -728,8 +730,8 @@ function _gusto__soft_penalty(
         else
             u = @variable(spbm.mdl, base_name="u")
             v = @variable(spbm.mdl, base_name="v")
-            @constraint(spbm.mdl, u>=0)
-            @constraint(spbm.mdl, f+u<=v)
+            acc!(spbm.mdl, Cone(-u, :nonpos))
+            acc!(spbm.mdl, Cone(f+u-v, :nonpos))
             h = v^2
         end
     else
@@ -741,11 +743,9 @@ function _gusto__soft_penalty(
             u = @variable(spbm.mdl, base_name="u")
             v = @variable(spbm.mdl, base_name="v")
             w = @variable(spbm.mdl, base_name="w")
-            acc! = add_conic_constraint!
-            C = T_ConvexConeConstraint
-            acc!(spbm.mdl, C(vcat(-w, 1, u), :exp))
-            acc!(spbm.mdl, C(vcat(hom*f-w, 1, v), :exp))
-            @constraint(spbm.mdl, u+v <= 1)
+            acc!(spbm.mdl, Cone(vcat(-w, 1, u), :exp))
+            acc!(spbm.mdl, Cone(vcat(hom*f-w, 1, v), :exp))
+            acc!(spbm.mdl, Cone(u+v-1, :nonpos))
             h = w/hom
         end
     end
@@ -822,7 +822,7 @@ function _gusto__trust_region_cost(x::T_OptiVarMatrix,
                 acc!(spbm.mdl, C(vcat(w, @k(dx_lq), dp_lq), :soc))
                 acc!(spbm.mdl, C(vcat(w, η+@k(tr), 1), :geom))
             else
-                @constraint(spbm.mdl, @k(dx_lq)+dp_lq <= η+@k(tr))
+                acc!(spbm.mdl, C(@k(dx_lq)+dp_lq-(η+@k(tr)), :nonpos))
             end
         else
             dx_lq = norm(@k(dx), q)
