@@ -306,6 +306,7 @@ end
 A conic constraint is of the form {z : z ∈ K}, where K is a convex cone.
 
 The supported cones are:
+    :zero   for constraints z==0.
     :nonpos for constraints z<=0.
     :l1     for constraints z=(t, x), norm(x, 1)<=t.
     :soc    for constraints z=(t, x), norm(x, 2)<=t.
@@ -328,7 +329,7 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
         constraint: the conic constraint. =#
     function T_ConvexConeConstraint(z::T_OptiVar,
                                     kind::T_Symbol)::T_ConvexConeConstraint
-        if !(kind in (:nonpos, :l1, :soc, :linf, :geom, :exp))
+        if !(kind in (:zero, :nonpos, :l1, :soc, :linf, :geom, :exp))
             err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: Unsupported cone.")
             throw(err)
         end
@@ -336,7 +337,9 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
         z = (typeof(z) <: Array) ? z : [z]
         dim = length(z)
 
-        if kind==:nonpos
+        if kind==:zero
+            K = MOI.Zeros(dim)
+        elseif kind==:nonpos
             K = MOI.Nonpositives(dim)
         elseif kind==:l1
             K = MOI.NormOneCone(dim)
@@ -370,6 +373,7 @@ mutable struct T_DLTV
     F::T_RealTensor  # ... +F[:, :, k]*p+ ...
     r::T_RealMatrix  # ... +r[:, k]+ ...
     E::T_RealTensor  # ... +E[:, :, k]*v
+    timing::T_Real   # [s] Time taken to discretize
 
     #= Basic constructor.
 
@@ -393,8 +397,9 @@ mutable struct T_DLTV
         F = T_RealTensor(undef, nx, np, N-1)
         r = T_RealMatrix(undef, nx, N-1)
         E = T_RealTensor(undef, nx, nv, N-1)
+        timing = 0.0
 
-        dyn = new(A, Bm, Bp, F, r, E)
+        dyn = new(A, Bm, Bp, F, r, E, timing)
 
         return dyn
     end

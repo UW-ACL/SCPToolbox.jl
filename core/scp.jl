@@ -195,6 +195,51 @@ function SCPProblem(
     return pbm
 end
 
+""" Create the subproblem solution structure.
+
+This calls the SCP algorithm-specific function, and also saves some general
+properties of the solution.
+
+Args:
+* `spbm`: the subproblem structure.
+"""
+function SCPSubproblemSolution!(spbm::T)::Nothing where {T<:SCPSubproblem}
+    # Save the solution
+    # (this complicated-looking thing calls the constructor for the
+    #  SCPSubproblemSolution child type)
+    constructor = Meta.parse(string(typeof(spbm.ref)))
+    spbm.sol = eval(Expr(:call, constructor, spbm))
+
+    # Save common solution properties
+    spbm.sol.status = termination_status(spbm.mdl)
+
+    # Save statistics about the subproblem and its solution
+    spbm.timing[:solve] = solve_time(spbm.mdl)
+    spbm.timing[:discretize] = spbm.sol.dyn.timing
+    spbm.nvar = num_variables(spbm.mdl)
+    moi2sym = Dict("MathOptInterface.Zeros" => :zero,
+                   "MathOptInterface.Nonpositives" => :nonpos,
+                   "MathOptInterface.NormOneCone" => :l1,
+                   "MathOptInterface.SecondOrderCone" => :soc,
+                   "MathOptInterface.NormInfinityCone" => :linf,
+                   "MathOptInterface.GeometricMeanCone" => :geom,
+                   "MathOptInterface.ExponentialCone" => :exp)
+    dim = (ref) -> MOI.dimension(moi_set(constraint_object(ref)))
+    cons_types = list_of_constraint_types(spbm.mdl)
+    for cons_type in cons_types
+        function_type, set_type = cons_type
+        key = moi2sym[string(set_type)]
+        refs = all_constraints(spbm.mdl, function_type, set_type)
+        if key in (:zero, :nonpos)
+            spbm.ncons[key] = sum(dim(ref) for ref in refs)
+        else
+            spbm.ncons[key] = T_IntVector([dim(ref) for ref in refs])
+        end
+    end
+
+    return nothing
+end
+
 #= Convert subproblem solution to a final trajectory solution.
 
 This is what the SCP algorithm returns in the end to the user.
@@ -472,6 +517,8 @@ Args:
 function _scp__discretize!(
     ref::T, pbm::SCPProblem)::Nothing where {T<:SCPSubproblemSolution}
 
+    ref.dyn.timing = time_ns()
+
     # Parameters
     traj = pbm.traj
     nx = traj.nx
@@ -534,6 +581,8 @@ function _scp__discretize!(
 
     end
 
+    ref.dyn.timing = (time_ns()-ref.dyn.timing)/1e9
+
     return nothing
 end
 
@@ -552,6 +601,8 @@ function _scp__add_dynamics!(
     vd = spbm.vd
 
     # Add dynamics constraint to optimization model
+    acc! = add_conic_constraint!
+    Cone = T_ConvexConeConstraint
     for k = 1:N-1
         xk, xkp1, uk, ukp1, vdk = @k(x), @kp1(x), @k(u), @kp1(u), @k(vd)
         A = @k(spbm.ref.dyn.A)
@@ -560,7 +611,7 @@ function _scp__add_dynamics!(
         F = @k(spbm.ref.dyn.F)
         r = @k(spbm.ref.dyn.r)
         E = @k(spbm.ref.dyn.E)
-        @constraint(spbm.mdl, xkp1.==A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk)
+        acc!(spbm.mdl, Cone(xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk), :zero))
     end
 
     return nothing
@@ -647,6 +698,8 @@ function _scp__add_nonconvex_constraints!(
     p = spbm.p
 
     # Problem-specific convex constraints
+    acc! = add_conic_constraint!
+    Cone = T_ConvexConeConstraint
     for k = 1:N
         if !isnothing(traj_pbm.s)
             xup = (@k(xb), @k(ub), pb)
@@ -662,7 +715,7 @@ function _scp__add_nonconvex_constraints!(
                 spbm.vs = @variable(spbm.mdl, [1:ns, 1:N], base_name="vs")
             end
 
-            @constraint(spbm.mdl, lhs .<= @k(spbm.vs))
+            acc!(spbm.mdl, Cone(lhs-@k(spbm.vs), :nonpos))
         else
             spbm.vs = @variable(spbm.mdl, [1:0, 1:N], base_name="vs")
             break
@@ -730,6 +783,8 @@ function _scp__add_bcs!(
     pb = spbm.ref.p
 
     # Initial condition
+    acc! = add_conic_constraint!
+    Cone = T_ConvexConeConstraint
     if !isnothing(traj.gic)
         gic = traj.gic(xb0, pb)
         nic = length(gic)
@@ -739,9 +794,9 @@ function _scp__add_bcs!(
         lhs = H0*x0+K0*p+ℓ0
         if relaxed
             spbm.vic = @variable(spbm.mdl, [1:nic], base_name="vic")
-            @constraint(spbm.mdl, lhs+spbm.vic .== 0.0)
+            acc!(spbm.mdl, Cone(lhs+spbm.vic, :zero))
         else
-            @constraint(spbm.mdl, lhs .== 0.0)
+            acc!(spbm.mdl, Cone(lhs, :zero))
         end
     elseif relaxed
         spbm.vic = @variable(spbm.mdl, [1:0], base_name="vic")
@@ -757,9 +812,9 @@ function _scp__add_bcs!(
         lhs = Hf*xf+Kf*p+ℓf
         if relaxed
             spbm.vtc = @variable(spbm.mdl, [1:ntc], base_name="vtc")
-            @constraint(spbm.mdl, lhs+spbm.vtc .== 0.0)
+            acc!(spbm.mdl, Cone(lhs+spbm.vtc, :zero))
         else
-            @constraint(spbm.mdl, lhs .== 0.0)
+            acc!(spbm.mdl, Cone(lhs, :zero))
         end
     elseif relaxed
         spbm.vtc = @variable(spbm.mdl, [1:0], base_name="vtc")
@@ -810,10 +865,7 @@ function _scp__solve_subproblem!(spbm::T)::Nothing where {T<:SCPSubproblem}
     optimize!(spbm.mdl)
 
     # Save the solution
-    # (this complicated-looking thing calls the constructor for the
-    #  SCPSubproblemSolution child type)
-    constructor = Meta.parse(string(typeof(spbm.ref)))
-    spbm.sol = eval(Expr(:call, constructor, spbm))
+    SCPSubproblemSolution!(spbm)
 
     return nothing
 end
@@ -844,6 +896,19 @@ function _scp__unsafe_solution(sol::Union{T, V})::T_Bool where {
     return sol.unsafe
 end
 
+""" Compute solution time overhead introduced by the surrounding code.
+
+Args:
+* `spbm`: the subproblem structure.
+"""
+function _scp__overhead!(spbm::T)::Nothing where {T<:SCPSubproblem}
+    useful_time = (spbm.timing[:discretize]+spbm.timing[:formulate]+
+                   spbm.timing[:solve])
+    spbm.timing[:total] = (time_ns()-spbm.timing[:total])/1e9
+    spbm.timing[:overhead] = spbm.timing[:total]-useful_time
+    return nothing
+end
+
 #= Add subproblem to SCP history.
 
 Args:
@@ -851,6 +916,7 @@ Args:
     spbm: subproblem structure. =#
 function _scp__save!(hist::SCPHistory,
                      spbm::T)::Nothing where {T<:SCPSubproblem}
+    spbm.timing[:formulate] = (time_ns()-spbm.timing[:formulate])/1e9
     push!(hist.subproblems, spbm)
     return nothing
 end

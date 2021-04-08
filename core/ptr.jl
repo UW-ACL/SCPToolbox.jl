@@ -102,6 +102,10 @@ mutable struct PTRSubproblem <: SCPSubproblem
     ηx::T_OptiVarVector  # State trust region radii
     ηu::T_OptiVarVector  # Input trust region radii
     ηp::T_OptiVar        # Parameter trust region radii
+    # >> Statistics <<
+    nvar::T_Int                    # Total number of decision variables
+    ncons::Dict{T_Symbol, Any}     # Number of constraints
+    timing::Dict{T_Symbol, T_Real} # Runtime profiling
 end
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -169,9 +173,15 @@ Args:
 Returns:
     spbm: the subproblem structure. =#
 function PTRSubproblem(pbm::SCPProblem,
-                        iter::T_Int,
-                        ref::Union{PTRSubproblemSolution,
-                                   Missing}=missing)::PTRSubproblem
+                       iter::T_Int,
+                       ref::Union{PTRSubproblemSolution,
+                                  Missing}=missing)::PTRSubproblem
+
+    # Statistics
+    timing = Dict(:formulate => time_ns(), :total => time_ns())
+    nvar = 0
+    ncons = Dict()
+
     # Convenience values
     pars = pbm.pars
     scale = pbm.common.scale
@@ -221,7 +231,7 @@ function PTRSubproblem(pbm::SCPProblem,
 
     spbm = PTRSubproblem(iter, mdl, algo, pbm, sol, ref, J, J_tr, J_vc,
                          J_aug, xh, uh, ph, x, u, p, vd, vs, vic, vtc,
-                         ηx, ηu, ηp)
+                         ηx, ηu, ηp, nvar, ncons, timing)
 
     return spbm
 end
@@ -321,7 +331,6 @@ function PTRSubproblemSolution(spbm::PTRSubproblem)::PTRSubproblemSolution
     sol.ηx = value.(spbm.ηx)
     sol.ηu = value.(spbm.ηu)
     sol.ηp = value(spbm.ηp)
-    sol.status = termination_status(spbm.mdl)
 
     return sol
 end
@@ -467,7 +476,7 @@ function _ptr__add_trust_region!(spbm::PTRSubproblem)::Nothing
         acc!(spbm.mdl, C(vcat(wp, dp_lq), :soc))
         acc!(spbm.mdl, C(vcat(wp, ηp, 1), :geom))
     else
-        @constraint(spbm.mdl, dp_lq <= ηp)
+        acc!(spbm.mdl, C(dp_lq-ηp, :nonpos))
     end
 
     # State and input trust regions
@@ -487,9 +496,9 @@ function _ptr__add_trust_region!(spbm::PTRSubproblem)::Nothing
             acc!(spbm.mdl, C(vcat(wu, @k(ηu), 1), :geom))
         else
             # State
-            @constraint(spbm.mdl, @k(dx_lq) <= @k(ηx))
+            acc!(spbm.mdl, C(@k(dx_lq)-@k(ηx), :nonpos))
             # Input
-            @constraint(spbm.mdl, @k(du_lq) <= @k(ηu))
+            acc!(spbm.mdl, C(@k(du_lq)-@k(ηu), :nonpos))
         end
     end
 
@@ -665,6 +674,8 @@ function _ptr__print_info(spbm::PTRSubproblem,
 
         print(assoc, table)
     end
+
+    _scp__overhead!(spbm)
 
     return nothing
 end

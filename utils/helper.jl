@@ -174,7 +174,9 @@ function get_conic_constraint_indicator!(
     # Compute the indicator
     if mode==:numerical
         z = cone.z
-        if cone.kind==:nonpos
+        if cone.kind==:zero
+            q = abs.(z)
+        elseif cone.kind==:nonpos
             q = z
         elseif cone.kind in (:l1, :soc, :linf)
             t = z[1]
@@ -191,9 +193,12 @@ function get_conic_constraint_indicator!(
         end
     else
         z = cone.z
-        if cone.kind==:nonpos
+        if cone.kind in (:zero, :nonpos)
             q = @variable(pbm, [1:cone.dim], base_name="q")
-            acc!(pbm, C(z-q, cone.kind))
+            acc!(pbm, C(z-q, :nonpos))
+            if cone.kind==:zero
+                acc!(pbm, C(-q-z, :nonpos))
+            end
         else
             q = @variable(pbm, base_name="q")
             if cone.kind in (:l1, :soc, :linf)
