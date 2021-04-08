@@ -187,8 +187,7 @@ end
 # :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-"""
-Starship vehicle dynamics.
+""" Starship vehicle dynamics.
 
 Args:
 * `x`: the current state vector.
@@ -407,22 +406,18 @@ function plot_final_trajectory(mdl::StarshipProblem,
 
     # ..:: Draw the fuselage ::..
     b_scale = r_span*0.1
-    num_draw = 6 # Number of instances to draw
-    K = T_IntVector(1:(N÷num_draw):N)
     for k = 1:N
         altitude = dot(@k(pos), mdl.env.ey)
-        if altitude>=0 || k==N || k in K
-            base = pos[1:2, k]
-            nose = [-sin(θ[k]); cos(θ[k])]
-            tip = base+b_scale*nose
-            x = [base[1], tip[1]]
-            y = [base[2], tip[2]]
-            ax.plot(x, y,
-                    color="#26415d",
-                    linewidth=1.5,
-                    solid_capstyle="round",
-                    zorder=100)
-        end
+        base = @k(pos)
+        nose = [-sin(θ[k]); cos(θ[k])]
+        tip = base+b_scale*nose
+        x = [base[1], tip[1]]
+        y = [base[2], tip[2]]
+        ax.plot(x, y,
+                color="#26415d",
+                linewidth=1.5,
+                solid_capstyle="round",
+                zorder=100)
     end
 
     # ..:: Draw the discrete-time positions trajectory ::..
@@ -737,9 +732,9 @@ end
 """ Draw the glide slope constraint on an existing plot.
 
 Args:
-    ax: the figure axis object.
-    mdl: the starship problem parameters.
-    alt: (optional) altitude of glide slope "triangle" visualization.
+* `ax`: the figure axis object.
+* `mdl`: the starship problem parameters.
+* `alt`: (optional) altitude of glide slope "triangle" visualization.
 """
 function _starship__plot_glideslope(ax::PyPlot.PyObject,
                                     mdl::StarshipProblem;
@@ -757,8 +752,8 @@ end
 """ Draw the phase switch time on a timeseries plot.
 
 Args:
-    ax: the figure axis object.
-    t1: the duration of phase 1.
+* `ax`: the figure axis object.
+* `t1`: the duration of phase 1.
 """
 function _starship__plot_switch_time(ax::PyPlot.PyObject,
                                      t1::T_Real)::Nothing
