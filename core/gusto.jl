@@ -989,6 +989,7 @@ function _gusto__update_rule(
     # Extract values and relevant data
     pars = spbm.def.pars
     traj = spbm.def.traj
+    τ_grid = spbm.def.common.τ_grid
     sol = spbm.sol
     ref = spbm.ref
     N = pars.N
@@ -1022,7 +1023,7 @@ function _gusto__update_rule(
             # Check with respect to the convex state constraints
             if !isnothing(traj.X)
                 for k = 1:N
-                    xk_in_X = traj.X(@k(sol.xd))
+                    xk_in_X = traj.X(@k(τ_grid), @k(sol.xd))
                     for cone in xk_in_X
                         ind = get_conic_constraint_indicator!(spbm.mdl, cone)
                         if ind>c_buffer
