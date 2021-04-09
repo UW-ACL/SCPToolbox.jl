@@ -1097,6 +1097,7 @@ function plot_convergence(history, name::T_String)::Nothing
     discretize = [spbm.timing[:discretize] for spbm in spbms]
     solve = [spbm.timing[:solve] for spbm in spbms]
     overhead = [spbm.timing[:overhead] for spbm in spbms]
+    overhead[1] = 0.0
     total = [spbm.timing[:total] for spbm in spbms]
 
     for i = 1:2
