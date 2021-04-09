@@ -88,35 +88,39 @@ end
 
 #= Subproblem definition in JuMP format for the convex numerical optimizer. =#
 mutable struct SCvxSubproblem <: SCPSubproblem
-    iter::T_Int                  # SCvx iteration number
-    mdl::Model                   # The optimization problem handle
-    algo::T_String               # SCP and convex algorithms used
+    iter::T_Int          # SCvx iteration number
+    mdl::Model           # The optimization problem handle
+    algo::T_String       # SCP and convex algorithms used
     # >> Algorithm parameters <<
-    def::SCPProblem              # The SCvx problem definition
-    η::T_Real                    # Trust region radius
+    def::SCPProblem      # The SCvx problem definition
+    η::T_Real            # Trust region radius
     # >> Reference and solution trajectories <<
     sol::Union{SCvxSubproblemSolution, Missing} # Solution trajectory
     ref::Union{SCvxSubproblemSolution, Missing} # Reference trajectory
     # >> Cost function <<
-    L::T_Objective               # The original convex cost function
-    L_pen::T_Objective           # The virtual control penalty
-    L_aug::T_Objective           # Overall cost function
+    L::T_Objective       # The original convex cost function
+    L_pen::T_Objective   # The virtual control penalty
+    L_aug::T_Objective   # Overall cost function
     # >> Scaled variables <<
-    xh::T_OptiVarMatrix          # Discrete-time states
-    uh::T_OptiVarMatrix          # Discrete-time inputs
-    ph::T_OptiVarVector          # Parameter
+    xh::T_OptiVarMatrix  # Discrete-time states
+    uh::T_OptiVarMatrix  # Discrete-time inputs
+    ph::T_OptiVarVector  # Parameter
     # >> Physical variables <<
-    x::T_OptiVarMatrix           # Discrete-time states
-    u::T_OptiVarMatrix           # Discrete-time inputs
-    p::T_OptiVarVector           # Parameters
+    x::T_OptiVarMatrix   # Discrete-time states
+    u::T_OptiVarMatrix   # Discrete-time inputs
+    p::T_OptiVarVector   # Parameters
     # >> Virtual control (never scaled) <<
-    vd::T_OptiVarMatrix          # Dynamics virtual control
-    vs::T_OptiVarMatrix          # Nonconvex constraints virtual control
-    vic::T_OptiVarVector         # Initial conditions virtual control
-    vtc::T_OptiVarVector         # Terminal conditions virtual control
+    vd::T_OptiVarMatrix  # Dynamics virtual control
+    vs::T_OptiVarMatrix  # Nonconvex constraints virtual control
+    vic::T_OptiVarVector # Initial conditions virtual control
+    vtc::T_OptiVarVector # Terminal conditions virtual control
     # >> Other variables <<
-    P::T_OptiVarVector           # Virtual control penalty
-    Pf::T_OptiVarVector          # Boundary condition virtual control penalty
+    P::T_OptiVarVector   # Virtual control penalty
+    Pf::T_OptiVarVector  # Boundary condition virtual control penalty
+    # >> Statistics <<
+    nvar::T_Int                    # Total number of decision variables
+    ncons::Dict{T_Symbol, Any}     # Number of constraints
+    timing::Dict{T_Symbol, T_Real} # Runtime profiling
 end
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -191,6 +195,12 @@ function SCvxSubproblem(pbm::SCPProblem,
                         η::T_Real,
                         ref::Union{SCvxSubproblemSolution,
                                    Missing}=missing)::SCvxSubproblem
+
+    # Statistics
+    timing = Dict(:formulate => time_ns(), :total => time_ns())
+    nvar = 0
+    ncons = Dict()
+
     # Convenience values
     pars = pbm.pars
     scale = pbm.common.scale
@@ -237,7 +247,8 @@ function SCvxSubproblem(pbm::SCPProblem,
     Pf = @variable(mdl, [1:2], base_name="Pf")
 
     spbm = SCvxSubproblem(iter, mdl, algo, pbm, η, sol, ref, L, L_pen, L_aug,
-                          xh, uh, ph, x, u, p, vd, vs, vic, vtc, P, Pf)
+                          xh, uh, ph, x, u, p, vd, vs, vic, vtc, P, Pf, nvar,
+                          ncons, timing)
 
     return spbm
 end
@@ -341,9 +352,6 @@ function SCvxSubproblemSolution(spbm::SCvxSubproblem)::SCvxSubproblemSolution
     sol.L = value(spbm.L)
     sol.L_pen = value(spbm.L_pen)
     sol.L_aug = value(spbm.L_aug)
-
-    # Save the solution status
-    sol.status = termination_status(spbm.mdl)
 
     return sol
 end
@@ -589,65 +597,6 @@ function _scvx__update_trust_region!(
     next_ref, next_η = _scvx__update_rule(spbm)
 
     return next_ref, next_η
-end
-
-#= Print command line info message.
-
-Args:
-    spbm: the subproblem that was solved.
-    err: an SCvx-specific error message. =#
-function _scvx__print_info(spbm::SCvxSubproblem,
-                           err::Union{Nothing, SCPError}=nothing)::Nothing
-
-    # Convenience variables
-    sol = spbm.sol
-    ref = spbm.ref
-    table = spbm.def.common.table
-
-    if !isnothing(err)
-        @printf "ERROR: %s, exiting\n" err.msg
-    elseif _scp__unsafe_solution(sol)
-        @printf "ERROR: unsafe solution (%s), exiting\n" sol.status
-    else
-        # Preprocess values
-        scale = spbm.def.common.scale
-        xh = scale.iSx*(sol.xd.-scale.cx)
-        uh = scale.iSu*(sol.ud.-scale.cu)
-        ph = scale.iSp*(sol.p-scale.cp)
-        xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
-        uh_ref = scale.iSu*(spbm.ref.ud.-scale.cu)
-        ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
-        max_dxh = norm(xh-xh_ref, Inf)
-        max_duh = norm(uh-uh_ref, Inf)
-        max_dph = norm(ph-ph_ref, Inf)
-        E = spbm.def.common.E
-        status = @sprintf "%s" sol.status
-        status = status[1:min(8, length(status))]
-        ρ = !isnan(sol.ρ) ? @sprintf("%.2f", sol.ρ) : ""
-        ρ = (length(ρ)>8) ? @sprintf("%.1e", sol.ρ) : ρ
-
-        # Associate values with columns
-        assoc = Dict(:iter => spbm.iter,
-                     :status => status,
-                     :maxvd => norm(sol.vd, Inf),
-                     :maxvs => norm(sol.vs, Inf),
-                     :maxvbc => norm([sol.vic; sol.vtc], Inf),
-                     :cost => sol.J_aug,
-                     :dx => max_dxh,
-                     :du => max_duh,
-                     :dp => max_dph,
-                     :dynfeas => sol.feas ? "T" : "F",
-                     :δ => sol.deviation,
-                     :ρ => ρ,
-                     :pre_improv => sol.pre_improv/abs(ref.J_aug)*100,
-                     :dtr => sol.tr_update,
-                     :rej => sol.reject ? "x" : "",
-                     :tr => spbm.η)
-
-        print(assoc, table)
-    end
-
-    return nothing
 end
 
 #= Compute cost penalty at a particular instant.
@@ -934,6 +883,67 @@ function _scvx__correct_convex!(
                        @eval @sprintf($msg, $status))
         throw(err)
     end
+
+    return nothing
+end
+
+#= Print command line info message.
+
+Args:
+    spbm: the subproblem that was solved.
+    err: an SCvx-specific error message. =#
+function _scvx__print_info(spbm::SCvxSubproblem,
+                           err::Union{Nothing, SCPError}=nothing)::Nothing
+
+    # Convenience variables
+    sol = spbm.sol
+    ref = spbm.ref
+    table = spbm.def.common.table
+
+    if !isnothing(err)
+        @printf "ERROR: %s, exiting\n" err.msg
+    elseif _scp__unsafe_solution(sol)
+        @printf "ERROR: unsafe solution (%s), exiting\n" sol.status
+    else
+        # Preprocess values
+        scale = spbm.def.common.scale
+        xh = scale.iSx*(sol.xd.-scale.cx)
+        uh = scale.iSu*(sol.ud.-scale.cu)
+        ph = scale.iSp*(sol.p-scale.cp)
+        xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
+        uh_ref = scale.iSu*(spbm.ref.ud.-scale.cu)
+        ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
+        max_dxh = norm(xh-xh_ref, Inf)
+        max_duh = norm(uh-uh_ref, Inf)
+        max_dph = norm(ph-ph_ref, Inf)
+        E = spbm.def.common.E
+        status = @sprintf "%s" sol.status
+        status = status[1:min(8, length(status))]
+        ρ = !isnan(sol.ρ) ? @sprintf("%.2f", sol.ρ) : ""
+        ρ = (length(ρ)>8) ? @sprintf("%.1e", sol.ρ) : ρ
+
+        # Associate values with columns
+        assoc = Dict(:iter => spbm.iter,
+                     :status => status,
+                     :maxvd => norm(sol.vd, Inf),
+                     :maxvs => norm(sol.vs, Inf),
+                     :maxvbc => norm([sol.vic; sol.vtc], Inf),
+                     :cost => sol.J_aug,
+                     :dx => max_dxh,
+                     :du => max_duh,
+                     :dp => max_dph,
+                     :dynfeas => sol.feas ? "T" : "F",
+                     :δ => sol.deviation,
+                     :ρ => ρ,
+                     :pre_improv => sol.pre_improv/abs(ref.J_aug)*100,
+                     :dtr => sol.tr_update,
+                     :rej => sol.reject ? "x" : "",
+                     :tr => spbm.η)
+
+        print(assoc, table)
+    end
+
+    _scp__overhead!(spbm)
 
     return nothing
 end

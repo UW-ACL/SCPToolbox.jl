@@ -118,6 +118,10 @@ mutable struct GuSTOSubproblem <: SCPSubproblem
     p::T_OptiVarVector           # Parameters
     # >> Virtual control (never scaled) <<
     vd::T_OptiVarMatrix          # Dynamics virtual control
+    # >> Statistics <<
+    nvar::T_Int                    # Total number of decision variables
+    ncons::Dict{T_Symbol, Any}     # Number of constraints
+    timing::Dict{T_Symbol, T_Real} # Runtime profiling
 end
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -192,6 +196,11 @@ function GuSTOSubproblem(pbm::SCPProblem,
                          η::T_Real,
                          ref::T_GuSTOSubSol)::GuSTOSubproblem
 
+    # Statistics
+    timing = Dict(:formulate => time_ns(), :total => time_ns())
+    nvar = 0
+    ncons = Dict()
+
     # Convenience values
     pars = pbm.pars
     scale = pbm.common.scale
@@ -236,7 +245,8 @@ function GuSTOSubproblem(pbm::SCPProblem,
     κ = (iter < pars.iter_μ) ? 1.0 : pars.μ^(iter-pars.iter_μ)
 
     spbm = GuSTOSubproblem(iter, mdl, algo, pbm, λ, η, κ, sol, ref, L, L_st,
-                           L_tr, L_vc, L_aug, xh, uh, ph, x, u, p, vd)
+                           L_tr, L_vc, L_aug, xh, uh, ph, x, u, p, vd, nvar,
+                           ncons, timing)
 
     return spbm
 end
@@ -337,9 +347,6 @@ function GuSTOSubproblemSolution(spbm::GuSTOSubproblem)::T_GuSTOSubSol
     sol.L = value.(spbm.L)
     sol.L_st = value.(spbm.L_st)
     sol.L_aug = value.(spbm.L_aug)
-
-    # Save the solution status
-    sol.status = termination_status(spbm.mdl)
 
     return sol
 end
@@ -1151,6 +1158,8 @@ function _gusto__print_info(spbm::GuSTOSubproblem,
 
         print(assoc, table)
     end
+
+    _scp__overhead!(spbm)
 
     return nothing
 end
