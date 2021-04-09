@@ -1028,7 +1028,7 @@ function plot_convergence(history, name::T_String)::Nothing
     end
     iters = T_IntVector(1:num_iter)
 
-    fig = create_figure((4, 6))
+    fig = create_figure((5, 6))
 
     if num_iter<=15
         xticks = iters
@@ -1051,7 +1051,7 @@ function plot_convergence(history, name::T_String)::Nothing
     ax.set_xticks(xticks)
 
     ax.set_xlabel("Iteration number")
-    ax.set_ylabel(string("Relative distance from solution, ",
+    ax.set_ylabel(string("Distance from solution, ",
                          "\$\\frac{\\|X^i-X^*\\|_2}{",
                          "\\|X^*\\|_2}\$"))
 
@@ -1063,6 +1063,8 @@ function plot_convergence(history, name::T_String)::Nothing
             markeredgewidth=0,
             clip_on=false,
             zorder=100)
+
+    ax_top = ax
 
     # ..:: Timing performance plot ::..
 
@@ -1092,28 +1094,19 @@ function plot_convergence(history, name::T_String)::Nothing
         1-darken_factor, parse(RGB, c), colorant"black"))
 
     spbms = history.subproblems[1:end-1]
-    formulate = [spbm.timing[:formulate] for spbm in spbms]
-    formulate[1] = 0.0
     discretize = [spbm.timing[:discretize] for spbm in spbms]
     solve = [spbm.timing[:solve] for spbm in spbms]
+    formulate = [spbm.timing[:formulate] for spbm in spbms]
     overhead = [spbm.timing[:overhead] for spbm in spbms]
-    overhead[1] = 0.0
     total = [spbm.timing[:total] for spbm in spbms]
+    ymax = maximum((formulate+discretize+solve+overhead)[2:end])*1.1
 
     for i = 1:2
         linew = (i==1) ? 0 : lw
         z = (i==1) ? 0 : -1
         lbl = (str) -> (i==1) ? str : nothing
 
-        ax.bar(labels, formulate, width,
-               label=lbl("Formulate"),
-               color=Green,
-               linewidth=linew,
-               edgecolor=darken(Green),
-               joinstyle=js,
-               zorder=z)
         ax.bar(labels, discretize, width,
-               bottom=formulate,
                label=lbl("Discretize"),
                color=Yellow,
                linewidth=linew,
@@ -1121,15 +1114,23 @@ function plot_convergence(history, name::T_String)::Nothing
                joinstyle=js,
                zorder=z)
         ax.bar(labels, solve, width,
-               bottom=formulate+discretize,
+               bottom=discretize,
                label=lbl("Solve"),
                color=Red,
                linewidth=linew,
                edgecolor=darken(Red),
                joinstyle=js,
                zorder=z)
+        ax.bar(labels, formulate, width,
+               bottom=discretize+solve,
+               label=lbl("Formulate"),
+               color=Green,
+               linewidth=linew,
+               edgecolor=darken(Green),
+               joinstyle=js,
+               zorder=z)
         ax.bar(labels, overhead, width,
-               bottom=formulate+discretize+solve,
+               bottom=discretize+solve+formulate,
                label=lbl("Overhead"),
                color=DarkBlue,
                linewidth=linew,
@@ -1138,13 +1139,16 @@ function plot_convergence(history, name::T_String)::Nothing
                zorder=z)
     end
 
-    ax.legend(framealpha=0.8,
-              fontsize=8,
-              loc="upper left")
+    ax.set_ylim(top=ymax)
+
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(reverse(handles), reverse(labels),
+              framealpha=0.8, fontsize=8, loc="upper left")
 
     ax2 = ax.twinx()
 
     ax2_clr = Blue
+    outline_w = 1.5
 
     ax2.set_ylabel("Cumulative time [s]", color=ax2_clr)
     ax2.tick_params(axis="y", colors=ax2_clr)
@@ -1156,8 +1160,22 @@ function plot_convergence(history, name::T_String)::Nothing
              marker="o",
              markersize=6,
              markeredgewidth=0,
+             markeredgecolor="white",
              clip_on=false,
              zorder=100)
+    ax2.plot(iters, cumsum(total),
+             color="white",
+             linewidth=2+outline_w,
+             marker="o",
+             markersize=6,
+             markeredgewidth=outline_w,
+             markeredgecolor="white",
+             clip_on=false,
+             zorder=99)
+
+    ax_bot = ax
+
+    fig.align_ylabels([ax_top, ax_bot])
 
     save_figure(@sprintf("%s_convergence", name), algo)
 
@@ -1206,9 +1224,9 @@ function create_figure(size::Tuple{T, V})::Figure where {T<:Real, V<:Real}
     rcParams = PyPlot.PyDict(PyPlot.matplotlib."rcParams")
     rcParams["text.usetex"] = true
     rcParams["font.family"] = "sans-serif"
-    rcParams["axes.labelsize"] = 10
-    rcParams["xtick.labelsize"] = 8
-    rcParams["ytick.labelsize"] = 8
+    rcParams["axes.labelsize"] = 14
+    rcParams["xtick.labelsize"] = 12
+    rcParams["ytick.labelsize"] = 12
     rcParams["text.latex.preamble"] = string("\\usepackage{sansmath}",
                                              "\\sansmath")
 
@@ -1229,13 +1247,44 @@ solution.
 Args:
     filename: the filename of the figure.
     algo: the SCP algorithm string (format
-        "<SCP_ALGO> (backend: <CVX_ALGO>)"). =#
-function save_figure(filename::T_String, algo::T_String)::Nothing
+        "<SCP_ALGO> (backend: <CVX_ALGO>)").
+    tmp: (optional) whether this is a temporary file. =#
+function save_figure(filename::T_String, algo::T_String;
+                     tmp::T_Bool=false)::Nothing
     algo = lowercase(split(algo, " "; limit=2)[1])
     plt.tight_layout()
-    plt.savefig(@sprintf("../../figures/%s_%s.pdf", algo, filename),
-                bbox_inches="tight", facecolor=zeros(4))
-    plt.close()
+    if !tmp
+        plt.savefig(@sprintf("../../figures/%s_%s.pdf", algo, filename),
+                    bbox_inches="tight", facecolor=zeros(4))
+        plt.close()
+    else
+        plt.savefig(@sprintf("/tmp/%s_%s.pdf", algo, filename),
+                    bbox_inches="tight", facecolor=zeros(4))
+    end
+    return nothing
+end
+
+""" Set axis limits with an equal aspect ratio (i.e. circles appear as circles).
+
+Args:
+* `ax`: the axis object.
+* `xmin`: the plot's minimum x-value.
+* `xmax`: the plot's maximum x-value.
+* `ymin`: the plot's minimum y-value.
+"""
+function set_axis_equal(ax::PyPlot.PyObject,
+                        xmin::T_Real,
+                        xmax::T_Real,
+                        ymin::T_Real)::Nothing
+    ax.axis("equal")
+    save_figure("scp_tmp_fig", "", tmp=true)
+    x_rng = ax.get_xlim()
+    y_rng = ax.get_ylim()
+    ar = (y_rng[2]-y_rng[1])/(x_rng[2]-x_rng[1])
+    ax.axis("auto")
+    ymax = ymin+ar*(xmax-xmin)
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
     return nothing
 end
 

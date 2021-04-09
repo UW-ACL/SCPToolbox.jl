@@ -152,7 +152,6 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
     fig = create_figure((3, 4))
     ax = fig.add_subplot()
 
-    ax.axis("equal")
     ax.grid(linewidth=0.3, alpha=0.5)
     ax.set_axisbelow(true)
     ax.set_facecolor("white")
@@ -192,6 +191,8 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
                 zorder=100)
     end
 
+    set_axis_equal(ax, -1.0, 4.0, -0.5)
+
     save_figure("quadrotor_traj_iters", algo)
 
     return nothing
@@ -216,10 +217,9 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
     v_cmap = matplotlib.cm.ScalarMappable(norm=v_nrm, cmap=v_cmap)
     u_scale = 0.2
 
-    fig = create_figure((3, 4))
+    fig = create_figure((3.13, 4))
     ax = fig.add_subplot()
 
-    ax.axis("equal")
     ax.grid(linewidth=0.3, alpha=0.5)
     ax.set_axisbelow(true)
     ax.set_facecolor("white")
@@ -289,6 +289,8 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
             markeredgewidth=0.3,
             clip_on=false,
             zorder=100)
+
+    set_axis_equal(ax, -0.25, 3.5, -0.5)
 
     save_figure("quadrotor_final_traj", algo)
 
