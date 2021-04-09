@@ -500,7 +500,7 @@ function _scvx__add_trust_region!(spbm::SCvxSubproblem)::Nothing
             acc!(spbm.mdl, C(vcat(w, @k(dx_lq), @k(du_lq), dp_lq), :soc))
             acc!(spbm.mdl, C(vcat(w, η, 1), :geom))
         else
-            @constraint(spbm.mdl, @k(dx_lq)+@k(du_lq)+dp_lq <= η)
+            acc!(spbm.mdl, C(@k(dx_lq)+@k(du_lq)+dp_lq-η, :nonpos))
         end
     end
 

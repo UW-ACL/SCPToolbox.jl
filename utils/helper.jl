@@ -993,11 +993,12 @@ function plot_prisms!(ax::PyPlot.PyObject,
     return nothing
 end
 
-#= Optimization algorithm convergence plot.
+""" Optimization algorithm convergence and performance plot.
 
 Args:
-    history: SCP iteration data history.
-    name: the example name. =#
+* `history`: SCP iteration data history.
+* `name`: the example name.
+"""
 function plot_convergence(history, name::T_String)::Nothing
 
     # Common values
@@ -1027,8 +1028,18 @@ function plot_convergence(history, name::T_String)::Nothing
     end
     iters = T_IntVector(1:num_iter)
 
-    fig = create_figure((4, 3))
-    ax = fig.add_subplot()
+    fig = create_figure((4, 6))
+
+    if num_iter<=15
+        xticks = iters
+    else
+        step = T_Int(ceil(num_iter/15))
+        xticks = T_IntVector(1:step:num_iter)
+    end
+
+    # ..:: Convergence plot ::..
+
+    ax = fig.add_subplot(211)
 
     ax.set_yscale("log")
     ax.grid(linewidth=0.3, alpha=0.5, axis="y", which="major")
@@ -1037,7 +1048,7 @@ function plot_convergence(history, name::T_String)::Nothing
     ax.set_facecolor("white")
     ax.autoscale(tight=true, axis="x")
     ax.margins(x=0.04, y=0.04)
-    ax.set_xticks(T_Int.(round.(LinRange(1, num_iter, 10))))
+    ax.set_xticks(xticks)
 
     ax.set_xlabel("Iteration number")
     ax.set_ylabel(string("Relative distance from solution, ",
@@ -1052,6 +1063,100 @@ function plot_convergence(history, name::T_String)::Nothing
             markeredgewidth=0,
             clip_on=false,
             zorder=100)
+
+    # ..:: Timing performance plot ::..
+
+    ax = fig.add_subplot(212)
+
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.autoscale(tight=true, axis="x")
+    ax.margins(x=0.04, y=0.04)
+    ax.set_xticks(xticks)
+
+    ax.set_xlabel("Iteration number")
+    ax.set_ylabel("Time per iteration [s]")
+
+    Yellow = "#f1d46a"
+    Red = "#db6245"
+    Blue = "#356397"
+    DarkBlue = "#26415d"
+    Green = "#5da9a1"
+
+    labels = iters
+    width = 0.3
+    lw = 3.0+(num_iter-5)/35*(1.5-3.0) # Scaling that works visually well
+    js = "bevel"
+    darken_factor = 0.3
+    darken = (c) -> rgb2pyplot(weighted_color_mean(
+        1-darken_factor, parse(RGB, c), colorant"black"))
+
+    spbms = history.subproblems[1:end-1]
+    formulate = [spbm.timing[:formulate] for spbm in spbms]
+    formulate[1] = 0.0
+    discretize = [spbm.timing[:discretize] for spbm in spbms]
+    solve = [spbm.timing[:solve] for spbm in spbms]
+    overhead = [spbm.timing[:overhead] for spbm in spbms]
+    total = [spbm.timing[:total] for spbm in spbms]
+
+    for i = 1:2
+        linew = (i==1) ? 0 : lw
+        z = (i==1) ? 0 : -1
+        lbl = (str) -> (i==1) ? str : nothing
+
+        ax.bar(labels, formulate, width,
+               label=lbl("Formulate"),
+               color=Green,
+               linewidth=linew,
+               edgecolor=darken(Green),
+               joinstyle=js,
+               zorder=z)
+        ax.bar(labels, discretize, width,
+               bottom=formulate,
+               label=lbl("Discretize"),
+               color=Yellow,
+               linewidth=linew,
+               edgecolor=darken(Yellow),
+               joinstyle=js,
+               zorder=z)
+        ax.bar(labels, solve, width,
+               bottom=formulate+discretize,
+               label=lbl("Solve"),
+               color=Red,
+               linewidth=linew,
+               edgecolor=darken(Red),
+               joinstyle=js,
+               zorder=z)
+        ax.bar(labels, overhead, width,
+               bottom=formulate+discretize+solve,
+               label=lbl("Overhead"),
+               color=DarkBlue,
+               linewidth=linew,
+               edgecolor=darken(DarkBlue),
+               joinstyle=js,
+               zorder=z)
+    end
+
+    ax.legend(framealpha=0.8,
+              fontsize=8,
+              loc="upper left")
+
+    ax2 = ax.twinx()
+
+    ax2_clr = Blue
+
+    ax2.set_ylabel("Cumulative time [s]", color=ax2_clr)
+    ax2.tick_params(axis="y", colors=ax2_clr)
+    ax2.spines["right"].set_edgecolor(ax2_clr)
+
+    ax2.plot(iters, cumsum(total),
+             color=ax2_clr,
+             linewidth=2,
+             marker="o",
+             markersize=6,
+             markeredgewidth=0,
+             clip_on=false,
+             zorder=100)
 
     save_figure(@sprintf("%s_convergence", name), algo)
 
