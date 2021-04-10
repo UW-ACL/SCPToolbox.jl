@@ -242,7 +242,7 @@ function GuSTOSubproblem(pbm::SCPProblem,
     vd = @variable(mdl, [1:size(_E, 2), 1:N-1], base_name="vd")
 
     # Trust region shrink factor
-    κ = (iter < pars.iter_μ) ? 1.0 : pars.μ^(iter-pars.iter_μ)
+    κ = (iter < pars.iter_μ) ? 1.0 : pars.μ^(1+iter-pars.iter_μ)
 
     spbm = GuSTOSubproblem(iter, mdl, algo, pbm, λ, η, κ, sol, ref, L, L_st,
                            L_tr, L_vc, L_aug, xh, uh, ph, x, u, p, vd, nvar,
@@ -964,7 +964,7 @@ function _gusto__update_trust_region!(
     sol.ρ = (sol.cost_error+sol.dyn_error)/normalization_term
 
     # Apply update rule
-    next_ref, next_η, next_λ = _gusto__update_rule(spbm)
+    next_ref, next_η, next_λ = _gusto__update_rule!(spbm)
 
     return next_ref, next_η, next_λ
 end
@@ -981,7 +981,7 @@ Returns:
     next_ref: reference trajectory for the next iteration.
     next_η: trust region radius for the next iteration.
     next_λ: soft penalty weight for the next iteration. =#
-function _gusto__update_rule(
+function _gusto__update_rule!(
     spbm::GuSTOSubproblem)::Tuple{GuSTOSubproblemSolution,
                                   T_Real,
                                   T_Real}
