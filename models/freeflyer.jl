@@ -534,15 +534,15 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
     ax.autoscale(tight=true)
 
     ax.set_xlabel("Time [s]")
-    ax.set_ylabel("\$d_{\\mathrm{ISS}}(r_{\\mathcal{I}}(t))\$")
+    ax.set_ylabel("\$d_{\\mathrm{ISS}}(r_{\\mathcal{I}}(\\mathsf{t}))\$")
 
     # >> Continuous-time components <<
     yc = T_RealVector([signed_distance(env.iss,
                                        sample(sol.xc, τ)[veh.id_r];
                                        t=mdl.traj.hom, a=mdl.traj.sdf_pwr)[1]
                        for τ in ct_τ])
-    y_top = max(0.1, maximum(yc))
-    plot_timeseries_bound!(ax, 0.0, tf, 0.0, y_top)
+    y_bot = min(-0.1, minimum(yc))
+    plot_timeseries_bound!(ax, 0.0, tf, 0.0, y_bot)
 
     ax.plot(ct_time, yc,
             color=cmap(1.0),
@@ -563,7 +563,7 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
             zorder=100)
 
     ax.set_xlim((0.0, tf))
-    ax.set_ylim((minimum(yc), y_top))
+    ax.set_ylim((y_bot, maximum(yc)))
 
     # ..:: Plot ellipsoid obstacle constraints ::..
     ax = fig.add_subplot(1, 2, 2)
@@ -574,7 +574,7 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
     ax.autoscale(tight=true)
 
     ax.set_xlabel("Time [s]")
-    ax.set_ylabel("\$\\| H_j(r_{\\mathcal{I}}(t)-c_j)\\|_2\$")
+    ax.set_ylabel("\$\\| H_j(r_{\\mathcal{I}}(\\mathsf{t})-c_j)\\|_2\$")
 
     clr_offset = 0.4
     cval = (j) -> (env.n_obs==1) ? 1.0 :

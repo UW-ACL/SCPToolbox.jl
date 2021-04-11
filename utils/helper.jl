@@ -721,7 +721,7 @@ function logsumexp(
     return L
 end
 
-#= Evaluate signed distance function (SDF) for a hyperrectangle.
+""" Evaluate signed distance function (SDF) for a hyperrectangle.
 
 Let the hyperrectangle be represented as the set:
 
@@ -731,63 +731,66 @@ Let the hyperrectangle be represented as the set:
 where s and c are vectors that define a scaling which allows to express H as a
 unity bound on the inf-norm. We define the SDF to be:
 
-  d(r) = -1+max_i abs((x_i-c_i)/s_i)^a,
+  d(r) = 1-max_i abs((x_i-c_i)/s_i)^a,
 
-where a>0 is an exponent parameter. Hence, d(r)<=0 if and only if x∈H. To make
+where a>0 is an exponent parameter. Hence, d(r)>=0 if and only if x∈H. To make
 the SDF smooth, instead of the max we use the softmax (log-sum-exp)
 function. The closer the exponent a is to zero, the more "concave" the SDF is
 along a ray emanating from the hyperrectangle centroid. This is beneficial for
 sequential convex programming, because it means that a linear approximation is
-more likely to over-approximate the SDF, and therefore the optimization will
+more likely to under-approximate the SDF, and therefore the optimization will
 have a better time respecting the SDF negativity constraint.
 
 Args:
-    H: the hyperrectangle set.
-    r: the point location.
-    t: positive homotopy parameter for log-sum-exp.
-    a: the exponent on the absolute value function in the SDF definition.
+* `H`: the hyperrectangle set.
+* `r`: the point location.
+* `t`: positive homotopy parameter for log-sum-exp.
+* `a`: the exponent on the absolute value function in the SDF definition.
 
 Returns:
-    d: the SDF value at r.
-    ∇d: the SDF gradient at r. =#
+* `d`: the SDF value at r.
+* `∇d`: the SDF gradient at r.
+"""
 function signed_distance(H::T_Hyperrectangle,
                          r::T_RealVector;
                          t::T_Real=1.0,
                          a::T_Real=0.5)::Tuple{T_Real,
                                                T_RealVector}
     n = length(r)
-    f = T_RealVector(undef, n)
-    ∇f = Vector{T_RealVector}(undef, n)
+    ρ = T_RealVector(undef, n)
+    ∇ρ = Vector{T_RealVector}(undef, n)
     for i = 1:n
         dg = 1/H.s[i]
         g = (r[i]-H.c[i])*dg
-        _f = (abs(g))^a
-        _df = a*sign(g)*abs(g)^(a-1)*dg
-        f[i] = _f
-        ∇f[i] = zeros(n)
-        ∇f[i][i] = isnan(_df) ? 0.0 : _df
+        abs_g = abs(g)
+        ρ[i] = abs_g^a
+        ∇ρ[i] = zeros(n)
+        if abs_g>eps() # Not in "exact center"
+            ∇ρ[i][i] = a*abs_g^(a-1)*sign(g)*dg
+        end
     end
-    d, ∇d = logsumexp(f, ∇f; t=t)
-    d -= 1
+    d, ∇d = logsumexp(ρ, ∇ρ; t=t)
+    d, ∇d = 1-d, -∇d
     return d, ∇d
 end
 
-#= Evaluate signed distance function (SDF) for a union of hyperrectangles.
+""" Evaluate signed distance function (SDF) for a union of hyperrectangles.
 
 Given a collection of hyperrectangles H_i, i=1,...,m, we define the SDF for the
-union as the min over the individual SDFs. To make the function smooth, we use
+union as the max over the individual SDFs. To make the function smooth, we use
 the log-sum-exp softmax with a homotopy parameter (the larger, the more
 accurate the min approximation).
 
 Args:
-    H: the hyperrectangle sets defining the union.
-    r: the point location.
-    t: positive homotopy parameter for log-sum-exp.
-    a: the exponent on the absolute value function in the SDF definition.
+* `H`: the hyperrectangle sets defining the union.
+* `r`: the point location.
+* `t`: positive homotopy parameter for log-sum-exp.
+* `a`: the exponent on the absolute value function in the SDF definition.
 
 Returns:
-    d: the signed-distance function value at r.
-    ∇d: the gradient of the signed-distance function. =#
+* `d`: the signed-distance function value at r.
+* `∇d`: the gradient of the signed-distance function.
+"""
 function signed_distance(H::Vector{T_Hyperrectangle},
                          r::T_RealVector;
                          t::T_Real=1.0,
@@ -795,13 +798,12 @@ function signed_distance(H::Vector{T_Hyperrectangle},
                                                T_RealVector}
     # Evaluate the SDFs for all hyperrectangles
     m = length(H)
-    _d = T_RealVector(undef, m)
-    _∇d = Vector{T_RealVector}(undef, m)
+    σ = T_RealVector(undef, m)
+    ∇σ = Vector{T_RealVector}(undef, m)
     for i = 1:m
-        _d[i], _∇d[i] = signed_distance(H[i], r; t=t, a=a)
+        σ[i], ∇σ[i] = signed_distance(H[i], r; t=t, a=a)
     end
-    d, ∇d = logsumexp(-_d, -_∇d; t=t)
-    d, ∇d = -d, -∇d
+    d, ∇d = logsumexp(σ, ∇σ; t=t)
     return d, ∇d
 end
 
