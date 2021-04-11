@@ -157,7 +157,7 @@ problem_set_s!(
     # Space station flight space
     d_iss, _ = signed_distance(env.iss, r; t=traj.hom,
                                a=traj.sdf_pwr)
-    s[end-2] = d_iss
+    s[end-2] = -d_iss
     # Flight time
     s[end-1] = p[veh.id_t]-traj.tf_max
     s[end] = traj.tf_min-p[veh.id_t]
@@ -180,7 +180,7 @@ problem_set_s!(
     # Space station flight space
     _, ∇d_iss = signed_distance(env.iss, r; t=traj.hom,
                                 a=traj.sdf_pwr)
-    C[end-2, veh.id_r] = ∇d_iss
+    C[end-2, veh.id_r] = -∇d_iss
     return C
     end,
     # Jacobian ds/dp
