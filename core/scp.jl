@@ -68,8 +68,8 @@ end
 #= Common constant terms used throughout the algorithm. =#
 struct SCPCommon
     # >> Discrete-time grid <<
-    Δτ::T_Real           # Discrete time step
-    τ_grid::T_RealVector # Grid of scaled timed on the [0,1] interval
+    Δt::T_Real           # Discrete time step
+    t_grid::T_RealVector # Grid of scaled timed on the [0,1] interval
     E::T_RealMatrix      # Continuous-time matrix for dynamics virtual control
     scale::SCPScaling    # Variable scaling
     id::SCPDiscretizationIndices # Convenience indices during propagation
@@ -116,7 +116,7 @@ struct SCPSolution
     iterations::T_Int # Number of SCP iterations that occurred
     cost::T_Real      # The original convex cost function
     # >> Discrete-time trajectory <<
-    τd::T_RealVector  # Discrete times
+    td::T_RealVector  # Discrete times
     xd::T_RealMatrix  # States
     ud::T_RealMatrix  # Inputs
     p::T_RealVector   # Parameter vector
@@ -181,12 +181,12 @@ function SCPProblem(
     table::T_Table)::SCPProblem where {T<:SCPParameters}
 
     # Compute the common constant terms
-    τ_grid = T_RealVector(LinRange(0.0, 1.0, pars.N))
-    Δτ = τ_grid[2]-τ_grid[1]
+    t_grid = T_RealVector(LinRange(0.0, 1.0, pars.N))
+    Δt = t_grid[2]-t_grid[1]
     E = T_RealMatrix(I(traj.nx))
-    scale = _scp__compute_scaling(pars, traj, τ_grid)
+    scale = _scp__compute_scaling(pars, traj, t_grid)
     idcs = SCPDiscretizationIndices(traj, E)
-    consts = SCPCommon(Δτ, τ_grid, E, scale, idcs, table)
+    consts = SCPCommon(Δt, t_grid, E, scale, idcs, table)
 
     pbm = SCPProblem(pars, traj, consts)
 
@@ -262,7 +262,7 @@ function SCPSolution(history::SCPHistory)::SCPSolution
     nx = pbm.traj.nx
     nu = pbm.traj.nu
     np = pbm.traj.np
-    τd = pbm.common.τ_grid
+    td = pbm.common.t_grid
     algo = last_spbm.algo
 
     if _scp__unsafe_solution(last_sol)
@@ -286,17 +286,17 @@ function SCPSolution(history::SCPHistory)::SCPSolution
         # Since within-interval integration using Nsub points worked, using
         # twice as many this time around seems like a good heuristic
         Nc = 2*Nsub*(N-1)
-        τc = T_RealVector(LinRange(0.0, 1.0, Nc))
-        uc = T_ContinuousTimeTrajectory(τd, ud, :linear)
-        F = (τ, x) -> pbm.traj.f(x, sample(uc, τ), p)
-        xc_vals = rk4(F, @first(last_sol.xd), τc; full=true,
+        tc = T_RealVector(LinRange(0.0, 1.0, Nc))
+        uc = T_ContinuousTimeTrajectory(td, ud, :linear)
+        F = (t, x) -> pbm.traj.f(x, sample(uc, t), p)
+        xc_vals = rk4(F, @first(last_sol.xd), tc; full=true,
                       actions=pbm.traj.integ_actions)
-        xc = T_ContinuousTimeTrajectory(τc, xc_vals, :linear)
+        xc = T_ContinuousTimeTrajectory(tc, xc_vals, :linear)
 
         cost = last_sol.J_aug
     end
 
-    sol = SCPSolution(status, algo, num_iters, cost, τd, xd, ud, p, xc, uc)
+    sol = SCPSolution(status, algo, num_iters, cost, td, xd, ud, p, xc, uc)
 
     return sol
 end
@@ -320,14 +320,14 @@ end
 Args:
     pars: the SCP algorithm parameters.
     traj: the trajectory problem definition.
-    τ_grid: normalized discrete-time grid.
+    t: normalized discrete-time grid.
 
 Returns:
     scale: the scaling structure. =#
 function _scp__compute_scaling(
     pars::T,
     traj::TrajectoryProblem,
-    τ_grid::T_RealVector)::SCPScaling where {T<:SCPParameters}
+    t::T_RealVector)::SCPScaling where {T<:SCPParameters}
 
     # Parameters
     nx = traj.nx
@@ -352,22 +352,22 @@ function _scp__compute_scaling(
     p_bbox[:, 1] .= 0.0
 
     defs = [Dict(:dim => nx,
-                 :set => (τ, x, u, p) -> traj.X(τ, x, p),
+                 :set => (t, k, x, u, p) -> traj.X(t, k, x, p),
                  :bbox => x_bbox,
                  :advice => :xrg,
                  :cost => (x, u, p, i) -> x[i]),
             Dict(:dim => nu,
-                 :set => (τ, x, u, p) -> traj.U(τ, u, p),
+                 :set => (t, k, x, u, p) -> traj.U(t, k, u, p),
                  :bbox => u_bbox,
                  :advice => :urg,
                  :cost => (x, u, p, i) -> u[i]),
             Dict(:dim => np,
-                 :set => (τ, x, u, p) -> traj.X(τ, x, p),
+                 :set => (t, k, x, u, p) -> traj.X(t, k, x, p),
                  :bbox => p_bbox,
                  :advice => :prg,
                  :cost => (x, u, p, i) -> p[i]),
             Dict(:dim => np,
-                 :set => (τ, x, u, p) -> traj.U(τ, u, p),
+                 :set => (t, k, x, u, p) -> traj.U(t, k, u, p),
                  :bbox => p_bbox,
                  :advice => :prg,
                  :cost => (x, u, p, i) -> p[i])]
@@ -391,8 +391,9 @@ function _scp__compute_scaling(
                     p = @variable(mdl, [1:np])
                     # Constraints
                     if !isnothing(def[:set])
-                        for τ in τ_grid
-                            add_conic_constraints!(mdl, def[:set](τ, x, u, p))
+                        for k = 1:length(t)
+                            add_conic_constraints!(
+                                mdl, def[:set](@k(t), k, x, u, p))
                         end
                     end
                     # Cost
@@ -455,7 +456,7 @@ end
 #= Compute concatenanted time derivative vector for dynamics discretization.
 
 Args:
-    τ: the time.
+    t: the time.
     V: the current concatenated vector.
     k: the discrete time grid interval.
     pbm: the SCP problem definition.
@@ -463,7 +464,7 @@ Args:
 
 Returns:
     dVdt: the time derivative of V. =#
-function _scp__derivs(τ::T_Real,
+function _scp__derivs(t::T_Real,
                       V::T_RealVector,
                       k::T_Int,
                       pbm::SCPProblem,
@@ -472,16 +473,16 @@ function _scp__derivs(τ::T_Real,
     # Parameters
     nx = pbm.traj.nx
     N = pbm.pars.N
-    τ_span = @k(pbm.common.τ_grid, k, k+1)
+    t_span = @k(pbm.common.t_grid, k, k+1)
 
     # Get current values
     idcs = pbm.common.id
     x = V[idcs.x]
-    u = linterp(τ, @k(ref.ud, k, k+1), τ_span)
+    u = linterp(t, @k(ref.ud, k, k+1), t_span)
     p = ref.p
     Phi = reshape(V[idcs.A], (nx, nx))
-    σ_m = (τ_span[2]-τ)/(τ_span[2]-τ_span[1])
-    σ_p = (τ-τ_span[1])/(τ_span[2]-τ_span[1])
+    σ_m = (t_span[2]-t)/(t_span[2]-t_span[1])
+    σ_p = (t-t_span[1])/(t_span[2]-t_span[1])
 
     # Compute the state time derivative and local linearization
     f = pbm.traj.f(x, u, p)
@@ -530,7 +531,7 @@ function _scp__discretize!(
     np = traj.np
     N = pbm.pars.N
     Nsub = pbm.pars.Nsub
-    τ_grid = pbm.common.τ_grid
+    t = pbm.common.t_grid
     sz_E = size(pbm.common.E)
     iSx = pbm.common.scale.iSx
 
@@ -546,9 +547,9 @@ function _scp__discretize!(
         V0[idcs.x] = @k(ref.xd)
 
         # Integrate
-        f = (τ, V) -> _scp__derivs(τ, V, k, pbm, ref)
-        τ_subgrid = T_RealVector(LinRange(@k(τ_grid), @kp1(τ_grid), Nsub))
-        V = rk4(f, V0, τ_subgrid; actions=traj.integ_actions)
+        f = (t, V) -> _scp__derivs(t, V, k, pbm, ref)
+        t_subgrid = T_RealVector(LinRange(@k(t), @kp1(t), Nsub))
+        V = rk4(f, V0, t_subgrid; actions=traj.integ_actions)
 
         # Get the raw RK4 results
         xV = V[idcs.x]
@@ -631,13 +632,13 @@ function _scp__add_convex_state_constraints!(
     # Variables and parameters
     N = spbm.def.pars.N
     traj_pbm = spbm.def.traj
-    τ = spbm.def.common.τ_grid
+    t = spbm.def.common.t_grid
     x = spbm.x
     p = spbm.p
 
     if !isnothing(traj_pbm.X)
         for k = 1:N
-            xk_in_X = traj_pbm.X(@k(τ), @k(x), p)
+            xk_in_X = traj_pbm.X(@k(t), k, @k(x), p)
             correct_type = typeof(xk_in_X)<:(
                 Vector{T} where {T<:T_ConvexConeConstraint})
             if !correct_type
@@ -662,13 +663,13 @@ function _scp__add_convex_input_constraints!(
     # Variables and parameters
     N = spbm.def.pars.N
     traj_pbm = spbm.def.traj
-    τ = spbm.def.common.τ_grid
+    t = spbm.def.common.t_grid
     u = spbm.u
     p = spbm.p
 
     if !isnothing(traj_pbm.U)
         for k = 1:N
-            uk_in_U = traj_pbm.U(@k(τ), @k(u), p)
+            uk_in_U = traj_pbm.U(@k(t), k, @k(u), p)
             correct_type = typeof(uk_in_U)<:(
                 Vector{T} where {T<:T_ConvexConeConstraint})
             if !correct_type
@@ -693,7 +694,7 @@ function _scp__add_nonconvex_constraints!(
     # Variables and parameters
     N = spbm.def.pars.N
     traj_pbm = spbm.def.traj
-    τ = spbm.def.common.τ_grid
+    t = spbm.def.common.t_grid
     nx = traj_pbm.nx
     nu = traj_pbm.nu
     np = traj_pbm.np
@@ -709,12 +710,12 @@ function _scp__add_nonconvex_constraints!(
     Cone = T_ConvexConeConstraint
     for k = 1:N
         if !isnothing(traj_pbm.s)
-            τxup = (@k(τ), @k(xb), @k(ub), pb)
-            s = traj_pbm.s(τxup...)
+            tkxup = (@k(t), k, @k(xb), @k(ub), pb)
+            s = traj_pbm.s(tkxup...)
             ns = length(s)
-            C = !isnothing(traj_pbm.C) ? traj_pbm.C(τxup...) : zeros(ns, nx)
-            D = !isnothing(traj_pbm.D) ? traj_pbm.D(τxup...) : zeros(ns, nu)
-            G = !isnothing(traj_pbm.G) ? traj_pbm.G(τxup...) : zeros(ns, np)
+            C = !isnothing(traj_pbm.C) ? traj_pbm.C(tkxup...) : zeros(ns, nx)
+            D = !isnothing(traj_pbm.D) ? traj_pbm.D(tkxup...) : zeros(ns, nu)
+            G = !isnothing(traj_pbm.G) ? traj_pbm.G(tkxup...) : zeros(ns, np)
             r = s-C*@k(xb)-D*@k(ub)-G*pb
             lhs = C*@k(x)+D*@k(u)+G*p+r
 
@@ -750,7 +751,7 @@ function _scp__original_cost(
 
     # Parameters
     N = pbm.pars.N
-    τ_grid = pbm.common.τ_grid
+    t = pbm.common.t_grid
     traj_pbm = pbm.traj
 
     # Terminal cost
@@ -762,7 +763,7 @@ function _scp__original_cost(
     for k = 1:N
         @k(J_run) = isnothing(pbm.traj.Γ) ? 0.0 : pbm.traj.Γ(@k(x), @k(u), p)
     end
-    integ_J_run = trapz(J_run, τ_grid)
+    integ_J_run = trapz(J_run, t)
 
     cost = J_term+integ_J_run
 

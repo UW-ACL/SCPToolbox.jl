@@ -643,7 +643,7 @@ function _scvx__compute_linear_cost_penalty!(spbm::SCvxSubproblem)::Nothing
     # Variables and parameters
     N = spbm.def.pars.N
     λ = spbm.def.pars.λ
-    τ_grid = spbm.def.common.τ_grid
+    t = spbm.def.common.t_grid
     E = spbm.ref.dyn.E
     P = spbm.P
     Pf = spbm.Pf
@@ -665,7 +665,7 @@ function _scvx__compute_linear_cost_penalty!(spbm::SCvxSubproblem)::Nothing
     end
     acc!(spbm.mdl, C(vcat(@first(Pf), vic), :l1))
     acc!(spbm.mdl, C(vcat(@last(Pf), vtc), :l1))
-    spbm.L_pen = trapz(λ*P, τ_grid)+sum(λ*Pf)
+    spbm.L_pen = trapz(λ*P, t)+sum(λ*Pf)
 
     return nothing
 end
@@ -695,7 +695,7 @@ function _scvx__actual_cost_penalty!(
     N = pbm.pars.N
     λ = pbm.pars.λ
     nx = pbm.traj.nx
-    τ_grid = pbm.common.τ_grid
+    t = pbm.common.t_grid
     x = sol.xd
     u = sol.ud
     p = sol.p
@@ -709,11 +709,11 @@ function _scvx__actual_cost_penalty!(
     P = T_RealVector(undef, N)
     for k = 1:N
         δk = (k<N) ? @k(δ) : zeros(nx)
-        sk = pbm.traj.s(@k(τ_grid), @k(x), @k(u), sol.p)
+        sk = pbm.traj.s(@k(t), k, @k(x), @k(u), sol.p)
         sk = isempty(sk) ? [0.0] : sk
         @k(P) = λ*_scvx__P(δk, max.(sk, 0.0))
     end
-    pen = trapz(P, τ_grid)+λ*_scvx__Pf(gic)+λ*_scvx__Pf(gtc)
+    pen = trapz(P, t)+λ*_scvx__Pf(gic)+λ*_scvx__Pf(gtc)
 
     return pen
 end

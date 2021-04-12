@@ -112,10 +112,7 @@ function FreeFlyerProblem(N::T_Int)::FreeFlyerProblem
     z_iss = 4.75
     obs = [T_Ellipsoid(copy(obs_shape), [8.5; -0.15; 5.0]),
            T_Ellipsoid(copy(obs_shape), [11.2; 1.84; 5.0]),
-           # T_Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8])
-           # T_Ellipsoid(copy(obs_shape), [12.5; 3.8;  4.8])
-           T_Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8])
-           ]
+           T_Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8])]
     iss_rooms = [T_Hyperrectangle([6.0; 0.0; z_iss],
                                   1.0, 1.0, 1.5;
                                   pitch=90.0),
@@ -134,25 +131,6 @@ function FreeFlyerProblem(N::T_Int)::FreeFlyerProblem
                  T_Hyperrectangle([10.75; 2.5; z_iss],
                                   2.5, 2.5, 4.5;
                                   yaw=90.0, pitch=90.0)]
-    # iss_pad = 0.25
-    # iss_rooms = [T_Hyperrectangle([6.0; 0.0; z_iss],
-    #                               1.0, 1.0, 1.5+iss_pad;
-    #                               pitch=90.0),
-    #              T_Hyperrectangle([7.5; 0.0; z_iss],
-    #                               2.0, 2.0, 4.0;
-    #                               pitch=90.0),
-    #              T_Hyperrectangle([11.5; 0.0; z_iss],
-    #                               1.25, 1.25, 0.5;
-    #                               pitch=90.0),
-    #              T_Hyperrectangle([10.75; -1.0; z_iss],
-    #                               1.5, 1.5, 1.5;
-    #                               yaw=-90.0, pitch=90.0),
-    #              T_Hyperrectangle([10.75; 1.0-iss_pad; z_iss],
-    #                               1.5, 1.5, 1.5+2*iss_pad;
-    #                               yaw=90.0, pitch=90.0),
-    #              T_Hyperrectangle([10.75; 2.5; z_iss],
-    #                               2.5, 2.5, 4.5;
-    #                               yaw=90.0, pitch=90.0)]
     env = FreeFlyerEnvironmentParameters(iss_rooms, obs)
 
     # >> Free-flyer <<
@@ -185,7 +163,7 @@ function FreeFlyerProblem(N::T_Int)::FreeFlyerProblem
     tf_min = 60.0
     tf_max = 200.0
     γ = 0.0
-    hom = 500.0
+    hom = 50.0#1e3
     sdf_pwr = 0.5
     traj = FreeFlyerTrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min,
                                          tf_max, γ, hom, sdf_pwr)
@@ -385,7 +363,7 @@ function plot_timeseries(mdl::FreeFlyerProblem,
     ct_res = 500
     ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
     tf = sol.p[veh.id_t]
-    dt_time = sol.τd*tf
+    dt_time = sol.td*tf
     ct_time = ct_τ*tf
     clr = get_colormap()(1.0)
     xyz_clrs = ["#db6245", "#5da9a1", "#356397"]
@@ -508,7 +486,7 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
     ct_res = 500
     ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
     tf = sol.p[veh.id_t]
-    dt_time = sol.τd*tf
+    dt_time = sol.td*tf
     ct_time = ct_τ*tf
     cmap = get_colormap()
     xyz_clrs = ["#db6245", "#5da9a1", "#356397"]
@@ -637,7 +615,6 @@ function _freeflyer__plot_zero_levelset(ax::PyPlot.PyObject,
     ylims = (-2.6, 7.1)
     res = 100
 
-    # ..:: Actual zero-level set ::..
     x = T_RealVector(LinRange(xlims..., res))
     y = T_RealVector(LinRange(ylims..., res))
     X = repeat(reshape(x, 1, :), length(y), 1)
@@ -651,142 +628,6 @@ function _freeflyer__plot_zero_levelset(ax::PyPlot.PyObject,
                linewidths=1,
                linestyles="solid",
                zorder=10)
-
-    return nothing
-end
-
-function plot_sdf(mdl::FreeFlyerProblem,
-                  history::SCPHistory,)::Nothing
-
-    # Parameters
-    veh = mdl.vehicle
-    traj = mdl.traj
-    env = mdl.env
-    room = env.iss
-    sol = [spbm.sol for spbm in history.subproblems]
-    N = size(sol[1].xd, 2)
-    τd = T_RealVector(LinRange(0.0, 1.0, N))
-    num_iter = length(sol)
-    algo = history.subproblems[1].algo
-    cmap = get_colormap()
-    cmap_offset = 0.1
-    alph_offset = 0.3
-
-    fig = create_figure((5, 3*num_iter))
-
-    for i = 1:num_iter
-        ax = fig.add_subplot(num_iter, 1, i)
-
-        ax.grid(linewidth=0.3, alpha=0.5)
-        ax.set_axisbelow(true)
-        ax.set_facecolor("white")
-        ax.autoscale(tight=true)
-        ax.set_title(@sprintf("\$j=%d\$", i))
-
-        f = (off) -> 1.0#(i-1)/(num_iter-1)*(1-off)+off
-        alph = f(alph_offset)
-        clr = (cmap(f(cmap_offset))..., alph)
-
-        # (Actual) numerical SDF
-        f_num = (r) -> logsumexp([1-norm((r-room[j].c)./room[j].s, Inf)
-                                  for j=1:env.n_iss]; t=traj.hom)
-        r = sol[i].xd[veh.id_r, :]
-        sdf_num = map(f_num, [@k(r) for k=1:N])
-
-        # (Modelled) SDF in optimization
-        f_scp = (δ) -> logsumexp(δ; t=traj.hom)
-        δ = reshape(sol[i].p[veh.id_δ], env.n_iss, :)
-        sdf_scp = map(f_scp, [@k(δ) for k=1:N])
-
-        time = τd*sol[i].p[veh.id_t]
-
-        ax.plot(time, sdf_num,
-                linestyle="none",
-                marker="o",
-                markersize=5,
-                markeredgewidth=0,
-                markerfacecolor=clr,
-                clip_on=false,
-                zorder=99)
-
-        ax.plot(time, sdf_scp,
-                linestyle="none",
-                marker="o",
-                markersize=2.5,
-                markeredgecolor="white",
-                markeredgewidth=0.3,
-                markerfacecolor="#f1d46a",
-                clip_on=false,
-                zorder=100)
-
-    end
-
-    save_figure("freeflyer_sdf", algo)
-
-    iters = 10
-    fig = create_figure((3*env.n_iss, 3*iters))
-
-    for j = 1:iters
-
-        # (Modelled) SDF in optimization
-        E = T_RealMatrix(I(env.n_iss))
-        f_scp = (δ) -> logsumexp(δ; t=traj.hom)
-        ∇f_scp = (δ) -> logsumexp(δ, [E[:, i] for i=1:env.n_iss];
-                                  t=traj.hom)[2]
-        δ = reshape(sol[j].p[veh.id_δ], env.n_iss, :)
-        sdf_scp = map(f_scp, [@k(δ) for k=1:N])
-        ∇sdf_scp = map(∇f_scp, [@k(δ) for k=1:N])
-        ∇sdf_scp = hcat(∇sdf_scp...)
-
-        time = τd*sol[j].p[veh.id_t]
-
-        for i = 1:env.n_iss
-            ax = fig.add_subplot(iters, env.n_iss, (j-1)*env.n_iss+i)
-
-            ax.grid(linewidth=0.3, alpha=0.5)
-            ax.set_axisbelow(true)
-            ax.set_facecolor("white")
-            ax.autoscale(tight=true)
-            ax.set_title(@sprintf("\$i=%d,~j=%d\$", i, j))
-
-            ax.plot(time, ∇sdf_scp[i, :],
-                    linestyle="none",
-                    marker="o",
-                    markersize=3,
-                    markeredgewidth=0,
-                    markerfacecolor="blue",
-                    clip_on=false,
-                    zorder=100)
-
-            ax2 = ax.twinx()
-
-            # (Actual) numerical SDF
-            f_num = (r) -> logsumexp([1-norm((r-room[ii].c)./room[ii].s, Inf)
-                                      for ii=1:env.n_iss]; t=traj.hom)
-            r = sol[j].xd[veh.id_r, :]
-            sdf_num = map(f_num, [@k(r) for k=1:N])
-
-            ax2.plot(time, sdf_num,
-                     linestyle="none",
-                     marker="v",
-                     markersize=3,
-                     markeredgewidth=0,
-                     markerfacecolor="black",
-                     clip_on=false,
-                     zorder=99)
-
-            ax2.plot(time, δ[i, :],
-                     linestyle="none",
-                     marker="^",
-                     markersize=3,
-                     markeredgewidth=0,
-                     markerfacecolor="red",
-                     clip_on=false,
-                     zorder=100)
-        end
-    end
-
-    save_figure("freeflyer_sdf_gradient", algo)
 
     return nothing
 end

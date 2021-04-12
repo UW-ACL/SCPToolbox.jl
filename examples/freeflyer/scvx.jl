@@ -29,20 +29,12 @@ include("../../models/freeflyer.jl")
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 N = 50
+algo = :scvx
+
 mdl = FreeFlyerProblem(N)
 pbm = TrajectoryProblem(mdl)
 
-define_problem!(pbm)
-
-# >> Special numerical integration <<
-
-# Quaternion re-normalization on numerical integration step
-problem_set_integration_action!(
-    pbm, mdl.vehicle.id_q,
-    (x, pbm) -> begin
-    xn = x/norm(x)
-    return xn
-    end)
+define_problem!(pbm, algo)
 
 # >> Running cost to be minimized <<
 problem_set_running_cost!(pbm, (x, u, p, pbm) -> begin
@@ -112,91 +104,6 @@ problem_set_dynamics!(pbm,
                       return F
                       end)
 
-# >> Nonconvex path inequality constraints <<
-problem_set_s!(
-    pbm,
-    # Constraint s
-    (τ, x, u, p, pbm) -> begin
-    env = pbm.mdl.env
-    veh = pbm.mdl.vehicle
-    traj = pbm.mdl.traj
-    r = x[veh.id_r]
-    δ = reshape(p[veh.id_δ], env.n_iss, :)
-    N = size(δ,2)
-    k = T_Int(round(τ*(N-1)))+1
-    δ = @k(δ)
-    s = zeros(env.n_obs+1)
-    # Ellipsoidal obstacles
-    for i = 1:env.n_obs
-    # ---
-    E = env.obs[i]
-    s[i] = 1-E(r)
-    # ---
-    end
-    # Space station flight space
-    d = logsumexp(δ; t=traj.hom)
-    s[end] = -d
-    # d_iss, _ = signed_distance(env.iss, r; t=traj.hom,
-    #                            a=traj.sdf_pwr)
-    # s[end-2] = -d_iss
-    return s
-    end,
-    # Jacobian ds/dx
-    (τ, x, u, p, pbm) -> begin
-    env = pbm.mdl.env
-    veh = pbm.mdl.vehicle
-    traj = pbm.mdl.traj
-    r = x[veh.id_r]
-    C = zeros(env.n_obs+1, pbm.nx)
-    # Ellipsoidal obstacles
-    for i = 1:env.n_obs
-    # ---
-    E = env.obs[i]
-    C[i, veh.id_r] = -∇(E, r)
-    # ---
-    end
-    # Space station flight space
-    # _, ∇d_iss = signed_distance(env.iss, r; t=traj.hom,
-    #                             a=traj.sdf_pwr)
-    # C[end, veh.id_r] = -∇d_iss
-    return C
-    end,
-    # Jacobian ds/du
-    (τ, x, u, p, pbm) -> begin
-    env = pbm.mdl.env
-    D = zeros(env.n_obs+1, pbm.nu)
-    return D
-    end,
-    # Jacobian ds/dp
-    (τ, x, u, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    env = pbm.mdl.env
-    traj = pbm.mdl.traj
-    room = env.iss
-    r = x[veh.id_r]
-    id_δ = reshape(veh.id_δ, env.n_iss, :)
-    N = size(id_δ,2)
-    k = T_Int(round(τ*(N-1)))+1
-    id_δ = @k(id_δ)
-    δ = p[id_δ]
-    E = T_RealMatrix(I(env.n_iss))
-    G = zeros(env.n_obs+1, pbm.np)
-
-    _, ∇d = logsumexp(δ, [E[:, i] for i=1:env.n_iss]; t=traj.hom)
-    # ∇d = zeros(env.n_iss)
-    # for i = 1:env.n_iss
-    # if norm((r-room[i].c)./room[i].s, Inf)<=1.0
-    # ∇d[i] = 1.0
-    # end
-    # end
-    G[end, id_δ] = -∇d
-
-    # G[end-2, id_δ] .= 0.0
-    # G[end-1, veh.id_t] = 1.0
-    # G[end, veh.id_t] = -1.0
-    return G
-    end)
-
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: SCvx algorithm parameters ::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -239,4 +146,3 @@ plot_final_trajectory(mdl, sol)
 plot_timeseries(mdl, sol)
 plot_obstacle_constraints(mdl, sol)
 plot_convergence(history, "freeflyer")
-# plot_sdf(mdl, history)

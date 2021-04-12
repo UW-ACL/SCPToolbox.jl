@@ -424,6 +424,7 @@ end
 
 Function signature: X(t, x, pbm), where:
   - t (T_Real): the current time.
+  - k (T_Int): the current discrete-time node.
   - x (T_OptiVarVector): the state vector.
   - pbm (TrajectoryProblem): the trajectory problem structure.
 
@@ -435,7 +436,7 @@ Args:
        state set. =#
 function problem_set_X!(pbm::TrajectoryProblem,
                         X::T_Function)::Nothing
-    pbm.X = (t, x, p) -> X(t, x, p, pbm)
+    pbm.X = (t, k, x, p) -> X(t, k, x, p, pbm)
     return nothing
 end
 
@@ -443,6 +444,7 @@ end
 
 Function signature: U(t, u, pbm), where:
   - t (T_Real): the current time.
+  - k (T_Int): the current discrete-time node.
   - u (T_OptiVarVector): the input vector.
   - pbm (TrajectoryProblem): the trajectory problem structure.
 
@@ -454,70 +456,50 @@ Args:
        input set. =#
 function problem_set_U!(pbm::TrajectoryProblem,
                         U::T_Function)::Nothing
-    pbm.U = (t, u, p) -> U(t, u, p, pbm)
+    pbm.U = (t, k, u, p) -> U(t, k, u, p, pbm)
     return nothing
 end
 
-#= Define the nonconvex inequality path constraints (SCvx version).
+""" Define the nonconvex inequality path constraints.
 
-Function signature: f(t, x, u, p, pbm), where:
-  - t (T_Real): the current time.
-  - x (T_RealVector): the state vector.
-  - u (T_RealVector): the input vector.
-  - p (T_RealVector): the parameter vector.
-  - pbm (TrajectoryProblem): the trajectory problem structure.
-
-The function s must return a T_RealVector, while C, D, and G must return a
-T_RealMatrix.
+The SCvx algorithm assumes the function form \$s(t, k, x, u, p)\$. The GuSTO
+algorithm assumes the function form \$s(t, k, x, p)\$. Thus, SCvx requires the
+`s` argument as well as all three Jacobians. GuSTO requires `s` and the two
+Jacobians.
 
 Args:
-    pbm: the trajectory problem structure.
-    s: the constraint function.
-    C: Jacobian with respect to the state, ds/dx.
-    D: Jacobian with respect to the input, ds/du.
-    G: Jacobian with respect to the parameter, ds/dp. =#
+* `pbm`: the trajectory problem structure.
+* `algo`: which algorithm is being used.
+* `s`: the constraint function.
+* `C`: Jacobian with respect to the state, \$\\grad_x s\$.
+* `DG`: Jacobian with respect to the input or parameter, \$\\grad_u s\$ or
+  \$\\grad_p s\$. If SCvx, \$\\grad_u s\$ is used. If GuSTO, \$\\grad_p s\$ is
+  used.
+* `G`: (optional) Jacobian with respect to the parameter, \$\\grad_p s\$. Only
+  provide if using SCvx.
+"""
 function problem_set_s!(pbm::TrajectoryProblem,
+                        algo::T_Symbol,
                         s::T_Function,
                         C::T_Function,
-                        D::T_Function,
-                        G::T_Function)::Nothing
+                        DG::T_Function,
+                        G::T_Function=nothing)::Nothing
     if isnothing(s)
         err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: must at least provide s.")
         throw(err)
     end
-    pbm.s = (t, x, u, p) -> s(t, x, u, p, pbm)
-    pbm.C = !isnothing(C) ? (t, x, u, p) -> C(t, x, u, p, pbm) : nothing
-    pbm.D = !isnothing(D) ? (t, x, u, p) -> D(t, x, u, p, pbm) : nothing
-    pbm.G = !isnothing(G) ? (t, x, u, p) -> G(t, x, u, p, pbm) : nothing
-    return nothing
-end
 
-#= Define the nonconvex inequality path constraints (GuSTO version).
-
-Function signature: f(x, u, p, pbm), where:
-  - x (T_RealVector): the state vector.
-  - p (T_RealVector): the parameter vector.
-  - pbm (TrajectoryProblem): the trajectory problem structure.
-
-The function s must return a T_RealVector, while C, D, and G must return a
-T_RealMatrix.
-
-Args:
-    pbm: the trajectory problem structure.
-    s: the constraint function.
-    C: Jacobian with respect to the state, ds/dx.
-    G: Jacobian with respect to the parameter, ds/dp. =#
-function problem_set_s!(pbm::TrajectoryProblem,
-                        s::T_Function,
-                        C::T_Function,
-                        G::T_Function)::Nothing
-    if isnothing(s)
-        err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: must at least provide s.")
-        throw(err)
+    if algo==:scvx
+        pbm.s = (t, k, x, u, p) -> s(t, k, x, u, p, pbm)
+        pbm.C = !isnothing(C) ? (t, k, x, u, p) -> C(t, k, x, u, p, pbm) : nothing
+        pbm.D = !isnothing(DG) ? (t, k, x, u, p) -> DG(t, k, x, u, p, pbm) : nothing
+        pbm.G = !isnothing(G) ? (t, k, x, u, p) -> G(t, k, x, u, p, pbm) : nothing
+    else
+        pbm.s = (t, k, x, p) -> s(t, k, x, p, pbm)
+        pbm.C = !isnothing(C) ? (t, k, x, p) -> C(t, k, x, p, pbm) : nothing
+        pbm.G = !isnothing(DG) ? (t, k, x, p) -> DG(t, k, x, p, pbm) : nothing
     end
-    pbm.s = (x, p) -> s(x, p, pbm)
-    pbm.C = !isnothing(C) ? (x, p) -> C(x, p, pbm) : nothing
-    pbm.G = !isnothing(G) ? (x, p) -> G(x, p, pbm) : nothing
+
     return nothing
 end
 

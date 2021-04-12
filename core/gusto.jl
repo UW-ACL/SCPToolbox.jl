@@ -503,7 +503,7 @@ function _gusto__original_cost(x::T_OptiVarMatrix,
     traj = spbm.def.traj
     ref = spbm.ref
     N = pars.N
-    τ_grid = spbm.def.common.τ_grid
+    t = spbm.def.common.t_grid
     if mode!=:convex
         xb = ref.xd
         ub = ref.ud
@@ -580,7 +580,7 @@ function _gusto__original_cost(x::T_OptiVarMatrix,
             @k(cost_run_integrand) = Γk
         end
     end
-    cost_run = trapz(cost_run_integrand, τ_grid)
+    cost_run = trapz(cost_run_integrand, t)
 
     # Overall original cost
     cost = cost_term+cost_run
@@ -612,7 +612,7 @@ function _gusto__state_penalty_cost(x::T_OptiVarMatrix,
     pars = pbm.pars
     traj = pbm.traj
     N = pars.N
-    τ_grid = pbm.common.τ_grid
+    t = pbm.common.t_grid
     nx = traj.nx
     np = traj.np
     if mode==:convex
@@ -625,46 +625,46 @@ function _gusto__state_penalty_cost(x::T_OptiVarMatrix,
 
     cost_st = 0.0
 
-    # ..:: Convex state constraints x∈X ::..
+    # ..:: Convex state constraints ::..
     if !isnothing(traj.X)
         cost_soft_X = Vector{T_Objective}(undef, N)
         for k = 1:N
-            xk_in_X = traj.X(@k(τ_grid), @k(x))
+            in_X = traj.X(@k(t), k, @k(x), p)
             cost_soft_X[k] = 0.0
-            for cone in xk_in_X
+            for cone in in_X
                 ρ = get_conic_constraint_indicator!(spbm.mdl, cone)
                 for ρi in ρ
                     cost_soft_X[k] += _gusto__soft_penalty(spbm, ρi)
                 end
             end
         end
-        cost_st += trapz(cost_soft_X, τ_grid)
+        cost_st += trapz(cost_soft_X, t)
     end
 
-    # ..:: Nonconvex path constraints s(x, u, p)<=0 ::..
+    # ..:: Nonconvex path constraints ::..
     if !isnothing(traj.s)
         cost_soft_s = Vector{T_Objective}(undef, N)
         for k = 1:N
             cost_soft_s[k] = 0.0
             if mode==:convex
-                xp = (@k(xb), pb)
-                s = traj.s(xp...)
+                tkxp = (@k(t), k, @k(xb), pb)
+                s = traj.s(tkxp...)
                 ns = length(s)
-                dsdx = !isnothing(traj.C) ? traj.C(xp...) : zeros(ns, nx)
-                dsdp = !isnothing(traj.G) ? traj.G(xp...) : zeros(ns, np)
+                dsdx = !isnothing(traj.C) ? traj.C(tkxp...) : zeros(ns, nx)
+                dsdp = !isnothing(traj.G) ? traj.G(tkxp...) : zeros(ns, np)
                 for i = 1:ns
                     cost_soft_s[k] += _gusto__soft_penalty(
                         spbm, s[i], dsdx[i, :], dsdp[i, :], @k(dx), dp)
                 end
             else
-                s = traj.s(@k(x), p)
+                s = traj.s(@k(t), k, @k(x), p)
                 ns = length(s)
                 for i = 1:ns
                     cost_soft_s[k] += _gusto__soft_penalty(spbm, s[i])
                 end
             end
         end
-        cost_st += trapz(cost_soft_s, τ_grid)
+        cost_st += trapz(cost_soft_s, t)
     end
 
     return cost_st
@@ -789,7 +789,7 @@ function _gusto__trust_region_cost(x::T_OptiVarMatrix,
     N = pars.N
     η = spbm.η
     sqrt_η = sqrt(η)
-    τ_grid = spbm.def.common.τ_grid
+    t = spbm.def.common.t_grid
     xh = scale.iSx*(x.-scale.cx)
     ph = scale.iSp*(p-scale.cp)
     xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
@@ -834,7 +834,7 @@ function _gusto__trust_region_cost(x::T_OptiVarMatrix,
         end
     end
     if !raw
-        cost_tr = trapz(cost_tr_integrand, τ_grid)
+        cost_tr = trapz(cost_tr_integrand, t)
     end
 
     return (raw) ? tr : cost_tr
@@ -855,7 +855,7 @@ function _gusto__virtual_control_cost(vd::T_OptiVarMatrix,
     pars = spbm.def.pars
     ω = pars.ω
     N = pars.N
-    τ_grid = spbm.def.common.τ_grid
+    t = spbm.def.common.t_grid
     E = spbm.ref.dyn.E
     vc_l1 = @variable(spbm.mdl, [1:N-1], base_name="vc_l1")
 
@@ -868,7 +868,7 @@ function _gusto__virtual_control_cost(vd::T_OptiVarMatrix,
         add_conic_constraint!(spbm.mdl, C)
         @k(cost_vc_integrand) = ω*vck_l1
     end
-    cost_vc = trapz(cost_vc_integrand, τ_grid)
+    cost_vc = trapz(cost_vc_integrand, t)
 
     return cost_vc
 end
@@ -927,7 +927,7 @@ function _gusto__update_trust_region!(
     traj = pbm.traj
     N = pbm.pars.N
     Nsub = pbm.pars.Nsub
-    τ_grid = pbm.common.τ_grid
+    t = pbm.common.t_grid
     sol = spbm.sol
     ref = spbm.ref
     xb = ref.xd
@@ -956,8 +956,8 @@ function _gusto__update_trust_region!(
         @k(Δf) = norm(f_nl-f_lin)
         @k(dxdt) = norm(f_lin)
     end
-    sol.dyn_error = trapz(Δf, τ_grid)
-    dynamics_nrml = trapz(dxdt, τ_grid)
+    sol.dyn_error = trapz(Δf, t)
+    dynamics_nrml = trapz(dxdt, t)
 
     # Convexification performance metric
     normalization_term = cost_nrml+dynamics_nrml
@@ -989,7 +989,7 @@ function _gusto__update_rule!(
     # Extract values and relevant data
     pars = spbm.def.pars
     traj = spbm.def.traj
-    τ_grid = spbm.def.common.τ_grid
+    t = spbm.def.common.t_grid
     sol = spbm.sol
     ref = spbm.ref
     N = pars.N
@@ -1023,10 +1023,10 @@ function _gusto__update_rule!(
             # Check with respect to the convex state constraints
             if !isnothing(traj.X)
                 for k = 1:N
-                    xk_in_X = traj.X(@k(τ_grid), @k(sol.xd))
-                    for cone in xk_in_X
+                    in_X = traj.X(@k(t), k, @k(sol.xd), sol.p)
+                    for cone in in_X
                         ind = get_conic_constraint_indicator!(spbm.mdl, cone)
-                        if ind>c_buffer
+                        if any(ind.>c_buffer)
                             error("Convex state constraint violated")
                         end
                     end
@@ -1036,7 +1036,7 @@ function _gusto__update_rule!(
             # Check with respect to the nonconvex path constraints
             if !isnothing(traj.s)
                 for k = 1:N
-                    s = traj.s(@k(sol.xd), sol.p)
+                    s = traj.s(@k(t), k, @k(sol.xd), sol.p)
                     if any(s.>c_buffer)
                         error("Nonconvex path constraint violated")
                     end
