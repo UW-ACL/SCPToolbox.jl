@@ -34,7 +34,8 @@ struct FreeFlyerParameters
     id_ω::T_IntRange # Angular velocity indices of the state vector
     id_T::T_IntRange # Thrust indices of the input vector
     id_M::T_IntRange # Torque indicates of the input vector
-    id_t::T_Int      # Index of time dilation
+    id_t::T_Int      # Time dilation index of the parameter vector
+    id_δ::T_IntRange # Room SDF indices of the parameter vector
     v_max::T_Real    # [m/s] Maximum velocity
     ω_max::T_Real    # [rad/s] Maximum angular velocity
     T_max::T_Real    # [N] Maximum thrust
@@ -48,6 +49,7 @@ struct FreeFlyerEnvironmentParameters
     obs::Vector{T_Ellipsoid}      # Obstacles (ellipsoids)
     iss::Vector{T_Hyperrectangle} # Space station flight space
     n_obs::T_Int                  # Number of obstacles
+    n_iss::T_Int                  # Number of space station rooms
 end
 
 #= Trajectory parameters. =#
@@ -91,9 +93,10 @@ function FreeFlyerEnvironmentParameters(
     obs::Vector{T_Ellipsoid})::FreeFlyerEnvironmentParameters
 
     # Derived values
+    n_iss = length(iss)
     n_obs = length(obs)
 
-    env = FreeFlyerEnvironmentParameters(obs, iss, n_obs)
+    env = FreeFlyerEnvironmentParameters(obs, iss, n_obs, n_iss)
 
     return env
 end
@@ -102,24 +105,7 @@ end
 
 Returns:
     mdl: the free-flyer problem. =#
-function FreeFlyerProblem()::FreeFlyerProblem
-
-    # >> Free-flyer <<
-    id_r = 1:3
-    id_v = 4:6
-    id_q = 7:10
-    id_ω = 11:13
-    id_T = 1:3
-    id_M = 4:6
-    id_t = 1
-    v_max = 0.4
-    ω_max = deg2rad(1)
-    T_max = 20e-3
-    M_max = 1e-4
-    mass = 7.2
-    J = diagm([0.1083, 0.1083, 0.1083])
-    fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_T, id_M, id_t,
-                                 v_max, ω_max, T_max, M_max, mass, J)
+function FreeFlyerProblem(N::T_Int)::FreeFlyerProblem
 
     # >> Environment <<
     obs_shape = diagm([1.0; 1.0; 1.0]/0.3)
@@ -147,6 +133,24 @@ function FreeFlyerProblem()::FreeFlyerProblem
                                   yaw=90.0, pitch=90.0)]
     env = FreeFlyerEnvironmentParameters(iss_rooms, obs)
 
+    # >> Free-flyer <<
+    id_r = 1:3
+    id_v = 4:6
+    id_q = 7:10
+    id_ω = 11:13
+    id_T = 1:3
+    id_M = 4:6
+    id_t = 1
+    id_δ = (1:(N*env.n_iss)).+1
+    v_max = 0.4
+    ω_max = deg2rad(1)
+    T_max = 20e-3
+    M_max = 1e-4
+    mass = 7.2
+    J = diagm([0.1083, 0.1083, 0.1083])
+    fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_T, id_M, id_t,
+                                 id_δ, v_max, ω_max, T_max, M_max, mass, J)
+
     # >> Trajectory <<
     r0 = [6.5; -0.2; 5.0]
     v0 = [0.035; 0.035; 0.0]
@@ -159,7 +163,7 @@ function FreeFlyerProblem()::FreeFlyerProblem
     tf_min = 60.0
     tf_max = 200.0
     γ = 0.0
-    hom = 50.0
+    hom = 500.0
     sdf_pwr = 0.5
     traj = FreeFlyerTrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min,
                                          tf_max, γ, hom, sdf_pwr)

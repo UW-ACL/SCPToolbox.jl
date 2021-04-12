@@ -435,7 +435,7 @@ Args:
        state set. =#
 function problem_set_X!(pbm::TrajectoryProblem,
                         X::T_Function)::Nothing
-    pbm.X = (t, x) -> X(t, x, pbm)
+    pbm.X = (t, x, p) -> X(t, x, p, pbm)
     return nothing
 end
 
@@ -454,13 +454,14 @@ Args:
        input set. =#
 function problem_set_U!(pbm::TrajectoryProblem,
                         U::T_Function)::Nothing
-    pbm.U = (t, u) -> U(t, u, pbm)
+    pbm.U = (t, u, p) -> U(t, u, p, pbm)
     return nothing
 end
 
 #= Define the nonconvex inequality path constraints (SCvx version).
 
-Function signature: f(x, u, p, pbm), where:
+Function signature: f(t, x, u, p, pbm), where:
+  - t (T_Real): the current time.
   - x (T_RealVector): the state vector.
   - u (T_RealVector): the input vector.
   - p (T_RealVector): the parameter vector.
@@ -484,10 +485,10 @@ function problem_set_s!(pbm::TrajectoryProblem,
         err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: must at least provide s.")
         throw(err)
     end
-    pbm.s = (x, u, p) -> s(x, u, p, pbm)
-    pbm.C = !isnothing(C) ? (x, u, p) -> C(x, u, p, pbm) : nothing
-    pbm.D = !isnothing(D) ? (x, u, p) -> D(x, u, p, pbm) : nothing
-    pbm.G = !isnothing(G) ? (x, u, p) -> G(x, u, p, pbm) : nothing
+    pbm.s = (t, x, u, p) -> s(t, x, u, p, pbm)
+    pbm.C = !isnothing(C) ? (t, x, u, p) -> C(t, x, u, p, pbm) : nothing
+    pbm.D = !isnothing(D) ? (t, x, u, p) -> D(t, x, u, p, pbm) : nothing
+    pbm.G = !isnothing(G) ? (t, x, u, p) -> G(t, x, u, p, pbm) : nothing
     return nothing
 end
 

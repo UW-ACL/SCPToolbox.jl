@@ -342,17 +342,35 @@ function _scp__compute_scaling(
     intrvl_u = [0.0; 1.0]
     intrvl_p = [0.0; 1.0]
 
-    # >> Compute bounding boxes for state and input <<
+    # >> Compute physical variable bounding boxes <<
 
     x_bbox = fill(1.0, nx, 2)
     u_bbox = fill(1.0, nu, 2)
+    p_bbox = fill(1.0, np, 2)
     x_bbox[:, 1] .= 0.0
     u_bbox[:, 1] .= 0.0
+    p_bbox[:, 1] .= 0.0
 
-    defs = [Dict(:dim => nx, :set => traj.X,
-                 :bbox => x_bbox, :advice => :xrg),
-            Dict(:dim => nu, :set => traj.U,
-                 :bbox => u_bbox, :advice => :urg)]
+    defs = [Dict(:dim => nx,
+                 :set => (τ, x, u, p) -> traj.X(τ, x, p),
+                 :bbox => x_bbox,
+                 :advice => :xrg,
+                 :cost => (x, u, p, i) -> x[i]),
+            Dict(:dim => nu,
+                 :set => (τ, x, u, p) -> traj.U(τ, u, p),
+                 :bbox => u_bbox,
+                 :advice => :urg,
+                 :cost => (x, u, p, i) -> u[i]),
+            Dict(:dim => np,
+                 :set => (τ, x, u, p) -> traj.X(τ, x, p),
+                 :bbox => p_bbox,
+                 :advice => :prg,
+                 :cost => (x, u, p, i) -> p[i]),
+            Dict(:dim => np,
+                 :set => (τ, x, u, p) -> traj.U(τ, u, p),
+                 :bbox => p_bbox,
+                 :advice => :prg,
+                 :cost => (x, u, p, i) -> p[i])]
 
     for def in defs
         for j = 1:2 # 1:min, 2:max
@@ -368,15 +386,17 @@ function _scp__compute_scaling(
                         set_optimizer_attribute(mdl, key, val)
                     end
                     # Variables
-                    var = @variable(mdl, [1:def[:dim]])
+                    x = @variable(mdl, [1:nx])
+                    u = @variable(mdl, [1:nu])
+                    p = @variable(mdl, [1:np])
                     # Constraints
                     if !isnothing(def[:set])
                         for τ in τ_grid
-                            add_conic_constraints!(mdl, def[:set](τ, var))
+                            add_conic_constraints!(mdl, def[:set](τ, x, u, p))
                         end
                     end
                     # Cost
-                    set_objective_function(mdl, var[i])
+                    set_objective_function(mdl, def[:cost](x, u, p, i))
                     set_objective_sense(mdl, (j==1) ? MOI.MIN_SENSE :
                                         MOI.MAX_SENSE)
                     # Solve
@@ -394,20 +414,6 @@ function _scp__compute_scaling(
                         throw(err)
                     end
                 end
-            end
-        end
-    end
-
-    # >> Compute bounding box for parameters <<
-
-    p_bbox = fill(1.0, np, 2)
-    p_bbox[:, 1] .= 0.0
-
-    for j = 1:2 # 1:min, 2:max
-        for i = 1:np
-            if !isnothing(traj.prg[i])
-                # Take user scaling advice
-                p_bbox[i, j] = traj.prg[i][j]
             end
         end
     end
@@ -627,10 +633,11 @@ function _scp__add_convex_state_constraints!(
     traj_pbm = spbm.def.traj
     τ = spbm.def.common.τ_grid
     x = spbm.x
+    p = spbm.p
 
     if !isnothing(traj_pbm.X)
         for k = 1:N
-            xk_in_X = traj_pbm.X(@k(τ), @k(x))
+            xk_in_X = traj_pbm.X(@k(τ), @k(x), p)
             correct_type = typeof(xk_in_X)<:(
                 Vector{T} where {T<:T_ConvexConeConstraint})
             if !correct_type
@@ -657,10 +664,11 @@ function _scp__add_convex_input_constraints!(
     traj_pbm = spbm.def.traj
     τ = spbm.def.common.τ_grid
     u = spbm.u
+    p = spbm.p
 
     if !isnothing(traj_pbm.U)
         for k = 1:N
-            uk_in_U = traj_pbm.U(@k(τ), @k(u))
+            uk_in_U = traj_pbm.U(@k(τ), @k(u), p)
             correct_type = typeof(uk_in_U)<:(
                 Vector{T} where {T<:T_ConvexConeConstraint})
             if !correct_type
@@ -685,6 +693,7 @@ function _scp__add_nonconvex_constraints!(
     # Variables and parameters
     N = spbm.def.pars.N
     traj_pbm = spbm.def.traj
+    τ = spbm.def.common.τ_grid
     nx = traj_pbm.nx
     nu = traj_pbm.nu
     np = traj_pbm.np
@@ -700,12 +709,12 @@ function _scp__add_nonconvex_constraints!(
     Cone = T_ConvexConeConstraint
     for k = 1:N
         if !isnothing(traj_pbm.s)
-            xup = (@k(xb), @k(ub), pb)
-            s = traj_pbm.s(xup...)
+            τxup = (@k(τ), @k(xb), @k(ub), pb)
+            s = traj_pbm.s(τxup...)
             ns = length(s)
-            C = !isnothing(traj_pbm.C) ? traj_pbm.C(xup...) : zeros(ns, nx)
-            D = !isnothing(traj_pbm.D) ? traj_pbm.D(xup...) : zeros(ns, nu)
-            G = !isnothing(traj_pbm.G) ? traj_pbm.G(xup...) : zeros(ns, np)
+            C = !isnothing(traj_pbm.C) ? traj_pbm.C(τxup...) : zeros(ns, nx)
+            D = !isnothing(traj_pbm.D) ? traj_pbm.D(τxup...) : zeros(ns, nu)
+            G = !isnothing(traj_pbm.G) ? traj_pbm.G(τxup...) : zeros(ns, np)
             r = s-C*@k(xb)-D*@k(ub)-G*pb
             lhs = C*@k(x)+D*@k(u)+G*p+r
 

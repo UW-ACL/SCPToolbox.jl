@@ -450,7 +450,7 @@ function _scvx__generate_initial_guess(
 
     # Construct the raw trajectory
     x, u, p = pbm.traj.guess(pbm.pars.N)
-    _scvx__correct_convex!(x, u, pbm)
+    _scvx__correct_convex!(x, u, p, pbm)
     guess = SCvxSubproblemSolution(x, u, p, 0, pbm)
 
     return guess
@@ -709,7 +709,7 @@ function _scvx__actual_cost_penalty!(
     P = T_RealVector(undef, N)
     for k = 1:N
         δk = (k<N) ? @k(δ) : zeros(nx)
-        sk = pbm.traj.s(@k(x), @k(u), sol.p)
+        sk = pbm.traj.s(@k(τ_grid), @k(x), @k(u), sol.p)
         sk = isempty(sk) ? [0.0] : sk
         @k(P) = λ*_scvx__P(δk, max.(sk, 0.0))
     end
@@ -833,15 +833,15 @@ Args:
 function _scvx__correct_convex!(
     x_ref::T_RealMatrix,
     u_ref::T_RealMatrix,
+    p_ref::T_RealVector,
     pbm::SCPProblem)::Nothing
 
     # Parameters
     N = pbm.pars.N
     nx = pbm.traj.nx
     nu = pbm.traj.nu
+    np = pbm.traj.np
     scale = pbm.common.scale
-    cone_dim_x = 1+nx
-    cone_dim_u = 1+nu
 
     # Initialize the problem
     opti = SCvxSubproblem(pbm, 0, 0.0)
@@ -853,18 +853,22 @@ function _scvx__correct_convex!(
     # Add epigraph constraints to make a convex cost for JuMP
     xh_ref = scale.iSx*(x_ref.-scale.cx)
     uh_ref = scale.iSu*(u_ref.-scale.cu)
+    ph_ref = scale.iSp*(p_ref-scale.cp)
     dx = opti.xh-xh_ref
     du = opti.uh-uh_ref
+    dp = opti.ph-ph_ref
     epi_x = @variable(opti.mdl, [1:N], base_name="τx")
     epi_u = @variable(opti.mdl, [1:N], base_name="τu")
+    epi_p = @variable(opti.mdl, base_name="τp")
     C = T_ConvexConeConstraint
     for k = 1:N
         add_conic_constraint!(opti.mdl, C(vcat(@k(epi_x), @k(dx)), :l1))
         add_conic_constraint!(opti.mdl, C(vcat(@k(epi_u), @k(du)), :l1))
     end
+    add_conic_constraint!(opti.mdl, C(vcat(epi_p, dp), :l1))
 
     # Define the cost
-    cost = sum(epi_x)+sum(epi_u)
+    cost = sum(epi_x)+sum(epi_u)+epi_p
     set_objective_function(opti.mdl, cost)
     set_objective_sense(opti.mdl, MOI.MIN_SENSE)
 
@@ -876,6 +880,7 @@ function _scvx__correct_convex!(
     if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
         x_ref .= value.(opti.x)
         u_ref .= value.(opti.u)
+        p_ref .= value.(opti.p)
     else
         msg = string("Solver failed to find the closest initial guess ",
                      "that satisfies the convex constraints (%s)")

@@ -43,7 +43,10 @@ end
 
 function _common__set_dims!(pbm::TrajectoryProblem)::Nothing
 
-    problem_set_dims!(pbm, 13, 6, 1)
+    # Parameters
+    np = pbm.mdl.vehicle.id_δ[end]
+
+    problem_set_dims!(pbm, 13, 6, np)
 
     return nothing
 end
@@ -53,12 +56,17 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
     mdl = pbm.mdl
 
     veh, traj = mdl.vehicle, mdl.traj
+    min_pos, max_pos = min.(traj.r0, traj.rf), max.(traj.r0, traj.rf)
     for i in veh.id_r
-        min_pos = min(traj.r0[i], traj.rf[i])
-        max_pos = max(traj.r0[i], traj.rf[i])
-        problem_advise_scale!(pbm, :state, i, (min_pos, max_pos))
+        problem_advise_scale!(pbm, :state, i,
+                              (min_pos[i], max_pos[i]))
     end
-    problem_advise_scale!(pbm, :parameter, veh.id_t, (traj.tf_min, traj.tf_max))
+    problem_advise_scale!(pbm, :parameter, veh.id_t,
+                          (traj.tf_min, traj.tf_max))
+    for i in veh.id_δ
+        problem_advise_scale!(pbm, :parameter, i,
+                              (-20.0, 1.0))
+    end
 
     return nothing
 end
@@ -72,13 +80,17 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
     problem_set_guess!(
         pbm,
         (N, pbm) -> begin
+
+        # Parameters
         veh = pbm.mdl.vehicle
+        env = pbm.mdl.env
         traj = pbm.mdl.traj
-        # No existing reference provided - make a new guess
+
         # >> Parameter guess <<
         p = zeros(pbm.np)
         flight_time = 0.5*(traj.tf_min+traj.tf_max)
         p[veh.id_t] = flight_time
+
         # >> State guess <<
         x = T_RealMatrix(undef, pbm.nx, N)
         # @ Position/velocity L-shape trajectory @
@@ -132,9 +144,25 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
         ang_vel = rot_speed*rot_ax
         x[veh.id_ω, :] = straightline_interpolate(
             ang_vel, ang_vel, N)
+
+        # Update room SDF parameter guess
+        δ = reshape(view(p, veh.id_δ), env.n_iss, :)
+        for i = 1:env.n_iss
+        # ---
+        δi = view(δ, i, :)
+        roomi = env.iss[i]
+        for k = 1:N
+        # --
+        @k(δi) = 1-norm((@k(r)-roomi.c)./roomi.s, Inf)
+        # -- for k
+        end
+        # --- for i
+        end
+
         # >> Input guess <<
         idle = zeros(pbm.nu)
         u = straightline_interpolate(idle, idle, N)
+
         return x, u, p
         end)
 
@@ -160,18 +188,30 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the state
     problem_set_X!(
-        pbm, (τ, x, pbm) -> begin
+        pbm, (τ, x, p, pbm) -> begin
         traj = pbm.mdl.traj
         veh = pbm.mdl.vehicle
+        env = pbm.mdl.env
+        r = x[veh.id_r]
+        v = x[veh.id_v]
+        ω = x[veh.id_ω]
+        δ = reshape(p[veh.id_δ], env.n_iss, :)
+        N = size(δ,2)
+        k = T_Int(round(τ*(N-1)))+1
+        room = env.iss
         C = T_ConvexConeConstraint
-        X = [C(vcat(veh.v_max, x[veh.id_v]), :soc),
-             C(vcat(veh.ω_max, x[veh.id_ω]), :soc)]
+        X = Array{C}(undef, 2+env.n_iss)
+        X[1:2] = [C(vcat(veh.v_max, v), :soc),
+                  C(vcat(veh.ω_max, ω), :soc)]
+        for i = 1:env.n_iss
+        X[i+2] = C(vcat(1-δ[i, k], (r-room[i].c)./room[i].s), :linf)
+        end
         return X
         end)
 
     # Convex path constraints on the input
     problem_set_U!(
-        pbm, (τ, u, pbm) -> begin
+        pbm, (τ, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         C = T_ConvexConeConstraint
         U = [C(vcat(veh.T_max, u[veh.id_T]), :soc),

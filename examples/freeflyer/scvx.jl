@@ -28,7 +28,8 @@ include("../../models/freeflyer.jl")
 # :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-mdl = FreeFlyerProblem()
+N = 50
+mdl = FreeFlyerProblem(N)
 pbm = TrajectoryProblem(mdl)
 
 define_problem!(pbm)
@@ -115,11 +116,15 @@ problem_set_dynamics!(pbm,
 problem_set_s!(
     pbm,
     # Constraint s
-    (x, u, p, pbm) -> begin
+    (τ, x, u, p, pbm) -> begin
     env = pbm.mdl.env
     veh = pbm.mdl.vehicle
     traj = pbm.mdl.traj
     r = x[veh.id_r]
+    δ = reshape(p[veh.id_δ], env.n_iss, :)
+    N = size(δ,2)
+    k = T_Int(round(τ*(N-1)))+1
+    δ = @k(δ)
     s = zeros(env.n_obs+3)
     # Ellipsoidal obstacles
     for i = 1:env.n_obs
@@ -129,16 +134,18 @@ problem_set_s!(
     # ---
     end
     # Space station flight space
+    d = logsumexp(δ; t=traj.hom)
+    s[end-2] = -d
     d_iss, _ = signed_distance(env.iss, r; t=traj.hom,
                                a=traj.sdf_pwr)
-    s[end-2] = -d_iss
+    # s[end-2] = -d_iss
     # Flight time
     s[end-1] = p[veh.id_t]-traj.tf_max
     s[end] = traj.tf_min-p[veh.id_t]
     return s
     end,
     # Jacobian ds/dx
-    (x, u, p, pbm) -> begin
+    (τ, x, u, p, pbm) -> begin
     env = pbm.mdl.env
     veh = pbm.mdl.vehicle
     traj = pbm.mdl.traj
@@ -158,16 +165,26 @@ problem_set_s!(
     return C
     end,
     # Jacobian ds/du
-    (x, u, p, pbm) -> begin
+    (τ, x, u, p, pbm) -> begin
     env = pbm.mdl.env
     D = zeros(env.n_obs+3, pbm.nu)
     return D
     end,
     # Jacobian ds/dp
-    (x, u, p, pbm) -> begin
+    (τ, x, u, p, pbm) -> begin
     veh = pbm.mdl.vehicle
     env = pbm.mdl.env
+    traj = pbm.mdl.traj
+    id_δ = reshape(veh.id_δ, env.n_iss, :)
+    N = size(id_δ,2)
+    k = T_Int(round(τ*(N-1)))+1
+    id_δ = @k(id_δ)
+    δ = p[id_δ]
+    E = T_RealMatrix(I(env.n_iss))
     G = zeros(env.n_obs+3, pbm.np)
+    _, ∇d = logsumexp(δ, [E[:, i] for i=1:env.n_iss]; t=traj.hom)
+    G[end-2, id_δ] = -∇d
+    # G[end-2, id_δ] .= 0.0
     G[end-1, veh.id_t] = 1.0
     G[end, veh.id_t] = -1.0
     return G
@@ -177,7 +194,6 @@ problem_set_s!(
 # :: SCvx algorithm parameters ::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-N = 50
 Nsub = 15
 iter_max = 50
 λ = 1e3
@@ -187,7 +203,7 @@ iter_max = 50
 β_sh = 2.0
 β_gr = 2.0
 η_init = 1.0
-η_lb = 1e-3
+η_lb = 1e-6
 η_ub = 10.0
 ε_abs = 1e-5
 ε_rel = 0.01/100
