@@ -65,7 +65,7 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
                           (traj.tf_min, traj.tf_max))
     for i in veh.id_δ
         problem_advise_scale!(pbm, :parameter, i,
-                              (-20.0, 1.0))
+                              (-100.0, 1.0))
     end
 
     return nothing
@@ -176,9 +176,10 @@ function _common__set_terminal_cost!(pbm::TrajectoryProblem)::Nothing
         veh = pbm.mdl.vehicle
         traj = pbm.mdl.traj
         tdil = p[veh.id_t]
+        δ = p[veh.id_δ]
         tdil_max = traj.tf_max
         γ = traj.γ
-        return γ*(tdil/tdil_max)^2
+        return γ*(tdil/tdil_max)^2+1e-4*sum(-δ)
         end)
 
     return nothing

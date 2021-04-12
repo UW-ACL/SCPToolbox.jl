@@ -175,6 +175,8 @@ problem_set_s!(
     veh = pbm.mdl.vehicle
     env = pbm.mdl.env
     traj = pbm.mdl.traj
+    room = env.iss
+    r = x[veh.id_r]
     id_δ = reshape(veh.id_δ, env.n_iss, :)
     N = size(id_δ,2)
     k = T_Int(round(τ*(N-1)))+1
@@ -182,8 +184,16 @@ problem_set_s!(
     δ = p[id_δ]
     E = T_RealMatrix(I(env.n_iss))
     G = zeros(env.n_obs+3, pbm.np)
+
     _, ∇d = logsumexp(δ, [E[:, i] for i=1:env.n_iss]; t=traj.hom)
+    # ∇d = zeros(env.n_iss)
+    # for i = 1:env.n_iss
+    # if norm((r-room[i].c)./room[i].s, Inf)<=1.0
+    # ∇d[i] = 1.0
+    # end
+    # end
     G[end-2, id_δ] = -∇d
+
     # G[end-2, id_δ] .= 0.0
     G[end-1, veh.id_t] = 1.0
     G[end, veh.id_t] = -1.0
@@ -232,3 +242,4 @@ plot_final_trajectory(mdl, sol)
 plot_timeseries(mdl, sol)
 plot_obstacle_constraints(mdl, sol)
 plot_convergence(history, "freeflyer")
+# plot_sdf(mdl, history)
