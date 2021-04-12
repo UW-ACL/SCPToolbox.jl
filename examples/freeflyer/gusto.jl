@@ -29,12 +29,11 @@ include("../../models/freeflyer.jl")
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 N = 50
-algo = :gusto
 
 mdl = FreeFlyerProblem(N)
 pbm = TrajectoryProblem(mdl)
 
-define_problem!(pbm, algo)
+define_problem!(pbm, :gusto)
 
 # >> Dynamics constraint <<
 _gusto_freeflyer__f = (x, p, pbm) -> begin

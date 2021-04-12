@@ -34,7 +34,7 @@ function define_problem!(pbm::TrajectoryProblem,
     _common__set_dims!(pbm)
     _common__set_scale!(pbm)
     _common__set_integration!(pbm)
-    _common__set_terminal_cost!(pbm, algo)
+    _common__set_cost!(pbm, algo)
     _common__set_convex_constraints!(pbm)
     _common__set_nonconvex_constraints!(pbm, algo)
     _common__set_bcs!(pbm)
@@ -185,8 +185,8 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-function _common__set_terminal_cost!(pbm::TrajectoryProblem,
-                                     algo::T_Symbol)::Nothing
+function _common__set_cost!(pbm::TrajectoryProblem,
+                            algo::T_Symbol)::Nothing
 
     # Terminal cost
     problem_set_terminal_cost!(

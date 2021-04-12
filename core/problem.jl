@@ -410,17 +410,17 @@ Args:
 - `pbm`: the trajectory problem structure.
 - `algo`: which algorithm is being used.
 - `s`: the constraint function.
-- `C`: Jacobian with respect to the state, `ds/dx`.
-- `DG`: Jacobian with respect to the input or parameter, `ds/du` or `ds/dp`. If
-  SCvx, `ds/du` is used. If GuSTO, `ds/do` is used.
+- `C`: (optional) Jacobian with respect to the state, `ds/dx`.
+- `DG`: (optional) Jacobian with respect to the input or parameter, `ds/du` or
+  `ds/dp`. If SCvx, `ds/du` is used. If GuSTO, `ds/do` is used.
 - `G`: (optional) Jacobian with respect to the parameter, `ds/dp`. Only provide
   if using SCvx.
 """
 function problem_set_s!(pbm::TrajectoryProblem,
                         algo::T_Symbol,
                         s::T_Function,
-                        C::T_Function,
-                        DG::T_Function,
+                        C::T_Function=nothing,
+                        DG::T_Function=nothing,
                         G::T_Function=nothing)::Nothing
     if isnothing(s)
         err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: must at least provide s.")

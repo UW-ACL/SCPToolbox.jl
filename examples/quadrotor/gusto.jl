@@ -30,40 +30,9 @@ include("../../core/gusto.jl")
 mdl = QuadrotorProblem()
 pbm = TrajectoryProblem(mdl)
 
-define_problem!(pbm)
-
-# >> Running cost to be minimized <<
-problem_set_running_cost!(
-    pbm,
-    # Input quadratic penalty S
-    (p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    env = pbm.mdl.env
-    traj = pbm.mdl.traj
-    hover = norm(env.g)
-    γ = traj.γ
-    S = zeros(pbm.nu, pbm.nu)
-    S[veh.id_σ, veh.id_σ] = (1-γ)*1/hover^2
-    return S
-    end,
-    # Jacobian dS/dp
-    nothing,
-    # Input-affine penalty ℓ
-    nothing,
-    # Jacobian dℓ/dx
-    nothing,
-    # Jacobian dℓ/dp
-    nothing,
-    # Additive penalty g
-    nothing,
-    # Jacobian dg/dx
-    nothing,
-    # Jacobian dg/dp
-    nothing)
+define_problem!(pbm, :gusto)
 
 # >> Dynamics constraint <<
-
-# The input-affine dynamics function
 _gusto_quadrotor__f = (x, p, pbm) -> begin
     veh = pbm.mdl.vehicle
     g = pbm.mdl.env.g
@@ -109,50 +78,6 @@ problem_set_dynamics!(
     # ---
     end
     return F
-    end)
-
-# >> Nonconvex path inequality constraints <<
-problem_set_s!(
-    pbm,
-    # Constraint s
-    (x, p, pbm) -> begin
-    env = pbm.mdl.env
-    veh = pbm.mdl.vehicle
-    traj = pbm.mdl.traj
-    s = zeros(env.n_obs+2)
-    for i = 1:env.n_obs
-    # ---
-    E = env.obs[i]
-    r = x[veh.id_r]
-    s[i] = 1-E(r)
-    # ---
-    end
-    s[end-1] = p[veh.id_t]-traj.tf_max
-    s[end] = traj.tf_min-p[veh.id_t]
-    return s
-    end,
-    # Jacobian ds/dx
-    (x, p, pbm) -> begin
-    env = pbm.mdl.env
-    veh = pbm.mdl.vehicle
-    C = zeros(env.n_obs+2, pbm.nx)
-    for i = 1:env.n_obs
-    # ---
-    E = env.obs[i]
-    r = x[veh.id_r]
-    C[i, veh.id_r] = -∇(E, r)
-    # ---
-    end
-    return C
-    end,
-    # Jacobian ds/dp
-    (x, p, pbm) -> begin
-    env = pbm.mdl.env
-    veh = pbm.mdl.vehicle
-    G = zeros(env.n_obs+2, pbm.np)
-    G[end-1, veh.id_t] = 1.0
-    G[end, veh.id_t] = -1.0
-    return G
     end)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::

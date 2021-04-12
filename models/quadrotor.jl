@@ -340,7 +340,7 @@ function plot_input_norm(mdl::QuadrotorProblem,
             linewidth=2)
 
     # ..:: Norm of acceleration vector (discrete-time) ::..
-    time = sol.τd*sol.p[mdl.vehicle.id_t]
+    time = sol.td*sol.p[mdl.vehicle.id_t]
     acc_vec = sol.ud[mdl.vehicle.id_u, :]
     acc_nrm = T_RealVector([norm(@k(acc_vec)) for k in 1:size(acc_vec, 2)])
     ax.plot(time, acc_nrm,
@@ -410,7 +410,7 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
             linewidth=2)
 
     # ..:: Tilt angle (discrete-time) ::..
-    time = sol.τd*sol.p[mdl.vehicle.id_t]
+    time = sol.td*sol.p[mdl.vehicle.id_t]
     _u = sol.ud[mdl.vehicle.id_u, :]
     tilt = T_RealVector([acosd(@k(_u)[3]/norm(@k(_u)))
                          for k in 1:size(_u, 2)])

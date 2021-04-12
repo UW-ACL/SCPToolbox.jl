@@ -30,19 +30,7 @@ include("../../core/scvx.jl")
 mdl = QuadrotorProblem()
 pbm = TrajectoryProblem(mdl)
 
-define_problem!(pbm)
-
-# >> Running cost to be minimized <<
-problem_set_running_cost!(
-    pbm, (x, u, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    env = pbm.mdl.env
-    traj = pbm.mdl.traj
-    σ = u[veh.id_σ]
-    hover = norm(env.g)
-    γ = traj.γ
-    return (1-γ)*(σ/hover)^2
-    end)
+define_problem!(pbm, :scvx)
 
 # >> Dynamics constraint <<
 problem_set_dynamics!(
@@ -86,56 +74,6 @@ problem_set_dynamics!(
     F[:, veh.id_t] = pbm.f(x, u, p)/tdil
     return F
     end)
-
-# >> Nonconvex path inequality constraints <<
-problem_set_s!(
-        pbm,
-        # Constraint s
-        (x, u, p, pbm) -> begin
-        env = pbm.mdl.env
-        veh = pbm.mdl.vehicle
-        traj = pbm.mdl.traj
-        s = zeros(env.n_obs+2)
-        for i = 1:env.n_obs
-        # ---
-        E = env.obs[i]
-        r = x[veh.id_r]
-        s[i] = 1-E(r)
-        # ---
-        end
-        s[end-1] = p[veh.id_t]-traj.tf_max
-        s[end] = traj.tf_min-p[veh.id_t]
-        return s
-        end,
-        # Jacobian ds/dx
-        (x, u, p, pbm) -> begin
-        env = pbm.mdl.env
-        veh = pbm.mdl.vehicle
-        C = zeros(env.n_obs+2, pbm.nx)
-        for i = 1:env.n_obs
-        # ---
-        E = env.obs[i]
-        r = x[veh.id_r]
-        C[i, veh.id_r] = -∇(E, r)
-        # ---
-        end
-        return C
-        end,
-        # Jacobian ds/du
-        (x, u, p, pbm) -> begin
-        env = pbm.mdl.env
-        D = zeros(env.n_obs+2, pbm.nu)
-        return D
-        end,
-        # Jacobian ds/dp
-        (x, u, p, pbm) -> begin
-        env = pbm.mdl.env
-        veh = pbm.mdl.vehicle
-        G = zeros(env.n_obs+2, pbm.np)
-        G[end-1, veh.id_t] = 1.0
-        G[end, veh.id_t] = -1.0
-        return G
-        end)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: SCvx algorithm parameters ::::::::::::::::::::::::::::::::::::::::::::::::

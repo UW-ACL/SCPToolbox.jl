@@ -352,22 +352,26 @@ function _scp__compute_scaling(
     p_bbox[:, 1] .= 0.0
 
     defs = [Dict(:dim => nx,
-                 :set => (t, k, x, u, p) -> traj.X(t, k, x, p),
+                 :set => traj.X,
+                 :setcall => (t, k, x, u, p) -> traj.X(t, k, x, p),
                  :bbox => x_bbox,
                  :advice => :xrg,
                  :cost => (x, u, p, i) -> x[i]),
             Dict(:dim => nu,
-                 :set => (t, k, x, u, p) -> traj.U(t, k, u, p),
+                 :set => traj.U,
+                 :setcall => (t, k, x, u, p) -> traj.U(t, k, u, p),
                  :bbox => u_bbox,
                  :advice => :urg,
                  :cost => (x, u, p, i) -> u[i]),
             Dict(:dim => np,
-                 :set => (t, k, x, u, p) -> traj.X(t, k, x, p),
+                 :set => traj.X,
+                 :setcall => (t, k, x, u, p) -> traj.X(t, k, x, p),
                  :bbox => p_bbox,
                  :advice => :prg,
                  :cost => (x, u, p, i) -> p[i]),
             Dict(:dim => np,
-                 :set => (t, k, x, u, p) -> traj.U(t, k, u, p),
+                 :set => traj.U,
+                 :setcall => (t, k, x, u, p) -> traj.U(t, k, u, p),
                  :bbox => p_bbox,
                  :advice => :prg,
                  :cost => (x, u, p, i) -> p[i])]
@@ -393,7 +397,7 @@ function _scp__compute_scaling(
                     if !isnothing(def[:set])
                         for k = 1:length(t)
                             add_conic_constraints!(
-                                mdl, def[:set](@k(t), k, x, u, p))
+                                mdl, def[:setcall](@k(t), k, x, u, p))
                         end
                     end
                     # Cost

@@ -29,12 +29,11 @@ include("../../models/freeflyer.jl")
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 N = 50
-algo = :scvx
 
 mdl = FreeFlyerProblem(N)
 pbm = TrajectoryProblem(mdl)
 
-define_problem!(pbm, algo)
+define_problem!(pbm, :scvx)
 
 # >> Dynamics constraint <<
 problem_set_dynamics!(pbm,
