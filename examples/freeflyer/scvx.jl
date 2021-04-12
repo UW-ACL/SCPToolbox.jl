@@ -36,18 +36,6 @@ pbm = TrajectoryProblem(mdl)
 
 define_problem!(pbm, algo)
 
-# >> Running cost to be minimized <<
-problem_set_running_cost!(pbm, (x, u, p, pbm) -> begin
-                          traj = pbm.mdl.traj
-                          veh = pbm.mdl.vehicle
-                          T_max_sq = veh.T_max^2
-                          M_max_sq = veh.M_max^2
-                          T = u[veh.id_T]
-                          M = u[veh.id_M]
-                          γ = traj.γ
-                          return (1-γ)*((T'*T)/T_max_sq+(M'*M)/M_max_sq)
-                          end)
-
 # >> Dynamics constraint <<
 problem_set_dynamics!(pbm,
                       # Dynamics f

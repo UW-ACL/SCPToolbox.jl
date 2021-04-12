@@ -30,7 +30,7 @@ include("../utils/types.jl")
 # :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Trajectory problem definition. =#
+""" Trajectory problem definition. """
 mutable struct TrajectoryProblem
     # >> Variable sizes <<
     nx::T_Int         # Number of state variables
@@ -85,13 +85,17 @@ end
 # :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Default (empty) constructor of a trajectory problem.
+"""
+    TrajectoryProblem(mdl)
 
-Args:
-    mdl: problem-specific data.
+Default (empty) constructor of a trajectory problem..
 
-Returns:
-    pbm: an empty trajectory problem. =#
+# Arguments
+- `mdl`: problem-specific data.
+
+# Returns
+- `pbm`: an empty trajectory problem.
+"""
 function TrajectoryProblem(mdl::Any)::TrajectoryProblem
 
     nx = 0
@@ -144,13 +148,17 @@ end
 # :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Set the problem dimensions.
+"""
+    problem_set_dims!(pbm, nx, nu, np)
 
-Args:
-    pbm: the trajectory problem structure.
-    nx: state dimension.
-    nu: input dimension.
-    np: parameter dimension. =#
+Set the problem dimensions.
+
+# Arguments
+- `pbm`: the trajectory problem structure.
+- `nx`: state dimension.
+- `nu`: input dimension.
+- `np`: parameter dimension.
+"""
 function problem_set_dims!(pbm::TrajectoryProblem,
                            nx::T_Int,
                            nu::T_Int,
@@ -164,16 +172,18 @@ function problem_set_dims!(pbm::TrajectoryProblem,
     return nothing
 end
 
-#= Set variable ranges to advise proper scaling.
+"""
+    problem_advise_scale!(pbm, which, idx, rg)
 
-If no constraint is found that restricts the variable range, then the range
-passed manually into here is used.
+Set variable ranges to advise proper scaling. This overrides any automatic
+variable scaling that may occur.
 
-Args:
-    pbm: the trajectory problem structure.
-    which: either :state, :input, or :parameter.
-    idx: which elements this range applies to.
-    rg: the range itself, (min, max). =#
+# Arguments
+- `pbm`: the trajectory problem structure.
+- `which`: either :state, :input, or :parameter.
+- `idx`: which elements this range applies to.
+- `rg`: the range itself, (min, max).
+"""
 function problem_advise_scale!(pbm::TrajectoryProblem,
                                which::T_Symbol,
                                idx::T_ElementIndex,
@@ -189,17 +199,17 @@ function problem_advise_scale!(pbm::TrajectoryProblem,
     return nothing
 end
 
-#= Define an action on (part of) the state at integration update step.
+"""
+    problem_set_integration_action!(pbm, idx, action)
 
-Action signature: f(x, pbm), where:
-  - x (T_RealVector): subset of the state vector.
-  - pbm (TrajectoryProblem): the trajectory problem structure.
+Define an action on (part of) the state at integration update step.
 
-Args:
-    pbm: the trajectory problem structure.
-    idx: state elements to which the action applies.
-    action: the action to do. Receives the subset of the state, and
-        returns the updated/correct value. =#
+# Arguments
+- `pbm`: the trajectory problem structure.
+- `idx`: state elements to which the action applies.
+- `action`: the action to do. Receives the subset of the state, and returns the
+  updated/correct value.
+"""
 function problem_set_integration_action!(pbm::TrajectoryProblem,
                                          idx::T_ElementIndex,
                                          action::T_Function)::Nothing
@@ -207,146 +217,96 @@ function problem_set_integration_action!(pbm::TrajectoryProblem,
     return nothing
 end
 
-#= Define the initial trajectory guess.
+"""
+    problem_set_guess!(pbm, guess)
 
-Function signature: f(N, pbm), where:
-  - N (T_Int): the number of discrete-time grid nodes.
-  - pbm (TrajectoryProblem): the trajectory problem structure.
+Define the initial trajectory guess.
 
-The function must return the tuple (x,u,p), where:
-  - x (T_RealMatrix): the state trajectory guess.
-  - u (T_RealMatrix): the input trajectory guess.
-  - p (T_RealVector): the parameter vector.
-
-Args:
-    pbm: the trajectory problem structure.
-    guess: the guess generator. =#
+# Arguments
+- `pbm`: the trajectory problem structure.
+- `guess`: the guess generator.
+"""
 function problem_set_guess!(pbm::TrajectoryProblem,
                             guess::T_Function)::Nothing
     pbm.guess = (N) -> guess(N, pbm)
     return nothing
 end
 
-#= Define the terminal cost.
+"""
+    problem_set_terminal_cost!(pbm, φ)
 
-Function signature: φ(x, p, pbm), where:
-  - x (T_OptiVarVector): the final state.
-  - p (T_OptiVarVector): the parameter vector.
-  - pbm (TrajectoryProblem): the trajectory problem structure.
+Define the terminal cost.
 
-The function must return a real number.
-
-Args:
-    pbm: the trajectory problem structure.
-    φ: (optional) the terminal cost. =#
+# Arguments
+- `pbm`: the trajectory problem structure.
+- `φ`: (optional) the terminal cost.
+"""
 function problem_set_terminal_cost!(pbm::TrajectoryProblem,
                                     φ::T_Function)::Nothing
     pbm.φ = (x, p) -> φ(x, p, pbm)
     return nothing
 end
 
-#= Define the running cost function (SCvx).
+"""
+    problem_set_running_cost!(pbm, algo, SΓ
+                              [, dSdp, ℓ, dℓdx, dℓdp, g, dgdx, dgdp])
 
-Function signature: Γ(x, u, p, pbm), where:
-  - x (T_OptiVarVector): the current state.
-  - u (T_OptiVarVector): the current input.
-  - p (T_OptiVarVector): the parameter vector.
-  - pbm (TrajectoryProblem): the trajectory problem structure.
-
-The function must return a real number.
+Define the running cost function. SCvx just requires the first function, `Γ(x,
+u, p)`. GuSTO requires all the arguments and their Jacobians.
 
 Args:
-    pbm: the trajectory problem structure.
-    Γ: (optional) the running cost. =#
+- `pbm`: the trajectory problem structure.
+- `algo`: which algorithm is being used.
+- `SΓ`: (optional) the running cost is SCvx, or the input quadratic penalty if
+  GuSTO.
+- `dSdp`: (optional) the input penalty quadratic form Jacobian wrt state.
+- `ℓ`: (optional) the input-affine penalty function.
+- `dℓdx`: (optional) the input-affine penalty function Jacobian wrt state.
+- `dℓdp`: (optional) the input-affine penalty function Jacobian wrt parameter.
+- `g`: (optional) the additive penalty function.
+- `dgdx`: (optional) the additive penalty function Jacobian wrt state.
+- `dgdp`: (optional) the additive penalty function Jacobian wrt parameter.
+"""
 function problem_set_running_cost!(pbm::TrajectoryProblem,
-                                   Γ::T_Function)::Nothing
-    pbm.Γ = (x, u, p) -> Γ(x, u, p, pbm)
+                                   algo::T_Symbol,
+                                   SΓ::T_Function,
+                                   dSdp::T_Function=nothing,
+                                   ℓ::T_Function=nothing,
+                                   dℓdx::T_Function=nothing,
+                                   dℓdp::T_Function=nothing,
+                                   g::T_Function=nothing,
+                                   dgdx::T_Function=nothing,
+                                   dgdp::T_Function=nothing)::Nothing
+    if algo==:scvx
+        pbm.Γ = (x, u, p) -> SΓ(x, u, p, pbm)
+    else
+        pbm.S = !isnothing(SΓ) ? (p) -> SΓ(p, pbm) : nothing
+        pbm.dSdp = !isnothing(dSdp) ? (p) -> dSdp(p, pbm) : nothing
+        pbm.S_cvx = isnothing(dSdp)
+        pbm.ℓ = !isnothing(ℓ) ? (x, p) -> ℓ(x, p, pbm) : nothing
+        pbm.dℓdx = !isnothing(dℓdx) ? (x, p) -> dℓdx(x, p, pbm) : nothing
+        pbm.dℓdp = !isnothing(dℓdp) ? (x, p) -> dℓdp(x, p, pbm) : nothing
+        pbm.ℓ_cvx = isnothing(dℓdx) && isnothing(dℓdp)
+        pbm.g = !isnothing(g) ? (x, p) -> g(x, p, pbm) : nothing
+        pbm.dgdx = !isnothing(dgdx) ? (x, p) -> dgdx(x, p, pbm) : nothing
+        pbm.dgdp = !isnothing(dgdp) ? (x, p) -> dgdp(x, p, pbm) : nothing
+        pbm.g_cvx = isnothing(dgdx) && isnothing(dgdp)
+    end
     return nothing
 end
 
-#= Define the cost function (GuSTO variant).
+"""
+    problem_set_dynamics!(pbm, f, A, B, F)
 
-The running cost is given by:
+Define the dynamics (SCvx).
 
-    u'*S(p)*u+u'*ℓ(x, p)+g(x, p).
-
-Function signatures: S(p, pbm),
-                     dSdp(p, pbm),
-                     ℓ(x, p, pbm),
-                     dℓdx(x, p, pbm),
-                     dℓdp(x, p, pbm),
-                     g(x, p, pbm),
-                     dgdx(x, p, pbm),
-                     dgdp(x, p, pbm), where
-  - x (T_OptiVarVector): the current state.
-  - p (T_OptiVarVector): the parameter vector.
-  - pbm (TrajectoryProblem): the trajectory problem structure.
-
-The functions must return the following values:
-  - S: a positive-semidefinite R^{nu x nu} matrix
-  - dSdp: an np-element array of R^{nu x nu} matrices where the i-th matrix
-    represents the Jacobian of S with respect to the i-th parameter
-  - ℓ: a vector in R^nu
-  - dℓdx: a matrix in R^{nu x nx}
-  - dℓdp: a matrix in R^{nu x np}
-  - g: a real value
-  - dgdx: a vector R^nx
-  - dgdp: a vector R^np
-
-Args:
-    pbm: the trajectory problem structure.
-    S: the input quadratic penalty.
-    dSdp: the input penalty quadratic form Jacobian wrt state.
-    ℓ: the input-affine penalty function.
-    dℓdx: the input-affine penalty function Jacobian wrt state.
-    dℓdp: the input-affine penalty function Jacobian wrt parameter.
-    g: the additive penalty function.
-    dgdx: the additive penalty function Jacobian wrt state.
-    dgdp: the additive penalty function Jacobian wrt parameter.
-    g_cvx: a manual flag whether g(x, p) is a convex function (in which
-        case, the return value of g(x, p) must be a convex function in
-        JuMP format). =#
-function problem_set_running_cost!(pbm::TrajectoryProblem,
-                                   S::T_Function,
-                                   dSdp::T_Function,
-                                   ℓ::T_Function,
-                                   dℓdx::T_Function,
-                                   dℓdp::T_Function,
-                                   g::T_Function,
-                                   dgdx::T_Function,
-                                   dgdp::T_Function;
-                                   g_cvx::T_Bool=false)::Nothing
-    pbm.S = !isnothing(S) ? (p) -> S(p, pbm) : nothing
-    pbm.dSdp = !isnothing(dSdp) ? (p) -> dSdp(p, pbm) : nothing
-    pbm.S_cvx = isnothing(dSdp)
-    pbm.ℓ = !isnothing(ℓ) ? (x, p) -> ℓ(x, p, pbm) : nothing
-    pbm.dℓdx = !isnothing(dℓdx) ? (x, p) -> dℓdx(x, p, pbm) : nothing
-    pbm.dℓdp = !isnothing(dℓdp) ? (x, p) -> dℓdp(x, p, pbm) : nothing
-    pbm.ℓ_cvx = isnothing(dℓdx) && isnothing(dℓdp)
-    pbm.g = !isnothing(g) ? (x, p) -> g(x, p, pbm) : nothing
-    pbm.dgdx = !isnothing(dgdx) ? (x, p) -> dgdx(x, p, pbm) : nothing
-    pbm.dgdp = !isnothing(dgdp) ? (x, p) -> dgdp(x, p, pbm) : nothing
-    pbm.g_cvx = g_cvx || (isnothing(dgdx) && isnothing(dgdp))
-    return nothing
-end
-
-#= Define the dynamics (SCvx).
-
-Function signature: f(x, u, p, pbm), where:
-  - x (T_RealVector): the current state vector.
-  - u (T_RealVector): the current input vector.
-  - p (T_RealVector): the current parameter vector.
-  - pbm (TrajectorProblem): the trajectory problem structure.
-
-The function f must return a T_RealVector, while A, B, and F must return a
-T_RealMatrix.
-
-Args:
-    pbm: the trajectory problem structure.
-    f: the dynamics function.
-    A: Jacobian with respect to the state, df/dx.
-    B: Jacobian with respect to the input, df/du.
-    F: Jacobian with respect to the parameter, df/dp. =#
+# Arguments
+- `pbm`: the trajectory problem structure.
+- `f`: the dynamics function.
+- `A`: Jacobian with respect to the state, `df/dx`.
+- `B`: Jacobian with respect to the input, `df/du`.
+- `F`: Jacobian with respect to the parameter, `df/dp`.
+"""
 function problem_set_dynamics!(pbm::TrajectoryProblem,
                                f::T_Function,
                                A::T_Function,
@@ -362,30 +322,18 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
     return nothing
 end
 
-#= Define the input-affine dynamics (GuSTO).
+"""
+    problem_set_dynamics!(pb, f, A, F)
 
-Function signature: f(x, u, p, pbm), where:
-  - x (T_RealVector): the current state vector.
-  - u (T_RealVector): the current input vector.
-  - p (T_RealVector): the current parameter vector.
-  - pbm (TrajectorProblem): the trajectory problem structure.
+Define the input-affine dynamics (GuSTO).
 
-GuSTO assumes that the dynamics are input-affine, which means:
-
-f(x, u, p) = f0(x, p)+∑_{i=1}^{m} u_i*f_i(x, p)
-
-We thus require the user to provide each function fi (i=1,...,m), and each
-functions Jacobian with respect to the state and input. In particular:
-  - f must return a Vector{T_RealVector}, the first element of which is taken
-    to be independent of the input (i.e, f0 above);
-  - A, F must return a Vector{T_RealMatrix}.
-
-Args:
-    pbm: the trajectory problem structure.
-    kind: either :nonlinear or :inputaffine.
-    f: the dynamics functions {f0, f1, ...}.
-    A: Jacobians with respect to the state, {df0/dx, df1/dx, ...}.
-    F: Jacobians with respect to the parameter, {df0/dp, df1/dp, ...}.. =#
+# Arguments
+- `pbm`: the trajectory problem structure.
+- `kind`: either :nonlinear or :inputaffine.
+- `f`: the dynamics functions `{f0, f1, ...}`.
+- `A`: Jacobians with respect to the state, `{df0/dx, df1/dx, ...}`.
+- `F`: Jacobians with respect to the parameter, `{df0/dp, df1/dp, ...}`.
+"""
 function problem_set_dynamics!(pbm::TrajectoryProblem,
                                f::T_Function,
                                A::T_Function,
@@ -420,63 +368,53 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
     return nothing
 end
 
-#= Define the convex state constraint set.
+"""
+    problem_set_X!(pbm, X)
 
-Function signature: X(t, x, pbm), where:
-  - t (T_Real): the current time.
-  - k (T_Int): the current discrete-time node.
-  - x (T_OptiVarVector): the state vector.
-  - pbm (TrajectoryProblem): the trajectory problem structure.
+Define the convex state constraint set.
 
-The function must return an Vector{T_ConvexConeConstraint}.
-
-Args:
-    pbm: the trajectory problem structure.
-    X: the conic constraints whose intersection defines the convex
-       state set. =#
+# Arguments
+- `pbm`: the trajectory problem structure.
+- `X`: the conic constraints whose intersection defines the convex state set.
+"""
 function problem_set_X!(pbm::TrajectoryProblem,
                         X::T_Function)::Nothing
     pbm.X = (t, k, x, p) -> X(t, k, x, p, pbm)
     return nothing
 end
 
-#= Define the convex input constraint set.
+"""
+    problem_set_U!(pbm, U)
 
-Function signature: U(t, u, pbm), where:
-  - t (T_Real): the current time.
-  - k (T_Int): the current discrete-time node.
-  - u (T_OptiVarVector): the input vector.
-  - pbm (TrajectoryProblem): the trajectory problem structure.
+Define the convex input constraint set.
 
-The function must return an Vector{T_ConvexConeConstraint}.
-
-Args:
-    pbm: the trajectory problem structure.
-    U: the conic constraints whose intersection defines the convex
-       input set. =#
+# Arguments
+- `pbm`: the trajectory problem structure.
+- `U`: the conic constraints whose intersection defines the convex input set.
+"""
 function problem_set_U!(pbm::TrajectoryProblem,
                         U::T_Function)::Nothing
     pbm.U = (t, k, u, p) -> U(t, k, u, p, pbm)
     return nothing
 end
 
-""" Define the nonconvex inequality path constraints.
+"""
+    problem_set_s!(pbm, algo, s, C, DG, G)
 
-The SCvx algorithm assumes the function form \$s(t, k, x, u, p)\$. The GuSTO
-algorithm assumes the function form \$s(t, k, x, p)\$. Thus, SCvx requires the
-`s` argument as well as all three Jacobians. GuSTO requires `s` and the two
-Jacobians.
+Define the nonconvex inequality path constraints. The SCvx algorithm assumes
+the function form `s(t, k, x, u, p)`. The GuSTO algorithm assumes the function
+form `s(t, k, x, p)`. Thus, SCvx requires the `s` argument as well as all three
+Jacobians. GuSTO requires `s` and the two Jacobians.
 
 Args:
-* `pbm`: the trajectory problem structure.
-* `algo`: which algorithm is being used.
-* `s`: the constraint function.
-* `C`: Jacobian with respect to the state, \$\\grad_x s\$.
-* `DG`: Jacobian with respect to the input or parameter, \$\\grad_u s\$ or
-  \$\\grad_p s\$. If SCvx, \$\\grad_u s\$ is used. If GuSTO, \$\\grad_p s\$ is
-  used.
-* `G`: (optional) Jacobian with respect to the parameter, \$\\grad_p s\$. Only
-  provide if using SCvx.
+- `pbm`: the trajectory problem structure.
+- `algo`: which algorithm is being used.
+- `s`: the constraint function.
+- `C`: Jacobian with respect to the state, `ds/dx`.
+- `DG`: Jacobian with respect to the input or parameter, `ds/du` or `ds/dp`. If
+  SCvx, `ds/du` is used. If GuSTO, `ds/do` is used.
+- `G`: (optional) Jacobian with respect to the parameter, `ds/dp`. Only provide
+  if using SCvx.
 """
 function problem_set_s!(pbm::TrajectoryProblem,
                         algo::T_Symbol,
@@ -489,36 +427,34 @@ function problem_set_s!(pbm::TrajectoryProblem,
         throw(err)
     end
 
+    not = !isnothing
+
     if algo==:scvx
         pbm.s = (t, k, x, u, p) -> s(t, k, x, u, p, pbm)
-        pbm.C = !isnothing(C) ? (t, k, x, u, p) -> C(t, k, x, u, p, pbm) : nothing
-        pbm.D = !isnothing(DG) ? (t, k, x, u, p) -> DG(t, k, x, u, p, pbm) : nothing
-        pbm.G = !isnothing(G) ? (t, k, x, u, p) -> G(t, k, x, u, p, pbm) : nothing
+        pbm.C = not(C) ? (t, k, x, u, p) -> C(t, k, x, u, p, pbm) : nothing
+        pbm.D = not(DG) ? (t, k, x, u, p) -> DG(t, k, x, u, p, pbm) : nothing
+        pbm.G = not(G) ? (t, k, x, u, p) -> G(t, k, x, u, p, pbm) : nothing
     else
         pbm.s = (t, k, x, p) -> s(t, k, x, p, pbm)
-        pbm.C = !isnothing(C) ? (t, k, x, p) -> C(t, k, x, p, pbm) : nothing
-        pbm.G = !isnothing(DG) ? (t, k, x, p) -> DG(t, k, x, p, pbm) : nothing
+        pbm.C = not(C) ? (t, k, x, p) -> C(t, k, x, p, pbm) : nothing
+        pbm.G = not(DG) ? (t, k, x, p) -> DG(t, k, x, p, pbm) : nothing
     end
 
     return nothing
 end
 
-#= Define the boundary conditions.
+"""
+    problem_set_bc!(pbm, kind, g, H, K)
 
-Function signature: f(x, p, pbm), where:
-  - x (T_RealVector): the state vector.
-  - p (T_RealVector): the parameter vector.
-  - pbm (TrajectoryProblem): the trajectory problem structure.
+Define the boundary conditions.
 
-The function g must return a T_RealVector, while H and K must return a
-T_RealMatrix.
-
-Args:
-    pbm: the trajectory problem structure.
-    kind: either :ic (initial condition) or :tc (terminal condition).
-    g: the constraint function.
-    H: Jacobian with respect to the state, dg/dx.
-    K: Jacobian with respect to the parameter, dg/dp. =#
+# Arguments
+- `pbm`: the trajectory problem structure.
+- `kind`: either :ic (initial condition) or :tc (terminal condition).
+- `g`: the constraint function.
+- `H`: Jacobian with respect to the state, dg/dx.
+- `K`: Jacobian with respect to the parameter, dg/dp.
+"""
 function problem_set_bc!(pbm::TrajectoryProblem,
                          kind::Symbol,
                          g::T_Function,
@@ -528,6 +464,7 @@ function problem_set_bc!(pbm::TrajectoryProblem,
         err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: must at least provide g.")
         throw(err)
     end
+
     if kind==:ic
         pbm.gic = (x, p) -> g(x, p, pbm)
         pbm.H0 = !isnothing(H) ? (x, p) -> H(x, p, pbm) : nothing
@@ -537,5 +474,6 @@ function problem_set_bc!(pbm::TrajectoryProblem,
         pbm.Hf = !isnothing(H) ? (x, p) -> H(x, p, pbm) : nothing
         pbm.Kf = !isnothing(K) ? (x, p) -> K(x, p, pbm) : nothing
     end
+
     return nothing
 end

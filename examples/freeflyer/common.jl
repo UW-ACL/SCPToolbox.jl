@@ -34,7 +34,7 @@ function define_problem!(pbm::TrajectoryProblem,
     _common__set_dims!(pbm)
     _common__set_scale!(pbm)
     _common__set_integration!(pbm)
-    _common__set_terminal_cost!(pbm)
+    _common__set_terminal_cost!(pbm, algo)
     _common__set_convex_constraints!(pbm)
     _common__set_nonconvex_constraints!(pbm, algo)
     _common__set_bcs!(pbm)
@@ -185,8 +185,10 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-function _common__set_terminal_cost!(pbm::TrajectoryProblem)::Nothing
+function _common__set_terminal_cost!(pbm::TrajectoryProblem,
+                                     algo::T_Symbol)::Nothing
 
+    # Terminal cost
     problem_set_terminal_cost!(
         pbm, (x, p, pbm) -> begin
         veh = pbm.mdl.vehicle
@@ -195,8 +197,39 @@ function _common__set_terminal_cost!(pbm::TrajectoryProblem)::Nothing
         δ = p[veh.id_δ]
         tdil_max = traj.tf_max
         γ = traj.γ
-        return γ*(tdil/tdil_max)^2#+1e-4*sum(-δ)
+        return γ*(tdil/tdil_max)^2+1e-4*sum(-δ)
         end)
+
+    # Running cost
+    if algo==:scvx
+        problem_set_running_cost!(
+            pbm, algo,
+            (x, u, p, pbm) -> begin
+            traj = pbm.mdl.traj
+            veh = pbm.mdl.vehicle
+            T_max_sq = veh.T_max^2
+            M_max_sq = veh.M_max^2
+            T = u[veh.id_T]
+            M = u[veh.id_M]
+            γ = traj.γ
+            return (1-γ)*((T'*T)/T_max_sq+(M'*M)/M_max_sq)
+            end)
+    else
+        problem_set_running_cost!(
+            pbm, algo,
+            # Input quadratic penalty S
+            (p, pbm) -> begin
+            traj = pbm.mdl.traj
+            veh = pbm.mdl.vehicle
+            T_max_sq = veh.T_max^2
+            M_max_sq = veh.M_max^2
+            γ = traj.γ
+            S = zeros(pbm.nu, pbm.nu)
+            S[veh.id_T, veh.id_T] = (1-γ)*I(3)/T_max_sq
+            S[veh.id_M, veh.id_M] = (1-γ)*I(3)/M_max_sq
+            return S
+            end)
+    end
 
     return nothing
 end
@@ -219,16 +252,15 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
         δ = reshape(p[veh.id_δ], env.n_iss, :)
 
         C = T_ConvexConeConstraint
-        # X = Array{C}(undef, 2)#+env.n_iss)
-        X = [C(vcat(veh.v_max, v), :soc),
-                  C(vcat(veh.ω_max, ω), :soc)
-                  # C(tdil-traj.tf_max, :nonpos),
-                  # C(traj.tf_min-tdil, :nonpos)
-                  ]
+        X = Array{C}(undef, 4+env.n_iss)
+        X[1:4] = [C(vcat(veh.v_max, v), :soc),
+                  C(vcat(veh.ω_max, ω), :soc),
+                  C(tdil-traj.tf_max, :nonpos),
+                  C(traj.tf_min-tdil, :nonpos)]
         # Individual space station room SDFs
-        # for i = 1:env.n_iss
-        # X[i+4] = C(vcat(1-@k(δ)[i], (r-room[i].c)./room[i].s), :linf)
-        # end
+        for i = 1:env.n_iss
+        X[i+4] = C(vcat(1-@k(δ)[i], (r-room[i].c)./room[i].s), :linf)
+        end
 
         return X
         end)
@@ -264,7 +296,7 @@ function _common__set_nonconvex_constraints!(
         r = x[veh.id_r]
         δ = @k(reshape(p[veh.id_δ], env.n_iss, :))
 
-        s = zeros(env.n_obs+3)
+        s = zeros(env.n_obs+1)
         # Ellipsoidal obstacles
         for i = 1:env.n_obs
             # ---
@@ -273,14 +305,8 @@ function _common__set_nonconvex_constraints!(
             # ---
         end
         # Space station flight space SDF
-        # d = logsumexp(δ; t=traj.hom)
-        # s[end] = -d
-        d_iss, _ = signed_distance(env.iss, r; t=traj.hom,
-                                   a=traj.sdf_pwr)
-        s[end-2] = -d_iss
-
-        s[end-1] = p[veh.id_t]-traj.tf_max
-        s[end] = traj.tf_min-p[veh.id_t]
+        d = logsumexp(δ; t=traj.hom)
+        s[end] = -d
 
         return s
     end
@@ -293,7 +319,7 @@ function _common__set_nonconvex_constraints!(
 
         r = x[veh.id_r]
 
-        C = zeros(env.n_obs+3, pbm.nx)
+        C = zeros(env.n_obs+1, pbm.nx)
         # Ellipsoidal obstacles
         for i = 1:env.n_obs
             # ---
@@ -301,9 +327,6 @@ function _common__set_nonconvex_constraints!(
             C[i, veh.id_r] = -∇(E, r)
             # ---
         end
-        _, ∇d_iss = signed_distance(env.iss, r; t=traj.hom,
-                                    a=traj.sdf_pwr)
-        C[end-2, veh.id_r] = -∇d_iss
 
         return C
     end
@@ -321,13 +344,10 @@ function _common__set_nonconvex_constraints!(
         id_δ = @k(reshape(veh.id_δ, env.n_iss, :))
         δ = p[id_δ]
 
-        G = zeros(env.n_obs+3, pbm.np)
+        G = zeros(env.n_obs+1, pbm.np)
         # Space station flight space SDF
-        # _, ∇d = logsumexp(δ, [E[:, i] for i=1:env.n_iss]; t=traj.hom)
-        # G[end, id_δ] = -∇d
-
-        G[end-1, veh.id_t] = 1.0
-        G[end, veh.id_t] = -1.0
+        _, ∇d = logsumexp(δ, [E[:, i] for i=1:env.n_iss]; t=traj.hom)
+        G[end, id_δ] = -∇d
 
         return G
     end

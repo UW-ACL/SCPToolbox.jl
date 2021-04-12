@@ -36,25 +36,7 @@ pbm = TrajectoryProblem(mdl)
 
 define_problem!(pbm, algo)
 
-# >> Running cost to be minimized <<
-problem_set_running_cost!(
-    pbm,
-    # Input quadratic penalty S
-    (p, pbm) -> begin
-    traj = pbm.mdl.traj
-    veh = pbm.mdl.vehicle
-    T_max_sq = veh.T_max^2
-    M_max_sq = veh.M_max^2
-    γ = traj.γ
-    S = zeros(pbm.nu, pbm.nu)
-    S[veh.id_T, veh.id_T] = (1-γ)*I(3)/T_max_sq
-    S[veh.id_M, veh.id_M] = (1-γ)*I(3)/M_max_sq
-    return S
-    end)
-
 # >> Dynamics constraint <<
-
-# The input-affine dynamics function
 _gusto_freeflyer__f = (x, p, pbm) -> begin
     veh = pbm.mdl.vehicle
     v = x[veh.id_v]
