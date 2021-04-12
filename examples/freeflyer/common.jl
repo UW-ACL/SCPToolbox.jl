@@ -196,16 +196,19 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
         r = x[veh.id_r]
         v = x[veh.id_v]
         ω = x[veh.id_ω]
+        tdil = p[veh.id_t]
         δ = reshape(p[veh.id_δ], env.n_iss, :)
         N = size(δ,2)
         k = T_Int(round(τ*(N-1)))+1
         room = env.iss
         C = T_ConvexConeConstraint
-        X = Array{C}(undef, 2+env.n_iss)
-        X[1:2] = [C(vcat(veh.v_max, v), :soc),
-                  C(vcat(veh.ω_max, ω), :soc)]
+        X = Array{C}(undef, 4+env.n_iss)
+        X[1:4] = [C(vcat(veh.v_max, v), :soc),
+                  C(vcat(veh.ω_max, ω), :soc),
+                  C(tdil-traj.tf_max, :nonpos),
+                  C(traj.tf_min-tdil, :nonpos)]
         for i = 1:env.n_iss
-        X[i+2] = C(vcat(1-δ[i, k], (r-room[i].c)./room[i].s), :linf)
+        X[i+4] = C(vcat(1-δ[i, k], (r-room[i].c)./room[i].s), :linf)
         end
         return X
         end)

@@ -125,7 +125,7 @@ problem_set_s!(
     N = size(δ,2)
     k = T_Int(round(τ*(N-1)))+1
     δ = @k(δ)
-    s = zeros(env.n_obs+3)
+    s = zeros(env.n_obs+1)
     # Ellipsoidal obstacles
     for i = 1:env.n_obs
     # ---
@@ -135,13 +135,10 @@ problem_set_s!(
     end
     # Space station flight space
     d = logsumexp(δ; t=traj.hom)
-    s[end-2] = -d
-    d_iss, _ = signed_distance(env.iss, r; t=traj.hom,
-                               a=traj.sdf_pwr)
+    s[end] = -d
+    # d_iss, _ = signed_distance(env.iss, r; t=traj.hom,
+    #                            a=traj.sdf_pwr)
     # s[end-2] = -d_iss
-    # Flight time
-    s[end-1] = p[veh.id_t]-traj.tf_max
-    s[end] = traj.tf_min-p[veh.id_t]
     return s
     end,
     # Jacobian ds/dx
@@ -150,7 +147,7 @@ problem_set_s!(
     veh = pbm.mdl.vehicle
     traj = pbm.mdl.traj
     r = x[veh.id_r]
-    C = zeros(env.n_obs+3, pbm.nx)
+    C = zeros(env.n_obs+1, pbm.nx)
     # Ellipsoidal obstacles
     for i = 1:env.n_obs
     # ---
@@ -159,15 +156,15 @@ problem_set_s!(
     # ---
     end
     # Space station flight space
-    _, ∇d_iss = signed_distance(env.iss, r; t=traj.hom,
-                                a=traj.sdf_pwr)
-    C[end-2, veh.id_r] = -∇d_iss
+    # _, ∇d_iss = signed_distance(env.iss, r; t=traj.hom,
+    #                             a=traj.sdf_pwr)
+    # C[end, veh.id_r] = -∇d_iss
     return C
     end,
     # Jacobian ds/du
     (τ, x, u, p, pbm) -> begin
     env = pbm.mdl.env
-    D = zeros(env.n_obs+3, pbm.nu)
+    D = zeros(env.n_obs+1, pbm.nu)
     return D
     end,
     # Jacobian ds/dp
@@ -183,7 +180,7 @@ problem_set_s!(
     id_δ = @k(id_δ)
     δ = p[id_δ]
     E = T_RealMatrix(I(env.n_iss))
-    G = zeros(env.n_obs+3, pbm.np)
+    G = zeros(env.n_obs+1, pbm.np)
 
     _, ∇d = logsumexp(δ, [E[:, i] for i=1:env.n_iss]; t=traj.hom)
     # ∇d = zeros(env.n_iss)
@@ -192,11 +189,11 @@ problem_set_s!(
     # ∇d[i] = 1.0
     # end
     # end
-    G[end-2, id_δ] = -∇d
+    G[end, id_δ] = -∇d
 
     # G[end-2, id_δ] .= 0.0
-    G[end-1, veh.id_t] = 1.0
-    G[end, veh.id_t] = -1.0
+    # G[end-1, veh.id_t] = 1.0
+    # G[end, veh.id_t] = -1.0
     return G
     end)
 
