@@ -314,12 +314,12 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
                                A::T_Function,
                                B::T_Function,
                                F::T_Function)::Nothing
-    pbm.f = (x, u, p) -> f(x, u, p, pbm)
-    pbm.A = !isnothing(A) ? (x, u, p) -> A(x, u, p, pbm) :
-        (x, u, p) -> zeros(pbm.nx, pbm.nx)
-    pbm.B = !isnothing(A) ? (x, u, p) -> B(x, u, p, pbm) :
-        (x, u, p) -> zeros(pbm.nx, pbm.nu)
-    pbm.F = !isnothing(F) ? (x, u, p) -> F(x, u, p, pbm) :
+    pbm.f = (t, k, x, u, p) -> f(t, k, x, u, p, pbm)
+    pbm.A = !isnothing(A) ? (t, k, x, u, p) -> A(t, k, x, u, p, pbm) :
+        (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx)
+    pbm.B = !isnothing(A) ? (t, k, x, u, p) -> B(t, k, x, u, p, pbm) :
+        (t, k, x, u, p) -> zeros(pbm.nx, pbm.nu)
+    pbm.F = !isnothing(F) ? (t, k, x, u, p) -> F(t, k, x, u, p, pbm) :
         (x, u, p) -> zeros(pbm.nx, pbm.nu)
     return nothing
 end
@@ -340,32 +340,32 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
                                f::T_Function,
                                A::T_Function,
                                F::T_Function)::Nothing
-    pbm.f = (x, u, p) -> begin
-        _f = f(x, p, pbm)
+    pbm.f = (t, k, x, u, p) -> begin
+        _f = f(t, k, x, p, pbm)
         _f = _f[1]+sum(u[i]*_f[i+1] for i=1:pbm.nu)
         return _f
     end
 
-    pbm.A = !isnothing(A) ? (x, u, p) -> begin
-        _A = A(x, p, pbm)
+    pbm.A = !isnothing(A) ? (t, k, x, u, p) -> begin
+        _A = A(t, k, x, p, pbm)
         _A = _A[1]+sum(u[i]*_A[i+1] for i=1:pbm.nu)
         return _A
-    end : (x, u, p) -> zeros(pbm.nx, pbm.nx)
+    end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx)
 
-    pbm.B = (x, u, p) -> begin
+    pbm.B = (t, k, x, u, p) -> begin
         _B = zeros(pbm.nx, pbm.nu)
-        _f = f(x, p, pbm)
+        _f = f(t, k, x, p, pbm)
         for i = 1:pbm.nu
             _B[:, i] = _f[i+1]
         end
         return _B
     end
 
-    pbm.F = !isnothing(F) ? (x, u, p) -> begin
-        _F = F(x, p, pbm)
+    pbm.F = !isnothing(F) ? (t, k, x, u, p) -> begin
+        _F = F(t, k, x, p, pbm)
         _F = _F[1]+sum(u[i]*_F[i+1] for i=1:pbm.nu)
         return _F
-    end : (x, u, p) -> zeros(pbm.nx, pbm.nx)
+    end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx)
 
     return nothing
 end

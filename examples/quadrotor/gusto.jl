@@ -33,7 +33,7 @@ pbm = TrajectoryProblem(mdl)
 define_problem!(pbm, :gusto)
 
 # >> Dynamics constraint <<
-_gusto_quadrotor__f = (x, p, pbm) -> begin
+_gusto_quadrotor__f = (t, k, x, p, pbm) -> begin
     veh = pbm.mdl.vehicle
     g = pbm.mdl.env.g
     v = x[veh.id_v]
@@ -54,11 +54,11 @@ end
 problem_set_dynamics!(
     pbm,
     # Dynamics f
-    (x, p, pbm) -> begin
-    return _gusto_quadrotor__f(x, p, pbm)
+    (t, k, x, p, pbm) -> begin
+    return _gusto_quadrotor__f(t, k, x, p, pbm)
     end,
     # Jacobian df/dx
-    (x, p, pbm) -> begin
+    (t, k, x, p, pbm) -> begin
     veh = pbm.mdl.vehicle
     tdil = p[veh.id_t]
     A = [zeros(pbm.nx, pbm.nx) for i=1:pbm.nu+1]
@@ -67,11 +67,11 @@ problem_set_dynamics!(
     return A
     end,
     # Jacobian df/dp
-    (x, p, pbm) -> begin
+    (t, k, x, p, pbm) -> begin
     veh = pbm.mdl.vehicle
     tdil = p[veh.id_t]
     F = [zeros(pbm.nx, pbm.np) for i=1:pbm.nu+1]
-    _f = _gusto_quadrotor__f(x, p, pbm)
+    _f = _gusto_quadrotor__f(t, k, x, p, pbm)
     for i = 1:pbm.nu+1
     # ---
     F[i][:, veh.id_t] = _f[i]/tdil
