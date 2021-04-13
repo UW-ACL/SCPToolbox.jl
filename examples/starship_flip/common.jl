@@ -121,12 +121,12 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
     problem_set_dynamics!(
         pbm,
         # Dynamics f
-        (x, u, p, pbm) -> begin
-        f = dynamics(x, u, p, pbm)
+        (t, k, x, u, p, pbm) -> begin
+        f = dynamics(t, k, x, u, p, pbm)
         return f
         end,
         # Jacobian df/dx
-        (x, u, p, pbm) -> begin
+        (t, k, x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         env = pbm.mdl.env
         traj = pbm.mdl.traj
@@ -161,7 +161,7 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
         return A
         end,
         # Jacobian df/du
-        (x, u, p, pbm) -> begin
+        (t, k, x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         env = pbm.mdl.env
         traj = pbm.mdl.traj
@@ -194,13 +194,13 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
         return B
         end,
         # Jacobian df/dp
-        (x, u, p, pbm) -> begin
+        (t, k, x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         traj = pbm.mdl.traj
         τ = x[veh.id_τ]
         id_t = (τ<=traj.τs) ? veh.id_t1 : veh.id_t2
         F = zeros(pbm.nx, pbm.np)
-        F[:, id_t] = pbm.f(x, u, p)/p[id_t]
+        F[:, id_t] = pbm.f(t, k, x, u, p)/p[id_t]
         F[veh.id_τ, id_t] = 0.0
         return F
         end)

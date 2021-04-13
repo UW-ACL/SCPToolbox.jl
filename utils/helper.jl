@@ -293,7 +293,7 @@ function zohinterp(t::T_Real,
         k = length(t_grid)
     else
         t = max(t_grid[1], min(t_grid[end], t)) # Saturate to time grid
-        k = _helper__get_interval(t, t_grid)
+        k = get_interval(t, t_grid)
     end
     f_t = @k(f_cps)
     return f_t
