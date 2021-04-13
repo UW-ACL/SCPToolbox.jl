@@ -629,8 +629,8 @@ p)<=0.
 # Returns
 - `cost_st`: the original cost.
 """
-function _gusto__state_penalty_cost(x::T_RealMatrix,
-                                    p::T_RealVector,
+function _gusto__state_penalty_cost(x::T_OptiVarMatrix,
+                                    p::T_OptiVarVector,
                                     spbm::GuSTOSubproblem,
                                     mode::T_Symbol=:convex)::T_Objective
 
@@ -990,13 +990,13 @@ function _gusto__update_trust_region!(
     Δf = T_RealVector(undef, N)
     dxdt = T_RealVector(undef, N)
     for k = 1:N
-        f = traj.f(@k(xb), @k(ub), pb)
-        A = traj.A(@k(xb), @k(ub), pb)
-        B = traj.B(@k(xb), @k(ub), pb)
-        F = traj.F(@k(xb), @k(ub), pb)
+        f = traj.f(@k(t), k, @k(xb), @k(ub), pb)
+        A = traj.A(@k(t), k, @k(xb), @k(ub), pb)
+        B = traj.B(@k(t), k, @k(xb), @k(ub), pb)
+        F = traj.F(@k(t), k, @k(xb), @k(ub), pb)
         r = f-A*@k(xb)-B*@k(ub)-F*pb
         f_lin = A*@k(x)+B*@k(u)+F*p+r
-        f_nl = traj.f(@k(x), @k(u), p)
+        f_nl = traj.f(@k(t), k, @k(x), @k(u), p)
         @k(Δf) = norm(f_nl-f_lin)
         @k(dxdt) = norm(f_lin)
     end

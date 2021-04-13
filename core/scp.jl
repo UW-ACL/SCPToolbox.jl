@@ -304,7 +304,8 @@ function SCPSolution(history::SCPHistory)::SCPSolution
         Nc = 2*Nsub*(N-1)
         tc = T_RealVector(LinRange(0.0, 1.0, Nc))
         uc = T_ContinuousTimeTrajectory(td, ud, :linear)
-        F = (t, x) -> pbm.traj.f(x, sample(uc, t), p)
+        k = (t) -> floor(T_Int, t/(N-1))
+        F = (t, x) -> pbm.traj.f(t, k(t), x, sample(uc, t), p)
         xc_vals = rk4(F, @first(last_sol.xd), tc; full=true,
                       actions=pbm.traj.integ_actions)
         xc = T_ContinuousTimeTrajectory(tc, xc_vals, :linear)
@@ -517,10 +518,10 @@ function _scp__derivs(t::T_Real,
     σ_p = (t-t_span[1])/(t_span[2]-t_span[1])
 
     # Compute the state time derivative and local linearization
-    f = pbm.traj.f(x, u, p)
-    A = pbm.traj.A(x, u, p)
-    B = pbm.traj.B(x, u, p)
-    F = pbm.traj.F(x, u, p)
+    f = pbm.traj.f(t, k, x, u, p)
+    A = pbm.traj.A(t, k, x, u, p)
+    B = pbm.traj.B(t, k, x, u, p)
+    F = pbm.traj.F(t, k, x, u, p)
     B_m = σ_m*B
     B_p = σ_p*B
     r = f-A*x-B*u-F*p

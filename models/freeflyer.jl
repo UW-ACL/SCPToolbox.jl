@@ -66,7 +66,7 @@ mutable struct FreeFlyerTrajectoryParameters
     tf_max::T_Real   # Maximum flight time
     γ::T_Real        # Tradeoff weight terminal vs. running cost
     hom::T_Real      # Homotopy parameter for signed-distance function
-    sdf_pwr::T_Real  # Exponent used in signed-distance function
+    ε_sdf::T_Real    # Tiny weight to tighten the room SDF lower bounds
 end
 
 """ Free-flyer trajectory optimization problem parameters all in one. """
@@ -166,10 +166,10 @@ function FreeFlyerProblem(N::T_Int)::FreeFlyerProblem
     tf_min = 60.0
     tf_max = 200.0
     γ = 0.0
-    hom = 50.0#1e3
-    sdf_pwr = 0.5
+    hom = 50.0
+    ε_sdf = 1e-4
     traj = FreeFlyerTrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min,
-                                         tf_max, γ, hom, sdf_pwr)
+                                         tf_max, γ, hom, ε_sdf)
 
     mdl = FreeFlyerProblem(fflyer, env, traj)
 

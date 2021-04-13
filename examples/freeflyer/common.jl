@@ -197,7 +197,8 @@ function _common__set_cost!(pbm::TrajectoryProblem,
         δ = p[veh.id_δ]
         tdil_max = traj.tf_max
         γ = traj.γ
-        return γ*(tdil/tdil_max)^2+1e-4*sum(-δ)
+        ε_sdf = traj.ε_sdf
+        return γ*(tdil/tdil_max)^2+ε_sdf*sum(-δ)
         end)
 
     # Running cost

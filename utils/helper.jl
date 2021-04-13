@@ -227,6 +227,26 @@ function get_conic_constraint_indicator!(
     return q
 end
 
+"""
+    get_interval(x, grid)
+
+Compute grid bin. Get which grid interval a real number belongs to.
+
+# Arguments
+- `x`: the real number.
+- `grid`: the discrete grid on the real line.
+
+# Returns
+- `k`: the interval of the grid the the real number is in.
+"""
+function get_interval(x::T_Real, grid::T_RealVector)::T_Int
+    k = sum(x.>grid)
+    if k==0
+	k = 1
+    end
+    return k
+end
+
 """ Linear interpolation on a grid.
 
 Linearly interpolate a discrete function on a time grid. In other words, get
@@ -246,7 +266,7 @@ function linterp(t::T_Real,
                  t_grid::T_RealVector)::Union{T_Real,
                                               T_RealArray}
     t = max(t_grid[1], min(t_grid[end], t)) # Saturate to time grid
-    k = _helper__get_interval(t, t_grid)
+    k = get_interval(t, t_grid)
     c = (@kp1(t_grid)-t)/(@kp1(t_grid)-@k(t_grid))
     f_t = c*@k(f_cps) + (1-c)*@kp1(f_cps)
     return f_t
@@ -1252,25 +1272,6 @@ end
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-""" Compute grid bin.
-
-Get which grid interval a real number belongs to.
-
-# Arguments
-    x: the real number.
-    grid: the discrete grid on the real line.
-
-# Returns
-    k: the interval of the grid the the real number is in.
-"""
-function _helper__get_interval(x::T_Real, grid::T_RealVector)::T_Int
-    k = sum(x.>grid)
-    if k==0
-	k = 1
-    end
-    return k
-end
 
 """ Update the state using a single Runge-Kutta integration update.
 

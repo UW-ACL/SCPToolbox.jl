@@ -36,7 +36,7 @@ define_problem!(pbm, :scvx)
 problem_set_dynamics!(
     pbm,
     # Dynamics f
-    (x, u, p, pbm) -> begin
+    (t, k, x, u, p, pbm) -> begin
     g = pbm.mdl.env.g
     veh = pbm.mdl.vehicle
     v = x[veh.id_v]
@@ -49,7 +49,7 @@ problem_set_dynamics!(
     return f
     end,
     # Jacobian df/dx
-    (x, u, p, pbm) -> begin
+    (t, k, x, u, p, pbm) -> begin
     veh = pbm.mdl.vehicle
     tdil = p[veh.id_t]
     A = zeros(pbm.nx, pbm.nx)
@@ -58,7 +58,7 @@ problem_set_dynamics!(
     return A
     end,
     # Jacobian df/du
-    (x, u, p, pbm) -> begin
+    (t, k, x, u, p, pbm) -> begin
     veh = pbm.mdl.vehicle
     tdil = p[veh.id_t]
     B = zeros(pbm.nx, pbm.nu)
@@ -67,11 +67,11 @@ problem_set_dynamics!(
     return B
     end,
     # Jacobian df/dp
-    (x, u, p, pbm) -> begin
+    (t, k, x, u, p, pbm) -> begin
     veh = pbm.mdl.vehicle
     tdil = p[veh.id_t]
     F = zeros(pbm.nx, pbm.np)
-    F[:, veh.id_t] = pbm.f(x, u, p)/tdil
+    F[:, veh.id_t] = pbm.f(t, k, x, u, p)/tdil
     return F
     end)
 
