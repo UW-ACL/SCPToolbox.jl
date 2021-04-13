@@ -306,7 +306,7 @@ function SCPSolution(history::SCPHistory)::SCPSolution
         Nc = 2*Nsub*(N-1)
         tc = T_RealVector(LinRange(0.0, 1.0, Nc))
         uc = T_ContinuousTimeTrajectory(td, ud, :linear)
-        k = (t) -> floor(T_Int, t/(N-1))
+        k = (t) -> max(floor(T_Int, t/(N-1))+1, N)
         F = (t, x) -> pbm.traj.f(t, k(t), x, sample(uc, t), p)
         xc_vals = rk4(F, @first(last_sol.xd), tc; full=true,
                       actions=pbm.traj.integ_actions)

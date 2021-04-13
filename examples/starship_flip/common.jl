@@ -46,7 +46,7 @@ end
 
 function _common__set_dims!(pbm::TrajectoryProblem)::Nothing
 
-    problem_set_dims!(pbm, 9, 3, 11)
+    problem_set_dims!(pbm, 8, 3, 10)
 
     return nothing
 end
@@ -68,7 +68,6 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
     advise!(pbm, :state, veh.id_ω, deg2rad.((-10.0, 10.0)))
     advise!(pbm, :state, veh.id_m, (veh.m-1e3, veh.m))
     advise!(pbm, :state, veh.id_δd, (-veh.δ_max, veh.δ_max))
-    advise!(pbm, :state, veh.id_τ, (0.0, 1.0))
     # Inputs
     advise!(pbm, :input, veh.id_T, (veh.T_min1, veh.T_max3))
     advise!(pbm, :input, veh.id_δ, (-veh.δ_max, veh.δ_max))
@@ -133,10 +132,9 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
         v = x[veh.id_v]
         θ = x[veh.id_θ]
         m = x[veh.id_m]
-        τ = x[veh.id_τ]
         T = u[veh.id_T]
         δ = u[veh.id_δ]
-        tdil = ((τ<=traj.τs) ? p[veh.id_t1]/traj.τs :
+        tdil = ((t<=traj.τs) ? p[veh.id_t1]/traj.τs :
                 p[veh.id_t2]/(1-traj.τs))
 
         ℓcp = veh.lcp-veh.lcg
@@ -168,10 +166,9 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
         v = x[veh.id_v]
         θ = x[veh.id_θ]
         m = x[veh.id_m]
-        τ = x[veh.id_τ]
         T = u[veh.id_T]
         δ = u[veh.id_δ]
-        tdil = ((τ<=traj.τs) ? p[veh.id_t1]/traj.τs :
+        tdil = ((t<=traj.τs) ? p[veh.id_t1]/traj.τs :
                 p[veh.id_t2]/(1-traj.τs))
 
         ℓeng = -veh.lcg
@@ -197,11 +194,9 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
         (t, k, x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         traj = pbm.mdl.traj
-        τ = x[veh.id_τ]
-        id_t = (τ<=traj.τs) ? veh.id_t1 : veh.id_t2
+        id_t = (t<=traj.τs) ? veh.id_t1 : veh.id_t2
         F = zeros(pbm.nx, pbm.np)
         F[:, id_t] = pbm.f(t, k, x, u, p)/p[id_t]
-        F[veh.id_τ, id_t] = 0.0
         return F
         end)
 
@@ -277,10 +272,8 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
         r = x[veh.id_r]
         θ = x[veh.id_θ]
         δd = x[veh.id_δd]
-        τ = x[veh.id_τ]
         δ = u[veh.id_δ]
         δdot = u[veh.id_δdot]
-        tf = p[veh.id_t1]+p[veh.id_t2]
 
         s = zeros(_common_s_sz)
         s[1] = (δ-δd)-δdot*veh.rate_delay
@@ -288,11 +281,11 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
         s[3] = δdot-veh.δdot_max
         s[4] = -veh.δdot_max-δdot
         s[5] = norm(r)*cos(traj.γ_gs)-dot(r, env.ey)
-        if _common__phase_switch(τ, pbm)
+        if _common__phase_switch(t, pbm)
         s[(1:pbm.nx).+5] = p[veh.id_xs]-x
         s[(1:pbm.nx).+(5+pbm.nx)] = x-p[veh.id_xs]
         end
-        if _common__phase2(τ, pbm)
+        if _common__phase2(t, pbm)
         s[end-1] = θ-traj.θmax2
         s[end] = -traj.θmax2-θ
         end
@@ -305,7 +298,6 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
         env = pbm.mdl.env
         traj = pbm.mdl.traj
         r = x[veh.id_r]
-        τ = x[veh.id_τ]
 
         nrm_r = norm(r)
         ∇nrm_r = (nrm_r<sqrt(eps())) ? zeros(2) : r/nrm_r
@@ -314,11 +306,11 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
         C[1, veh.id_δd] = -1.0
         C[2, veh.id_δd] = 1.0
         C[5, veh.id_r] = ∇nrm_r*cos(traj.γ_gs)-env.ey
-        if _common__phase_switch(τ, pbm)
+        if _common__phase_switch(t, pbm)
         C[(1:pbm.nx).+5, :] = -I(pbm.nx)
         C[(1:pbm.nx).+(5+pbm.nx), :] = I(pbm.nx)
         end
-        if _common__phase2(τ, pbm)
+        if _common__phase2(t, pbm)
         C[end-1, veh.id_θ] = 1.0
         C[end, veh.id_θ] = -1.0
         end
@@ -328,7 +320,6 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
         # Jacobian ds/du
         (t, k, x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
-        τ = x[veh.id_τ]
 
         D = zeros(_common_s_sz, pbm.nu)
         D[1, veh.id_δ] = 1.0
@@ -343,10 +334,9 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
         # Jacobian ds/dp
         (t, k, x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
-        τ = x[veh.id_τ]
 
         G = zeros(_common_s_sz, pbm.np)
-        if _common__phase_switch(τ, pbm)
+        if _common__phase_switch(t, pbm)
         G[(1:pbm.nx).+5, veh.id_xs] = I(pbm.nx)
         G[(1:pbm.nx).+(5+pbm.nx), veh.id_xs] = -I(pbm.nx)
         end
@@ -366,38 +356,29 @@ function _common__set_bcs!(pbm::TrajectoryProblem)::Nothing
         (x, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         traj = pbm.mdl.traj
-        rhs = zeros(8)
+        rhs = zeros(7)
         rhs[1:2] = traj.r0
         rhs[3:4] = traj.v0
         rhs[5] = traj.θ0
         rhs[6] = 0.0
         rhs[7] = 0.0
-        rhs[8] = 0.0
         g = x[vcat(veh.id_r,
                    veh.id_v,
                    veh.id_θ,
                    veh.id_ω,
-                   veh.id_m,
-                   veh.id_τ)]-rhs
+                   veh.id_m)]-rhs
         return g
         end,
         # Jacobian dg/dx
         (x, p, pbm) -> begin
         veh = pbm.mdl.vehicle
-        H = zeros(8, pbm.nx)
+        H = zeros(7, pbm.nx)
         H[1:2, veh.id_r] = I(2)
         H[3:4, veh.id_v] = I(2)
         H[5, veh.id_θ] = 1.0
         H[6, veh.id_ω] = 1.0
         H[7, veh.id_m] = 1.0
-        H[8, veh.id_τ] = 1.0
         return H
-        end,
-        # Jacobian dg/dp
-        (x, p, pbm) -> begin
-        veh = pbm.mdl.vehicle
-        K = zeros(8, pbm.np)
-        return K
         end)
 
     # Terminal conditions
@@ -427,12 +408,6 @@ function _common__set_bcs!(pbm::TrajectoryProblem)::Nothing
         H[5, veh.id_θ] = 1.0
         H[6, veh.id_ω] = 1.0
         return H
-        end,
-        # Jacobian dg/dp
-        (x, p, pbm) -> begin
-        veh = pbm.mdl.vehicle
-        K = zeros(6, pbm.np)
-        return K
         end)
 
     return nothing

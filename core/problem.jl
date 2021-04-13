@@ -446,7 +446,7 @@ function problem_set_s!(pbm::TrajectoryProblem,
 end
 
 """
-    problem_set_bc!(pbm, kind, g, H, K)
+    problem_set_bc!(pbm, kind, g, H[, K])
 
 Define the boundary conditions.
 
@@ -455,13 +455,13 @@ Define the boundary conditions.
 - `kind`: either :ic (initial condition) or :tc (terminal condition).
 - `g`: the constraint function.
 - `H`: Jacobian with respect to the state, dg/dx.
-- `K`: Jacobian with respect to the parameter, dg/dp.
+- `K`: (optional) Jacobian with respect to the parameter, dg/dp.
 """
 function problem_set_bc!(pbm::TrajectoryProblem,
                          kind::Symbol,
                          g::T_Function,
                          H::T_Function,
-                         K::T_Function)::Nothing
+                         K::T_Function=nothing)::Nothing
     if isnothing(g)
         err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: must at least provide g.")
         throw(err)

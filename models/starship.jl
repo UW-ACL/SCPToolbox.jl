@@ -43,7 +43,6 @@ struct StarshipParameters
     id_ω::T_Int        # Tilt rate index of the state vector
     id_m::T_Int        # Mass index of the state vector
     id_δd::T_Int       # Delayed gimbal angle index of the state vector
-    id_τ::T_Int        # Normalized time index of the state vector
     id_T::T_Int        # Thrust index of the input vector
     id_δ::T_Int        # Gimbal angle index of the input vector
     id_δdot::T_Int     # Gimbal rate index of the input vector
@@ -126,13 +125,12 @@ function StarshipProblem()::StarshipProblem
     id_ω = 6
     id_m = 7
     id_δd = 8
-    id_τ = 9
     id_T = 1
     id_δ = 2
     id_δdot = 3
     id_t1 = 1
     id_t2 = 2
-    id_xs = 3:(3+id_τ-1)
+    id_xs = (1:id_δd).+2
     # >> Body axes <<
     ei = (θ) -> cos(θ)*[1.0; 0.0]+sin(θ)*[0.0; 1.0]
     ej = (θ) -> -sin(θ)*[1.0; 0.0]+cos(θ)*[0.0; 1.0]
@@ -159,9 +157,9 @@ function StarshipProblem()::StarshipProblem
     rate_delay = 0.05
 
     starship = StarshipParameters(
-        id_r, id_v, id_θ, id_ω, id_m, id_δd, id_τ, id_T, id_δ, id_δdot,
-        id_t1, id_t2, id_xs, ei, ej, lcg, lcp, m, J, CD, T_min1, T_max1,
-        T_min3, T_max3, αe, δ_max, δdot_max, rate_delay)
+        id_r, id_v, id_θ, id_ω, id_m, id_δd, id_T, id_δ, id_δdot, id_t1,
+        id_t2, id_xs, ei, ej, lcg, lcp, m, J, CD, T_min1, T_max1, T_min3,
+        T_max3, αe, δ_max, δdot_max, rate_delay)
 
     # ..:: Trajectory ::..
     # Initial values
@@ -224,11 +222,10 @@ function dynamics(t::T_Real,
     θ = x[veh.id_θ]
     ω = x[veh.id_ω]
     m = x[veh.id_m]
-    τ = x[veh.id_τ]
     δd = x[veh.id_δd]
     T = u[veh.id_T]
     δ = u[veh.id_δ]
-    tdil = ((τ<=traj.τs) ? p[veh.id_t1]/traj.τs :
+    tdil = ((t<=traj.τs) ? p[veh.id_t1]/traj.τs :
             p[veh.id_t2]/(1-traj.τs))
 
     # Derived quantities
@@ -253,11 +250,9 @@ function dynamics(t::T_Real,
     f[veh.id_ω] = (MT+MD)/veh.J
     f[veh.id_m] = veh.αe*T
     f[veh.id_δd] = (δ-δd)/veh.rate_delay
-    f[veh.id_τ] = 1.0
 
     # Scale for time
     f *= tdil
-    f[veh.id_τ] /= tdil
 
     return f
 end
@@ -331,10 +326,11 @@ function starship_initial_guess(
         veh = pbm.mdl.vehicle
         traj = pbm.mdl.traj
         u = flip_ctrl(t, pbm)
+        k = max(floor(T_Int, t/(N-1))+1, N)
         p = zeros(pbm.np)
         p[veh.id_t1] = traj.τs
         p[veh.id_t2] = 1-traj.τs
-        dxdt = dynamics(x, u, p, pbm; no_aero_torques=true)
+        dxdt = dynamics(t, k, x, u, p, pbm; no_aero_torques=true)
         return dxdt
     end
 
@@ -363,7 +359,6 @@ function starship_initial_guess(
     t = @k(t, 1, k_0x)
     t1 = t[end]
     x1 = @k(x1, 1, k_0x)
-    x1[veh.id_τ, :] *= traj.τs/t1
 
     # Populate trajectory guess first phase
     τ2t = (τ) -> τ/traj.τs*t1
@@ -562,7 +557,6 @@ function starship_initial_guess(
     # Add terminal descent to initial guess
     x_guess[veh.id_r, id_phase2] = x2[1:2, :]
     x_guess[veh.id_v, id_phase2] = x2[3:4, :]
-    x_guess[veh.id_τ, id_phase2] = τ2.+traj.τs
     _tdil = tdil(t2)
     m20 = x_guess[veh.id_m, id_phase2[1]]
     for k = 1:N2

@@ -32,7 +32,7 @@ include("../../models/starship.jl")
 mdl = StarshipProblem()
 pbm = TrajectoryProblem(mdl)
 
-define_problem!(pbm)
+define_problem!(pbm, :scvx)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: PTR algorithm parameters :::::::::::::::::::::::::::::::::::::::::::::::::
