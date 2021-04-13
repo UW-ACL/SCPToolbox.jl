@@ -34,10 +34,11 @@ abstract type SCPSubproblemSolution end
 # :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Variable scaling parameters.
+""" Variable scaling parameters.
 
 Holds the SCP subproblem internal scaling parameters, which makes the numerical
-optimization subproblems better conditioned. =#
+optimization subproblems better conditioned.
+"""
 struct SCPScaling
     Sx::T_RealMatrix  # State scaling coefficient matrix
     cx::T_RealVector  # State scaling offset vector
@@ -50,10 +51,11 @@ struct SCPScaling
     iSp::T_RealMatrix # Inverse of parameter scaling coefficient matrix
 end
 
-#= Indexing arrays for convenient access during dynamics discretization.
+""" Indexing arrays for convenient access during dynamics discretization.
 
 Container of indices useful for extracting variables from the propagation
-vector during the linearized dynamics discretization process. =#
+vector during the linearized dynamics discretization process.
+"""
 struct SCPDiscretizationIndices
     x::T_IntRange  # Indices for state
     A::T_IntRange  # Indices for A matrix
@@ -65,7 +67,7 @@ struct SCPDiscretizationIndices
     length::T_Int  # Propagation vector total length
 end
 
-#= Common constant terms used throughout the algorithm. =#
+"""" Common constant terms used throughout the algorithm."""
 struct SCPCommon
     # >> Discrete-time grid <<
     Δt::T_Real           # Discrete time step
@@ -76,19 +78,23 @@ struct SCPCommon
     table::T_Table       # Iteration info table (printout to REPL)
 end
 
-#= Structure which contains all the necessary information to run SCP. =#
+""" Structure which contains all the necessary information to run SCP."""
 struct SCPProblem{T<:SCPParameters}
     pars::T                 # Algorithm parameters
     traj::TrajectoryProblem # The underlying trajectory problem
     common::SCPCommon       # Common precomputed terms
 
-    #= Basic constructor.
+    """"
+        SCPProblem(pars, traj, common)
 
-    Args:
-        See the above comments.
+    Basic constructor.
 
-    Returns:
-        pbm: the SCP problem definition structure. =#
+    # Arguments
+    - See the above comments.
+
+    # Returns
+    - `pbm`: the SCP problem definition structure.
+    """
     function SCPProblem(pars::T,
                         traj::TrajectoryProblem,
                         common::SCPCommon)::SCPProblem where {T<:SCPParameters}
@@ -105,10 +111,10 @@ struct SCPProblem{T<:SCPParameters}
     end
 end
 
-#= Overall trajectory solution.
+""" Overall trajectory solution.
 
-Structure which holds the trajectory solution that the SCP algorithm
-returns. =#
+Structure which holds the trajectory solution that the SCP algorithm returns.
+"""
 struct SCPSolution
     # >> Properties <<
     status::T_String  # Solution status (success? failure?)
@@ -125,7 +131,7 @@ struct SCPSolution
     uc::Union{T_ContinuousTimeTrajectory, Missing} # Inputs
 end
 
-#= SCP iteration history data. =#
+"""" SCP iteration history data."""
 struct SCPHistory{T<:SCPSubproblem}
     subproblems::Vector{T} # Subproblems
 end
@@ -134,14 +140,18 @@ end
 # :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Indexing arrays from problem definition.
+"""
+    SCPDiscretizationIndices(traj, E)
 
-Args:
-    traj: the trajectory problem definition.
-    E: the dynamics virtual control coefficient matrix.
+Indexing arrays from problem definition.
 
-Returns:
-    idcs: the indexing array structure. =#
+# Arguments
+- `traj`: the trajectory problem definition.
+- `E`: the dynamics virtual control coefficient matrix.
+
+# Returns
+- `idcs`: the indexing array structure.
+"""
 function SCPDiscretizationIndices(
     traj::TrajectoryProblem,
     E::T_RealMatrix)::SCPDiscretizationIndices
@@ -163,18 +173,20 @@ function SCPDiscretizationIndices(
     return idcs
 end
 
-#= Construct the SCP problem definition.
+"""
+    SCPProblem(pars, traj, table)
 
-This internally also computes the scaling matrices used to improve subproblem
-numerics.
+Construct the SCP problem definition. This internally also computes the scaling
+matrices used to improve subproblem numerics.
 
-Args:
-    pars: GuSTO algorithm parameters.
-    traj: the underlying trajectory optimization problem.
-    table: the iteration progress table.
+# Arguments
+- `pars`: GuSTO algorithm parameters.
+- `traj`: the underlying trajectory optimization problem.
+- `table`: the iteration progress table.
 
-Returns:
-    pbm: the problem structure ready for being solved by GuSTO. =#
+# Returns
+- `pbm`: the problem structure ready for being solved by GuSTO.
+"""
 function SCPProblem(
     pars::T,
     traj::TrajectoryProblem,
@@ -193,13 +205,14 @@ function SCPProblem(
     return pbm
 end
 
-""" Create the subproblem solution structure.
+"""
+    SCPSubproblemSolution!(spbm)
 
-This calls the SCP algorithm-specific function, and also saves some general
-properties of the solution.
+Create the subproblem solution structure. This calls the SCP algorithm-specific
+function, and also saves some general properties of the solution.
 
-Args:
-* `spbm`: the subproblem structure.
+# Arguments
+- `spbm`: the subproblem structure.
 """
 function SCPSubproblemSolution!(spbm::T)::Nothing where {T<:SCPSubproblem}
     # Save the solution
@@ -238,16 +251,19 @@ function SCPSubproblemSolution!(spbm::T)::Nothing where {T<:SCPSubproblem}
     return nothing
 end
 
-#= Convert subproblem solution to a final trajectory solution.
+"""
+    SCPSolution(history)
 
-This is what the SCP algorithm returns in the end to the user.
+Convert subproblem solution to a final trajectory solution. This is what the
+SCP algorithm returns in the end to the user.
 
-Args:
-    history: SCP iteration history.
-    scp_algo: name of the SCP algorithm used.
+# Arguments
+- `history`: SCP iteration history.
+- `scp_algo`: name of the SCP algorithm used.
 
-Returns:
-    sol: the trajectory solution. =#
+# Returns
+- `sol`: the trajectory solution.
+"""
 function SCPSolution(history::SCPHistory)::SCPSolution
 
     # Get the solution
@@ -301,10 +317,14 @@ function SCPSolution(history::SCPHistory)::SCPSolution
     return sol
 end
 
-#= Empty history.
+"""
+    SCPHistory()
 
-Returns:
-    history: history with no entries. =#
+Empty history.
+
+# Returns
+- `history`: history with no entries.
+"""
 function SCPHistory()::SCPHistory
     subproblems = Vector{SCPSubproblem}(undef, 0)
     history = SCPHistory(subproblems)
@@ -315,15 +335,19 @@ end
 # :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Compute the scaling matrices given the problem definition.
+"""
+    _scp__compute_scaling(pars, traj, t)
 
-Args:
-    pars: the SCP algorithm parameters.
-    traj: the trajectory problem definition.
-    t: normalized discrete-time grid.
+Compute the scaling matrices given the problem definition.
 
-Returns:
-    scale: the scaling structure. =#
+# Arguments
+- `pars`: the SCP algorithm parameters.
+- `traj`: the trajectory problem definition.
+- `t`: normalized discrete-time grid.
+
+# Returns
+- `scale`: the scaling structure.
+"""
 function _scp__compute_scaling(
     pars::T,
     traj::TrajectoryProblem,
@@ -457,17 +481,21 @@ function _scp__compute_scaling(
     return scale
 end
 
-#= Compute concatenanted time derivative vector for dynamics discretization.
+"""
+    _scp__derivs(t, V, k, pbm, ref)
 
-Args:
-    t: the time.
-    V: the current concatenated vector.
-    k: the discrete time grid interval.
-    pbm: the SCP problem definition.
-    ref: the reference trajectory.
+Compute concatenanted time derivative vector for dynamics discretization.
 
-Returns:
-    dVdt: the time derivative of V. =#
+# Arguments
+- `t`: the time.
+- `V`: the current concatenated vector.
+- `k`: the discrete time grid interval.
+- `pbm`: the SCP problem definition.
+- `ref`: the reference trajectory.
+
+# Returns
+- `dVdt`: the time derivative of V.
+"""
 function _scp__derivs(t::T_Real,
                       V::T_RealVector,
                       k::T_Int,
@@ -514,15 +542,17 @@ function _scp__derivs(t::T_Real,
     return dVdt
 end
 
-#= Discrete linear time varying dynamics computation.
+"""
+    _scp__discretize!(ref, pbm)
 
-Compute the discrete-time update matrices for the linearized dynamics about a
-reference trajectory. As a byproduct, this calculates the defects needed for
-the trust region update.
+Discrete linear time varying dynamics computation. Compute the discrete-time
+update matrices for the linearized dynamics about a reference trajectory. As a
+byproduct, this calculates the defects needed for the trust region update.
 
-Args:
-    ref: reference solution about which to discretize.
-    pbm: the SCP problem definition. =#
+# Arguments
+- `ref`: reference solution about which to discretize.
+- `pbm`: the SCP problem definition.
+"""
 function _scp__discretize!(
     ref::T, pbm::SCPProblem)::Nothing where {T<:SCPSubproblemSolution}
 
@@ -595,10 +625,14 @@ function _scp__discretize!(
     return nothing
 end
 
-#= Add dynamics constraints to the problem.
+"""
+    _scp__add_dynamics!(spbm)
 
-Args:
-    spbm: the subproblem definition. =#
+Add dynamics constraints to the problem.
+
+# Arguments
+- `spbm`: the subproblem definition.
+"""
 function _scp__add_dynamics!(
     spbm::T)::Nothing where {T<:SCPSubproblem}
 
@@ -626,10 +660,14 @@ function _scp__add_dynamics!(
     return nothing
 end
 
-#= Add convex state constraints.
+"""
+    _scp__add_convex_state_constraints!(spbm)
 
-Args:
-    spbm: the subproblem definition. =#
+Add convex state constraints.
+
+# Arguments
+- `spbm`: the subproblem definition.
+"""
 function _scp__add_convex_state_constraints!(
     spbm::T)::Nothing where {T<:SCPSubproblem}
 
@@ -657,10 +695,14 @@ function _scp__add_convex_state_constraints!(
     return nothing
 end
 
-#= Add convex input constraints.
+"""
+    _scp__add_convex_input_constraints!(spbm)
 
-Args:
-    spbm: the subproblem definition. =#
+Add convex input constraints.
+
+# Arguments
+- `spbm`: the subproblem definition.
+"""
 function _scp__add_convex_input_constraints!(
     spbm::T)::Nothing where {T<:SCPSubproblem}
 
@@ -688,10 +730,14 @@ function _scp__add_convex_input_constraints!(
     return nothing
 end
 
-#= Add non-convex state, input, and parameter constraints.
+"""
+    _scp__add_nonconvex_constraints!(spbm)
 
-Args:
-    spbm: the subproblem definition. =#
+Add non-convex state, input, and parameter constraints.
+
+# Arguments
+- `spbm`: the subproblem definition.
+"""
 function _scp__add_nonconvex_constraints!(
     spbm::T)::Nothing where {T<:SCPSubproblem}
 
@@ -737,16 +783,20 @@ function _scp__add_nonconvex_constraints!(
     return nothing
 end
 
-#= Compute the original problem cost function.
+"""
+    _scp__original_cost(x, u, p, pbm)
 
-Args:
-    x: the discrete-time state trajectory.
-    u: the discrete-time input trajectory.
-    p: the parameter vector.
-    pbm: the SCP problem definition.
+Compute the original problem cost function.
 
-Returns:
-    cost: the original cost. =#
+# Arguments
+- `x`: the discrete-time state trajectory.
+- `u`: the discrete-time input trajectory.
+- `p`: the parameter vector.
+- `pbm`: the SCP problem definition.
+
+# Returns
+- `cost`: the original cost.
+"""
 function _scp__original_cost(
     x::T_OptiVarMatrix,
     u::T_OptiVarMatrix,
@@ -774,12 +824,18 @@ function _scp__original_cost(
     return cost
 end
 
-#= Add boundary condition constraints to the problem.
+"""
+    _scp__add_bcs!(spbm[; relaxed])
 
-Args:
-    spbm: the subproblem definition.
-    relaxed: (optional) if true then relax equalities with a virtual control, else
-        impose the linearized boundary conditions exactly. =#
+Add boundary condition constraints to the problem.
+
+# Arguments
+- `spbm`: the subproblem definition.
+
+# Keywords
+- `relaxed`: (optional) if true then relax equalities with a virtual control,
+  else impose the linearized boundary conditions exactly.
+"""
 function _scp__add_bcs!(
     spbm::T; relaxed::T_Bool=true)::Nothing where {T<:SCPSubproblem}
 
@@ -835,15 +891,18 @@ function _scp__add_bcs!(
     return nothing
 end
 
-#= Compute the deviation of subproblem solution from the reference.
+"""
+    _scp__solution_deviation(spbm)
 
-It is assumed that the function received a solved subproblem.
+Compute the deviation of subproblem solution from the reference. It is assumed
+that the function received a solved subproblem.
 
-Args:
-    spbm: the subproblem structure.
+# Arguments
+- `spbm`: the subproblem structure.
 
-Returns:
-    deviation: a measure of deviation of spbm.sol from spbm.ref. =#
+# Returns
+- `deviation`: a measure of deviation of `spbm.sol` from `spbm.ref`.
+"""
 function _scp__solution_deviation(spbm::T)::T_Real where {T<:SCPSubproblem}
     # Extract values
     pbm = spbm.def
@@ -868,10 +927,14 @@ function _scp__solution_deviation(spbm::T)::T_Real where {T<:SCPSubproblem}
     return deviation
 end
 
-#= Solve the SCP method's convex subproblem via numerical optimization.
+"""
+    _scp__solve_subproblem!(spbm)
 
-Args:
-    spbm: the subproblem structure. =#
+Solve the SCP method's convex subproblem via numerical optimization.
+
+# Arguments
+- `spbm`: the subproblem structure.
+"""
 function _scp__solve_subproblem!(spbm::T)::Nothing where {T<:SCPSubproblem}
     # Optimize
     optimize!(spbm.mdl)
@@ -882,16 +945,19 @@ function _scp__solve_subproblem!(spbm::T)::Nothing where {T<:SCPSubproblem}
     return nothing
 end
 
-#= Check if the subproblem optimization had issues.
+"""
+    _scp__unsafe_solution(sol)
 
-A solution is judged unsafe if the numerical optimizer exit code indicates that
-there were serious problems in solving the subproblem.
+Check if the subproblem optimization had issues. A solution is judged unsafe if
+the numerical optimizer exit code indicates that there were serious problems in
+solving the subproblem.
 
-Args:
-    sol: the subproblem or directly its solution.
+# Arguments
+- `sol`: the subproblem or directly its solution.
 
-Returns:
-    unsafe: true if the subproblem solution process "failed". =#
+# Returns
+- `unsafe`: true if the subproblem solution process "failed".
+"""
 function _scp__unsafe_solution(sol::Union{T, V})::T_Bool where {
     T<:SCPSubproblemSolution, V<:SCPSubproblem}
 
@@ -908,10 +974,13 @@ function _scp__unsafe_solution(sol::Union{T, V})::T_Bool where {
     return sol.unsafe
 end
 
-""" Compute solution time overhead introduced by the surrounding code.
+"""
+    _scp__overhead!(spbm)
 
-Args:
-* `spbm`: the subproblem structure.
+Compute solution time overhead introduced by the surrounding code.
+
+# Arguments
+- `spbm`: the subproblem structure.
 """
 function _scp__overhead!(spbm::T)::Nothing where {T<:SCPSubproblem}
     useful_time = (spbm.timing[:discretize]+spbm.timing[:formulate]+
@@ -921,11 +990,15 @@ function _scp__overhead!(spbm::T)::Nothing where {T<:SCPSubproblem}
     return nothing
 end
 
-#= Add subproblem to SCP history.
+"""
+    _scp__save!(hist, spbm)
 
-Args:
-    hist: the history.
-    spbm: subproblem structure. =#
+Add subproblem to SCP history.
+
+# Arguments
+- `hist`: the history.
+- `spbm`: subproblem structure.
+"""
 function _scp__save!(hist::SCPHistory,
                      spbm::T)::Nothing where {T<:SCPSubproblem}
     spbm.timing[:formulate] = (time_ns()-spbm.timing[:formulate])/1e9

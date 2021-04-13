@@ -27,7 +27,7 @@ include("../core/scp.jl")
 # :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Quadrotor vehicle parameters. =#
+""" Quadrotor vehicle parameters. """
 struct QuadrotorParameters
     id_r::T_IntRange # Position indices of the state vector
     id_v::T_IntRange # Velocity indices of the state vector
@@ -39,14 +39,14 @@ struct QuadrotorParameters
     tilt_max::T_Real # [rad] Maximum tilt
 end
 
-#= Quadrotor flight environment. =#
+""" Quadrotor flight environment. """
 struct QuadrotorEnvironmentParameters
     g::T_RealVector          # [m/s^2] Gravity vector
     obs::Vector{T_Ellipsoid} # Obstacles (ellipsoids)
     n_obs::T_Int             # Number of obstacles
 end
 
-#= Trajectory parameters. =#
+""" Trajectory parameters. """
 struct QuadrotorTrajectoryParameters
     r0::T_RealVector # Initial position
     rf::T_RealVector # Terminal position
@@ -57,7 +57,7 @@ struct QuadrotorTrajectoryParameters
     γ::T_Real        # Minimum-time vs. minimum-energy tradeoff
 end
 
-#= Quadrotor trajectory optimization problem parameters all in one. =#
+""" Quadrotor trajectory optimization problem parameters all in one. """
 struct QuadrotorProblem
     vehicle::QuadrotorParameters        # The ego-vehicle
     env::QuadrotorEnvironmentParameters # The environment
@@ -68,14 +68,15 @@ end
 # :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Constructor for the environment.
+""" Constructor for the environment.
 
-Args:
+# Arguments
     gnrm: gravity vector norm.
     obs: array of obstacles (ellipsoids).
 
-Returns:
-    env: the environment struct. =#
+# Returns
+    env: the environment struct.
+"""
 function QuadrotorEnvironmentParameters(
     gnrm::T_Real,
     obs::Vector{T_Ellipsoid})::QuadrotorEnvironmentParameters
@@ -90,10 +91,11 @@ function QuadrotorEnvironmentParameters(
     return env
 end
 
-#= Constructor for the quadrotor problem.
+""" Constructor for the quadrotor problem.
 
-Returns:
-    mdl: the quadrotor problem. =#
+# Returns
+    mdl: the quadrotor problem.
+"""
 function QuadrotorProblem()::QuadrotorProblem
 
     # >> Quadrotor <<
@@ -134,11 +136,12 @@ end
 # :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Plot the trajectory evolution through SCP iterations.
+""" Plot the trajectory evolution through SCP iterations.
 
-Args:
+# Arguments
     mdl: the quadrotor problem parameters.
-    history: SCP iteration data history. =#
+    history: SCP iteration data history.
+"""
 function plot_trajectory_history(mdl::QuadrotorProblem,
                                  history::SCPHistory)::Nothing
 
@@ -198,11 +201,12 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
     return nothing
 end
 
-#= Plot the final converged trajectory.
+""" Plot the final converged trajectory.
 
-Args:
+# Arguments
     mdl: the quadrotor problem parameters.
-    sol: the trajectory solution. =#
+    sol: the trajectory solution.
+"""
 function plot_final_trajectory(mdl::QuadrotorProblem,
                                sol::SCPSolution)::Nothing
 
@@ -297,11 +301,12 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
     return nothing
 end
 
-#= Plot the acceleration input norm.
+""" Plot the acceleration input norm.
 
-Args:
+# Arguments
     mdl: the quadrotor problem parameters.
-    sol: the trajectory solution. =#
+    sol: the trajectory solution.
+"""
 function plot_input_norm(mdl::QuadrotorProblem,
                          sol::SCPSolution)::Nothing
 
@@ -369,11 +374,12 @@ function plot_input_norm(mdl::QuadrotorProblem,
     return nothing
 end
 
-#= Plot the acceleration input norm.
+""" Plot the acceleration input norm.
 
-Args:
+# Arguments
     mdl: the quadrotor problem parameters.
-    sol: the trajectory solution. =#
+    sol: the trajectory solution.
+"""
 function plot_tilt_angle(mdl::QuadrotorProblem,
                          sol::SCPSolution)::Nothing
 

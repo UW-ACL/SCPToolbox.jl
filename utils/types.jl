@@ -86,21 +86,23 @@ const T_SIA = T_SpecialIntegrationActions # Alias
 # :: Composite types ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Quaternion using Hamiltonian convention.
+""" Quaternion using Hamiltonian convention.
 
-In vectorized form/indexing, use the scalar last convention. =#
+In vectorized form/indexing, use the scalar last convention.
+"""
 struct T_Quaternion
     v::T_RealVector # Vector part
     w::T_Real       # Scalar part
 
-    #= Basic constructor.
+    """ Basic constructor.
 
-    Args:
+    # Arguments
         w: the scalar part.
         v: the vector part.
 
-    Returns:
-        q: the quaternion. =#
+    # Returns
+        q: the quaternion.
+    """
     function T_Quaternion(v::T_RealVector, w::T_Real)::T_Quaternion
         if length(v)!=3
             err = ArgumentError("ERROR: quaternion is a 4-element object.")
@@ -112,13 +114,14 @@ struct T_Quaternion
         return q
     end
 
-    #= (Pure) quaternion constructor from a vector.
+    """ (Pure) quaternion constructor from a vector.
 
-    Args:
+    # Arguments
         v: the vector part or the full quaternion in vector form.
 
-    Returns:
-        q: the pure quaternion. =#
+    # Returns
+        q: the pure quaternion.
+    """
     function T_Quaternion(v::T_RealVector)::T_Quaternion
         if length(v)!=3 && length(v)!=4
             msg = string("ERROR: cannot construct a quaternion from ",
@@ -136,14 +139,15 @@ struct T_Quaternion
         return q
     end
 
-    #= Unit quaternion from an angle-axis attitude parametrization.
+    """ Unit quaternion from an angle-axis attitude parametrization.
 
-    Args:
+    # Arguments
         α: the angle (in radians).
         a: the axis (internally normalized to a unit norm).
 
-    Returns:
-        q: the unit quaternion. =#
+    # Returns
+        q: the unit quaternion.
+    """
     function T_Quaternion(α::T_Real, a::T_RealVector)::T_Quaternion
         if length(a)!=3
             msg = string("ERROR: axis must be in R^3.")
@@ -160,24 +164,26 @@ struct T_Quaternion
     end
 end
 
-#= Ellipsoid geometric object.
+""" Ellipsoid geometric object.
 
 Ellipsoid set = {x : norm(H*(x-c), 2) <= 1},
 
 where H is a positive definite matrix which defines the ellipsoid shape,
-and c is the ellipsoid's center. =#
+and c is the ellipsoid's center.
+"""
 struct T_Ellipsoid
     H::T_RealMatrix # Ellipsoid shape matrix
     c::T_RealVector # Ellipsoid center
 
-    #= Basic constructor.
+    """ Basic constructor.
 
-    Args:
+    # Arguments
         H: ellipsoid shape matrix.
         c: ellipsoid center
 
-    Returns:
-        E: the ellipsoid. =#
+    # Returns
+        E: the ellipsoid.
+    """
     function T_Ellipsoid(H::T_RealMatrix,
                          c::T_RealVector)::T_Ellipsoid
         if size(H,2)!=length(c)
@@ -189,9 +195,10 @@ struct T_Ellipsoid
     end
 end
 
-#= Hyperrectangle geometric object.
+""" Hyperrectangle geometric object.
 
-Hyperrectangle set H = {x : l <= x <= u} =#
+Hyperrectangle set H = {x : l <= x <= u}
+"""
 struct T_Hyperrectangle
     n::T_Int        # Ambient space dimension
     l::T_RealVector # Lower bound ("lower-left" vertex)
@@ -200,14 +207,15 @@ struct T_Hyperrectangle
     s::T_RealVector # Dilation
     c::T_RealVector # Offset
 
-    #= Basic constructor.
+    """ Basic constructor.
 
-    Args:
+    # Arguments
         l: the lower-left vertex.
         u: the upper-right vertex.
 
-    Returns:
-        H: the hyperrectangle set. =#
+    # Returns
+        H: the hyperrectangle set.
+    """
     function T_Hyperrectangle(l::T_RealVector,
                               u::T_RealVector)::T_Hyperrectangle
         if length(l)!=length(u)
@@ -221,14 +229,15 @@ struct T_Hyperrectangle
         return H
     end
 
-    #= Constructor from axis ranges.
+    """ Constructor from axis ranges.
 
-    Args:
+    # Arguments
         range: the (min, max) range of values in the set along
           axis 1, 2, etc.
 
-    Returns:
-        H: the hyperrectangle set. =#
+    # Returns
+        H: the hyperrectangle set.
+    """
     function T_Hyperrectangle(
         range::Tuple{T_Real, T_Real}...)::T_Hyperrectangle
 
@@ -241,7 +250,7 @@ struct T_Hyperrectangle
         return H
     end
 
-    #= Extrusion-like constructor for a 3D rectangular prism.
+    """ Extrusion-like constructor for a 3D rectangular prism.
 
     Think about it like extruding a 3D rectangular prism in a Computer Aided
     Design (CAD) software. You create a 2D rectangle centered at c with
@@ -249,7 +258,7 @@ struct T_Hyperrectangle
     the depth value. Afterwards, you yaw the rectangle by ±90 degrees in yaw,
     pitch, and roll.
 
-    Args:
+    # Arguments
         offset: the rectangular base center (aka centroid).
         width: rectangular base width (along x).
         height: rectangular base height (along y).
@@ -258,8 +267,9 @@ struct T_Hyperrectangle
         pitch: (optional) the Tait-Bryan pitch angle (in degrees).
         roll: (optional) the Tait-Bryan roll angle (in degrees).
 
-    Returns:
-        H: the hyperrectangle set. =#
+    # Returns
+        H: the hyperrectangle set.
+    """
     function T_Hyperrectangle(offset::T_RealVector,
                               width::T_Real,
                               height::T_Real,
@@ -301,32 +311,34 @@ struct T_Hyperrectangle
     end
 end
 
-#= Convex cone constraint.
+""" Convex cone constraint.
 
-A conic constraint is of the form {z : z ∈ K}, where K is a convex cone.
+A conic constraint is of the form `{z : z ∈ K}`, where `K` is a convex cone.
 
 The supported cones are:
-    :zero   for constraints z==0.
-    :nonpos for constraints z<=0.
-    :l1     for constraints z=(t, x), norm(x, 1)<=t.
-    :soc    for constraints z=(t, x), norm(x, 2)<=t.
-    :linf   for constraints z=(t, x), norm(x, ∞)<=t.
-    :geom   for constraints z=(t, x), geomean(x)>=t.
-    :exp    for constraints z=(x, y, w), y*exp(x/y)<=w, y>0. =#
+- `:zero` for constraints `z==0`.
+- `:nonpos` for constraints `z<=0`.
+- `:l1` for constraints `z=(t, x), norm(x, 1)<=t`.
+- `:soc` for constraints `z=(t, x), norm(x, 2)<=t`.
+- `:linf` for constraints `z=(t, x), norm(x, ∞)<=t`.
+- `:geom` for constraints `z=(t, x), geomean(x)>=t`.
+- `:exp` for constraints `z=(x, y, w), y*exp(x/y)<=w, y>0`.
+"""
 struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
     z::T_OptiVar   # The expression to be constrained in the cone
     K::T           # The cone set
     dim::T_Int     # Cone admbient space dimension
     kind::T_Symbol # The kind of cone (:nonpos, :l1, etc.)
 
-    #= Basic constructor.
+    """ Basic constructor.
 
-    Args:
+    # Arguments
         z: the vector to be constraint to lie within the cone.
         kind: the cone type.
 
-    Returns:
-        constraint: the conic constraint. =#
+    # Returns
+        constraint: the conic constraint.
+    """
     function T_ConvexConeConstraint(z::T_OptiVar,
                                     kind::T_Symbol)::T_ConvexConeConstraint
         if !(kind in (:zero, :nonpos, :l1, :soc, :linf, :geom, :exp))
@@ -364,7 +376,7 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
     end
 end
 
-#= Discrete-time linear time-varying system, with virtual control. =#
+""" Discrete-time linear time-varying system, with virtual control. """
 mutable struct T_DLTV
     # x[:,k+1] = ...
     A::T_RealTensor  # ...  A[:, :, k]*x[:, k]+ ...
@@ -375,17 +387,18 @@ mutable struct T_DLTV
     E::T_RealTensor  # ... +E[:, :, k]*v
     timing::T_Real   # [s] Time taken to discretize
 
-    #= Basic constructor.
+    """ Basic constructor.
 
-    Args:
+    # Arguments
         nx: state dimension.
         nu: input dimension.
         np: parameter dimension.
         nv: virtual control dimension.
         N: the number of discrete time nodes.
 
-    Returns:
-        dyn: the dynamics, with empty (undefined) matrices. =#
+    # Returns
+        dyn: the dynamics, with empty (undefined) matrices.
+    """
     function T_DLTV(nx::T_Int,
                     nu::T_Int,
                     np::T_Int,
@@ -405,7 +418,7 @@ mutable struct T_DLTV
     end
 end
 
-#= Continuous-time trajectory data structure. =#
+""" Continuous-time trajectory data structure. """
 struct T_ContinuousTimeTrajectory
     t::T_RealVector  # The trajectory time nodes
     x::T_RealArray   # The trajectory values at the corresponding times
@@ -414,15 +427,16 @@ struct T_ContinuousTimeTrajectory
     #   :zoh (zeroth-order hold interpolation)
     interp::T_Symbol
 
-    #= Constructor.
+    """ Constructor.
 
-    Args:
+    # Arguments
         t: the trajectory time nodes.
         x: the trajectory values at the corresponding times.
         interp: the interpolation method.
 
-    Returns:
-        traj: the continuous-time trajectory. =#
+    # Returns
+        traj: the continuous-time trajectory.
+    """
     function T_ContinuousTimeTrajectory(
         t::T_RealVector,
         x::T_RealArray,
@@ -439,7 +453,7 @@ struct T_ContinuousTimeTrajectory
     end
 end
 
-#= Iteration progress information table to be printed in REPL. =#
+""" Iteration progress information table to be printed in REPL. """
 mutable struct T_Table
     headings::Array{T_String}      # Column headings
     sorting::Dict{T_Symbol, T_Int} # Column order
@@ -450,7 +464,7 @@ mutable struct T_Table
     __colw::T_IntVector  # Column widths
 end
 
-#= Error exception in SCvx algorithm. Hopefully it doesn't happen! =#
+""" Error exception in SCvx algorithm. Hopefully it doesn't happen! """
 struct SCPError <: Exception
     k::T_Int           # At what discrete time step the error occured
     status::SCPStatus  # Error status code
@@ -461,17 +475,18 @@ end
 # :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Table constructor.
+""" Table constructor.
 
-Args:
+# Arguments
     def: an array of column definitions, where each element is a tuple of:
         [1]: unique symbol referencing this colum.
         [2]: column heading.
         [3]: column format (for sprintf to convert into a string).
         [4]: column width.
 
-Returns:
-    table: the table structure. =#
+# Returns
+    table: the table structure.
+"""
 function T_Table(
     def::Vector{Tuple{T_Symbol, T_String, T_String, T_Int}},
     separator::T_String="|")::T_Table
@@ -502,9 +517,9 @@ end
 # :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Add a new column to the iteration info table.
+""" Add a new column to the iteration info table.
 
-Args:
+# Arguments
     col_sym: symbol that references this column.
     col_heading: the column heading.
     col_fmt: the column format (for sprintf to convert from native to string).
@@ -517,8 +532,9 @@ Args:
     sep: table column separator.
     row: the complete row format specification to add this new column to.
 
-Returns:
-    fmt: the updated string of table column format. =#
+# Returns
+    fmt: the updated string of table column format.
+"""
 function _types__add_table_column!(
     col_sym::Symbol,
     col_heading::T_String,

@@ -30,7 +30,7 @@ include("../utils/types.jl")
 # :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-""" Trajectory problem definition. """
+""" Trajectory problem definition."""
 mutable struct TrajectoryProblem
     # >> Variable sizes <<
     nx::T_Int         # Number of state variables
@@ -399,7 +399,7 @@ function problem_set_U!(pbm::TrajectoryProblem,
 end
 
 """
-    problem_set_s!(pbm, algo, s, C, DG, G)
+    problem_set_s!(pbm, algo, s[, C, DG, G])
 
 Define the nonconvex inequality path constraints. The SCvx algorithm assumes
 the function form `s(t, k, x, u, p)`. The GuSTO algorithm assumes the function

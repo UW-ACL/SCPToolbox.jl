@@ -26,7 +26,7 @@ include("scp.jl")
 # :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Structure holding the GuSTO algorithm parameters. =#
+""" Structure holding the GuSTO algorithm parameters."""
 struct GuSTOParameters <: SCPParameters
     N::T_Int          # Number of temporal grid nodes
     Nsub::T_Int       # Number of subinterval integration time nodes
@@ -55,7 +55,7 @@ struct GuSTOParameters <: SCPParameters
     solver_opts::Dict{T_String, Any} # Numerical solver options
 end
 
-#= GuSTO subproblem solution. =#
+""" GuSTO subproblem solution."""
 mutable struct GuSTOSubproblemSolution <: SCPSubproblemSolution
     iter::T_Int          # GuSTO iteration number
     # >> Discrete-time rajectory <<
@@ -89,7 +89,7 @@ mutable struct GuSTOSubproblemSolution <: SCPSubproblemSolution
 end
 const T_GuSTOSubSol = GuSTOSubproblemSolution # Alias
 
-#= Subproblem definition in JuMP format for the convex numerical optimizer. =#
+""" Subproblem definition in JuMP format for the convex numerical optimizer."""
 mutable struct GuSTOSubproblem <: SCPSubproblem
     iter::T_Int                  # GuSTO iteration number
     mdl::Model                   # The optimization problem handle
@@ -128,14 +128,18 @@ end
 # :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Construct the GuSTO problem definition.
+"""
+    GuSTOProblem(pars, traj)
 
-Args:
-    pars: GuSTO algorithm parameters.
-    traj: the underlying trajectory optimization problem.
+Construct the GuSTO problem definition.
 
-Returns:
-    pbm: the problem structure ready for being solved by GuSTO. =#
+# Arguments
+- `pars`: GuSTO algorithm parameters.
+- `traj`: the underlying trajectory optimization problem.
+
+# Returns
+- `pbm`: the problem structure ready for being solved by GuSTO.
+"""
 function GuSTOProblem(pars::GuSTOParameters,
                       traj::TrajectoryProblem)::SCPProblem
 
@@ -176,20 +180,22 @@ function GuSTOProblem(pars::GuSTOParameters,
     return pbm
 end
 
-#= Constructor for an empty convex optimization subproblem.
+"""
+    GuSTOSubproblem(pbm, iter, λ, η, ref)
 
-No cost or constraints. Just the decision variables and empty associated
-parameters.
+Constructor for an empty convex optimization subproblem. No cost or
+constraints. Just the decision variables and empty associated parameters.
 
-Args:
-    pbm: the GuSTO problem being solved.
-    iter: GuSTO iteration number.
-    λ: the soft penalty weight.
-    η: the trust region radius.
-    ref: the reference trajectory.
+# Arguments
+- `pbm`: the GuSTO problem being solved.
+- `iter`: GuSTO iteration number.
+- `λ`: the soft penalty weight.
+- `η`: the trust region radius.
+- `ref`: the reference trajectory.
 
-Returns:
-    spbm: the subproblem structure. =#
+# Returns
+- `spbm`: the subproblem structure.
+"""
 function GuSTOSubproblem(pbm::SCPProblem,
                          iter::T_Int,
                          λ::T_Real,
@@ -251,20 +257,23 @@ function GuSTOSubproblem(pbm::SCPProblem,
     return spbm
 end
 
-#= Construct a subproblem solution from a discrete-time trajectory.
+"""
+    GuSTOSubproblemSolution(x, u, p, iter, pbm)
 
-This leaves parameters of the solution other than the passed discrete-time
-trajectory unset.
+Construct a subproblem solution from a discrete-time trajectory. This leaves
+parameters of the solution other than the passed discrete-time trajectory
+unset.
 
-Args:
-    x: discrete-time state trajectory.
-    u: discrete-time input trajectory.
-    p: parameter vector.
-    iter: GuSTO iteration number.
-    pbm: the GuSTO problem definition.
+# Arguments
+- `x`: discrete-time state trajectory.
+- `u`: discrete-time input trajectory.
+- `p`: parameter vector.
+- `iter`: GuSTO iteration number.
+- `pbm`: the GuSTO problem definition.
 
-Returns:
-    subsol: subproblem solution structure. =#
+# Returns
+- `subsol`: subproblem solution structure.
+"""
 function GuSTOSubproblemSolution(
     x::T_RealMatrix,
     u::T_RealMatrix,
@@ -316,16 +325,19 @@ function GuSTOSubproblemSolution(
     return subsol
 end
 
-#= Construct subproblem solution from a subproblem object.
+"""
+    GuSTOSubproblemSolution(spbms)
 
-Expects that the subproblem argument is a solved subproblem (i.e. one to which
-numerical optimization has been applied).
+Construct subproblem solution from a subproblem object. Expects that the
+subproblem argument is a solved subproblem (i.e. one to which numerical
+optimization has been applied).
 
-Args:
-    spbm: the subproblem structure.
+# Arguments
+- `spbm`: the subproblem structure.
 
-Returns:
-    sol: subproblem solution. =#
+# Returns
+- `sol`: subproblem solution.
+"""
 function GuSTOSubproblemSolution(spbm::GuSTOSubproblem)::T_GuSTOSubSol
     # Extract the discrete-time trajectory
     x = value.(spbm.x)
@@ -355,14 +367,18 @@ end
 # :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Apply the GuSTO algorithm to solve the trajectory generation problem.
+"""
+    gusto_solve(pbm)
 
-Args:
-    pbm: the trajectory problem to be solved.
+Apply the GuSTO algorithm to solve the trajectory generation problem.
 
-Returns:
-    sol: the GuSTO solution structure.
-    history: GuSTO iteration data history. =#
+# Arguments
+- `pbm`: the trajectory problem to be solved.
+
+# Returns
+- `sol`: the GuSTO solution structure.
+- `history`: GuSTO iteration data history.
+"""
 function gusto_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution,
                                                    T_GuSTOSubSol,
                                                    Nothing},
@@ -430,16 +446,18 @@ end
 # :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Compute the initial trajectory guess.
+"""
+    _gusto__generate_initial_guess(pbm)
 
 Construct the initial trajectory guess. Calls problem-specific initial guess
 generator, which is converted to a GuSTOSubproblemSolution structure.
 
-Args:
-    pbm: the GuSTO problem structure.
+# Arguments
+- `pbm`: the GuSTO problem structure.
 
-Returns:
-    guess: the initial guess. =#
+# Returns
+- `guess`: the initial guess.
+"""
 function _gusto__generate_initial_guess(
     pbm::SCPProblem)::T_GuSTOSubSol
 
@@ -450,10 +468,14 @@ function _gusto__generate_initial_guess(
     return guess
 end
 
-#= Define the subproblem cost function.
+"""
+    _gusto__add_cost!(spbm)
 
-Args:
-    spbm: the subproblem definition. =#
+Define the subproblem cost function.
+
+# Arguments
+- `spbm`: the subproblem definition.
+"""
 function _gusto__add_cost!(spbm::GuSTOSubproblem)::Nothing
 
     # Variables and parameters
@@ -478,21 +500,24 @@ function _gusto__add_cost!(spbm::GuSTOSubproblem)::Nothing
     return nothing
 end
 
-#= Compute the original cost function.
+"""
+    _gusto__original_cost(x, u, p, spbm[, mode])
 
-This function has two "modes": the (default) convex mode computes the convex
-version of the cost (where all non-convexity has been convexified), while the
-nonconvex mode computes the fully nonlinear cost.
+Compute the original cost function. This function has two "modes": the
+(default) convex mode computes the convex version of the cost (where all
+non-convexity has been convexified), while the nonconvex mode computes the
+fully nonlinear cost.
 
-Args:
-    x: the discrete-time state trajectory.
-    u: the discrete-time input trajectory.
-    p: the parameter vector.
-    spbm: the subproblem structure.
-    mode: (optional) either :convex (default) or :nonconvex.
+# Arguments
+- `x`: the discrete-time state trajectory.
+- `u`: the discrete-time input trajectory.
+- `p`: the parameter vector.
+- `spbm`: the subproblem structure.
+- `mode`: (optional) either :convex (default) or :nonconvex.
 
-Returns:
-    cost: the original cost. =#
+# Returns
+- `cost`: the original cost.
+"""
 function _gusto__original_cost(x::T_OptiVarMatrix,
                                u::T_OptiVarMatrix,
                                p::T_OptiVarVector,
@@ -588,22 +613,24 @@ function _gusto__original_cost(x::T_OptiVarMatrix,
     return cost
 end
 
-#= Compute a soft penalty cost on the state constraints.
+"""
+    _gusto__state_penalty_cost(x, p, spbm[, mode])
 
-This includes the convex state constraints x∈X and the generally nonconvex path
-constraints s(x, u, p)<=0.
+Compute a soft penalty cost on the state constraints. This includes the convex
+state constraints x∈X and the generally nonconvex path constraints s(x, u,
+p)<=0.
 
-Args:
-    x: the discrete-time state trajectory.
-    u: the discrete-time input trajectory.
-    p: the parameter vector.
-    spbm: the subproblem structure.
-    mode: (optional) either :convex (default) or :nonconvex.
+# Arguments
+- `x`: the discrete-time state trajectory.
+- `p`: the parameter vector.
+- `spbm`: the subproblem structure.
+- `mode`: (optional) either :convex (default) or :nonconvex.
 
-Returns:
-    cost_st: the original cost. =#
-function _gusto__state_penalty_cost(x::T_OptiVarMatrix,
-                                    p::T_OptiVarVector,
+# Returns
+- `cost_st`: the original cost.
+"""
+function _gusto__state_penalty_cost(x::T_RealMatrix,
+                                    p::T_RealVector,
                                     spbm::GuSTOSubproblem,
                                     mode::T_Symbol=:convex)::T_Objective
 
@@ -670,25 +697,26 @@ function _gusto__state_penalty_cost(x::T_OptiVarMatrix,
     return cost_st
 end
 
-#= Compute a smooth, convex and nondecreasing penalization function.
+"""
+    _gusto__soft_penalty(spbm, f[, dfdx, dfdp, dx, dp])
 
-Basic idea: the penalty is zero if quantity f<0, else the penalty is positive
-(and grows as f becomes more positive).
+Compute a smooth, convex and nondecreasing penalization function. Basic idea:
+the penalty is zero if quantity f<0, else the penalty is positive (and grows as
+f becomes more positive). If the Jacobian values are passed in, a linearized
+version of the penalty function is computed. If a Jacobians (e.g. d/dx, or
+d/dp) is zero, then you can pass `nothing` in its place.
 
-If the Jacobian values are passed in, a linearized version of the penalty
-function is computed. If a Jacobians (e.g. d/dx, or d/dp) is zero, then
-you can pass `nothing` in its place.
+# Arguments
+- `spbm`: the subproblem structure.
+- `f`: the quantity to be penalized.
+- `dfdx`: (optional) Jacobian of f wrt state.
+- `dfdp`: (optional) Jacobian of f wrt parameter vector.
+- `dx`: (optional) state vector deviation from reference.
+- `dp`: (optional) parameter vector deviation from reference.
 
-Args:
-    spbm: the subproblem structure.
-    f: the quantity to be penalized.
-    dfdx: (optional) Jacobian of f wrt state.
-    dfdp: (optional) Jacobian of f wrt parameter vector.
-    dx: (optional) state vector deviation from reference.
-    dp: (optional) parameter vector deviation from reference.
-
-Returns:
-    h: penalization function value. =#
+# Returns
+- `h`: penalization function value.
+"""
 function _gusto__soft_penalty(
     spbm::GuSTOSubproblem,
     f::T_OptiVar,
@@ -754,27 +782,31 @@ function _gusto__soft_penalty(
     return h
 end
 
-#= Compute the trust region constraint soft penalty.
+"""
+    _gusto__trust_region_cost(x, p, spbm[, mode; raw])
 
-This function has two "modes": the (default) convex mode computes the convex
-version of the cost (where all non-convexity has been convexified), while the
-nonconvex mode computes the fully nonlinear cost.
+Compute the trust region constraint soft penalty. This function has two
+"modes": the (default) convex mode computes the convex version of the cost
+(where all non-convexity has been convexified), while the nonconvex mode
+computes the fully nonlinear cost.
 
-Args:
-    x: the discrete-time state trajectory.
-    p: the parameter vector.
-    spbm: the subproblem structure.
-    mode: (optional) either :convex (default) or :nonconvex.
-    raw: (optional) the value false (default) means to integrate and return the
-        integrated penalty. Otherwise, if true, then return the actual trust
-        region left-hand sides (which should be <=0 if the trust region
-        constraints are satisfied).
+# Arguments
+- `x`: the discrete-time state trajectory.
+- `p`: the parameter vector.
+- `spbm`: the subproblem structure.
+- `mode`: (optional) either :convex (default) or :nonconvex.
 
-Returns:
-    cost_tr: if raw is false, the trust region soft penalty cost.
-    --OR--
-    tr: if raw is true, the trust regions left-hand sides (which should
-        all be <=0 if the trust region constraints are satisfied). =#
+# Keywords
+- `raw`: (optional) the value false (default) means to integrate and return the
+  integrated penalty. Otherwise, if true, then return the actual trust region
+  left-hand sides (which should be <=0 if the trust region constraints are
+  satisfied).
+
+# Returns
+- `cost_tr`: if raw is false, the trust region soft penalty cost; or
+- `tr`: if raw is true, the trust regions left-hand sides (which should all be
+  <=0 if the trust region constraints are satisfied).
+"""
 function _gusto__trust_region_cost(x::T_OptiVarMatrix,
                                    p::T_OptiVarVector,
                                    spbm::GuSTOSubproblem,
@@ -840,14 +872,18 @@ function _gusto__trust_region_cost(x::T_OptiVarMatrix,
     return (raw) ? tr : cost_tr
 end
 
-#= Compute the virtual control penalty.
+"""
+    _gusto__virtual_control_cost(vd, spbm)
 
-Args:
-    vd: the discrete-time dynamics virtual control trajectory.
-    spbm: the subproblem structure.
+Compute the virtual control penalty.
 
-Returns:
-    cost_vc: the virtual control penalty cost. =#
+# Arguments
+- `vd`: the discrete-time dynamics virtual control trajectory.
+- `spbm`: the subproblem structure.
+
+# Returns
+- `cost_vc`: the virtual control penalty cost.
+"""
 function _gusto__virtual_control_cost(vd::T_OptiVarMatrix,
                                       spbm::GuSTOSubproblem)::T_Objective
 
@@ -873,13 +909,17 @@ function _gusto__virtual_control_cost(vd::T_OptiVarMatrix,
     return cost_vc
 end
 
-#= Check if stopping criterion is triggered.
+"""
+    _gusto__check_stopping_criterion!(spbm)
 
-Args:
-    spbm: the subproblem definition.
+Check if stopping criterion is triggered.
 
-Returns:
-    stop: true if stopping criterion holds. =#
+# Arguments
+- `spbm`: the subproblem definition.
+
+# Returns
+- `stop`: true if stopping criterion holds.
+"""
 function _gusto__check_stopping_criterion!(spbm::GuSTOSubproblem)::T_Bool
 
     # Extract values
@@ -908,15 +948,19 @@ function _gusto__check_stopping_criterion!(spbm::GuSTOSubproblem)::T_Bool
     return stop
 end
 
-#= Compute the new reference, trust region, and soft penalty.
+"""
+    _gusto__update_trust_region!(spbm)
 
-Args:
-    spbm: the subproblem definition.
+Compute the new reference, trust region, and soft penalty.
 
-Returns:
-    next_ref: reference trajectory for the next iteration.
-    next_η: trust region radius for the next iteration.
-    next_λ: soft penalty weight for the next iteration. =#
+# Arguments
+- `spbm`: the subproblem definition.
+
+# Returns
+- `next_ref`: reference trajectory for the next iteration.
+- `next_η`: trust region radius for the next iteration.
+- `next_λ`: soft penalty weight for the next iteration.
+"""
 function _gusto__update_trust_region!(
     spbm::GuSTOSubproblem)::Tuple{GuSTOSubproblemSolution,
                                   T_Real,
@@ -969,18 +1013,21 @@ function _gusto__update_trust_region!(
     return next_ref, next_η, next_λ
 end
 
-#= Apply the low-level GuSTO trust region update rule.
+"""
+    _gusto__update_rule!(spbm)
 
-Based on the obtained subproblem solution, this computes the new trust region
-value, soft penalty weight, and reference trajectory.
+Apply the low-level GuSTO trust region update rule. Based on the obtained
+subproblem solution, this computes the new trust region value, soft penalty
+weight, and reference trajectory.
 
-Args:
-    spbm: the subproblem definition.
+# Arguments
+- `spbm`: the subproblem definition.
 
-Returns:
-    next_ref: reference trajectory for the next iteration.
-    next_η: trust region radius for the next iteration.
-    next_λ: soft penalty weight for the next iteration. =#
+# Returns
+- `next_ref`: reference trajectory for the next iteration.
+- `next_η`: trust region radius for the next iteration.
+- `next_λ`: soft penalty weight for the next iteration.
+"""
 function _gusto__update_rule!(
     spbm::GuSTOSubproblem)::Tuple{GuSTOSubproblemSolution,
                                   T_Real,
@@ -1104,11 +1151,15 @@ function _gusto__update_rule!(
     return next_ref, next_η, next_λ
 end
 
-#= Print command line info message.
+"""
+    _gusto__print_info(spbm[, err])
 
-Args:
-    spbm: the subproblem that was solved.
-    err: a GuSTO-specific error message. =#
+Print command line info message.
+
+# Arguments
+- `spbm`: the subproblem that was solved.
+- `err`: (optional) a GuSTO-specific error message.
+"""
 function _gusto__print_info(spbm::GuSTOSubproblem,
                             err::Union{Nothing, SCPError}=nothing)::Nothing
 
