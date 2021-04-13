@@ -916,16 +916,23 @@ function plot_timeseries_bound!(ax::PyPlot.PyObject,
     return nothing
 end
 
-""" Draw ellipsoids on the currently active plot.
+"""
+    plot_ellipsoids!(ax, E[, axes][; label])
+
+Draw ellipsoids on the currently active plot.
 
 # Arguments
-    ax: the figure axis object.
-    E: array of ellipsoids.
-    axes: (optional) which 2 axes to project onto.
+- `ax`: the figure axis object.
+- `E`: array of ellipsoids.
+- `axes`: (optional) which 2 axes to project onto.
+
+# Keywords
+- `label`: (optional) legend label.
 """
 function plot_ellipsoids!(ax::PyPlot.PyObject,
                           E::Vector{T_Ellipsoid},
-                          axes::T_IntVector=[1, 2])::Nothing
+                          axes::T_IntVector=[1, 2];
+                          label::Union{T_String,Nothing}=nothing)::Nothing
     θ = LinRange(0.0, 2*pi, 100)
     circle = hcat(cos.(θ), sin.(θ))'
     for i = 1:length(E)
@@ -936,21 +943,30 @@ function plot_ellipsoids!(ax::PyPlot.PyObject,
         ax.fill(x, y,
                 facecolor=rgb2pyplot(fc, a=0.5),
                 edgecolor="#26415d",
-                linewidth=1)
+                linewidth=1,
+                label=(i==1) ? label : nothing)
     end
     return nothing
 end
 
-""" Draw rectangular prisms on the current active plot.
+"""
+    plot_prisms!(ax, H[, axes][; label])
+
+Draw rectangular prisms on the current active plot.
 
 # Arguments
-    ax: the figure axis object.
-    H: array of 3D hyperrectangle sets.
-    axes: (optional) which 2 axes to project onto.
+- `ax`: the figure axis object.
+- `H`: array of 3D hyperrectangle sets.
+- `axes`: (optional) which 2 axes to project onto.
+
+# Keywords
+- `label`: (optional) legend label.
 """
 function plot_prisms!(ax::PyPlot.PyObject,
                       H::Vector{T_Hyperrectangle},
-                      axes::T_IntVector=[1, 2])::Nothing
+                      axes::T_IntVector=[1, 2];
+                      label::Union{T_String,Nothing}=nothing)::Nothing
+    patch = nothing
     for i = 1:length(H)
         Hi = H[i]
         x, y = axes
@@ -959,13 +975,10 @@ function plot_prisms!(ax::PyPlot.PyObject,
         x, y = vertices[1, :], vertices[2, :]
         fc = parse(RGB, "#5da9a1")
         ax.fill(x, y,
+                linewidth=1,
                 facecolor=rgb2pyplot(fc, a=0.5),
-                linewidth=0)
-        ax.plot(x, y,
-                color="#427d77",
-                solid_joinstyle="round",
-                solid_capstyle="round",
-                linewidth=1)
+                edgecolor="#427d77",
+                label=(i==1) ? label : nothing)
     end
     return nothing
 end
@@ -1040,6 +1053,15 @@ function plot_convergence(history, name::T_String)::Nothing
             markeredgewidth=0,
             clip_on=false,
             zorder=100)
+
+    # Set y ticks
+    # Based on: https://stackoverflow.com/a/64840431
+    y_major = matplotlib.ticker.LogLocator(base = 10.0, numticks = 5)
+    ax.yaxis.set_major_locator(y_major)
+    y_minor = matplotlib.ticker.LogLocator(
+        base = 10.0, subs = (1:10)*0.1, numticks = 10)
+    ax.yaxis.set_minor_locator(y_minor)
+    ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
 
     ax_top = ax
 
@@ -1219,53 +1241,85 @@ function create_figure(size::Tuple{T, V})::Figure where {T<:Real, V<:Real}
     return fig
 end
 
-""" Save the current figure to a PDF file.
+"""
+    save_figure(filename, algo[; tmp])
 
-The filename is prepended with the name of the SCP algorithm used for the
-solution.
+Save the current figure to a PDF file. The filename is prepended with the name
+of the SCP algorithm used for the solution.
 
 # Arguments
-    filename: the filename of the figure.
-    algo: the SCP algorithm string (format
-        "<SCP_ALGO> (backend: <CVX_ALGO>)").
-    tmp: (optional) whether this is a temporary file.
+- `filename`: the filename of the figure.
+- `algo`: the SCP algorithm string (format "<SCP_ALGO> (backend: <CVX_ALGO>)").
+
+# Keywords
+- `tmp`: (optional) whether this is a temporary file.
 """
+_helper__tight_layout_applied = false
 function save_figure(filename::T_String, algo::T_String;
                      tmp::T_Bool=false)::Nothing
+
+    global _helper__tight_layout_applied
+
     algo = lowercase(split(algo, " "; limit=2)[1])
-    plt.tight_layout()
+
+    # Apply tight layout, only do this **once** per figure
+    if !_helper__tight_layout_applied
+        plt.tight_layout()
+        _helper__tight_layout_applied = true
+    end
+
+    # Save figure
     if !tmp
         plt.savefig(@sprintf("../../figures/%s_%s.pdf", algo, filename),
-                    bbox_inches="tight", facecolor=zeros(4))
+                    bbox_inches="tight", pad_inches=0.01, facecolor=zeros(4))
         plt.close()
+        _helper__tight_layout_applied = false # reset
     else
         plt.savefig(@sprintf("/tmp/%s_%s.pdf", algo, filename),
-                    bbox_inches="tight", facecolor=zeros(4))
+                    bbox_inches="tight", pad_inches=0.01, facecolor=zeros(4))
     end
+
     return nothing
 end
 
-""" Set axis limits with an equal aspect ratio (i.e. circles appear as circles).
+"""
+    set_axis_equal(ax, lims)
+
+Set axis limits with an equal aspect ratio (i.e. circles appear as circles).
 
 # Arguments
-* `ax`: the axis object.
-* `xmin`: the plot's minimum x-value.
-* `xmax`: the plot's maximum x-value.
-* `ymin`: the plot's minimum y-value.
+- `ax`: the axis object.
+- `lims`: a four-tuple of scalars (xmin,xmax,ymin,ymax). At least one of these
+  has to be `missing`, which means the bound of that limit is decided by the
+  scaling amount.
 """
-function set_axis_equal(ax::PyPlot.PyObject,
-                        xmin::T_Real,
-                        xmax::T_Real,
-                        ymin::T_Real)::Nothing
+function set_axis_equal(
+    ax::PyPlot.PyObject,
+    lims::Tuple{Union{Real, Missing},
+                Union{Real, Missing},
+                Union{Real, Missing},
+                Union{Real, Missing}})::Nothing
+
     ax.axis("equal")
     save_figure("scp_tmp_fig", "", tmp=true)
     x_rng = ax.get_xlim()
     y_rng = ax.get_ylim()
     ar = (y_rng[2]-y_rng[1])/(x_rng[2]-x_rng[1])
+
     ax.axis("auto")
-    ymax = ymin+ar*(xmax-xmin)
+    xmin, xmax, ymin, ymax = lims
+    if ismissing(xmin)
+        xmin = xmax-(ymax-ymin)/ar
+    elseif ismissing(xmax)
+        xmax = xmin+(ymax-ymin)/ar
+    elseif ismissing(ymin)
+        ymin = ymax-ar*(xmax-xmin)
+    elseif ismissing(ymax)
+        ymax = ymin+ar*(xmax-xmin)
+    end
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(ymin, ymax)
+
     return nothing
 end
 

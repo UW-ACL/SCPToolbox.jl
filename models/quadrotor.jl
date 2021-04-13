@@ -152,17 +152,17 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
     cmap_offset = 0.1
     alph_offset = 0.3
 
-    fig = create_figure((3, 4))
+    fig = create_figure((2.58, 4))
     ax = fig.add_subplot()
 
     ax.grid(linewidth=0.3, alpha=0.5)
     ax.set_axisbelow(true)
     ax.set_facecolor("white")
 
-    ax.set_xlabel("East position [m]")
-    ax.set_ylabel("North position [m]")
+    ax.set_xlabel("East position \$r_1\$ [m]")
+    ax.set_ylabel("North position \$r_2\$ [m]")
 
-    plot_ellipsoids!(ax, mdl.env.obs)
+    plot_ellipsoids!(ax, mdl.env.obs; label="Obstacle")
 
     # ..:: Draw the trajectories ::..
     for i = 0:num_iter
@@ -183,6 +183,13 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
         pos = trj.xd[mdl.vehicle.id_r, :]
         x, y = pos[1, :], pos[2, :]
 
+        label = nothing
+        if i == 0
+            label = "Initial \$r\$"
+        elseif i == num_iter
+            label = "Converged \$r\$"
+        end
+
         ax.plot(x, y,
                 linestyle="none",
                 marker=shp,
@@ -190,11 +197,16 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
                 markerfacecolor=clr,
                 markeredgecolor=(1, 1, 1, alph),
                 markeredgewidth=0.3,
-                clip_on=false,
+                label=label,
                 zorder=100)
     end
 
-    set_axis_equal(ax, -1.0, 4.0, -0.5)
+    ax.set_xticks(-0.5:1:5)
+
+    leg = ax.legend(framealpha=0.8, fontsize=8, loc="upper left")
+    leg.set_zorder(200)
+
+    set_axis_equal(ax, (-0.5, missing, -0.5, 6.5))
 
     save_figure("quadrotor_traj_iters", algo)
 
@@ -221,22 +233,22 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
     v_cmap = matplotlib.cm.ScalarMappable(norm=v_nrm, cmap=v_cmap)
     u_scale = 0.2
 
-    fig = create_figure((3.13, 4))
+    fig = create_figure((3.27, 4))
     ax = fig.add_subplot()
 
     ax.grid(linewidth=0.3, alpha=0.5)
     ax.set_axisbelow(true)
     ax.set_facecolor("white")
 
-    ax.set_xlabel("East position [m]")
-    ax.set_ylabel("North position [m]")
+    ax.set_xlabel("East position \$r_1\$ [m]")
+    ax.set_ylabel("North position \$r_2\$ [m]")
 
     # Colorbar for velocity norm
     plt.colorbar(v_cmap,
                  aspect=40,
-                 label="Velocity [m/s]")
+                 label="Velocity \$\\|\\dot r\\|_2\$ [m/s]")
 
-    plot_ellipsoids!(ax, mdl.env.obs)
+    plot_ellipsoids!(ax, mdl.env.obs; label="Obstacle")
 
     # ..:: Draw the final continuous-time position trajectory ::..
     # Collect the continuous-time trajectory data
@@ -265,6 +277,20 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
                 zorder=100)
     end
 
+
+    # ..:: Draw the discrete-time positions trajectory ::..
+    pos = sol.xd[mdl.vehicle.id_r, :]
+    x, y = pos[1, :], pos[2, :]
+    ax.plot(x, y,
+            linestyle="none",
+            marker="o",
+            markersize=3,
+            markerfacecolor=dt_clr,
+            markeredgecolor="white",
+            markeredgewidth=0.3,
+            label="\$r\$",
+            zorder=100)
+
     # ..:: Draw the acceleration vector ::..
     acc = sol.ud[mdl.vehicle.id_u, :]
     pos = sol.xd[mdl.vehicle.id_r, :]
@@ -277,24 +303,16 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
                 color="#db6245",
                 linewidth=1.5,
                 solid_capstyle="round",
-                zorder=100)
+                label=(k==1) ? "\$a\$ (scaled)" : nothing,
+                zorder=99)
     end
 
+    ax.set_xticks(-0.5:1:5)
 
-    # ..:: Draw the discrete-time positions trajectory ::..
-    pos = sol.xd[mdl.vehicle.id_r, :]
-    x, y = pos[1, :], pos[2, :]
-    ax.plot(x, y,
-            linestyle="none",
-            marker="o",
-            markersize=3,
-            markerfacecolor=dt_clr,
-            markeredgecolor="white",
-            markeredgewidth=0.3,
-            clip_on=false,
-            zorder=100)
+    leg = ax.legend(framealpha=0.8, fontsize=8, loc="upper left")
+    leg.set_zorder(200)
 
-    set_axis_equal(ax, -0.25, 3.5, -0.5)
+    set_axis_equal(ax, (-0.5, missing, -0.5, 6.5))
 
     save_figure("quadrotor_final_traj", algo)
 
@@ -317,7 +335,7 @@ function plot_input_norm(mdl::QuadrotorProblem,
     y_top = 25.0
     y_bot = 0.0
 
-    fig = create_figure((5, 2.5))
+    fig = create_figure((5, 2.75))
     ax = fig.add_subplot()
 
     ax.grid(linewidth=0.3, alpha=0.5)
@@ -326,7 +344,7 @@ function plot_input_norm(mdl::QuadrotorProblem,
     ax.autoscale(tight=true)
 
     ax.set_xlabel("Time [s]")
-    ax.set_ylabel("Acceleration [m/s\$^2\$]")
+    ax.set_ylabel("Acceleration \$\\|a\\|_2\$ [m/s\$^2\$]")
 
     # ..:: Acceleration bounds ::..
     bnd_max = mdl.vehicle.u_max
@@ -348,26 +366,40 @@ function plot_input_norm(mdl::QuadrotorProblem,
     time = sol.td*sol.p[mdl.vehicle.id_t]
     acc_vec = sol.ud[mdl.vehicle.id_u, :]
     acc_nrm = T_RealVector([norm(@k(acc_vec)) for k in 1:size(acc_vec, 2)])
-    ax.plot(time, acc_nrm,
-            linestyle="none",
-            marker="o",
-            markersize=5,
-            markeredgewidth=0,
-            markerfacecolor=clr,
-            clip_on=false,
-            zorder=100)
+    for visible in [true, false]
+        ax.plot(visible ? time : [],
+                visible ? acc_nrm : [],
+                linestyle=visible ? "none" : "-",
+                color=visible ? nothing : clr,
+                linewidth=2,
+                marker="o",
+                markersize=5,
+                markeredgewidth=0,
+                markerfacecolor=clr,
+                zorder=100-T_Int(!visible)*200,
+                clip_on=!visible,
+                label=visible ? nothing : "\$\\|a\\|_2\$")
+    end
 
     # ..:: Slack input (discrete-time) ::..
     σ = sol.ud[mdl.vehicle.id_σ, :]
     ax.plot(time, σ,
             linestyle="none",
             marker="h",
-            markersize=2.5,
-            markeredgecolor="white",
+            markersize=4,
+            markeredgecolor=clr,
             markeredgewidth=0.3,
             markerfacecolor="#f1d46a",
             clip_on=false,
-            zorder=100)
+            zorder=100,
+            label="\$\\sigma\$")
+
+    leg = ax.legend(framealpha=0.8, fontsize=8, loc="upper right")
+    leg.set_zorder(200)
+
+    tf_max = round(tf, digits=5)
+    ax.set_xlim((0.0, tf_max))
+    ax.set_xticks(LinRange(0, tf_max, 6))
 
     save_figure("quadrotor_input", algo)
 
@@ -389,7 +421,7 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
     tf = sol.p[mdl.vehicle.id_t]
     y_top = 70.0
 
-    fig = create_figure((5, 2.5))
+    fig = create_figure((5, 2.75))
     ax = fig.add_subplot()
 
     ax.grid(linewidth=0.3, alpha=0.5)
@@ -399,7 +431,10 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
     ax.set_ylim((0, y_top))
 
     ax.set_xlabel("Time [s]")
-    ax.set_ylabel("Tilt angle [\$^\\circ\$]")
+    ax.set_ylabel(string("Tilt",
+                         " \$\\arccos({\\hat n^{\\scriptscriptstyle",
+                         "\\mathsf{T}}a}\\|a\\|_2^{-1})\$",
+                         " [\$^\\circ\$]"))
 
     # ..:: Tilt angle bounds ::..
     bnd_max = rad2deg(mdl.vehicle.tilt_max)
@@ -428,6 +463,10 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
             markerfacecolor=clr,
             clip_on=false,
             zorder=100)
+
+    tf_max = round(tf, digits=5)
+    ax.set_xlim((0.0, tf_max))
+    ax.set_xticks(LinRange(0, tf_max, 6))
 
     save_figure("quadrotor_tilt", algo)
 
