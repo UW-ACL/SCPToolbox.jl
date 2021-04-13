@@ -30,7 +30,7 @@ include("scp.jl")
 # :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Structure holding the SCvx algorithm parameters. =#
+""" Structure holding the SCvx algorithm parameters."""
 struct SCvxParameters <: SCPParameters
     N::T_Int          # Number of temporal grid nodes
     Nsub::T_Int       # Number of subinterval integration time nodes
@@ -53,7 +53,7 @@ struct SCvxParameters <: SCPParameters
     solver_opts::Dict{T_String, Any} # Numerical solver options
 end
 
-#= SCvx subproblem solution. =#
+""" SCvx subproblem solution."""
 mutable struct SCvxSubproblemSolution <: SCPSubproblemSolution
     iter::T_Int          # SCvx iteration number
     # >> Discrete-time rajectory <<
@@ -86,7 +86,7 @@ mutable struct SCvxSubproblemSolution <: SCPSubproblemSolution
     dyn::T_DLTV          # The dynamics
 end
 
-#= Subproblem definition in JuMP format for the convex numerical optimizer. =#
+""" Subproblem definition in JuMP format for the convex numerical optimizer."""
 mutable struct SCvxSubproblem <: SCPSubproblem
     iter::T_Int          # SCvx iteration number
     mdl::Model           # The optimization problem handle
@@ -127,14 +127,18 @@ end
 # :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Construct the SCvx problem definition.
+"""
+    SCvxProblem(pars, traj)
 
-Args:
-    pars: SCvx algorithm parameters.
-    traj: the underlying trajectory optimization problem.
+Construct the SCvx problem definition.
 
-Returns:
-    pbm: the problem structure ready for being solved by SCvx. =#
+# Arguments
+- `pars`: SCvx algorithm parameters.
+- `traj`: the underlying trajectory optimization problem.
+
+# Returns
+- `pbm`: the problem structure ready for being solved by SCvx.
+"""
 function SCvxProblem(pars::SCvxParameters,
                      traj::TrajectoryProblem)::SCPProblem
 
@@ -177,19 +181,21 @@ function SCvxProblem(pars::SCvxParameters,
     return pbm
 end
 
-#= Constructor for an empty convex optimization subproblem.
+"""
+    SCvxSubproblem(pbm, iter, η[, ref])
 
-No cost or constraints. Just the decision variables and empty associated
-parameters.
+Constructor for an empty convex optimization subproblem. No cost or
+constraints. Just the decision variables and empty associated parameters.
 
-Args:
-    pbm: the SCvx problem being solved.
-    iter: SCvx iteration number.
-    η: the trust region radius.
-    ref: (optional) the reference trajectory.
+# Arguments
+- `pbm`: the SCvx problem being solved.
+- `iter`: SCvx iteration number.
+- `η`: the trust region radius.
+- `ref`: (optional) the reference trajectory.
 
-Returns:
-    spbm: the subproblem structure. =#
+# Returns
+- `spbm`: the subproblem structure.
+"""
 function SCvxSubproblem(pbm::SCPProblem,
                         iter::T_Int,
                         η::T_Real,
@@ -253,20 +259,23 @@ function SCvxSubproblem(pbm::SCPProblem,
     return spbm
 end
 
-#= Construct a subproblem solution from a discrete-time trajectory.
+"""
+    SCvxSubproblemSolution(x, u, p, iter, pbm)
 
-This leaves parameters of the solution other than the passed discrete-time
-trajectory unset.
+Construct a subproblem solution from a discrete-time trajectory. This leaves
+parameters of the solution other than the passed discrete-time trajectory
+unset.
 
-Args:
-    x: discrete-time state trajectory.
-    u: discrete-time input trajectory.
-    p: parameter vector.
-    iter: SCvx iteration number.
-    pbm: the SCvx problem definition.
+# Arguments
+- `x`: discrete-time state trajectory.
+- `u`: discrete-time input trajectory.
+- `p`: parameter vector.
+- `iter`: SCvx iteration number.
+- `pbm`: the SCvx problem definition.
 
-Returns:
-    subsol: subproblem solution structure. =#
+# Returns
+- `subsol`: subproblem solution structure.
+"""
 function SCvxSubproblemSolution(
     x::T_RealMatrix,
     u::T_RealMatrix,
@@ -321,16 +330,19 @@ function SCvxSubproblemSolution(
     return subsol
 end
 
-#= Construct subproblem solution from a subproblem object.
+"""
+    Signature
 
-Expects that the subproblem argument is a solved subproblem (i.e. one to which
-numerical optimization has been applied).
+Construct subproblem solution from a subproblem object. Expects that the
+subproblem argument is a solved subproblem (i.e. one to which numerical
+optimization has been applied).
 
-Args:
-    spbm: the subproblem structure.
+# Arguments
+- `spbm`: the subproblem structure.
 
-Returns:
-    sol: subproblem solution. =#
+# Returns
+- `sol`: subproblem solution.
+"""
 function SCvxSubproblemSolution(spbm::SCvxSubproblem)::SCvxSubproblemSolution
     # Extract the discrete-time trajectory
     x = value.(spbm.x)
@@ -360,14 +372,18 @@ end
 # :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Apply the SCvx algorithm to solve the trajectory generation problem.
+"""
+    scvx_solve(pbm)
 
-Args:
-    pbm: the trajectory problem to be solved.
+Apply the SCvx algorithm to solve the trajectory generation problem.
 
-Returns:
-    sol: the SCvx solution structure.
-    history: SCvx iteration data history. =#
+# Arguments
+- `pbm`: the trajectory problem to be solved.
+
+# Returns
+- `sol`: the SCvx solution structure.
+- `history`: SCvx iteration data history.
+"""
 function scvx_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution, Nothing},
                                              SCPHistory}
     # ..:: Initialize ::..
@@ -435,31 +451,37 @@ end
 # :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Compute the initial trajectory guess.
+"""
+    _scvx__generate_initial_guess(pbm)
 
 Construct the initial trajectory guess. Calls problem-specific initial guess
 generator, which is converted to an SCvxSubproblemSolution structure.
 
-Args:
-    pbm: the SCvx problem structure.
+# Arguments
+- `pbm`: the SCvx problem structure.
 
-Returns:
-    guess: the initial guess. =#
+# Returns
+- `guess`: the initial guess.
+"""
 function _scvx__generate_initial_guess(
     pbm::SCPProblem)::SCvxSubproblemSolution
 
     # Construct the raw trajectory
     x, u, p = pbm.traj.guess(pbm.pars.N)
-    _scvx__correct_convex!(x, u, pbm)
+    _scvx__correct_convex!(x, u, p, pbm)
     guess = SCvxSubproblemSolution(x, u, p, 0, pbm)
 
     return guess
 end
 
-#= Add trust region constraint to the subproblem.
+"""
+    _scvx__add_trust_region!(spbm)
 
-Args:
-    spbm: the subproblem definition. =#
+Add trust region constraint to the subproblem.
+
+# Arguments
+- `spbm`: the subproblem definition.
+"""
 function _scvx__add_trust_region!(spbm::SCvxSubproblem)::Nothing
 
     # Variables and parameters
@@ -507,10 +529,14 @@ function _scvx__add_trust_region!(spbm::SCvxSubproblem)::Nothing
     return nothing
 end
 
-#= Define the subproblem cost function.
+"""
+    _scvx__add_cost!(spbm)
 
-Args:
-    spbm: the subproblem definition. =#
+Define the subproblem cost function.
+
+# Arguments
+- `spbm`: the subproblem definition.
+"""
 function _scvx__add_cost!(spbm::SCvxSubproblem)::Nothing
 
     # Variables and parameters
@@ -532,13 +558,17 @@ function _scvx__add_cost!(spbm::SCvxSubproblem)::Nothing
     return nothing
 end
 
-#= Check if stopping criterion is triggered.
+"""
+    _scvx__add_cost!(spbm)
 
-Args:
-    spbm: the subproblem definition.
+Check if stopping criterion is triggered.
 
-Returns:
-    stop: true if stopping criterion holds. =#
+# Arguments
+- `spbm`: the subproblem definition.
+
+# Returns
+- `stop`: true if stopping criterion holds.
+"""
 function _scvx__check_stopping_criterion!(spbm::SCvxSubproblem)::T_Bool
 
     # Extract values
@@ -564,18 +594,21 @@ function _scvx__check_stopping_criterion!(spbm::SCvxSubproblem)::T_Bool
     return stop
 end
 
-#= Compute the new reference and trust region.
+"""
+    _scvx__update_trust_region!(spbm)
 
-Apply the trust region update rule based on the most recent subproblem
-solution. This updates the trust region radius, and selects either the current
-or the reference solution to act as the next iteration's reference trajectory.
+Compute the new reference and trust region. Apply the trust region update rule
+based on the most recent subproblem solution. This updates the trust region
+radius, and selects either the current or the reference solution to act as the
+next iteration's reference trajectory.
 
-Args:
-    spbm: the subproblem definition.
+# Arguments
+- `spbm`: the subproblem definition.
 
-Returns:
-    next_ref: reference trajectory for the next iteration.
-    next_η: trust region radius for the next iteration. =#
+# Returns
+- `next_ref`: reference trajectory for the next iteration.
+- `next_η`: trust region radius for the next iteration.
+"""
 function _scvx__update_trust_region!(
     spbm::SCvxSubproblem)::Tuple{SCvxSubproblemSolution,
                                  T_Real}
@@ -599,7 +632,10 @@ function _scvx__update_trust_region!(
     return next_ref, next_η
 end
 
-#= Compute cost penalty at a particular instant.
+"""
+    _scvx__P(vd, vs)
+
+Compute cost penalty at a particular instant.
 
 This is the integrand of the overall cost penalty term for dynamics and
 nonconvex constraint violation.
@@ -607,43 +643,52 @@ nonconvex constraint violation.
 Note: **this function must match the penalty implemented in
 _scvx__add_cost!()**.
 
-Args:
-    vd: inconsistency in the dynamics ("defect").
-    vs: inconsistency in the nonconvex inequality constraints.
+# Arguments
+- `vd`: inconsistency in the dynamics ("defect").
+- `vs`: inconsistency in the nonconvex inequality constraints.
 
-Returns:
-    P: the penalty value. =#
+# Returns
+- `P`: the penalty value.
+"""
 function _scvx__P(vd::T_RealVector, vs::T_RealVector)::T_Real
     P = norm(vd, 1)+norm(vs, 1)
     return P
 end
 
-#= Compute cost penalty for boundary condition.
+"""
+    _scvx__Pf(g)
+
+Compute cost penalty for boundary condition.
 
 This is the cost penalty term for violating a boundary condition.
 
 Note: **this function must match the penalty implemented in
 _scvx__add_cost!()**.
 
-Args:
-    g: boundary condition value (zero if satisfied).
+# Arguments
+- `g`: boundary condition value (zero if satisfied).
 
-Returns:
-    Pf: the penalty value. =#
+# Returns
+- `Pf`: the penalty value.
+"""
 function _scvx__Pf(g::T_RealVector)::T_Real
     Pf = norm(g, 1)
     return Pf
 end
 
-#= Compute the subproblem cost virtual control penalty term.
+"""
+    _scvx__compute_linear_cost_penalty!(spbm)
 
-Args:
-    spbm: the subproblem definition. =#
+Compute the subproblem cost virtual control penalty term.
+
+# Arguments
+- `spbm`: the subproblem definition.
+"""
 function _scvx__compute_linear_cost_penalty!(spbm::SCvxSubproblem)::Nothing
     # Variables and parameters
     N = spbm.def.pars.N
     λ = spbm.def.pars.λ
-    τ_grid = spbm.def.common.τ_grid
+    t = spbm.def.common.t_grid
     E = spbm.ref.dyn.E
     P = spbm.P
     Pf = spbm.Pf
@@ -665,12 +710,15 @@ function _scvx__compute_linear_cost_penalty!(spbm::SCvxSubproblem)::Nothing
     end
     acc!(spbm.mdl, C(vcat(@first(Pf), vic), :l1))
     acc!(spbm.mdl, C(vcat(@last(Pf), vtc), :l1))
-    spbm.L_pen = trapz(λ*P, τ_grid)+sum(λ*Pf)
+    spbm.L_pen = trapz(λ*P, t)+sum(λ*Pf)
 
     return nothing
 end
 
-#= Compute the subproblem cost penalty based on actual constraint violation.
+"""
+    _scvx__actual_cost_penalty!(sol, pbm)
+
+Compute the subproblem cost penalty based on actual constraint violation.
 
 This computes the same cost penalty form as in the subproblem. However, instead
 of using virtual control terms, it uses defects from nonlinear propagation of
@@ -679,14 +727,15 @@ the dynamics and the actual values of the nonconvex inequality constraints.
 If the subproblem solution has already had this function called for it,
 re-computation is skipped and the already computed value is returned.
 
-Args:
-    sol: the subproblem solution.
-    pbm: the SCvx problem definition.
-    safe: (optional) whether to check that the coded penalty function
-        matches the optimization.
+# Arguments
+- `sol`: the subproblem solution.
+- `pbm`: the SCvx problem definition.
+- `safe`: (optional) whether to check that the coded penalty function matches
+  the optimization.
 
-Returns:
-    pen: the nonlinear cost penalty term. =#
+# Returns
+- `pen`: the nonlinear cost penalty term.
+"""
 function _scvx__actual_cost_penalty!(
     sol::SCvxSubproblemSolution,
     pbm::SCPProblem)::T_Real
@@ -695,7 +744,7 @@ function _scvx__actual_cost_penalty!(
     N = pbm.pars.N
     λ = pbm.pars.λ
     nx = pbm.traj.nx
-    τ_grid = pbm.common.τ_grid
+    t = pbm.common.t_grid
     x = sol.xd
     u = sol.ud
     p = sol.p
@@ -709,24 +758,28 @@ function _scvx__actual_cost_penalty!(
     P = T_RealVector(undef, N)
     for k = 1:N
         δk = (k<N) ? @k(δ) : zeros(nx)
-        sk = pbm.traj.s(@k(x), @k(u), sol.p)
+        sk = pbm.traj.s(@k(t), k, @k(x), @k(u), sol.p)
         sk = isempty(sk) ? [0.0] : sk
         @k(P) = λ*_scvx__P(δk, max.(sk, 0.0))
     end
-    pen = trapz(P, τ_grid)+λ*_scvx__Pf(gic)+λ*_scvx__Pf(gtc)
+    pen = trapz(P, t)+λ*_scvx__Pf(gic)+λ*_scvx__Pf(gtc)
 
     return pen
 end
 
-#= Compute the linear or nonlinear overall associated with a solution.
+"""
+    _scvx__solution_cost!(sol, kind, pbm)
 
-Args:
-    sol: the subproblem solution structure.
-    kind: whether to compute the linear or nonlinear problem cost.
-    pbm: the SCvx problem definition.
+Compute the linear or nonlinear overall associated with a solution.
 
-Returns:
-    cost: the optimal cost associated with this solution. =#
+# Arguments
+- `sol`: the subproblem solution structure.
+- `kind`: whether to compute the linear or nonlinear problem cost.
+- `pbm`: the SCvx problem definition.
+
+# Returns
+- `cost`: the optimal cost associated with this solution.
+"""
 function _scvx__solution_cost!(
     sol::SCvxSubproblemSolution,
     kind::T_Symbol,
@@ -750,17 +803,20 @@ function _scvx__solution_cost!(
     return cost
 end
 
-#= Apply the low-level SCvx trust region update rule.
+"""
+    _scvx__update_rule(spbm)
 
-This computes the new trust region value and reference trajectory, based on the
-obtained subproblem solution.
+Apply the low-level SCvx trust region update rule. This computes the new trust
+region value and reference trajectory, based on the obtained subproblem
+solution.
 
-Args:
-    spbm: the subproblem definition.
+# Arguments
+- `spbm`: the subproblem definition.
 
-Returns:
-    next_ref: reference trajectory for the next iteration.
-    next_η: trust region radius for the next iteration. =#
+# Returns
+- `next_ref`: reference trajectory for the next iteration.
+- `next_η`: trust region radius for the next iteration.
+"""
 function _scvx__update_rule(
     spbm::SCvxSubproblem)::Tuple{SCvxSubproblemSolution,
                                  T_Real}
@@ -810,11 +866,15 @@ function _scvx__update_rule(
     return next_ref, next_η
 end
 
-#= Mark a solution as unsafe to use.
+"""
+    _scvx__mark_unsafe!(sol, err)
 
-Args:
-    sol: subproblem solution.
-    err: the SCvx error that occurred. =#
+Mark a solution as unsafe to use.
+
+# Arguments
+- `sol`: subproblem solution.
+- `err`: the SCvx error that occurred.
+"""
 function _scvx__mark_unsafe!(sol::SCvxSubproblemSolution,
                              err::SCPError)::Nothing
     sol.status = err.status
@@ -822,26 +882,31 @@ function _scvx__mark_unsafe!(sol::SCvxSubproblemSolution,
     return nothing
 end
 
-#= Find closest trajectory that satisfies the convex path constraints.
+"""
+    _scvx__correct_convex!( x_ref, u_ref, p_ref, pbm)
+
+Find closest trajectory that satisfies the convex path constraints.
 
 Closeness is measured in an L1-norm sense.
 
-Args:
-    x_ref: the discrete-time state trajectory to be projected.
-    u_ref: the discrete-time input trajectory to be projected.
-    pbm: the SCvx problem definition. =#
+# Arguments
+- `x_ref`: the discrete-time state trajectory to be projected.
+- `u_ref`: the discrete-time input trajectory to be projected.
+- `p_ref`: the parameter vector to be projected.
+- `pbm`: the SCvx problem definition.
+"""
 function _scvx__correct_convex!(
     x_ref::T_RealMatrix,
     u_ref::T_RealMatrix,
+    p_ref::T_RealVector,
     pbm::SCPProblem)::Nothing
 
     # Parameters
     N = pbm.pars.N
     nx = pbm.traj.nx
     nu = pbm.traj.nu
+    np = pbm.traj.np
     scale = pbm.common.scale
-    cone_dim_x = 1+nx
-    cone_dim_u = 1+nu
 
     # Initialize the problem
     opti = SCvxSubproblem(pbm, 0, 0.0)
@@ -853,18 +918,22 @@ function _scvx__correct_convex!(
     # Add epigraph constraints to make a convex cost for JuMP
     xh_ref = scale.iSx*(x_ref.-scale.cx)
     uh_ref = scale.iSu*(u_ref.-scale.cu)
+    ph_ref = scale.iSp*(p_ref-scale.cp)
     dx = opti.xh-xh_ref
     du = opti.uh-uh_ref
+    dp = opti.ph-ph_ref
     epi_x = @variable(opti.mdl, [1:N], base_name="τx")
     epi_u = @variable(opti.mdl, [1:N], base_name="τu")
+    epi_p = @variable(opti.mdl, base_name="τp")
     C = T_ConvexConeConstraint
     for k = 1:N
         add_conic_constraint!(opti.mdl, C(vcat(@k(epi_x), @k(dx)), :l1))
         add_conic_constraint!(opti.mdl, C(vcat(@k(epi_u), @k(du)), :l1))
     end
+    add_conic_constraint!(opti.mdl, C(vcat(epi_p, dp), :l1))
 
     # Define the cost
-    cost = sum(epi_x)+sum(epi_u)
+    cost = sum(epi_x)+sum(epi_u)+epi_p
     set_objective_function(opti.mdl, cost)
     set_objective_sense(opti.mdl, MOI.MIN_SENSE)
 
@@ -876,6 +945,7 @@ function _scvx__correct_convex!(
     if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
         x_ref .= value.(opti.x)
         u_ref .= value.(opti.u)
+        p_ref .= value.(opti.p)
     else
         msg = string("Solver failed to find the closest initial guess ",
                      "that satisfies the convex constraints (%s)")
@@ -887,11 +957,15 @@ function _scvx__correct_convex!(
     return nothing
 end
 
-#= Print command line info message.
+"""
+    _scvx__print_info(spbm[, err])
 
-Args:
-    spbm: the subproblem that was solved.
-    err: an SCvx-specific error message. =#
+Print command line info message.
+
+# Arguments
+- `spbm`: the subproblem that was solved.
+- `err`: an SCvx-specific error message.
+"""
 function _scvx__print_info(spbm::SCvxSubproblem,
                            err::Union{Nothing, SCPError}=nothing)::Nothing
 

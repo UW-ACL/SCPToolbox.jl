@@ -29,11 +29,14 @@ include("../../utils/helper.jl")
 # :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-function define_problem!(pbm::TrajectoryProblem)::Nothing
+function define_problem!(pbm::TrajectoryProblem,
+                         algo::T_Symbol)::Nothing
     _common__set_dims!(pbm)
     _common__set_scale!(pbm)
-    _common__set_terminal_cost!(pbm)
+    _common__set_integration!(pbm)
+    _common__set_cost!(pbm, algo)
     _common__set_convex_constraints!(pbm)
+    _common__set_nonconvex_constraints!(pbm, algo)
     _common__set_bcs!(pbm)
 
     _common__set_guess!(pbm)
@@ -43,7 +46,10 @@ end
 
 function _common__set_dims!(pbm::TrajectoryProblem)::Nothing
 
-    problem_set_dims!(pbm, 13, 6, 1)
+    # Parameters
+    np = pbm.mdl.vehicle.id_δ[end]
+
+    problem_set_dims!(pbm, 13, 6, np)
 
     return nothing
 end
@@ -53,12 +59,30 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
     mdl = pbm.mdl
 
     veh, traj = mdl.vehicle, mdl.traj
+    min_pos, max_pos = min.(traj.r0, traj.rf), max.(traj.r0, traj.rf)
     for i in veh.id_r
-        min_pos = min(traj.r0[i], traj.rf[i])
-        max_pos = max(traj.r0[i], traj.rf[i])
-        problem_advise_scale!(pbm, :state, i, (min_pos, max_pos))
+        problem_advise_scale!(pbm, :state, i,
+                              (min_pos[i], max_pos[i]))
     end
-    problem_advise_scale!(pbm, :parameter, veh.id_t, (traj.tf_min, traj.tf_max))
+    problem_advise_scale!(pbm, :parameter, veh.id_t,
+                          (traj.tf_min, traj.tf_max))
+    for i in veh.id_δ
+        problem_advise_scale!(pbm, :parameter, i,
+                              (-100.0, 1.0))
+    end
+
+    return nothing
+end
+
+function _common__set_integration!(pbm::TrajectoryProblem)::Nothing
+
+    # Quaternion re-normalization on numerical integration step
+    problem_set_integration_action!(
+        pbm, pbm.mdl.vehicle.id_q,
+        (x, pbm) -> begin
+        xn = x/norm(x)
+        return xn
+        end)
 
     return nothing
 end
@@ -72,13 +96,17 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
     problem_set_guess!(
         pbm,
         (N, pbm) -> begin
+
+        # Parameters
         veh = pbm.mdl.vehicle
+        env = pbm.mdl.env
         traj = pbm.mdl.traj
-        # No existing reference provided - make a new guess
+
         # >> Parameter guess <<
         p = zeros(pbm.np)
         flight_time = 0.5*(traj.tf_min+traj.tf_max)
         p[veh.id_t] = flight_time
+
         # >> State guess <<
         x = T_RealMatrix(undef, pbm.nx, N)
         # @ Position/velocity L-shape trajectory @
@@ -132,26 +160,76 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
         ang_vel = rot_speed*rot_ax
         x[veh.id_ω, :] = straightline_interpolate(
             ang_vel, ang_vel, N)
+
+        # Update room SDF parameter guess
+        δ = reshape(view(p, veh.id_δ), env.n_iss, :)
+        for i = 1:env.n_iss
+        # ---
+        δi = view(δ, i, :)
+        roomi = env.iss[i]
+        for k = 1:N
+        # --
+        @k(δi) = 1-norm((@k(r)-roomi.c)./roomi.s, Inf)
+        # -- for k
+        end
+        # --- for i
+        end
+
         # >> Input guess <<
         idle = zeros(pbm.nu)
         u = straightline_interpolate(idle, idle, N)
+
         return x, u, p
         end)
 
     return nothing
 end
 
-function _common__set_terminal_cost!(pbm::TrajectoryProblem)::Nothing
+function _common__set_cost!(pbm::TrajectoryProblem,
+                            algo::T_Symbol)::Nothing
 
+    # Terminal cost
     problem_set_terminal_cost!(
         pbm, (x, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         traj = pbm.mdl.traj
         tdil = p[veh.id_t]
+        δ = p[veh.id_δ]
         tdil_max = traj.tf_max
         γ = traj.γ
-        return γ*(tdil/tdil_max)^2
+        return γ*(tdil/tdil_max)^2+1e-4*sum(-δ)
         end)
+
+    # Running cost
+    if algo==:scvx
+        problem_set_running_cost!(
+            pbm, algo,
+            (x, u, p, pbm) -> begin
+            traj = pbm.mdl.traj
+            veh = pbm.mdl.vehicle
+            T_max_sq = veh.T_max^2
+            M_max_sq = veh.M_max^2
+            T = u[veh.id_T]
+            M = u[veh.id_M]
+            γ = traj.γ
+            return (1-γ)*((T'*T)/T_max_sq+(M'*M)/M_max_sq)
+            end)
+    else
+        problem_set_running_cost!(
+            pbm, algo,
+            # Input quadratic penalty S
+            (p, pbm) -> begin
+            traj = pbm.mdl.traj
+            veh = pbm.mdl.vehicle
+            T_max_sq = veh.T_max^2
+            M_max_sq = veh.M_max^2
+            γ = traj.γ
+            S = zeros(pbm.nu, pbm.nu)
+            S[veh.id_T, veh.id_T] = (1-γ)*I(3)/T_max_sq
+            S[veh.id_M, veh.id_M] = (1-γ)*I(3)/M_max_sq
+            return S
+            end)
+    end
 
     return nothing
 end
@@ -160,26 +238,129 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the state
     problem_set_X!(
-        pbm, (x, pbm) -> begin
+        pbm, (t, k, x, p, pbm) -> begin
         traj = pbm.mdl.traj
         veh = pbm.mdl.vehicle
+        env = pbm.mdl.env
+
+        room = env.iss
+
+        r = x[veh.id_r]
+        v = x[veh.id_v]
+        ω = x[veh.id_ω]
+        tdil = p[veh.id_t]
+        δ = reshape(p[veh.id_δ], env.n_iss, :)
+
         C = T_ConvexConeConstraint
-        X = [C(vcat(veh.v_max, x[veh.id_v]), :soc),
-             C(vcat(veh.ω_max, x[veh.id_ω]), :soc)]
+        X = Array{C}(undef, 4+env.n_iss)
+        X[1:4] = [C(vcat(veh.v_max, v), :soc),
+                  C(vcat(veh.ω_max, ω), :soc),
+                  C(tdil-traj.tf_max, :nonpos),
+                  C(traj.tf_min-tdil, :nonpos)]
+        # Individual space station room SDFs
+        for i = 1:env.n_iss
+        X[i+4] = C(vcat(1-@k(δ)[i], (r-room[i].c)./room[i].s), :linf)
+        end
+
         return X
         end)
 
     # Convex path constraints on the input
     problem_set_U!(
-        pbm, (u, pbm) -> begin
+        pbm, (t, k, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
+
+        T = u[veh.id_T]
+        M = u[veh.id_M]
+
         C = T_ConvexConeConstraint
-        U = [C(vcat(veh.T_max, u[veh.id_T]), :soc),
-             C(vcat(veh.M_max, u[veh.id_M]), :soc)]
+        U = [C(vcat(veh.T_max, T), :soc),
+             C(vcat(veh.M_max, M), :soc)]
+
         return U
         end)
 
     return nothing
+end
+
+function _common__set_nonconvex_constraints!(
+    pbm::TrajectoryProblem,
+    algo::T_Symbol)::Nothing
+
+    # Constraint s
+    _ff__s = (t, k, x, u, p, pbm) -> begin
+        env = pbm.mdl.env
+        veh = pbm.mdl.vehicle
+        traj = pbm.mdl.traj
+
+        r = x[veh.id_r]
+        δ = @k(reshape(p[veh.id_δ], env.n_iss, :))
+
+        s = zeros(env.n_obs+1)
+        # Ellipsoidal obstacles
+        for i = 1:env.n_obs
+            # ---
+            E = env.obs[i]
+            s[i] = 1-E(r)
+            # ---
+        end
+        # Space station flight space SDF
+        d = logsumexp(δ; t=traj.hom)
+        s[end] = -d
+
+        return s
+    end
+
+    # Jacobian ds/dx
+    _ff__C = (t, k, x, u, p, pbm) -> begin
+        env = pbm.mdl.env
+        veh = pbm.mdl.vehicle
+        traj = pbm.mdl.traj
+
+        r = x[veh.id_r]
+
+        C = zeros(env.n_obs+1, pbm.nx)
+        # Ellipsoidal obstacles
+        for i = 1:env.n_obs
+            # ---
+            E = env.obs[i]
+            C[i, veh.id_r] = -∇(E, r)
+            # ---
+        end
+
+        return C
+    end
+
+    # Jacobian ds/dp
+    _ff__G = (t, k, x, u, p, pbm) -> begin
+        veh = pbm.mdl.vehicle
+        env = pbm.mdl.env
+        traj = pbm.mdl.traj
+
+        room = env.iss
+        E = T_RealMatrix(I(env.n_iss))
+
+        r = x[veh.id_r]
+        id_δ = @k(reshape(veh.id_δ, env.n_iss, :))
+        δ = p[id_δ]
+
+        G = zeros(env.n_obs+1, pbm.np)
+        # Space station flight space SDF
+        _, ∇d = logsumexp(δ, [E[:, i] for i=1:env.n_iss]; t=traj.hom)
+        G[end, id_δ] = -∇d
+
+        return G
+    end
+
+    if algo==:scvx
+        problem_set_s!(pbm, algo, _ff__s, _ff__C, nothing, _ff__G)
+    else
+        _ff___s = (t, k, x, p, pbm) -> _ff__s(t, k, x, nothing, p, pbm)
+        _ff___C = (t, k, x, p, pbm) -> _ff__C(t, k, x, nothing, p, pbm)
+        _ff___G = (t, k, x, p, pbm) -> _ff__G(t, k, x, nothing, p, pbm)
+        problem_set_s!(pbm, algo, _ff___s, _ff___C, _ff___G)
+    end
+
 end
 
 function _common__set_bcs!(pbm::TrajectoryProblem)::Nothing

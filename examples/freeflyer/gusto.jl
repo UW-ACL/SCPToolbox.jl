@@ -28,54 +28,14 @@ include("../../models/freeflyer.jl")
 # :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-mdl = FreeFlyerProblem()
+N = 50
+
+mdl = FreeFlyerProblem(N)
 pbm = TrajectoryProblem(mdl)
 
-define_problem!(pbm)
-
-# >> Special numerical integration <<
-
-# Quaternion re-normalization on numerical integration step
-problem_set_integration_action!(
-    pbm, mdl.vehicle.id_q,
-    (x, pbm) -> begin
-    xn = x/norm(x)
-    return xn
-    end)
-
-# >> Running cost to be minimized <<
-problem_set_running_cost!(
-    pbm,
-    # Input quadratic penalty S
-    (p, pbm) -> begin
-    traj = pbm.mdl.traj
-    veh = pbm.mdl.vehicle
-    T_max_sq = veh.T_max^2
-    M_max_sq = veh.M_max^2
-    γ = traj.γ
-    S = zeros(pbm.nu, pbm.nu)
-    S[veh.id_T, veh.id_T] = (1-γ)*I(3)/T_max_sq
-    S[veh.id_M, veh.id_M] = (1-γ)*I(3)/M_max_sq
-    return S
-    end,
-    # Jacobian dS/dp
-    nothing,
-    # Input-affine penalty ℓ
-    nothing,
-    # Jacobian dℓ/dx
-    nothing,
-    # Jacobian dℓ/dp
-    nothing,
-    # Additive penalty g
-    nothing,
-    # Jacobian dg/dx
-    nothing,
-    # Jacobian dg/dp
-    nothing)
+define_problem!(pbm, :gusto)
 
 # >> Dynamics constraint <<
-
-# The input-affine dynamics function
 _gusto_freeflyer__f = (x, p, pbm) -> begin
     veh = pbm.mdl.vehicle
     v = x[veh.id_v]
@@ -137,71 +97,14 @@ problem_set_dynamics!(
     return F
     end)
 
-# >> Nonconvex path inequality constraints <<
-problem_set_s!(
-    pbm,
-    # Constraint s
-    (x, p, pbm) -> begin
-    env = pbm.mdl.env
-    veh = pbm.mdl.vehicle
-    traj = pbm.mdl.traj
-    r = x[veh.id_r]
-    s = zeros(env.n_obs+3)
-    # Ellipsoidal obstacles
-    for i = 1:env.n_obs
-    # ---
-    E = env.obs[i]
-    s[i] = 1-E(r)
-    # ---
-    end
-    # Space station flight space
-    d_iss, _ = signed_distance(env.iss, r; t=traj.hom,
-                               a=traj.sdf_pwr)
-    s[end-2] = d_iss
-    # Flight time
-    s[end-1] = p[veh.id_t]-traj.tf_max
-    s[end] = traj.tf_min-p[veh.id_t]
-    return s
-    end,
-    # Jacobian ds/dx
-    (x, p, pbm) -> begin
-    env = pbm.mdl.env
-    veh = pbm.mdl.vehicle
-    traj = pbm.mdl.traj
-    r = x[veh.id_r]
-    C = zeros(env.n_obs+3, pbm.nx)
-    # Ellipsoidal obstacles
-    for i = 1:env.n_obs
-    # ---
-    E = env.obs[i]
-    C[i, veh.id_r] = -∇(E, r)
-    # ---
-    end
-    # Space station flight space
-    _, ∇d_iss = signed_distance(env.iss, r; t=traj.hom,
-                                a=traj.sdf_pwr)
-    C[end-2, veh.id_r] = ∇d_iss
-    return C
-    end,
-    # Jacobian ds/dp
-    (x, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    env = pbm.mdl.env
-    G = zeros(env.n_obs+3, pbm.np)
-    G[end-1, veh.id_t] = 1.0
-    G[end, veh.id_t] = -1.0
-    return G
-    end)
-
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: GuSTO algorithm parameters :::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-N = 50
 Nsub = 15
 iter_max = 50
 ω = 1e3
-λ_init = 13e3
+λ_init = 1e4
 λ_max = 1e9
 ρ_0 = 0.1
 ρ_1 = 0.5
@@ -212,8 +115,8 @@ iter_max = 50
 η_lb = 1e-3
 η_ub = 10.0
 μ = 0.8
-iter_μ = 15
-ε_abs = 1e-6
+iter_μ = 16
+ε_abs = 1e-5
 ε_rel = 0.01/100
 feas_tol = 1e-3
 pen = :quad

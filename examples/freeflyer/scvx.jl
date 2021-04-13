@@ -28,32 +28,12 @@ include("../../models/freeflyer.jl")
 # :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-mdl = FreeFlyerProblem()
+N = 50
+
+mdl = FreeFlyerProblem(N)
 pbm = TrajectoryProblem(mdl)
 
-define_problem!(pbm)
-
-# >> Special numerical integration <<
-
-# Quaternion re-normalization on numerical integration step
-problem_set_integration_action!(
-    pbm, mdl.vehicle.id_q,
-    (x, pbm) -> begin
-    xn = x/norm(x)
-    return xn
-    end)
-
-# >> Running cost to be minimized <<
-problem_set_running_cost!(pbm, (x, u, p, pbm) -> begin
-                          traj = pbm.mdl.traj
-                          veh = pbm.mdl.vehicle
-                          T_max_sq = veh.T_max^2
-                          M_max_sq = veh.M_max^2
-                          T = u[veh.id_T]
-                          M = u[veh.id_M]
-                          γ = traj.γ
-                          return (1-γ)*((T'*T)/T_max_sq+(M'*M)/M_max_sq)
-                          end)
+define_problem!(pbm, :scvx)
 
 # >> Dynamics constraint <<
 problem_set_dynamics!(pbm,
@@ -111,73 +91,10 @@ problem_set_dynamics!(pbm,
                       return F
                       end)
 
-# >> Nonconvex path inequality constraints <<
-problem_set_s!(
-    pbm,
-    # Constraint s
-    (x, u, p, pbm) -> begin
-    env = pbm.mdl.env
-    veh = pbm.mdl.vehicle
-    traj = pbm.mdl.traj
-    r = x[veh.id_r]
-    s = zeros(env.n_obs+3)
-    # Ellipsoidal obstacles
-    for i = 1:env.n_obs
-    # ---
-    E = env.obs[i]
-    s[i] = 1-E(r)
-    # ---
-    end
-    # Space station flight space
-    d_iss, _ = signed_distance(env.iss, r; t=traj.hom,
-                               a=traj.sdf_pwr)
-    s[end-2] = d_iss
-    # Flight time
-    s[end-1] = p[veh.id_t]-traj.tf_max
-    s[end] = traj.tf_min-p[veh.id_t]
-    return s
-    end,
-    # Jacobian ds/dx
-    (x, u, p, pbm) -> begin
-    env = pbm.mdl.env
-    veh = pbm.mdl.vehicle
-    traj = pbm.mdl.traj
-    r = x[veh.id_r]
-    C = zeros(env.n_obs+3, pbm.nx)
-    # Ellipsoidal obstacles
-    for i = 1:env.n_obs
-    # ---
-    E = env.obs[i]
-    C[i, veh.id_r] = -∇(E, r)
-    # ---
-    end
-    # Space station flight space
-    _, ∇d_iss = signed_distance(env.iss, r; t=traj.hom,
-                                a=traj.sdf_pwr)
-    C[end-2, veh.id_r] = ∇d_iss
-    return C
-    end,
-    # Jacobian ds/du
-    (x, u, p, pbm) -> begin
-    env = pbm.mdl.env
-    D = zeros(env.n_obs+3, pbm.nu)
-    return D
-    end,
-    # Jacobian ds/dp
-    (x, u, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    env = pbm.mdl.env
-    G = zeros(env.n_obs+3, pbm.np)
-    G[end-1, veh.id_t] = 1.0
-    G[end, veh.id_t] = -1.0
-    return G
-    end)
-
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: SCvx algorithm parameters ::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-N = 50
 Nsub = 15
 iter_max = 50
 λ = 1e3
@@ -187,9 +104,9 @@ iter_max = 50
 β_sh = 2.0
 β_gr = 2.0
 η_init = 1.0
-η_lb = 1e-3
+η_lb = 1e-6
 η_ub = 10.0
-ε_abs = 1e-6
+ε_abs = 1e-5
 ε_rel = 0.01/100
 feas_tol = 1e-3
 q_tr = Inf

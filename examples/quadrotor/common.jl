@@ -29,11 +29,13 @@ include("../../utils/helper.jl")
 # :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-function define_problem!(pbm::TrajectoryProblem)::Nothing
+function define_problem!(pbm::TrajectoryProblem,
+                         algo::T_Symbol)::Nothing
     _common__set_dims!(pbm)
     _common__set_scale!(pbm)
-    _common__set_terminal_cost!(pbm)
+    _common__set_cost!(pbm, algo)
     _common__set_convex_constraints!(pbm)
+    _common__set_nonconvex_constraints!(pbm, algo)
     _common__set_bcs!(pbm)
 
     _common__set_guess!(pbm)
@@ -94,7 +96,8 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-function _common__set_terminal_cost!(pbm::TrajectoryProblem)::Nothing
+function _common__set_cost!(pbm::TrajectoryProblem,
+                            algo::T_Symbol)::Nothing
 
     problem_set_terminal_cost!(
         pbm, (x, p, pbm) -> begin
@@ -106,6 +109,36 @@ function _common__set_terminal_cost!(pbm::TrajectoryProblem)::Nothing
         return γ*(tdil/tdil_max)^2
         end)
 
+    # Running cost
+    if algo==:scvx
+        problem_set_running_cost!(
+            pbm, algo,
+            (x, u, p, pbm) -> begin
+            veh = pbm.mdl.vehicle
+            env = pbm.mdl.env
+            traj = pbm.mdl.traj
+            σ = u[veh.id_σ]
+            hover = norm(env.g)
+            γ = traj.γ
+            return (1-γ)*(σ/hover)^2
+            end)
+    else
+        problem_set_running_cost!(
+            pbm, algo,
+            # Input quadratic penalty S
+            (p, pbm) -> begin
+            veh = pbm.mdl.vehicle
+            env = pbm.mdl.env
+            traj = pbm.mdl.traj
+            hover = norm(env.g)
+            γ = traj.γ
+            S = zeros(pbm.nu, pbm.nu)
+            S[veh.id_σ, veh.id_σ] = (1-γ)*1/hover^2
+            return S
+            end)
+    end
+
+
     return nothing
 end
 
@@ -113,20 +146,71 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the input
     problem_set_U!(
-        pbm, (u, pbm) -> begin
+        pbm, (t, k, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         traj = pbm.mdl.traj
-        uu = u[veh.id_u]
+
+        a = u[veh.id_u]
         σ = u[veh.id_σ]
+        tdil = p[veh.id_t]
+
         C = T_ConvexConeConstraint
         U = [C(veh.u_min-σ, :nonpos),
              C(σ-veh.u_max, :nonpos),
-             C(vcat(σ, uu), :soc),
-             C(σ*cos(veh.tilt_max)-uu[3], :nonpos)]
+             C(vcat(σ, a), :soc),
+             C(σ*cos(veh.tilt_max)-a[3], :nonpos),
+             C(tdil-traj.tf_max, :nonpos),
+             C(traj.tf_min-tdil, :nonpos)]
+
         return U
         end)
 
     return nothing
+end
+
+function _common__set_nonconvex_constraints!(
+    pbm::TrajectoryProblem,
+    algo::T_Symbol)::Nothing
+
+    # Constraint s
+    _q__s = (t, k, x, u, p, pbm) -> begin
+        env = pbm.mdl.env
+        veh = pbm.mdl.vehicle
+        traj = pbm.mdl.traj
+        s = zeros(env.n_obs)
+        for i = 1:env.n_obs
+            # ---
+            E = env.obs[i]
+            r = x[veh.id_r]
+            s[i] = 1-E(r)
+            # ---
+        end
+        return s
+    end
+
+    # Jacobian ds/dx
+    _q__C = (t, k, x, u, p, pbm) -> begin
+        env = pbm.mdl.env
+        veh = pbm.mdl.vehicle
+        C = zeros(env.n_obs, pbm.nx)
+        for i = 1:env.n_obs
+            # ---
+            E = env.obs[i]
+            r = x[veh.id_r]
+            C[i, veh.id_r] = -∇(E, r)
+            # ---
+        end
+        return C
+    end
+
+    if algo==:scvx
+        problem_set_s!(pbm, algo, _q__s, _q__C)
+    else
+        _q___s = (t, k, x, p, pbm) -> _q__s(t, k, x, nothing, p, pbm)
+        _q___C = (t, k, x, p, pbm) -> _q__C(t, k, x, nothing, p, pbm)
+        problem_set_s!(pbm, algo, _q___s, _q___C)
+    end
+
 end
 
 function _common__set_bcs!(pbm::TrajectoryProblem)::Nothing

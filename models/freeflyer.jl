@@ -26,7 +26,7 @@ include("../core/scp.jl")
 # :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Free-flyer vehicle parameters. =#
+""" Free-flyer vehicle parameters. """
 struct FreeFlyerParameters
     id_r::T_IntRange # Position indices of the state vector
     id_v::T_IntRange # Velocity indices of the state vector
@@ -34,7 +34,8 @@ struct FreeFlyerParameters
     id_ω::T_IntRange # Angular velocity indices of the state vector
     id_T::T_IntRange # Thrust indices of the input vector
     id_M::T_IntRange # Torque indicates of the input vector
-    id_t::T_Int      # Index of time dilation
+    id_t::T_Int      # Time dilation index of the parameter vector
+    id_δ::T_IntRange # Room SDF indices of the parameter vector
     v_max::T_Real    # [m/s] Maximum velocity
     ω_max::T_Real    # [rad/s] Maximum angular velocity
     T_max::T_Real    # [N] Maximum thrust
@@ -43,14 +44,15 @@ struct FreeFlyerParameters
     J::T_RealMatrix  # [kg*m^2] Principle moments of inertia matrix
 end
 
-#= Space station flight environment. =#
+""" Space station flight environment. """
 struct FreeFlyerEnvironmentParameters
     obs::Vector{T_Ellipsoid}      # Obstacles (ellipsoids)
     iss::Vector{T_Hyperrectangle} # Space station flight space
     n_obs::T_Int                  # Number of obstacles
+    n_iss::T_Int                  # Number of space station rooms
 end
 
-#= Trajectory parameters. =#
+""" Trajectory parameters. """
 mutable struct FreeFlyerTrajectoryParameters
     r0::T_RealVector # Initial position
     rf::T_RealVector # Terminal position
@@ -67,7 +69,7 @@ mutable struct FreeFlyerTrajectoryParameters
     sdf_pwr::T_Real  # Exponent used in signed-distance function
 end
 
-#= Free-flyer trajectory optimization problem parameters all in one. =#
+""" Free-flyer trajectory optimization problem parameters all in one. """
 struct FreeFlyerProblem
     vehicle::FreeFlyerParameters        # The ego-vehicle
     env::FreeFlyerEnvironmentParameters # The environment
@@ -78,48 +80,35 @@ end
 # :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Constructor for the environment.
+""" Constructor for the environment.
 
-Args:
+# Arguments
     iss: the space station flight corridors, defined as hyperrectangles.
     obs: array of obstacles (ellipsoids).
 
-Returns:
-    env: the environment struct. =#
+# Returns
+    env: the environment struct.
+"""
 function FreeFlyerEnvironmentParameters(
     iss::Vector{T_Hyperrectangle},
     obs::Vector{T_Ellipsoid})::FreeFlyerEnvironmentParameters
 
     # Derived values
+    n_iss = length(iss)
     n_obs = length(obs)
 
-    env = FreeFlyerEnvironmentParameters(obs, iss, n_obs)
+    env = FreeFlyerEnvironmentParameters(obs, iss, n_obs, n_iss)
 
     return env
 end
 
-#= Constructor for the 6-DoF free-flyer problem.
 
-Returns:
-    mdl: the free-flyer problem. =#
-function FreeFlyerProblem()::FreeFlyerProblem
+""" Constructor for the 6-DoF free-flyer problem.
 
-    # >> Free-flyer <<
-    id_r = 1:3
-    id_v = 4:6
-    id_q = 7:10
-    id_ω = 11:13
-    id_T = 1:3
-    id_M = 4:6
-    id_t = 1
-    v_max = 0.4
-    ω_max = deg2rad(1)
-    T_max = 20e-3
-    M_max = 1e-4
-    mass = 7.2
-    J = diagm([0.1083, 0.1083, 0.1083])
-    fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_T, id_M, id_t,
-                                 v_max, ω_max, T_max, M_max, mass, J)
+# Returns
+    mdl: the free-flyer problem.
+"""
+function FreeFlyerProblem(N::T_Int)::FreeFlyerProblem
 
     # >> Environment <<
     obs_shape = diagm([1.0; 1.0; 1.0]/0.3)
@@ -147,6 +136,24 @@ function FreeFlyerProblem()::FreeFlyerProblem
                                   yaw=90.0, pitch=90.0)]
     env = FreeFlyerEnvironmentParameters(iss_rooms, obs)
 
+    # >> Free-flyer <<
+    id_r = 1:3
+    id_v = 4:6
+    id_q = 7:10
+    id_ω = 11:13
+    id_T = 1:3
+    id_M = 4:6
+    id_t = 1
+    id_δ = (1:(N*env.n_iss)).+1
+    v_max = 0.4
+    ω_max = deg2rad(1)
+    T_max = 20e-3
+    M_max = 1e-4
+    mass = 7.2
+    J = diagm([0.1083, 0.1083, 0.1083])
+    fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_T, id_M, id_t,
+                                 id_δ, v_max, ω_max, T_max, M_max, mass, J)
+
     # >> Trajectory <<
     r0 = [6.5; -0.2; 5.0]
     v0 = [0.035; 0.035; 0.0]
@@ -159,7 +166,7 @@ function FreeFlyerProblem()::FreeFlyerProblem
     tf_min = 60.0
     tf_max = 200.0
     γ = 0.0
-    hom = 50.0
+    hom = 50.0#1e3
     sdf_pwr = 0.5
     traj = FreeFlyerTrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min,
                                          tf_max, γ, hom, sdf_pwr)
@@ -173,11 +180,13 @@ end
 # :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Plot the trajectory evolution through SCP iterations.
 
-Args:
+""" Plot the trajectory evolution through SCP iterations.
+
+# Arguments
     mdl: the free-flyer problem parameters.
-    history: SCP iteration data history. =#
+    history: SCP iteration data history.
+"""
 function plot_trajectory_history(mdl::FreeFlyerProblem,
                                  history::SCPHistory)::Nothing
 
@@ -205,7 +214,7 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
 
     # ..:: Signed distance function zero-level set ::..
     z_iss = @first(history.subproblems[end].sol.xd[mdl.vehicle.id_r, :])[3]
-    plot_zero_levelset(ax, mdl, z_iss)
+    _freeflyer__plot_zero_levelset(ax, mdl, z_iss)
 
     # ..:: Draw the trajectories ::..
     for i = 0:num_iter
@@ -242,11 +251,13 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
     return nothing
 end
 
-#= Plot the final converged trajectory.
 
-Args:
+""" Plot the final converged trajectory.
+
+# Arguments
     mdl: the free-flyer problem parameters.
-    sol: the trajectory solution. =#
+    sol: the trajectory solution.
+"""
 function plot_final_trajectory(mdl::FreeFlyerProblem,
                                sol::SCPSolution)::Nothing
 
@@ -283,7 +294,7 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
 
     # ..:: Signed distance function zero-level set ::..
     z_iss = @first(sol.xd[mdl.vehicle.id_r, :])[3]
-    plot_zero_levelset(ax, mdl, z_iss)
+    _freeflyer__plot_zero_levelset(ax, mdl, z_iss)
 
     # ..:: Draw the final continuous-time position trajectory ::..
     # Collect the continuous-time trajectory data
@@ -345,11 +356,13 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
     return nothing
 end
 
-#= Timeseries signal plots.
 
-Args:
+""" Timeseries signal plots.
+
+# Arguments
     mdl: the free-flyer problem parameters.
-    sol: the trajectory solution. =#
+    sol: the trajectory solution.
+"""
 function plot_timeseries(mdl::FreeFlyerProblem,
                          sol::SCPSolution)::Nothing
 
@@ -359,7 +372,7 @@ function plot_timeseries(mdl::FreeFlyerProblem,
     ct_res = 500
     ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
     tf = sol.p[veh.id_t]
-    dt_time = sol.τd*tf
+    dt_time = sol.td*tf
     ct_time = ct_τ*tf
     clr = get_colormap()(1.0)
     xyz_clrs = ["#db6245", "#5da9a1", "#356397"]
@@ -467,46 +480,13 @@ function plot_timeseries(mdl::FreeFlyerProblem,
     return nothing
 end
 
-#= Plot the signed distance function zero-level set.
 
-This gives a view of the space station flight space boundary that is seen by
-the optimization, for a specific z-height.
+""" Timeseries plot of obstacle constraint values for final trajectory.
 
-Args:
-    ax: the figure axis object.
-    mdl: the free-flyer problem parameters.
-    z: the z-coordinate at which to evaluate the signed distance function. =#
-function plot_zero_levelset(ax::PyPlot.PyObject,
-                            mdl::FreeFlyerProblem,
-                            z::T_Real)::Nothing
-
-    xlims = (5.9, 12.1)
-    ylims = (-2.6, 7.1)
-    res = 100
-    x = T_RealVector(LinRange(xlims..., res))
-    y = T_RealVector(LinRange(ylims..., res))
-    X = repeat(reshape(x, 1, :), length(y), 1)
-    Y = repeat(y, 1, length(x))
-    f = (x, y) -> round(
-        signed_distance(mdl.env.iss, [x; y; z];
-                        t=mdl.traj.hom,
-                        a=mdl.traj.sdf_pwr)[1], digits=9)
-    Z = map(f, X, Y)
-
-    ax.contour(x, y, Z, [0.0],
-               colors="#f1d46a",
-               linewidths=1,
-               linestyles="solid",
-               zorder=10)
-
-    return nothing
-end
-
-#= Timeseries plot of obstacle constraint values for final trajectory.
-
-Args:
-    mdl: the free-flyer problem parameters.
-    sol: the trajectory solution. =#
+# Arguments
+- `mdl`: the free-flyer problem parameters.
+- `sol`: the trajectory solution.
+"""
 function plot_obstacle_constraints(mdl::FreeFlyerProblem,
                                    sol::SCPSolution)::Nothing
 
@@ -517,7 +497,7 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
     ct_res = 500
     ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
     tf = sol.p[veh.id_t]
-    dt_time = sol.τd*tf
+    dt_time = sol.td*tf
     ct_time = ct_τ*tf
     cmap = get_colormap()
     xyz_clrs = ["#db6245", "#5da9a1", "#356397"]
@@ -534,15 +514,13 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
     ax.autoscale(tight=true)
 
     ax.set_xlabel("Time [s]")
-    ax.set_ylabel("\$d_{\\mathrm{ISS}}(r_{\\mathcal{I}}(t))\$")
+    ax.set_ylabel("\$d_{\\mathrm{ISS}}(r_{\\mathcal{I}}(\\mathsf{t}))\$")
 
     # >> Continuous-time components <<
-    yc = T_RealVector([signed_distance(env.iss,
-                                       sample(sol.xc, τ)[veh.id_r];
-                                       t=mdl.traj.hom, a=mdl.traj.sdf_pwr)[1]
-                       for τ in ct_τ])
-    y_top = max(0.1, maximum(yc))
-    plot_timeseries_bound!(ax, 0.0, tf, 0.0, y_top)
+    yc = T_RealVector([_freeflyer__signed_distance(
+        sample(sol.xc, τ)[veh.id_r], mdl) for τ in ct_τ])
+    y_bot = min(-0.1, minimum(yc))
+    plot_timeseries_bound!(ax, 0.0, tf, 0.0, y_bot)
 
     ax.plot(ct_time, yc,
             color=cmap(1.0),
@@ -550,8 +528,7 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
 
     # >> Discrete-time components <<
     yd = sol.xd[veh.id_r, :]
-    yd = T_RealVector([signed_distance(env.iss, @k(yd); t=mdl.traj.hom,
-                                       a=mdl.traj.sdf_pwr)[1]
+    yd = T_RealVector([_freeflyer__signed_distance(@k(yd), mdl)
                        for k=1:size(yd, 2)])
     ax.plot(dt_time, yd,
             linestyle="none",
@@ -563,7 +540,7 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
             zorder=100)
 
     ax.set_xlim((0.0, tf))
-    ax.set_ylim((minimum(yc), y_top))
+    ax.set_ylim((y_bot, maximum(yc)))
 
     # ..:: Plot ellipsoid obstacle constraints ::..
     ax = fig.add_subplot(1, 2, 2)
@@ -574,7 +551,7 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
     ax.autoscale(tight=true)
 
     ax.set_xlabel("Time [s]")
-    ax.set_ylabel("\$\\| H_j(r_{\\mathcal{I}}(t)-c_j)\\|_2\$")
+    ax.set_ylabel("\$\\| H_j(r_{\\mathcal{I}}(\\mathsf{t})-c_j)\\|_2\$")
 
     clr_offset = 0.4
     cval = (j) -> (env.n_obs==1) ? 1.0 :
@@ -617,6 +594,70 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
     ax.set_ylim((0.0, y_top))
 
     save_figure("freeflyer_obstacles", algo)
+
+    return nothing
+end
+
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+
+"""
+    _freeflyer__signed_distance(r, mdl)
+
+Description.
+
+# Arguments
+- `r`: the position vector.
+- `mdl`: the free-flyer problem parameters.
+
+# Returns
+- `d`: the signed distance value.
+
+"""
+function _freeflyer__signed_distance(r::T_RealVector,
+                                     mdl::FreeFlyerProblem)::T_Real
+    room = mdl.env.iss
+    d = logsumexp([1-norm((r-room[i].c)./room[i].s, Inf)
+                   for i=1:mdl.env.n_iss]; t=mdl.traj.hom)
+end
+
+
+""" Plot the signed distance function zero-level set.
+
+This gives a view of the space station flight space boundary that is seen by
+the optimization, for a specific z-height.
+
+# Arguments
+    ax: the figure axis object.
+    mdl: the free-flyer problem parameters.
+    z: the z-coordinate at which to evaluate the signed distance function.
+"""
+function _freeflyer__plot_zero_levelset(ax::PyPlot.PyObject,
+                                        mdl::FreeFlyerProblem,
+                                        z::T_Real)::Nothing
+
+    # Parameters
+    env = mdl.env
+    traj = mdl.traj
+    room = env.iss
+    xlims = (5.9, 12.1)
+    ylims = (-2.6, 7.1)
+    res = 100
+
+    x = T_RealVector(LinRange(xlims..., res))
+    y = T_RealVector(LinRange(ylims..., res))
+    X = repeat(reshape(x, 1, :), length(y), 1)
+    Y = repeat(y, 1, length(x))
+    f = (x, y) -> _freeflyer__signed_distance([x; y; z], mdl)
+    Z = map(f, X, Y)
+
+    ax.contour(x, y, Z, [0.0],
+               colors="#f1d46a",
+               linewidths=1,
+               linestyles="solid",
+               zorder=10)
 
     return nothing
 end
