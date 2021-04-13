@@ -29,13 +29,14 @@ include("../../utils/helper.jl")
 # :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-function define_problem!(pbm::TrajectoryProblem)::Nothing
+function define_problem!(pbm::TrajectoryProblem,
+                         algo::T_Symbol)::Nothing
     _common__set_dims!(pbm)
     _common__set_scale!(pbm)
     _common__set_cost!(pbm)
     _common__set_dynamics!(pbm)
     _common__set_convex_constraints!(pbm)
-    _common__set_nonconvex_constraints!(pbm)
+    _common__set_nonconvex_constraints!(pbm, algo)
     _common__set_bcs!(pbm)
 
     _common__set_guess!(pbm)
@@ -211,25 +212,28 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the state
     problem_set_X!(
-        pbm, (τ, x, pbm) -> begin
+        pbm, (t, k, x, p, pbm) -> begin
         traj = pbm.mdl.traj
         env = pbm.mdl.env
         veh = pbm.mdl.vehicle
         r = x[veh.id_r]
         v = x[veh.id_v]
+        tf = p[veh.id_t1]+p[veh.id_t2]
         C = T_ConvexConeConstraint
-        X = [C(dot(v, env.ey), :nonpos)]
+        X = [C(dot(v, env.ey), :nonpos),
+             C(tf-traj.tf_max, :nonpos),
+             C(traj.tf_min-tf, :nonpos)]
         return X
         end)
 
     # Convex path constraints on the input
     problem_set_U!(
-        pbm, (τ, u, pbm) -> begin
+        pbm, (t, k, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         traj = pbm.mdl.traj
         T = u[veh.id_T]
         δ = u[veh.id_δ]
-        flip_phase = τ<=traj.τs
+        flip_phase = t<=traj.τs
         T_max = (flip_phase) ? veh.T_max3 : veh.T_max1
         T_min = (flip_phase) ? veh.T_min3 : veh.T_min1
         C = T_ConvexConeConstraint
@@ -242,30 +246,31 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
+function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
+                                             algo::T_Symbol)::Nothing
 
     # Return true if this is the temporal node where phase 1 ends
-    _common__phase_switch = (τ, pbm) -> begin
-        Δτ = 1/(pbm.scp.N-1)
+    _common__phase_switch = (t, pbm) -> begin
+        Δt = 1/(pbm.scp.N-1)
         τs = pbm.mdl.traj.τs
         tol = 1e-3
-        phase_switch = (τs-Δτ)+tol<=τ && τ<=τs+tol
+        phase_switch = (τs-Δt)+tol<=t && t<=τs+tol
         return phase_switch
     end
 
     # Return true if this is a phase 2 temporal node
-    _common__phase2 = (τ, pbm) -> begin
+    _common__phase2 = (t, pbm) -> begin
         τs = pbm.mdl.traj.τs
-        phase2 = _common__phase_switch(τ, pbm) || τ>τs
+        phase2 = _common__phase_switch(t, pbm) || t>τs
         return phase2
     end
 
-    _common_s_sz = 7+2*pbm.nx+2
+    _common_s_sz = 7+2*pbm.nx
 
     problem_set_s!(
-        pbm,
+        pbm, algo,
         # Constraint s
-        (x, u, p, pbm) -> begin
+        (t, k, x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         env = pbm.mdl.env
         traj = pbm.mdl.traj
@@ -278,16 +283,14 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         tf = p[veh.id_t1]+p[veh.id_t2]
 
         s = zeros(_common_s_sz)
-        s[1] = tf-traj.tf_max
-        s[2] = traj.tf_min-tf
-        s[3] = (δ-δd)-δdot*veh.rate_delay
-        s[4] = δdot*veh.rate_delay-(δ-δd)
-        s[5] = δdot-veh.δdot_max
-        s[6] = -veh.δdot_max-δdot
-        s[7] = norm(r)*cos(traj.γ_gs)-dot(r, env.ey)
+        s[1] = (δ-δd)-δdot*veh.rate_delay
+        s[2] = δdot*veh.rate_delay-(δ-δd)
+        s[3] = δdot-veh.δdot_max
+        s[4] = -veh.δdot_max-δdot
+        s[5] = norm(r)*cos(traj.γ_gs)-dot(r, env.ey)
         if _common__phase_switch(τ, pbm)
-        s[(1:pbm.nx).+7] = p[veh.id_xs]-x
-        s[(1:pbm.nx).+(7+pbm.nx)] = x-p[veh.id_xs]
+        s[(1:pbm.nx).+5] = p[veh.id_xs]-x
+        s[(1:pbm.nx).+(5+pbm.nx)] = x-p[veh.id_xs]
         end
         if _common__phase2(τ, pbm)
         s[end-1] = θ-traj.θmax2
@@ -297,7 +300,7 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         return s
         end,
         # Jacobian ds/dx
-        (x, u, p, pbm) -> begin
+        (t, k, x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         env = pbm.mdl.env
         traj = pbm.mdl.traj
@@ -308,12 +311,12 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         ∇nrm_r = (nrm_r<sqrt(eps())) ? zeros(2) : r/nrm_r
 
         C = zeros(_common_s_sz, pbm.nx)
-        C[3, veh.id_δd] = -1.0
-        C[4, veh.id_δd] = 1.0
-        C[7, veh.id_r] = ∇nrm_r*cos(traj.γ_gs)-env.ey
+        C[1, veh.id_δd] = -1.0
+        C[2, veh.id_δd] = 1.0
+        C[5, veh.id_r] = ∇nrm_r*cos(traj.γ_gs)-env.ey
         if _common__phase_switch(τ, pbm)
-        C[(1:pbm.nx).+7, :] = -I(pbm.nx)
-        C[(1:pbm.nx).+(7+pbm.nx), :] = I(pbm.nx)
+        C[(1:pbm.nx).+5, :] = -I(pbm.nx)
+        C[(1:pbm.nx).+(5+pbm.nx), :] = I(pbm.nx)
         end
         if _common__phase2(τ, pbm)
         C[end-1, veh.id_θ] = 1.0
@@ -323,33 +326,29 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem)::Nothing
         return C
         end,
         # Jacobian ds/du
-        (x, u, p, pbm) -> begin
+        (t, k, x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         τ = x[veh.id_τ]
 
         D = zeros(_common_s_sz, pbm.nu)
-        D[3, veh.id_δ] = 1.0
-        D[3, veh.id_δdot] = -veh.rate_delay
-        D[4, veh.id_δ] = -1.0
-        D[4, veh.id_δdot] = veh.rate_delay
-        D[5, veh.id_δdot] = 1.0
-        D[6, veh.id_δdot] = -1.0
+        D[1, veh.id_δ] = 1.0
+        D[1, veh.id_δdot] = -veh.rate_delay
+        D[2, veh.id_δ] = -1.0
+        D[2, veh.id_δdot] = veh.rate_delay
+        D[3, veh.id_δdot] = 1.0
+        D[4, veh.id_δdot] = -1.0
 
         return D
         end,
         # Jacobian ds/dp
-        (x, u, p, pbm) -> begin
+        (t, k, x, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
         τ = x[veh.id_τ]
 
         G = zeros(_common_s_sz, pbm.np)
-        G[1, veh.id_t1] = 1.0
-        G[1, veh.id_t2] = 1.0
-        G[2, veh.id_t1] = -1.0
-        G[2, veh.id_t2] = -1.0
         if _common__phase_switch(τ, pbm)
-        G[(1:pbm.nx).+7, veh.id_xs] = I(pbm.nx)
-        G[(1:pbm.nx).+(7+pbm.nx), veh.id_xs] = -I(pbm.nx)
+        G[(1:pbm.nx).+5, veh.id_xs] = I(pbm.nx)
+        G[(1:pbm.nx).+(5+pbm.nx), veh.id_xs] = -I(pbm.nx)
         end
 
         return G

@@ -818,7 +818,7 @@ function plot_velocity(mdl::StarshipProblem,
     end
 
     # ..:: Velocity (discrete-time) ::..
-    dt_time = map(τ2t, sol.τd)
+    dt_time = map(τ2t, sol.td)
     dt_vel = sol.xd[mdl.vehicle.id_v, :]
     for i=1:2
         ax.plot(dt_time, dt_vel[i, :],
@@ -894,7 +894,7 @@ function plot_thrust(mdl::StarshipProblem,
             linewidth=2)
 
     # ..:: Thrust value (discrete-time) ::..
-    dt_time = map(τ2t, sol.τd)
+    dt_time = map(τ2t, sol.td)
     dt_thrust = sol.ud[mdl.vehicle.id_T, :]*scale
     ax.plot(dt_time, dt_thrust,
             linestyle="none",
@@ -936,7 +936,7 @@ function plot_gimbal(mdl::StarshipProblem,
     ct_res = 500
     ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
     ct_time = map(τ2t, ct_τ)
-    dt_time = map(τ2t, sol.τd)
+    dt_time = map(τ2t, sol.td)
 
     # ..:: Gimbal angle timeseries ::..
     ax = fig.add_subplot(211)
@@ -1032,7 +1032,7 @@ function plot_gimbal(mdl::StarshipProblem,
             zorder=100)
 
     # >> Actual gimbal rate (continuous-time) <<
-    δdot = T_ContinuousTimeTrajectory(sol.τd[1:end-1], dt_δdot, :zoh)
+    δdot = T_ContinuousTimeTrajectory(sol.td[1:end-1], dt_δdot, :zoh)
     ct_δdot = T_RealVector([sample(δdot, τ)*scale for τ in ct_τ])
     ax.plot(ct_time, ct_δdot,
             color=clr,

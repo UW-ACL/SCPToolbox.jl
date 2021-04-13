@@ -279,7 +279,7 @@ function problem_set_running_cost!(pbm::TrajectoryProblem,
                                    g::T_Function=nothing,
                                    dgdx::T_Function=nothing,
                                    dgdp::T_Function=nothing)::Nothing
-    if algo==:scvx
+    if algo in (:scvx, :ptr)
         pbm.Γ = (x, u, p) -> SΓ(x, u, p, pbm)
     else
         pbm.S = !isnothing(SΓ) ? (p) -> SΓ(p, pbm) : nothing
@@ -431,7 +431,7 @@ function problem_set_s!(pbm::TrajectoryProblem,
 
     not = !isnothing
 
-    if algo==:scvx
+    if algo in (:scvx, :ptr)
         pbm.s = (t, k, x, u, p) -> s(t, k, x, u, p, pbm)
         pbm.C = not(C) ? (t, k, x, u, p) -> C(t, k, x, u, p, pbm) : nothing
         pbm.D = not(DG) ? (t, k, x, u, p) -> DG(t, k, x, u, p, pbm) : nothing

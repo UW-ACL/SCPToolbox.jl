@@ -538,15 +538,13 @@ Args:
 function _ptr__compute_trust_region_penalty!(spbm::PTRSubproblem)::Nothing
 
     # Variables and parameters
-    τ_grid = spbm.def.common.τ_grid
+    t = spbm.def.common.t_grid
     wtr = spbm.def.pars.wtr
     ηx = spbm.ηx
     ηu = spbm.ηu
     ηp = spbm.ηp
 
-    spbm.J_tr = wtr*(trapz(ηx, τ_grid)+
-                     trapz(ηu, τ_grid)+
-                     ηp)
+    spbm.J_tr = wtr*(trapz(ηx, t)+trapz(ηu, t)+ηp)
 
     return nothing
 end
@@ -560,7 +558,7 @@ function _ptr__compute_virtual_control_penalty!(spbm::PTRSubproblem)::Nothing
     # Variables and parameters
     N = spbm.def.pars.N
     wvc = spbm.def.pars.wvc
-    τ_grid = spbm.def.common.τ_grid
+    t = spbm.def.common.t_grid
     E = spbm.ref.dyn.E
     vd = spbm.vd
     vs = spbm.vs
@@ -582,7 +580,7 @@ function _ptr__compute_virtual_control_penalty!(spbm::PTRSubproblem)::Nothing
     end
     acc!(spbm.mdl, C(vcat(@first(Pf), vic), :l1))
     acc!(spbm.mdl, C(vcat(@last(Pf), vtc), :l1))
-    spbm.J_vc = wvc*(trapz(P, τ_grid)+sum(Pf))
+    spbm.J_vc = wvc*(trapz(P, t)+sum(Pf))
 
     return nothing
 end
