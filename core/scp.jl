@@ -337,6 +337,83 @@ end
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 """
+    _scp__correct_convex!(x_ref, u_ref, p_ref, pbm, constructor)
+
+Find closest trajectory that satisfies the convex path constraints.
+
+Closeness is measured in an L1-norm sense.
+
+# Arguments
+- `x_ref`: the discrete-time state trajectory to be projected.
+- `u_ref`: the discrete-time input trajectory to be projected.
+- `p_ref`: the parameter vector to be projected.
+- `pbm`: the SCP problem definition.
+- `constructor`: the subproblem constructor function (as a symbol).
+"""
+function _scp__correct_convex!(
+    x_ref::T_RealMatrix,
+    u_ref::T_RealMatrix,
+    p_ref::T_RealVector,
+    pbm::SCPProblem,
+    constructor::T_Symbol)::Nothing
+
+    # Parameters
+    N = pbm.pars.N
+    nx = pbm.traj.nx
+    nu = pbm.traj.nu
+    np = pbm.traj.np
+    scale = pbm.common.scale
+
+    # Initialize the problem
+    opti = eval(Expr(:call, constructor, pbm))
+
+    # Add the convex path constraints
+    _scp__add_convex_state_constraints!(opti)
+    _scp__add_convex_input_constraints!(opti)
+
+    # Add epigraph constraints to make a convex cost for JuMP
+    xh_ref = scale.iSx*(x_ref.-scale.cx)
+    uh_ref = scale.iSu*(u_ref.-scale.cu)
+    ph_ref = scale.iSp*(p_ref-scale.cp)
+    dx = opti.xh-xh_ref
+    du = opti.uh-uh_ref
+    dp = opti.ph-ph_ref
+    epi_x = @variable(opti.mdl, [1:N], base_name="τx")
+    epi_u = @variable(opti.mdl, [1:N], base_name="τu")
+    epi_p = @variable(opti.mdl, base_name="τp")
+    C = T_ConvexConeConstraint
+    for k = 1:N
+        add_conic_constraint!(opti.mdl, C(vcat(@k(epi_x), @k(dx)), :l1))
+        add_conic_constraint!(opti.mdl, C(vcat(@k(epi_u), @k(du)), :l1))
+    end
+    add_conic_constraint!(opti.mdl, C(vcat(epi_p, dp), :l1))
+
+    # Define the cost
+    cost = sum(epi_x)+sum(epi_u)+epi_p
+    set_objective_function(opti.mdl, cost)
+    set_objective_sense(opti.mdl, MOI.MIN_SENSE)
+
+    # Solve
+    optimize!(opti.mdl)
+
+    # Save solution
+    status = termination_status(opti.mdl)
+    if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
+        x_ref .= value.(opti.x)
+        u_ref .= value.(opti.u)
+        p_ref .= value.(opti.p)
+    else
+        msg = string("Solver failed to find the closest initial guess ",
+                     "that satisfies the convex constraints (%s)")
+        err = SCPError(0, SCP_GUESS_PROJECTION_FAILED,
+                       @eval @sprintf($msg, $status))
+        throw(err)
+    end
+
+    return nothing
+end
+
+"""
     _scp__compute_scaling(pars, traj, t)
 
 Compute the scaling matrices given the problem definition.
