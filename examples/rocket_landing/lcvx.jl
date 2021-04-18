@@ -455,34 +455,45 @@ sim = simulate(rocket,optimal_control,pdg.t[end])
 ################################################################################
 # ..:: Position trajectory plot ::..
 # >> Assign data to convenient variables <<
+v_max = rocket.v_max*3.6
+# Discrete time
 t = pdg.t
-t_sim = sim.t
-N = length(pdg.t)
+N = length(t)
 r_x = pdg.r[1,:]*1e-3
 r_y = pdg.r[2,:]*1e-3
 r_z = pdg.r[3,:]*1e-3
+v_x = pdg.v[1,:]*3.6
+v_y = pdg.v[2,:]*3.6
+v_z = pdg.v[3,:]*3.6
+mass = pdg.m
+T = pdg.T*1e-3
+# Simulated
+t_sim = sim.t
+N_sim = length(t_sim)
 r_x_sim = sim.r[1,:]*1e-3
 r_y_sim = sim.r[2,:]*1e-3
 r_z_sim = sim.r[3,:]*1e-3
+v_x_sim = sim.v[1,:]*3.6
+v_y_sim = sim.v[2,:]*3.6
+v_z_sim = sim.v[3,:]*3.6
+mass_sim = sim.m
+T_sim = sim.T*1e-3
 # >> Plot styles <<
-style_trajectory = Dict(:color=>"black",:linewidth=>3)
-style_trajectory_x = Dict(:color=>"red",:linestyle=>"none",:marker=>".",
-                          :markersize=>3)
-style_trajectory_y = Dict(:color=>"green",:linestyle=>"none",:marker=>".",
-                          :markersize=>3)
-style_trajectory_z = Dict(:color=>"blue",:linestyle=>"none",:marker=>".",
-                          :markersize=>3)
-style_simulated_x = Dict(:color=>"red",:linewidth=>1)
-style_simulated_y = Dict(:color=>"green",:linewidth=>1)
-style_simulated_z = Dict(:color=>"blue",:linewidth=>1)
+style_ct = Dict(:color=>"black",:linewidth=>1.5)
+style_dt = Dict(:color=>"orange",:linestyle=>"none",
+                :marker=>".",:markersize=>4)
 style_thrust = Dict(:edgecolor=>"none",:facecolor=>"red",
                     :width=>0.005,:head_width=>0.03,:alpha=>0.3)
-style_apch_cone = Dict(:color=>"gray",:linewidth=>1)
-style_ground = Dict(:facecolor=>"brown",:edgecolor=>"none",
-                    :alpha=>0.3)
+style_hover = Dict(:color=>"blue",:linewidth=>1.5)
+style_apch_cone = Dict(:color=>"blue",:linewidth=>1,
+                       :linestyle=>"dashed")
+style_ground = Dict(:facecolor=>"brown",:edgecolor=>"none",:alpha=>0.3)
+style_constraint = Dict(:color=>"red",:linestyle=>"--",:linewidth=>2)
+style_constraint_fill = Dict(:edgecolor=>"none",:facecolor=>"black",
+                             :alpha=>0.1)
 # >> Convenience functions <<
 function get_thrust_vec(pdg::Data.Solution,k::Int,i::Int,j::Int,
-                        scale::LCvxReal=0.3)::LCvxVector
+                        scale::LCvxReal=0.4)::LCvxVector
     # Compute a thrust vector "arrow".
     #
     # :in pdg: the optimized solution.
@@ -491,7 +502,7 @@ function get_thrust_vec(pdg::Data.Solution,k::Int,i::Int,j::Int,
     # :in j: the "y" axis.
     # :in scale: multiplicative scaling factor to apply to the thrust
     #            vector.
-    T = pdg.T[:,k]/pdg.T_nrm[k]*scale
+    T = pdg.T[:,k]/ρ_max*scale
     r = pdg.r[:,k]*1e-3
     return [r[i],r[j],T[i],T[j]]
 end
@@ -502,17 +513,18 @@ function set_fonts()::Nothing
     fig_med_sz = 15
     fig_big_sz = 17
     plt.rc("text", usetex=true)
-    plt.rc("font", size=fig_small_sz)
+    plt.rc("font", size=fig_small_sz, family="serif")
     plt.rc("axes", titlesize=fig_small_sz)
     plt.rc("axes", labelsize=fig_med_sz)
     plt.rc("xtick", labelsize=fig_small_sz)
     plt.rc("ytick", labelsize=fig_small_sz)
     plt.rc("legend", fontsize=fig_small_sz)
     plt.rc("figure", titlesize=fig_big_sz)
+
+    return nothing
 end
 #
-function draw_approach(ax, ground_h::Float64 = -0.1,
-                       apch_cone_w::Float64 = 10.0)::Nothing
+function draw_approach(ax; ground_h::Float64 = -0.1, apch_cone_w::Float64 = 10.0)::Nothing
     # Draw the approach cone for the rocket landing problem (in 2D).
     #
     # :in ax: the graph axes object on which to draw the approach cone
@@ -541,176 +553,231 @@ function draw_approach(ax, ground_h::Float64 = -0.1,
     return nothing
 end
 # >> Plot <<
-fig = plt.figure(1,figsize=(9,8))
+# Find regions of max and min thrust
+T_nrm = LCvxVector([norm(T[:,i]) for i=1:N-1])
+max_thrust = Array{Bool,1}([(ρ_max-norm(T[:,i])*1e3)/ρ_max<1e-2 for i=1:N-1])
+append!(max_thrust, max_thrust[end])
+min_thrust = .!max_thrust
+# @ (x,y) trajectory @
+fig = plt.figure(figsize=(4,4))
 plt.clf()
 set_fonts()
-# @ (x,y) trajectory @
-ax = fig.add_subplot(224)
+ax = fig.add_subplot()
 ax.axis("equal")
-ax.plot(r_x,r_y;style_trajectory...)
+ax.grid()
+ax.set_facecolor("white")
+fig.patch.set_alpha(0)
+# Max-thrust regime
+ax.plot(r_x,r_y; style_ct..., color="red")
+# Min-thrust regime
+tmp_x = copy(r_x)
+tmp_y = copy(r_y)
+tmp_x[max_thrust] .= Inf
+tmp_y[max_thrust] .= Inf
+ax.plot(tmp_x,tmp_y; style_ct..., color="blue")
 for k = 1:N-1
-    ax.arrow(get_thrust_vec(pdg,ax,k,1,2)...;style_thrust...)
+    ax.arrow(get_thrust_vec(pdg,k,1,2)...; style_thrust...)
 end
 ax.set_xlabel(L"Position $x$ [km]")
 ax.set_ylabel(L"Position $y$ [km]")
+ax.set_xticks(ticks=[0,1,2,3])
+ax.set_yticks(ticks=[-1,0,1])
+ax.set_xlim([0,3])
+ax.set_ylim([-1,1])
+fig.savefig("../../figures/lcvx_3dof_rocket_pos_xy.pdf",bbox_inches="tight")
 # @ (x,z) trajectory @
-ax = fig.add_subplot(222)
+fig = plt.figure(figsize=(4,4))
+plt.clf()
+set_fonts()
+ax = fig.add_subplot()
 ax.axis("equal")
-# (x,z) trajectory
-ax.plot(r_x,r_z;style_trajectory...)
-# Thrust vectors
+ax.grid()
+ax.set_facecolor("white")
+fig.patch.set_alpha(0)
+draw_approach(ax; ground_h=-2.0)
+# Max-thrust regime
+ax.plot(r_x,r_z; style_ct..., color="red")
+# Min-thrust regime
+tmp_x = copy(r_x)
+tmp_z = copy(r_z)
+tmp_x[max_thrust] .= Inf
+tmp_z[max_thrust] .= Inf
+ax.plot(tmp_x,tmp_z; style_ct..., color="blue")
 for k = 1:N-1
-    ax.arrow(get_thrust_vec(pdg,ax,k,1,3)...;style_thrust...)
+    ax.arrow(get_thrust_vec(pdg,k,1,3)...; style_thrust...)
 end
-draw_approach(ax)
+# Put markers where the slideslope constraint activates
+n = [cos(rocket.γ_gs);0;-sin(rocket.γ_gs)] # Glide slope normal
+for i = 1:N
+    local gs_dot = -dot(n,[r_x[i];r_y[i];r_z[i]])
+    if gs_dot<1e-12 && r_z[i]>1e-10
+        ax.plot(r_x[i],r_z[i]; color="black",marker=".",markersize=7)
+    end
+end
 ax.set_xlabel(L"Position $x$ [km]")
 ax.set_ylabel(L"Position $z$ [km]")
+ax.set_xticks(ticks=[0,1,2,3])
+ax.set_yticks(ticks=[0,1,2])
+ax.set_ylim([-1,2])
+ax.set_xlim([0,3])
+fig.savefig("../../figures/lcvx_3dof_rocket_pos_xz.pdf",bbox_inches="tight")
 # @ (y,z) trajectory @
-ax = fig.add_subplot(223)
+fig = plt.figure(figsize=(4,4))
+plt.clf()
+set_fonts()
+
+ax = fig.add_subplot()
 ax.axis("equal")
-ax.plot(r_y,r_z;style_trajectory...)
+ax.grid()
+ax.set_facecolor("white")
+fig.patch.set_alpha(0)
+draw_approach(ax; ground_h=-2.0)
+# Max-thrust regime
+ax.plot(r_y,r_z; style_ct..., color="red")
+# Min-thrust regime
+tmp_y = copy(r_y)
+tmp_z = copy(r_z)
+tmp_y[max_thrust] .= Inf
+tmp_z[max_thrust] .= Inf
+ax.plot(tmp_y,tmp_z; style_ct..., color="blue")
 for k = 1:N-1
-    ax.arrow(get_thrust_vec(pdg,ax,k,2,3)...;style_thrust...)
+    ax.arrow(get_thrust_vec(pdg,k,2,3)...; style_thrust...)
 end
-draw_approach(ax)
 ax.set_xlabel(L"Position $y$ [km]")
 ax.set_ylabel(L"Position $z$ [km]")
-# @ (x,y,z) time histories @
-ax = fig.add_subplot(221)
-ax.plot(t,r_x;style_trajectory_x...)
-ax.plot(t,r_y;style_trajectory_y...)
-ax.plot(t,r_z;style_trajectory_z...)
-ax.plot(t_sim,r_x_sim;style_simulated_x...,label=L"$x$")
-ax.plot(t_sim,r_y_sim;style_simulated_y...,label=L"$y$")
-ax.plot(t_sim,r_z_sim;style_simulated_z...,label=L"$z$")
-ax.legend()
-ax.set_xlabel("Time [s]")
-ax.set_ylabel("Position [km]")
-#
-plt.tight_layout(h_pad=0.1,w_pad=0.1)
-#
-fig.savefig("figures/lcvx_rocket_position.pdf",bbox_inches="tight")
+ax.set_xticks(ticks=[-1,-0.5,0,0.5,1])
+ax.set_yticks(ticks=[0,1,2])
+ax.set_xlim([-1,1])
+ax.set_ylim([-0.5,2])
+fig.savefig("../../figures/lcvx_3dof_rocket_pos_yz.pdf",bbox_inches="tight")
 ################################################################################
 
 ################################################################################
 # ..:: Velocity trajectory plot ::..
-# >> Assign data to convenient variables <<
-t = pdg.t
-t_sim = sim.t
-N = length(pdg.t)
-m2kph = 3600/1e3
-v_x = pdg.v[1,:]*m2kph
-v_y = pdg.v[2,:]*m2kph
-v_z = pdg.v[3,:]*m2kph
-v_x_sim = sim.v[1,:]*m2kph
-v_y_sim = sim.v[2,:]*m2kph
-v_z_sim = sim.v[3,:]*m2kph
-# >> Convenience functions <<
-# >> Plot <<
-fig = plt.figure(2,figsize=(9,8))
+fig = plt.figure(figsize=(4,4))
 plt.clf()
 set_fonts()
-# @ (x,y) trajectory @
-ax = fig.add_subplot(224)
-ax.axis("equal")
-ax.plot(v_x,v_y;style_trajectory...)
-ax.set_xlabel(L"Velocity $x$ [km/h]")
-ax.set_ylabel(L"Velocity $y$ [km/h]")
-# @ (x,z) trajectory @
-ax = fig.add_subplot(222)
-ax.axis("equal")
-# (x,z) trajectory
-ax.plot(v_x,v_z;style_trajectory...)
-ax.set_xlabel(L"Velocity $x$ [km/h]")
-ax.set_ylabel(L"Velocity $z$ [km/h]")
-# @ (y,z) trajectory @
-ax = fig.add_subplot(223)
-ax.axis("equal")
-ax.plot(v_y,v_z;style_trajectory...)
-ax.set_xlabel(L"Velocity $y$ [km/h]")
-ax.set_ylabel(L"Velocity $z$ [km/h]")
-# @ (x,y,z) time histories @
-ax = fig.add_subplot(221)
-ax.plot(t,v_x;style_trajectory_x...)
-ax.plot(t,v_y;style_trajectory_y...)
-ax.plot(t,v_z;style_trajectory_z...)
-ax.plot(t_sim,v_x_sim;style_simulated_x...,label=L"$x$")
-ax.plot(t_sim,v_y_sim;style_simulated_y...,label=L"$y$")
-ax.plot(t_sim,v_z_sim;style_simulated_z...,label=L"$z$")
-ax.legend()
+ax = fig.add_subplot()
+ax.grid()
+ax.set_facecolor("white")
+fig.patch.set_alpha(0)
+v_nrm = LCvxVector([norm([v_x[i];v_y[i];v_z[i]]) for i=1:N])
+v_sim_nrm = LCvxVector([norm([v_x_sim[i];v_y_sim[i];v_z_sim[i]]) for i=1:N_sim])
+ax.axhline(y=v_max; style_constraint...)
+ax.fill_between([0,t_opt],v_max,v_max+50; style_constraint_fill...)
+ax.plot(t_sim, v_sim_nrm; style_ct...)
+ax.plot(t, v_nrm; style_dt...)
+ax.set_xticks(ticks=[0,20,40,60,75])
+ax.set_yticks(ticks=[0,200,400,600,800,850])
+ax.set_xlim([0,75])
+ax.set_ylim([0,v_max+50])
 ax.set_xlabel("Time [s]")
-ax.set_ylabel("Velocity [km/h]")
-#
-plt.tight_layout(h_pad=0.1,w_pad=0.1)
-#
-fig.savefig("figures/lcvx_rocket_velocity.pdf",bbox_inches="tight")
+ax.set_ylabel(L"Speed $\|v(t)\|_2$ [km/h]")
+fig.savefig("../../figures/lcvx_3dof_rocket_speed.pdf",bbox_inches="tight")
 ################################################################################
 
 ################################################################################
-# ..:: Thrust plot ::..
-#
-top_offset = 1.1
-#
-fig = plt.figure(3,figsize=(8,6))
+# ..:: Mass plot ::..
+fig = plt.figure(4,figsize=(4,4))
 plt.clf()
 set_fonts()
-# @ Thrust magnitude @
-ax = fig.add_subplot(211)
-ax.plot(pdg.t[1:end-1],pdg.T_nrm*1e-3;color="black",marker=".",markersize=5,
-        linestyle="none")
-ax.plot(sim.t,sim.T_nrm*1e-3;color="black",linewidth=1)
-ax.axhline(y=rocket.ρ_min*1e-3;color="red",linestyle="--",zorder=0,linewidth=2)
-ax.axhline(y=rocket.ρ_max*1e-3;color="red",linestyle="--",zorder=0,linewidth=2)
-ax.fill_between([0,sim.t[end]],0,rocket.ρ_min*1e-3;edgecolor="none",
-                facecolor="black",alpha=0.1)
-ax.fill_between([0,sim.t[end]],rocket.ρ_max*1e-3,top_offset*rocket.ρ_max*1e-3;
-                edgecolor="none",facecolor="black",alpha=0.1)
-ax.set_xlim([0,sim.t[end]])
-ax.set_ylim([0,top_offset*rocket.ρ_max*1e-3])
-ax.set_xlabel("Time [s]")
-ax.set_ylabel("Thrust [kN]")
-# @ Pointing angle @
-ax = fig.add_subplot(212)
-ax.plot(pdg.t[1:end-1],pdg.γ*180/π;color="black",marker=".",markersize=5,
-        linestyle="none")
-ax.plot(sim.t,sim.γ*180/π;color="black",linewidth=1)
-ax.axhline(y=rocket.γ_p*180/π;color="red",linestyle="--",zorder=0,linewidth=2)
-ax.fill_between([0,sim.t[end]],rocket.γ_p*180/π,top_offset*rocket.γ_p*180/π;
-                edgecolor="none",facecolor="black",alpha=0.1)
-ax.set_xlim([0,sim.t[end]])
-ax.set_ylim([0,top_offset*rocket.γ_p*180/π])
-ax.set_xlabel("Time [s]")
-ax.set_ylabel(L"Pointing angle [$^\circ$]")
-#
-plt.tight_layout(h_pad=0.1,w_pad=0.1)
-#
-fig.savefig("figures/lcvx_rocket_thrust.pdf",bbox_inches="tight")
-################################################################################
-
-################################################################################
-# ..:: Mass history ::..
-#
-top_offset = 1.05
-bot_offset = 0.95
-#
-fig = plt.figure(4,figsize=(6,6))
-plt.clf()
-set_fonts()
-ax = fig.add_subplot(111)
-ax.plot(pdg.t,pdg.m;color="black",marker=".",markersize=5,linestyle="none")
-ax.plot(sim.t,sim.m;color="black",linewidth=1)
-ax.axhline(y=rocket.m_dry;color="red",linestyle="--",zorder=0,linewidth=2)
-ax.axhline(y=rocket.m_wet;color="red",linestyle="--",zorder=0,linewidth=2)
-ax.fill_between([0,sim.t[end]],bot_offset*rocket.m_dry,rocket.m_dry;
-                edgecolor="none",facecolor="black",alpha=0.1)
-ax.fill_between([0,sim.t[end]],rocket.m_wet,top_offset*rocket.m_wet;
-                edgecolor="none",facecolor="black",alpha=0.1)
+ax = fig.add_subplot()
+ax.grid()
+ax.set_facecolor("white")
+fig.patch.set_alpha(0)
+ax.axhline(y=rocket.m_dry; style_constraint...)
+ax.fill_between([0,t_opt],rocket.m_dry,rocket.m_dry-100; style_constraint_fill...)
+ax.axhline(y=rocket.m_wet; style_constraint...)
+ax.fill_between([0,t_opt],rocket.m_wet,rocket.m_wet+100; style_constraint_fill...)
+ax.plot(t_sim, mass_sim; style_ct...)
+ax.plot(t, mass; style_dt...)
+ax.set_xticks(ticks=[0,20,40,60,75])
+ax.set_yticks(ticks=[1450,1500,1600,1700,1800,1900,1950])
+ax.set_xlim([0,75])
+ax.set_ylim([1450,1950])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel("Mass [kg]")
-ax.set_xlim([0,sim.t[end]])
-ax.set_ylim([bot_offset*rocket.m_dry,top_offset*rocket.m_wet])
-#
-plt.tight_layout(h_pad=0.1,w_pad=0.1)
-#
-fig.savefig("figures/lcvx_rocket_mass.pdf",bbox_inches="tight")
+fig.savefig("../../figures/lcvx_3dof_rocket_mass.pdf",bbox_inches="tight")
+################################################################################
+
+################################################################################
+# ..:: Thrust magnitude history ::..
+fig = plt.figure(4,figsize=(4,4))
+plt.clf()
+set_fonts()
+ax = fig.add_subplot()
+ax.grid()
+ax.set_facecolor("white")
+fig.patch.set_alpha(0)
+T_nrm = LCvxVector([norm(T[:,i]) for i=1:N-1])
+T_sim_nrm = LCvxVector([norm(T_sim[:,i]) for i=1:N_sim])
+ax.axhline(y=rocket.ρ_min*1e-3; style_constraint...)
+ax.fill_between([0,t_opt],rocket.ρ_min*1e-3,0; style_constraint_fill...)
+ax.axhline(y=rocket.ρ_max*1e-3; style_constraint...)
+ax.fill_between([0,t_opt],rocket.ρ_max*1e-3,rocket.ρ_max*1e-3+16; style_constraint_fill...)
+ax.plot(t_sim, T_sim_nrm; style_ct...)
+ax.plot(t[1:end-1], T_nrm; style_dt...)
+ax.set_xticks(ticks=[0,20,40,60,75])
+ax.set_yticks(ticks=[0,4,8,12,16])
+ax.set_xlim([0,75])
+ax.set_ylim([0,16])
+ax.set_xlabel("Time [s]")
+ax.set_ylabel("Thrust [kN]")
+fig.savefig("../../figures/lcvx_3dof_rocket_thrust.pdf",bbox_inches="tight")
+################################################################################
+
+################################################################################
+# ..:: Thrust z history ::..
+fig = plt.figure(2,figsize=(4,4))
+plt.clf()
+set_fonts()
+ax = fig.add_subplot()
+ax.grid()
+ax.set_facecolor("white")
+fig.patch.set_alpha(0)
+T_z = LCvxVector([T[3,i] for i=1:N-1])
+T_z_sim = LCvxVector([T_sim[3,i] for i=1:N_sim])
+T_z_max = LCvxVector([sqrt((ρ_max*1e-3)^2-T[1,i]^2-T[2,i]^2) for i=1:N-1])
+append!(T_z_max, T_z_max[end])
+T_z_min = LCvxVector([sqrt(max(0,(ρ_min*1e-3)^2-T[1,i]^2-T[2,i]^2)) for i=1:N-1])
+append!(T_z_min, T_z_min[end])
+hover_line = mass*norm(g)*1e-3
+ax.plot(t, T_z_max; style_constraint...)
+ax.fill_between(t,T_z_max,40; style_constraint_fill...)
+ax.plot(t, T_z_min; style_constraint...)
+ax.fill_between(t,T_z_min,0; style_constraint_fill...)
+ax.plot(t, hover_line; style_hover...)
+ax.plot(t_sim, T_z_sim; style_ct...)
+ax.plot(t[1:end-1], T_z; style_dt...)
+ax.set_xticks(ticks=[0,20,40,60,75])
+ax.set_yticks(ticks=[0,5,10,15])
+ax.set_xlim([0,75])
+ax.set_ylim([0,15])
+ax.set_xlabel("Time [s]")
+ax.set_ylabel(L"Thrust along $\hat e_z$ [kN]")
+fig.savefig("../../figures/lcvx_3dof_rocket_thrust_z.pdf",bbox_inches="tight")
+################################################################################
+
+################################################################################
+# ..:: Pointing angle plot ::..
+fig = plt.figure(4,figsize=(4,4))
+plt.clf()
+set_fonts()
+ax = fig.add_subplot()
+ax.grid()
+ax.set_facecolor("white")
+fig.patch.set_alpha(0)
+pa = LCvxVector([acos(T[3,i]/norm(T[:,i]))*180/pi for i=1:N-1])
+pa_sim = LCvxVector([acos(T_sim[3,i]/norm(T_sim[:,i]))*180/pi for i=1:N_sim])
+ax.axhline(rocket.γ_p*180/pi; style_constraint...)
+ax.fill_between([0,t_opt],rocket.γ_p*180/pi,rocket.γ_p*180/pi+20; style_constraint_fill...)
+ax.plot(t_sim, pa_sim; style_ct...)
+ax.plot(t[1:end-1], pa; style_dt...)
+ax.set_xticks(ticks=[0,20,40,60,75])
+ax.set_yticks(ticks=[0,10,20,30,40,50])
+ax.set_xlim([0,75])
+ax.set_ylim([0,50])
+ax.set_xlabel("Time [s]")
+ax.set_ylabel(L"Pointing angle [$^\circ$]")
+fig.savefig("../../figures/lcvx_3dof_rocket_angle.pdf",bbox_inches="tight")
 ################################################################################
