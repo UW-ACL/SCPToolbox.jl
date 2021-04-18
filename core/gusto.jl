@@ -181,26 +181,27 @@ function GuSTOProblem(pars::GuSTOParameters,
 end
 
 """
-    GuSTOSubproblem(pbm, iter, λ, η, ref)
+    GuSTOSubproblem(pbm[, iter, λ, η, ref])
 
 Constructor for an empty convex optimization subproblem. No cost or
 constraints. Just the decision variables and empty associated parameters.
 
 # Arguments
 - `pbm`: the GuSTO problem being solved.
-- `iter`: GuSTO iteration number.
-- `λ`: the soft penalty weight.
-- `η`: the trust region radius.
-- `ref`: the reference trajectory.
+- `iter`: (optional) GuSTO iteration number.
+- `λ`: (optional) the soft penalty weight.
+- `η`: (optional) the trust region radius.
+- `ref`: (optional) the reference trajectory.
 
 # Returns
 - `spbm`: the subproblem structure.
 """
 function GuSTOSubproblem(pbm::SCPProblem,
-                         iter::T_Int,
-                         λ::T_Real,
-                         η::T_Real,
-                         ref::T_GuSTOSubSol)::GuSTOSubproblem
+                         iter::T_Int=0,
+                         λ::T_Real=1e4,
+                         η::T_Real=1.0,
+                         ref::Union{T_GuSTOSubSol,
+                                    Missing}=missing)::GuSTOSubproblem
 
     # Statistics
     timing = Dict(:formulate => time_ns(), :total => time_ns())
@@ -463,7 +464,8 @@ function _gusto__generate_initial_guess(
 
     # Construct the raw trajectory
     x, u, p = pbm.traj.guess(pbm.pars.N)
-    guess = T_GuSTOSubSol(x, u, p, 0, pbm)
+    _scp__correct_convex!(x, u, p, pbm, :GuSTOSubproblem)
+    guess = GuSTOSubproblemSolution(x, u, p, 0, pbm)
 
     return guess
 end

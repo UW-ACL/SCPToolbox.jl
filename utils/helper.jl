@@ -729,28 +729,31 @@ function contains(H::T_Hyperrectangle, r::T_RealVector)::T_Bool
     return all(H.l .<= r .<= H.u)
 end
 
-""" Compute log-sum-exp function value and its gradient.
+"""
+    logsumexp(f[, ∇f][; t])
 
-Numerically stable implementation based on [1]. The log-sum-exp function is:
+Compute log-sum-exp function value and its gradient. Numerically stable
+implementation based on [1]. The log-sum-exp function is:
 
-  L(x) = 1/t*log( ∑_i^{m} exp(t*f_i(x)) ).
+` L(x) = 1/t*log( ∑_i^{m} exp(t*f_i(x)) ). `
 
-As t increases, this becomes an increasingly accurate approximation of:
-
-    max_i f_i(x).
+As t increases, this becomes an increasingly accurate approximation of `max_i
+f_i(x)`.
 
 References:
 
 [1] https://leimao.github.io/blog/LogSumExp/
 
 # Arguments
-    f: the function in the exponent.
-    ∇f: (optional) the gradient of the function.
-    t: (optional) the homotopy parameter.
+- `f`: the function in the exponent.
+- `∇f`: (optional) the gradient of the function.
+
+# Keywords
+- `t`: (optional) the homotopy parameter.
 
 # Returns
-    L: the log-sum-exp function value.
-    ∇L: the log-sum-exp function gradient. Only returned in ∇f provided.
+- `L`: the log-sum-exp function value.
+- `∇L`: the log-sum-exp function gradient. Only returned in ∇f provided.
 """
 function logsumexp(
     f::T_RealVector,
@@ -1212,13 +1215,16 @@ function rgb2pyplot(c::T; a::Real=1)::Tuple{Real, Real,
     return t
 end
 
-""" Create an empty figure for plotting.
+"""
+    create_figure(size)
+
+Create an empty figure for plotting.
 
 # Arguments
-    size: the figure size (width, height).
+- `size`: the figure size (width, height).
 
 # Returns
-    fig: the figure object.
+- `fig`: the figure object.
 """
 function create_figure(size::Tuple{T, V})::Figure where {T<:Real, V<:Real}
 
@@ -1242,7 +1248,7 @@ function create_figure(size::Tuple{T, V})::Figure where {T<:Real, V<:Real}
 end
 
 """
-    save_figure(filename, algo[; tmp])
+    save_figure(filename, algo[; tmp, path])
 
 Save the current figure to a PDF file. The filename is prepended with the name
 of the SCP algorithm used for the solution.
@@ -1253,14 +1259,17 @@ of the SCP algorithm used for the solution.
 
 # Keywords
 - `tmp`: (optional) whether this is a temporary file.
+- `path`: (optional) where to save the figure.
 """
 _helper__tight_layout_applied = false
 function save_figure(filename::T_String, algo::T_String;
-                     tmp::T_Bool=false)::Nothing
+                     tmp::T_Bool=false,
+                     path::Union{T_String, Nothing}=nothing)::Nothing
 
     global _helper__tight_layout_applied
 
     algo = lowercase(split(algo, " "; limit=2)[1])
+    path = isnothing(path) ? "../../figures/" : path
 
     # Apply tight layout, only do this **once** per figure
     if !_helper__tight_layout_applied
@@ -1270,7 +1279,7 @@ function save_figure(filename::T_String, algo::T_String;
 
     # Save figure
     if !tmp
-        plt.savefig(@sprintf("../../figures/%s_%s.pdf", algo, filename),
+        plt.savefig(@sprintf("%s%s_%s.pdf", path, algo, filename),
                     bbox_inches="tight", pad_inches=0.01, facecolor=zeros(4))
         plt.close()
         _helper__tight_layout_applied = false # reset
