@@ -572,7 +572,7 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
     ax.autoscale(tight=true)
 
     ax.set_xlabel("Time [s]")
-    ax.set_ylabel("SDF \$d_{\\mathrm{ss}}(r_{\\mathcal{I}})\$")
+    ax.set_ylabel("SDF \$\\tilde d_{\\mathrm{ss}}(r_{\\mathcal{I}})\$")
 
     # >> Continuous-time components <<
     yc = T_RealVector([_freeflyer__signed_distance(

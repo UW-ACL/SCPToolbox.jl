@@ -656,27 +656,6 @@ function _scvx__P(vd::T_RealVector, vs::T_RealVector)::T_Real
 end
 
 """
-    _scvx__Pf(g)
-
-Compute cost penalty for boundary condition.
-
-This is the cost penalty term for violating a boundary condition.
-
-Note: **this function must match the penalty implemented in
-_scvx__add_cost!()**.
-
-# Arguments
-- `g`: boundary condition value (zero if satisfied).
-
-# Returns
-- `Pf`: the penalty value.
-"""
-function _scvx__Pf(g::T_RealVector)::T_Real
-    Pf = norm(g, 1)
-    return Pf
-end
-
-"""
     _scvx__compute_linear_cost_penalty!(spbm)
 
 Compute the subproblem cost virtual control penalty term.
@@ -762,7 +741,7 @@ function _scvx__actual_cost_penalty!(
         sk = isempty(sk) ? [0.0] : sk
         @k(P) = λ*_scvx__P(δk, max.(sk, 0.0))
     end
-    pen = trapz(P, t)+λ*_scvx__Pf(gic)+λ*_scvx__Pf(gtc)
+    pen = trapz(P, t)+λ*(_scvx__P([0.0], gic)+_scvx__P([0.0], gtc))
 
     return pen
 end
