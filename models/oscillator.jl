@@ -76,7 +76,7 @@ function OscillatorProblem(N::T_Int)::OscillatorProblem
     ω0 = 1.0
     # >> Control parameters <<
     a_db = 0.1
-    a_max = 2.0
+    a_max = 0.2
 
     oscillator = OscillatorParameters(
         id_r, id_v, id_a, id_l1r, ζ, ω0, a_db, a_max)

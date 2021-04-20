@@ -124,8 +124,8 @@ function _common__set_cost!(pbm::TrajectoryProblem,
         a = u[veh.id_a]
         r_nrml = traj.r0
         a_nrml = veh.a_max
-        α = 0.95 # Tradeoff
-        return α*(a/a_nrml)^2+(1-α)*(l1r/r_nrml)
+        α = 0.06 # Tradeoff
+        return α*(a/a_nrml)^2+(l1r/r_nrml)
         end)
 
     return nothing
@@ -183,6 +183,19 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
         X = [C(vcat(@k(l1r), r), :l1)]
 
         return X
+        end)
+
+    problem_set_U!(
+        pbm, (t, k, u, p, pbm) -> begin
+        veh = pbm.mdl.vehicle
+
+        a = u[veh.id_a]
+
+        C = T_ConvexConeConstraint
+        U = [C(a-veh.a_max, :nonpos),
+             C(-veh.a_max-a, :nonpos)]
+
+        return U
         end)
 
     return nothing
