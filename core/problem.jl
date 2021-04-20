@@ -280,18 +280,23 @@ function problem_set_running_cost!(pbm::TrajectoryProblem,
                                    dgdx::T_Function=nothing,
                                    dgdp::T_Function=nothing)::Nothing
     if algo in (:scvx, :ptr)
-        pbm.Γ = (x, u, p) -> SΓ(x, u, p, pbm)
+        pbm.Γ = (t, k, x, u, p) -> SΓ(t, k, x, u, p, pbm)
     else
-        pbm.S = !isnothing(SΓ) ? (p) -> SΓ(p, pbm) : nothing
-        pbm.dSdp = !isnothing(dSdp) ? (p) -> dSdp(p, pbm) : nothing
+        pbm.S = !isnothing(SΓ) ? (t, k, p) -> SΓ(t, k, p, pbm) : nothing
+        pbm.dSdp = !isnothing(dSdp) ? (t, k, p) -> dSdp(t, k, p, pbm) : nothing
         pbm.S_cvx = isnothing(dSdp)
-        pbm.ℓ = !isnothing(ℓ) ? (x, p) -> ℓ(x, p, pbm) : nothing
-        pbm.dℓdx = !isnothing(dℓdx) ? (x, p) -> dℓdx(x, p, pbm) : nothing
-        pbm.dℓdp = !isnothing(dℓdp) ? (x, p) -> dℓdp(x, p, pbm) : nothing
+        pbm.ℓ = !isnothing(ℓ) ? (t, k, x, p) -> ℓ(t, k, x, p, pbm) : nothing
+        pbm.dℓdx = !isnothing(dℓdx) ?
+            (t, k, x, p) -> dℓdx(t, k, x, p, pbm) : nothing
+        pbm.dℓdp = !isnothing(dℓdp) ?
+            (t, k, x, p) -> dℓdp(t, k, x, p, pbm) : nothing
         pbm.ℓ_cvx = isnothing(dℓdx) && isnothing(dℓdp)
-        pbm.g = !isnothing(g) ? (x, p) -> g(x, p, pbm) : nothing
-        pbm.dgdx = !isnothing(dgdx) ? (x, p) -> dgdx(x, p, pbm) : nothing
-        pbm.dgdp = !isnothing(dgdp) ? (x, p) -> dgdp(x, p, pbm) : nothing
+        pbm.g = !isnothing(g) ?
+            (t, k, x, p) -> g(t, k, x, p, pbm) : nothing
+        pbm.dgdx = !isnothing(dgdx) ?
+            (t, k, x, p) -> dgdx(t, k, x, p, pbm) : nothing
+        pbm.dgdp = !isnothing(dgdp) ?
+            (t, k, x, p) -> dgdp(t, k, x, p, pbm) : nothing
         pbm.g_cvx = isnothing(dgdx) && isnothing(dgdp)
     end
     return nothing

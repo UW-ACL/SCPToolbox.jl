@@ -1101,7 +1101,8 @@ function plot_convergence(history, name::T_String)::Nothing
     formulate = [spbm.timing[:formulate] for spbm in spbms]
     overhead = [spbm.timing[:overhead] for spbm in spbms]
     total = [spbm.timing[:total] for spbm in spbms]
-    ymax = maximum((formulate+discretize+solve+overhead)[2:end])*1.1
+    i_start = (length(solve)>1) ? 2 : 1
+    ymax = maximum((formulate+discretize+solve+overhead)[i_start:end])*1.1
 
     for i = 1:2
         linew = (i==1) ? 0 : lw

@@ -6,8 +6,7 @@ spaceflight101.com. No SpaceX engineers were involved in the creation of this
 code.
 
 Sequential convex programming algorithms for trajectory optimization.
-Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
-                   and Autonomous Systems Laboratory (Stanford University)
+Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington)
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software

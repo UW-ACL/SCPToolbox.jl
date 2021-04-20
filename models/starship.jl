@@ -6,8 +6,7 @@ spaceflight101.com. No SpaceX engineers were involved in the creation of this
 code.
 
 Sequential convex programming algorithms for trajectory optimization.
-Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
-                   and Autonomous Systems Laboratory (Stanford University)
+Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington)
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -189,7 +188,10 @@ end
 # :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-""" Starship vehicle dynamics.
+"""
+    dynamics(t, k, x, u, p, pbm[; no_aero_torques])
+
+Starship vehicle dynamics.
 
 Args:
 - `t`: the current time (normalized).
@@ -656,7 +658,7 @@ end
 
 Args:
     mdl: the starship problem parameters.
-    sol: the trajectory solution output by SCvx. =#
+    sol: the trajectory solution output by SCP. =#
 function plot_final_trajectory(mdl::StarshipProblem,
                                sol::SCPSolution)::Nothing
 

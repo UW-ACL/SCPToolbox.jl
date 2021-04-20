@@ -895,7 +895,8 @@ function _scp__original_cost(
     # Integrated running cost
     J_run = Vector{T_Objective}(undef, N)
     for k = 1:N
-        @k(J_run) = isnothing(pbm.traj.Γ) ? 0.0 : pbm.traj.Γ(@k(x), @k(u), p)
+        @k(J_run) = isnothing(pbm.traj.Γ) ? 0.0 :
+            pbm.traj.Γ(@k(t), k, @k(x), @k(u), p)
     end
     integ_J_run = trapz(J_run, t)
 
