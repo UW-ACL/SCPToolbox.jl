@@ -778,11 +778,118 @@ function logsumexp(
     return L
 end
 
-""" Print row of table.
+"""
+    sigmoid(f[, ∇f][; κ])
+
+Compute a sigmoid function. The sigmoid represence a logical "OR" combination
+of its argument, in the sense that its value tends to one as any argument
+becomes more positive.
 
 # Arguments
-    row: table row specification.
-    table: the table specification.
+- `f`: the function in the exponent.
+- `∇f`: (optional) the gradient of the function.
+
+# Keywords
+- `κ`: (optional) the sharpness parameter.
+
+# Returns
+- `σ`: the sigmoid function value.
+- `∇σ`: the sigmoid function gradient. Only returned in ∇f provided.
+"""
+function sigmoid(f::T_RealVector,
+                 ∇f::Union{Nothing, Vector{T_RealVector}}=nothing;
+                 κ::T_Real=1.0)::Union{Tuple{T_Real, T_RealVector},
+                                       T_Real}
+    L = logsumexp(f, ∇f; t=κ)
+    if !isnothing(∇f)
+        L, ∇L = L
+    end
+    σ = 1-1/(1+exp(κ*L))
+    if !isnothing(∇f)
+        ∇σ = κ*exp(κ*L)*(1-σ)^2*∇L
+        return σ, ∇σ
+    end
+    return σ
+end
+
+"""
+    indicator(f[, ∇f][; κ1, κ2])
+
+Description.
+
+# Arguments
+- `f`: the function in the exponent.
+- `∇f`: (optional) the gradient of the function.
+
+# Keywords
+- `κ1`: (optional) sigmoid sharpness parameter.
+- `κ2`: (optional) normalization sharpness parameter.
+
+# Returns
+- `δ`: the sigmoid function value.
+- `∇δ`: the sigmoid function gradient. Only returned in ∇f provided.
+"""
+function indicator(f::T_RealVector,
+                   ∇f::Union{Nothing, Vector{T_RealVector}}=nothing;
+                   κ1::T_Real=1.0,
+                   κ2::T_Real=1.0)::Union{Tuple{T_Real, T_RealVector},
+                                          T_Real}
+    σ = sigmoid(f, ∇f; κ=κ1)
+    if !isnothing(∇f)
+        σ, ∇σ = σ
+    end
+    γ = exp(-κ2*κ1)
+    δ = γ+(1-γ)*σ
+    if !isnothing(∇f)
+        ∇δ = (1-γ)*∇σ
+        return δ, ∇δ
+    end
+    return δ
+end
+
+"""
+    predicates(p1[, p2, ..., pN][; κ1, κ2])
+
+A smooth logical OR.
+
+# Arguments
+- `predicates`: (optional) the predicates to be composed as logical
+  "OR". Provide either a list of reals `f` or a list of (real, vector) tuples
+  `(f, ∇f)`.
+
+# Keywords
+- `κ1`: (optional) sigmoid sharpness parameter.
+- `κ2`: (optional) normalization sharpness parameter.
+
+# Returns
+- `OR`: the smooth OR value (1≡true).
+- `∇OR`: the smooth OR gradient. Only returned in `∇f` provided.
+"""
+function or(predicates...;
+            κ1::T_Real=1.0,
+            κ2::T_Real=1.0)::Union{Tuple{T_Real, T_RealVector},
+                                   T_Real}
+    nargs = length(predicates)
+    if typeof(predicates[1])<:Tuple
+        f = T_RealVector([p[1] for p in predicates])
+        ∇f = [p[2] for p in predicates]
+        OR, ∇OR = indicator(f, ∇f; κ1=κ1, κ2=κ2)
+        return OR, ∇OR
+    else
+        f = T_RealVector([p for p in predicates])
+        OR = indicator(f; κ1=κ1, κ2=κ2)
+        return OR
+    end
+end
+
+"""
+    print(row, table)
+
+Print row of table.
+
+# Arguments
+- `row`: table row specification.
+- `table`: the table specification.
 """
 function print(row::Dict{T_Symbol, T}, table::T_Table)::Nothing where {T}
     # Assign values to table columns

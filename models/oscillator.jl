@@ -28,7 +28,8 @@ struct OscillatorParameters
     # ..:: Indices ::..
     id_r::T_Int        # Position (state)
     id_v::T_Int        # Velocity (state)
-    id_a::T_Int        # Acceleration (input)
+    id_aa::T_Int       # Actual acceleration (input)
+    id_ar::T_Int       # Reference acceleration (input)
     id_l1r::T_IntRange # Position one-norm (parameter)
     # ..:: Mechanical parameters ::..
     ζ::T_Real          # Damping ratio
@@ -40,9 +41,11 @@ end
 
 """ Trajectory parameters. """
 mutable struct OscillatorTrajectoryParameters
-    r0::T_Real # [m] Initial position
-    v0::T_Real # [m/s] Initial velocity
-    tf::T_Real # [s] Trajectory duration
+    r0::T_Real  # [m] Initial position
+    v0::T_Real  # [m/s] Initial velocity
+    tf::T_Real  # [s] Trajectory duration
+    κ1::T_Real  # Sigmoid homotopy parameter
+    κ2::T_Real  # Normalize homotopy parameter
 end
 
 """ Oscillator trajectory optimization problem parameters all in one. """
@@ -69,7 +72,8 @@ function OscillatorProblem(N::T_Int)::OscillatorProblem
     # >> Indices <<
     id_r = 1
     id_v = 2
-    id_a = 1
+    id_aa = 1
+    id_ar = 2
     id_l1r = 1:N
     # >> Mechanical parameters <<
     ζ = 0.5
@@ -79,14 +83,16 @@ function OscillatorProblem(N::T_Int)::OscillatorProblem
     a_max = 0.2
 
     oscillator = OscillatorParameters(
-        id_r, id_v, id_a, id_l1r, ζ, ω0, a_db, a_max)
+        id_r, id_v, id_aa, id_ar, id_l1r, ζ, ω0, a_db, a_max)
 
     # ..:: Trajectory ::..
     r0 = 1.0
     v0 = 0.0
     tf = 10.0
+    κ1 = 1e-2
+    κ2 = 0.2
 
-    traj = OscillatorTrajectoryParameters(r0, v0, tf)
+    traj = OscillatorTrajectoryParameters(r0, v0, tf, κ1, κ2)
 
     mdl = OscillatorProblem(oscillator, traj)
 
@@ -127,12 +133,12 @@ function dynamics(t::T_Real, #nowarn
     # Current (x, u, p) values
     r = x[veh.id_r]
     v = x[veh.id_v]
-    a = u[veh.id_a]
+    aa = u[veh.id_aa]
 
     # The dynamics
     f = zeros(pbm.nx)
     f[veh.id_r] = v
-    f[veh.id_v] = a-veh.ω0^2*r-2*veh.ζ*veh.ω0*v
+    f[veh.id_v] = aa-veh.ω0^2*r-2*veh.ζ*veh.ω0*v
 
     # Scale for absolute time
     f *= traj.tf
@@ -187,7 +193,7 @@ function plot_timeseries(mdl::OscillatorProblem,
                  :scale=>(a)->a,
                  :dt_y=>(sol)->sol.ud,
                  :ct_y=>sol.uc,
-                 :id=>veh.id_a)]
+                 :id=>veh.id_aa)]
 
     axes = []
 

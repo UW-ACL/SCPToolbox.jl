@@ -30,7 +30,7 @@ function define_problem!(pbm::TrajectoryProblem,
     _common__set_cost!(pbm, algo)
     _common__set_dynamics!(pbm)
     _common__set_convex_constraints!(pbm)
-    # _common__set_nonconvex_constraints!(pbm, algo)
+    _common__set_nonconvex_constraints!(pbm, algo)
     _common__set_bcs!(pbm)
 
     _common__set_guess!(pbm)
@@ -43,7 +43,7 @@ function _common__set_dims!(pbm::TrajectoryProblem)::Nothing
     # Parameters
     np = pbm.mdl.vehicle.id_l1r[end]
 
-    problem_set_dims!(pbm, 2, 1, np)
+    problem_set_dims!(pbm, 2, 2, np)
 
     return nothing
 end
@@ -60,7 +60,8 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
     advise!(pbm, :state, veh.id_r, (-traj.r0, traj.r0))
     advise!(pbm, :state, veh.id_v, (-traj.v0, traj.v0))
     # Inputs
-    advise!(pbm, :input, veh.id_a, (-veh.a_max, veh.a_max))
+    advise!(pbm, :input, veh.id_aa, (-veh.a_max, veh.a_max))
+    advise!(pbm, :input, veh.id_ar, (-veh.a_max, veh.a_max))
     # Parameters
     for i in veh.id_l1r
         advise!(pbm, :parameter, i, (0.0, traj.r0))
@@ -121,11 +122,11 @@ function _common__set_cost!(pbm::TrajectoryProblem,
         veh = pbm.mdl.vehicle
         traj = pbm.mdl.traj
         l1r = @k(p[veh.id_l1r])
-        a = u[veh.id_a]
+        aa = u[veh.id_aa]
         r_nrml = traj.r0
         a_nrml = veh.a_max
         α = 0.06 # Tradeoff
-        return α*(a/a_nrml)^2+(l1r/r_nrml)
+        return α*(aa/a_nrml)^2+(l1r/r_nrml)
         end)
 
     return nothing
@@ -156,7 +157,7 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
         veh = pbm.mdl.vehicle
         traj = pbm.mdl.traj
         B = zeros(pbm.nx, pbm.nu)
-        B[veh.id_v, veh.id_a] = 1.0
+        B[veh.id_v, veh.id_aa] = 1.0
         B *= traj.tf
         return B
         end,
@@ -189,13 +190,83 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
         pbm, (t, k, u, p, pbm) -> begin
         veh = pbm.mdl.vehicle
 
-        a = u[veh.id_a]
+        aa = u[veh.id_aa]
+        ar = u[veh.id_aa]
 
         C = T_ConvexConeConstraint
-        U = [C(a-veh.a_max, :nonpos),
-             C(-veh.a_max-a, :nonpos)]
+        U = [C(aa-veh.a_max, :nonpos),
+             C(-veh.a_max-aa, :nonpos),
+             C(ar-veh.a_max, :nonpos),
+             C(-veh.a_max-ar, :nonpos)]
 
         return U
+        end)
+
+    return nothing
+end
+
+function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
+                                             algo::T_Symbol)::Nothing
+
+    _common_s_sz = 2
+
+    problem_set_s!(
+        pbm, algo,
+        # Constraint s
+        (t, k, x, u, p, pbm) -> begin
+        veh = pbm.mdl.vehicle
+        traj = pbm.mdl.traj
+
+        aa = u[veh.id_aa]
+        ar = u[veh.id_ar]
+
+        above_db = ar-veh.a_db
+        below_db = -veh.a_db-ar
+        OR = or(above_db, below_db;
+                κ1=traj.κ1, κ2=traj.κ2)
+
+        s = zeros(_common_s_sz)
+
+        s[1] = aa-OR*ar
+        s[2] = OR*ar-aa
+
+        return s
+        end,
+        # Jacobian ds/dx
+        (t, k, x, u, p, pbm) -> begin
+        C = zeros(_common_s_sz, pbm.nx)
+        return C
+        end,
+        # Jacobian ds/du
+        (t, k, x, u, p, pbm) -> begin
+        veh = pbm.mdl.vehicle
+        traj = pbm.mdl.traj
+
+        aa = u[veh.id_aa]
+        ar = u[veh.id_ar]
+
+        above_db = ar-veh.a_db
+        ∇above_db = [1.0]
+        below_db = -veh.a_db-ar
+        ∇below_db = [-1.0]
+        OR, ∇OR = or((above_db, ∇above_db),
+                     (below_db, ∇below_db);
+                     κ1=traj.κ1, κ2=traj.κ2)
+        ∇ORar = ∇OR[1]*ar+OR
+
+        D = zeros(_common_s_sz, pbm.nu)
+
+        D[1, veh.id_aa] = 1.0
+        D[1, veh.id_ar] = -∇ORar
+        D[2, veh.id_aa] = -1.0
+        D[2, veh.id_ar] = ∇ORar
+
+        return D
+        end,
+        # Jacobian ds/dp
+        (t, k, x, u, p, pbm) -> begin
+        G = zeros(_common_s_sz, pbm.np)
+        return G
         end)
 
     return nothing
