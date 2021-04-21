@@ -123,10 +123,13 @@ function _common__set_cost!(pbm::TrajectoryProblem,
         traj = pbm.mdl.traj
         l1r = @k(p[veh.id_l1r])
         aa = u[veh.id_aa]
+        ar = u[veh.id_ar]
         r_nrml = traj.r0
         a_nrml = veh.a_max
         α = 0.06 # Tradeoff
-        return α*(aa/a_nrml)^2+(l1r/r_nrml)
+        runn = α*(aa/a_nrml)^2+(l1r/r_nrml)
+        runn += 1.6*((aa-ar)/a_nrml)^2
+        return runn
         end)
 
     return nothing

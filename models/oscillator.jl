@@ -276,7 +276,7 @@ function plot_deadband(mdl::OscillatorProblem,
     clr = get_colormap()(1.0)
     veh = mdl.vehicle
     traj = mdl.traj
-    resol = 200
+    resol = 1000
     Red = "#db6245"
     Green = "#5da9a1"
 

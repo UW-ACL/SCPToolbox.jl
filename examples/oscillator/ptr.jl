@@ -51,8 +51,8 @@ pars = PTRParameters(N, Nsub, iter_max, wvc, wtr, ε_abs, ε_rel, feas_tol,
                      q_tr, q_exit, solver, solver_options)
 
 # Homotopy parameters
-Nhom = 10
-hom_κ1 = T_Homotopy(1e-6)
+Nhom = 50
+hom_κ1 = T_Homotopy(1e-8)
 hom_grid = LinRange(0.0, 1.0, Nhom)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -80,8 +80,8 @@ end
 # :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-sol = sol[end-1]
-history = history[end-1]
+sol = sol[end]
+history = history[end]
 
 plot_timeseries(mdl, sol, history)
 plot_deadband(mdl, sol)

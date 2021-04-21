@@ -22,7 +22,7 @@ using Printf
 using PyPlot
 using Colors
 
-import Base: vec, adjoint, *
+import Base: vec, adjoint, *, print
 
 include("types.jl")
 
