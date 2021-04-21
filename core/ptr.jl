@@ -338,19 +338,31 @@ end
 # :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#= Apply the PTR algorithm to solve the trajectory generation problem.
+"""
+    ptr_solve(pbm[, hot])
 
-Args:
-    pbm: the trajectory problem to be solved.
+Solve the optimal control problem using the penalized trust region (PTR)
+method.
 
-Returns:
-    sol: the PTR solution structure.
-    history: PTR iteration data history. =#
-function ptr_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution, Nothing},
-                                             SCPHistory}
+# Arguments
+- `pbm`: the trajectory problem to be solved.
+- `warm`: (optional) warm start solution.
+
+# Returns
+- `sol`: the PTR solution structur.
+- `history`: PTR iteration data history.
+"""
+function ptr_solve(pbm::SCPProblem,
+                   warm::Union{Nothing, SCPSolution}=nothing)::Tuple{
+                       Union{SCPSolution, Nothing},
+                       SCPHistory}
     # ..:: Initialize ::..
 
-    ref = _ptr__generate_initial_guess(pbm)
+    if isnothing(warm)
+        ref = _ptr__generate_initial_guess(pbm)
+    else
+        ref = _ptr__warm_start(pbm, warm)
+    end
 
     history = SCPHistory()
 
@@ -427,6 +439,28 @@ function _ptr__generate_initial_guess(
 
     # Construct the raw trajectory
     x, u, p = pbm.traj.guess(pbm.pars.N)
+    guess = PTRSubproblemSolution(x, u, p, 0, pbm)
+
+    return guess
+end
+
+"""
+    _ptr__warm_start(pbm, warm)
+
+Create initial guess from a warm start solution.
+
+# Arguments
+- `pbm`: the PTR problem structure.
+- `warm`: warm start solution.
+
+# Returns
+- `guess`: the initial guess for PTR.
+"""
+function _ptr__warm_start(pbm::SCPProblem,
+                          warm::SCPSolution)::PTRSubproblemSolution
+
+    # Extract the warm-start trajectory
+    x, u, p = warm.xd, warm.ud, warm.p
     guess = PTRSubproblemSolution(x, u, p, 0, pbm)
 
     return guess

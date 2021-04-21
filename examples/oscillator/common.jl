@@ -191,7 +191,7 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
         veh = pbm.mdl.vehicle
 
         aa = u[veh.id_aa]
-        ar = u[veh.id_aa]
+        ar = u[veh.id_ar]
 
         C = T_ConvexConeConstraint
         U = [C(aa-veh.a_max, :nonpos),

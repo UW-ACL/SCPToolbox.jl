@@ -453,6 +453,40 @@ struct T_ContinuousTimeTrajectory
     end
 end
 
+""" Homotopy (continuation) object. """
+struct T_Homotopy
+    # Raw parameters
+    ε::T_Real     # Error with respect to exact 1 or 0
+    δ_min::T_Real # Most precise transition half-width
+    δ_max::T_Real # Most coarse transition half-width
+    # Derived parameters
+    ρ::T_Real     # Exponential growth factor
+
+    """
+        T_Homotopy(δ_min[; δ_max, ε])
+
+    Basic constructor.
+
+    # Arguments
+    - `δ_min`: the sharpest transition half-width.
+
+    # Keywords
+    - `δ_max`: (optional) the smoothest transition half-width.
+    - `ε`: (optional) the y-error with respect to exact step function.
+
+    # Returns
+    - `h`: the homotopy object.
+    """
+    function T_Homotopy(
+        δ_min::T_Real; δ_max::T_Real=1.0, ε::T_Real=1e-2)::T_Homotopy
+
+        ρ = δ_min/δ_max
+        h = new(ε, δ_min, δ_max, ρ)
+
+        return h
+    end
+end
+
 """ Iteration progress information table to be printed in REPL. """
 mutable struct T_Table
     headings::Array{T_String}      # Column headings

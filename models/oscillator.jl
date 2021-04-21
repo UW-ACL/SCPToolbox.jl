@@ -41,11 +41,11 @@ end
 
 """ Trajectory parameters. """
 mutable struct OscillatorTrajectoryParameters
-    r0::T_Real  # [m] Initial position
-    v0::T_Real  # [m/s] Initial velocity
-    tf::T_Real  # [s] Trajectory duration
-    κ1::T_Real  # Sigmoid homotopy parameter
-    κ2::T_Real  # Normalize homotopy parameter
+    r0::T_Real # [m] Initial position
+    v0::T_Real # [m/s] Initial velocity
+    tf::T_Real # [s] Trajectory duration
+    κ1::T_Real # Sigmoid homotopy parameter
+    κ2::T_Real # Normalization homotopy parameter
 end
 
 """ Oscillator trajectory optimization problem parameters all in one. """
@@ -79,8 +79,8 @@ function OscillatorProblem(N::T_Int)::OscillatorProblem
     ζ = 0.5
     ω0 = 1.0
     # >> Control parameters <<
-    a_db = 0.1
-    a_max = 0.2
+    a_db = 0.05
+    a_max = 0.3
 
     oscillator = OscillatorParameters(
         id_r, id_v, id_aa, id_ar, id_l1r, ζ, ω0, a_db, a_max)
@@ -89,8 +89,8 @@ function OscillatorProblem(N::T_Int)::OscillatorProblem
     r0 = 1.0
     v0 = 0.0
     tf = 10.0
-    κ1 = 1e-2
-    κ2 = 0.2
+    κ1 = NaN
+    κ2 = 1.0
 
     traj = OscillatorTrajectoryParameters(r0, v0, tf, κ1, κ2)
 
@@ -254,6 +254,85 @@ function plot_timeseries(mdl::OscillatorProblem,
     fig.align_ylabels(axes)
 
     save_figure("oscillator_timeseries", algo)
+
+    return nothing
+end
+
+"""
+    plot_deadband(mdl, history)
+
+Desired versus actual acceleration polar plot, which clearly visualizes the
+deadband.
+
+# Arguments
+- `mdl`: the oscillator problem parameters.
+- `sol`: the trajectory solution.
+"""
+function plot_deadband(mdl::OscillatorProblem,
+                       sol::SCPSolution)::Nothing
+
+    # Common
+    algo = sol.algo
+    clr = get_colormap()(1.0)
+    veh = mdl.vehicle
+    traj = mdl.traj
+    resol = 200
+    Red = "#db6245"
+    Green = "#5da9a1"
+
+    aa = sol.ud[veh.id_aa, :]
+    ar = sol.ud[veh.id_ar, :]
+
+    fig = create_figure((4.5, 4))
+    ax = fig.add_subplot()
+
+    ax.axis("square")
+    ax.set_axisbelow(true)
+    ax.set_facecolor("white")
+    ax.grid(linewidth=0.3, alpha=0.5)
+    ax.autoscale(tight=true)
+    ax.set_xlabel("Reference acceleration, \$a_{\\mathsf{ref}}\$ [m/s\$^2\$]")
+    ax.set_ylabel("Actual acceleration, \$a_{\\mathsf{act}}\$ [m/s\$^2\$]")
+
+    # ..:: The continuous feasible (ar, aa) polar ::..
+    a_max = max(maximum(aa), maximum(ar))
+    a_min = min(minimum(aa), minimum(ar))
+    ar_rng = LinRange(a_min, a_max, resol)
+    above_db = (ar)->ar-veh.a_db
+    below_db = (ar)->-veh.a_db-ar
+    aa_polar = map((ar)->or(above_db(ar),
+                            below_db(ar);
+                            κ1=traj.κ1, κ2=traj.κ2)*ar,
+                   ar_rng)
+
+    # Without deadband
+    ax.plot(ar_rng, ar_rng,
+            color=Red,
+            linewidth=1,
+            solid_capstyle="round",
+            clip_on=false,
+            zorder=10)
+
+    # With deadband
+    ax.plot(ar_rng, aa_polar,
+            color=Green,
+            linewidth=4,
+            solid_capstyle="round",
+            clip_on=false,
+            zorder=10)
+
+    # ..:: The discrete-time (ar, aa) trajectory values ::..
+    ax.plot(ar, aa,
+            linestyle="none",
+            marker="o",
+            markersize=4,
+            markerfacecolor=clr,
+            markeredgecolor="white",
+            markeredgewidth=0.3,
+            clip_on=false,
+            zorder=100)
+
+    save_figure("oscillator_deadband", algo)
 
     return nothing
 end

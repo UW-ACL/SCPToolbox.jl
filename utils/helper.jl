@@ -716,6 +716,23 @@ function ∇(E::T_Ellipsoid, r::T_RealVector)::T_RealVector
     return g
 end
 
+"""
+    h(x)
+
+Get the homotopy parameter value.
+
+# Arguments
+- `x`: a number between [0,1] which maps to the homotopy value. Should increase
+  linearly, and the homotopy will take care of mapping to a nonlinear function.
+
+# Returns
+- `h`: homotopy value for x.
+"""
+function (hom::T_Homotopy)(x::T_Real)::T_Real
+    h = log(1/hom.ε-1)/(hom.ρ^(x)*hom.δ_max)
+    return h
+end
+
 """ Check if a point is contained in the hyperrectangle.
 
 # Arguments
@@ -806,7 +823,8 @@ function sigmoid(f::T_RealVector,
     end
     σ = 1-1/(1+exp(κ*L))
     if !isnothing(∇f)
-        ∇σ = κ*exp(κ*L)*(1-σ)^2*∇L
+        coeff = exp(κ*L+2*log(1-σ))
+        ∇σ = κ*coeff*∇L
         return σ, ∇σ
     end
     return σ
@@ -848,7 +866,7 @@ function indicator(f::T_RealVector,
 end
 
 """
-    predicates(p1[, p2, ..., pN][; κ1, κ2])
+    or(p1[, p2, ..., pN][; κ1, κ2])
 
 A smooth logical OR.
 
