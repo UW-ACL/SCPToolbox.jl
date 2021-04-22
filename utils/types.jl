@@ -18,6 +18,10 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 using LinearAlgebra
 using JuMP
+using ECOS
+using Printf
+using PyPlot
+using Colors
 
 # List of possible SCP statuses/errors
 @enum(SCPStatus,
