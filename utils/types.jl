@@ -16,21 +16,7 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-using LinearAlgebra
-using JuMP
-using ECOS
-using Printf
-using PyPlot
-using Colors
-
-# List of possible SCP statuses/errors
-@enum(SCPStatus,
-      SCP_SOLVED,
-      SCP_FAILED,
-      SCP_SCALING_FAILED,
-      SCP_GUESS_PROJECTION_FAILED,
-      SCP_BAD_ARGUMENT,
-      SCP_BAD_PROBLEM)
+include("globals.jl")
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Basic types ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -334,17 +320,24 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
     dim::T_Int     # Cone admbient space dimension
     kind::T_Symbol # The kind of cone (:nonpos, :l1, etc.)
 
-    """ Basic constructor.
+    """
+        add_conic_constraint!(z, kind[; dual])
+
+    Basic constructor.
 
     # Arguments
-        z: the vector to be constraint to lie within the cone.
-        kind: the cone type.
+    - `z`: the vector to be constraint to lie within the cone.
+    - `kind`: the cone type.
+
+    # Keywords
+    - `dual`: (optional) whether to use the dual of the cone instead.
 
     # Returns
-        constraint: the conic constraint.
+    - `constraint`: the conic constraint.
     """
     function T_ConvexConeConstraint(z::T_OptiVar,
-                                    kind::T_Symbol)::T_ConvexConeConstraint
+                                    kind::T_Symbol;
+                                    dual::T_Bool=false)::T_ConvexConeConstraint
         if !(kind in (:zero, :nonpos, :l1, :soc, :linf, :geom, :exp))
             err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: Unsupported cone.")
             throw(err)
@@ -354,24 +347,27 @@ struct T_ConvexConeConstraint{T<:MOI.AbstractSet}
         dim = length(z)
 
         if kind==:zero
-            K = MOI.Zeros(dim)
+            K = dual ? MOI.Reals(dim) : MOI.Zeros(dim)
         elseif kind==:nonpos
             K = MOI.Nonpositives(dim)
-        elseif kind==:l1
+        elseif kind==:l1 || (dual && kind==:linf)
             K = MOI.NormOneCone(dim)
         elseif kind==:soc
             K = MOI.SecondOrderCone(dim)
-        elseif kind==:linf
+        elseif kind==:linf || (dual && kind==:l1)
             K = MOI.NormInfinityCone(dim)
         elseif kind==:geom
             K = MOI.GeometricMeanCone(dim)
+            if dual
+                z = [-z[1]; z[2:end]]
+            end
         elseif kind==:exp
             if dim!=3
                 msg = "ERROR: Exponential cone is in R^3."
                 err = SCPError(0, SCP_BAD_ARGUMENT, msg)
                 throw(err)
             end
-            K = MOI.ExponentialCone()
+            K = dual ? MOI.DualExponentialCone() : MOI.ExponentialCone()
         end
 
         constraint = new{typeof(K)}(z, K, dim, kind)

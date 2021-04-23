@@ -44,6 +44,7 @@ mutable struct OscillatorTrajectoryParameters
     tf::T_Real # [s] Trajectory duration
     κ1::T_Real # Sigmoid homotopy parameter
     κ2::T_Real # Normalization homotopy parameter
+    γ::T_Real  # Control weight for deadband relaxation
 end
 
 """ Oscillator trajectory optimization problem parameters all in one. """
@@ -89,8 +90,9 @@ function OscillatorProblem(N::T_Int)::OscillatorProblem
     tf = 10.0
     κ1 = NaN
     κ2 = 1.0
+    γ = 1.6
 
-    traj = OscillatorTrajectoryParameters(r0, v0, tf, κ1, κ2)
+    traj = OscillatorTrajectoryParameters(r0, v0, tf, κ1, κ2, γ)
 
     mdl = OscillatorProblem(oscillator, traj)
 

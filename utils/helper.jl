@@ -105,17 +105,21 @@ end
 # :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-""" Add a conic constraint to the optimization problem.
+"""
+    add_conic_constraint!(pbm, cone)
+
+Add a conic constraint to the optimization problem.
 
 # Arguments
-    pbm: the optimization problem structure.
-    cone: the conic constraint structure.
+- `pbm`: the optimization problem structure.
+- `cone`: the conic constraint structure.
 
 # Returns
-    constraint: the conic constraint reference.
+- `constraint`: the conic constraint reference.
 """
 function add_conic_constraint!(
-    pbm::Model, cone::T)::T_Constraint where {T<:T_ConvexConeConstraint}
+    pbm::Model,
+    cone::T)::T_Constraint where {T<:T_ConvexConeConstraint}
 
     constraint = @constraint(pbm, cone.z in cone.K)
 
@@ -144,9 +148,22 @@ function add_conic_constraints!(
     return constraints
 end
 
+"""
+    fixed_cone(cone)
+
+Check if the cone is fixed (i.e. just numerical values, not used inside an
+optimization).
+
+# Arguments
+- `cone`: the cone object.
+
+# Returns
+- `is_fixed`: true if the cone is purely numerical.
+"""
 function fixed_cone(cone::T_ConvexConeConstraint)::T_Bool
     z_real = typeof(cone.z)<:Array{T} where {T<:Real}
-    return typeof(cone.z)==T_RealVector
+    is_fixed = typeof(cone.z)==T_RealVector
+    return is_fixed
 end
 
 """ Generate a vector which indicates conic constraint satisfaction.
@@ -1199,12 +1216,6 @@ function plot_convergence(history, name::T_String)::Nothing
 
     ax.set_xlabel("Iteration number")
     ax.set_ylabel("Time per iteration [s]")
-
-    Yellow = "#f1d46a"
-    Red = "#db6245"
-    Blue = "#356397"
-    DarkBlue = "#26415d"
-    Green = "#5da9a1"
 
     labels = iters
     width = 0.3
