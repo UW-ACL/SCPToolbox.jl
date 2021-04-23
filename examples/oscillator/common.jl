@@ -41,7 +41,7 @@ function _common__set_dims!(pbm::TrajectoryProblem)::Nothing
     # Parameters
     np = pbm.mdl.vehicle.id_l1r[end]
 
-    problem_set_dims!(pbm, 2, 2, np)
+    problem_set_dims!(pbm, 2, 4, np)
 
     return nothing
 end
@@ -60,6 +60,8 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
     # Inputs
     advise!(pbm, :input, veh.id_aa, (-veh.a_max, veh.a_max))
     advise!(pbm, :input, veh.id_ar, (-veh.a_max, veh.a_max))
+    advise!(pbm, :input, veh.id_l1aa, (0.0, veh.a_max))
+    advise!(pbm, :input, veh.id_l1adiff, (0.0, 2*veh.a_max))
     # Parameters
     for i in veh.id_l1r
         advise!(pbm, :parameter, i, (0.0, traj.r0))
@@ -117,17 +119,19 @@ function _common__set_cost!(pbm::TrajectoryProblem,
     problem_set_running_cost!(
         pbm, algo,
         (t, k, x, u, p, pbm) -> begin
-        veh = pbm.mdl.vehicle
-        traj = pbm.mdl.traj
-        l1r = @k(p[veh.id_l1r])
-        aa = u[veh.id_aa]
-        ar = u[veh.id_ar]
-        r_nrml = traj.r0
-        a_nrml = veh.a_max
-        α = 0.06 # Tradeoff
-        runn = α*(aa/a_nrml)^2+(l1r/r_nrml)
-        runn += traj.γ*((aa-ar)/a_nrml)^2
-        return runn
+            veh = pbm.mdl.vehicle
+            traj = pbm.mdl.traj
+            l1r = @k(p[veh.id_l1r])
+            l1aa = u[veh.id_l1aa]
+            l1adiff = u[veh.id_l1adiff]
+            aa = u[veh.id_aa]
+            ar = u[veh.id_ar]
+            r_nrml = traj.r0
+            a_nrml = veh.a_max
+            runn = l1r/r_nrml
+            runn += traj.α*l1aa/a_nrml
+            runn += traj.γ*l1adiff/a_nrml
+            return runn
         end)
 
     return nothing
@@ -175,32 +179,36 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_X!(
         pbm, (t, k, x, p, pbm) -> begin
-        veh = pbm.mdl.vehicle
-        N = pbm.scp.N
+            veh = pbm.mdl.vehicle
+            N = pbm.scp.N
 
-        r = x[veh.id_r]
-        l1r = p[veh.id_l1r]
+            r = x[veh.id_r]
+            l1r = p[veh.id_l1r]
 
-        C = T_ConvexConeConstraint
-        X = [C(vcat(@k(l1r), r), :l1)]
+            C = T_ConvexConeConstraint
+            X = [C(vcat(@k(l1r), r), :l1)]
 
-        return X
+            return X
         end)
 
     problem_set_U!(
         pbm, (t, k, u, p, pbm) -> begin
-        veh = pbm.mdl.vehicle
+            veh = pbm.mdl.vehicle
 
-        aa = u[veh.id_aa]
-        ar = u[veh.id_ar]
+            aa = u[veh.id_aa]
+            ar = u[veh.id_ar]
+            l1aa = u[veh.id_l1aa]
+            l1adiff = u[veh.id_l1adiff]
 
-        C = T_ConvexConeConstraint
-        U = [C(aa-veh.a_max, :nonpos),
-             C(-veh.a_max-aa, :nonpos),
-             C(ar-veh.a_max, :nonpos),
-             C(-veh.a_max-ar, :nonpos)]
+            C = T_ConvexConeConstraint
+            U = [C(aa-veh.a_max, :nonpos),
+                 C(-veh.a_max-aa, :nonpos),
+                 C(ar-veh.a_max, :nonpos),
+                 C(-veh.a_max-ar, :nonpos),
+                 C(vcat(l1aa, aa), :l1),
+                 C(vcat(l1adiff, aa-ar), :l1)]
 
-        return U
+            return U
         end)
 
     return nothing

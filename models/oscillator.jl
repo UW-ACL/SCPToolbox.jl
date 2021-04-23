@@ -28,6 +28,8 @@ struct OscillatorParameters
     id_v::T_Int        # Velocity (state)
     id_aa::T_Int       # Actual acceleration (input)
     id_ar::T_Int       # Reference acceleration (input)
+    id_l1aa::T_Int     # Actual acceleration one-norm (input)
+    id_l1adiff::T_Int  # Acceleration difference one-norm (input)
     id_l1r::T_IntRange # Position one-norm (parameter)
     # ..:: Mechanical parameters ::..
     ζ::T_Real          # Damping ratio
@@ -44,6 +46,7 @@ mutable struct OscillatorTrajectoryParameters
     tf::T_Real # [s] Trajectory duration
     κ1::T_Real # Sigmoid homotopy parameter
     κ2::T_Real # Normalization homotopy parameter
+    α::T_Real  # Control usage weight
     γ::T_Real  # Control weight for deadband relaxation
 end
 
@@ -73,6 +76,8 @@ function OscillatorProblem(N::T_Int)::OscillatorProblem
     id_v = 2
     id_aa = 1
     id_ar = 2
+    id_l1aa = 3
+    id_l1adiff = 4
     id_l1r = 1:N
     # >> Mechanical parameters <<
     ζ = 0.5
@@ -82,7 +87,8 @@ function OscillatorProblem(N::T_Int)::OscillatorProblem
     a_max = 0.3
 
     oscillator = OscillatorParameters(
-        id_r, id_v, id_aa, id_ar, id_l1r, ζ, ω0, a_db, a_max)
+        id_r, id_v, id_aa, id_ar, id_l1aa, id_l1adiff, id_l1r, ζ,
+        ω0, a_db, a_max)
 
     # ..:: Trajectory ::..
     r0 = 1.0
@@ -90,9 +96,10 @@ function OscillatorProblem(N::T_Int)::OscillatorProblem
     tf = 10.0
     κ1 = NaN
     κ2 = 1.0
-    γ = 1.6
+    α = 0.06
+    γ = 1e-2
 
-    traj = OscillatorTrajectoryParameters(r0, v0, tf, κ1, κ2, γ)
+    traj = OscillatorTrajectoryParameters(r0, v0, tf, κ1, κ2, α, γ)
 
     mdl = OscillatorProblem(oscillator, traj)
 
