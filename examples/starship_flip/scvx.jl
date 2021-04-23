@@ -22,7 +22,6 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 include("common.jl")
 include("../../core/scvx.jl")
-include("../../models/starship.jl")
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Common problem definition ::::::::::::::::::::::::::::::::::::::::::::::::

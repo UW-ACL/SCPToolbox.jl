@@ -2,7 +2,7 @@
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
-                   and Autonomous Systems Laboratory (Stanford University)
+and Autonomous Systems Laboratory (Stanford University)
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -16,11 +16,7 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-using ECOS
-
 include("common.jl")
-include("../../models/quadrotor.jl")
-include("../../core/problem.jl")
 include("../../core/scvx.jl")
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -37,42 +33,42 @@ problem_set_dynamics!(
     pbm,
     # Dynamics f
     (t, k, x, u, p, pbm) -> begin
-    g = pbm.mdl.env.g
-    veh = pbm.mdl.vehicle
-    v = x[veh.id_v]
-    uu = u[veh.id_u]
-    tdil = p[veh.id_t]
-    f = zeros(pbm.nx)
-    f[veh.id_r] = v
-    f[veh.id_v] = uu+g
-    f *= tdil
-    return f
+        g = pbm.mdl.env.g
+        veh = pbm.mdl.vehicle
+        v = x[veh.id_v]
+        uu = u[veh.id_u]
+        tdil = p[veh.id_t]
+        f = zeros(pbm.nx)
+        f[veh.id_r] = v
+        f[veh.id_v] = uu+g
+        f *= tdil
+        return f
     end,
     # Jacobian df/dx
     (t, k, x, u, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    tdil = p[veh.id_t]
-    A = zeros(pbm.nx, pbm.nx)
-    A[veh.id_r, veh.id_v] = I(3)
-    A *= tdil
-    return A
+        veh = pbm.mdl.vehicle
+        tdil = p[veh.id_t]
+        A = zeros(pbm.nx, pbm.nx)
+        A[veh.id_r, veh.id_v] = I(3)
+        A *= tdil
+        return A
     end,
     # Jacobian df/du
     (t, k, x, u, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    tdil = p[veh.id_t]
-    B = zeros(pbm.nx, pbm.nu)
-    B[veh.id_v, veh.id_u] = I(3)
-    B *= tdil
-    return B
+        veh = pbm.mdl.vehicle
+        tdil = p[veh.id_t]
+        B = zeros(pbm.nx, pbm.nu)
+        B[veh.id_v, veh.id_u] = I(3)
+        B *= tdil
+        return B
     end,
     # Jacobian df/dp
     (t, k, x, u, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    tdil = p[veh.id_t]
-    F = zeros(pbm.nx, pbm.np)
-    F[:, veh.id_t] = pbm.f(t, k, x, u, p)/tdil
-    return F
+        veh = pbm.mdl.vehicle
+        tdil = p[veh.id_t]
+        F = zeros(pbm.nx, pbm.np)
+        F[:, veh.id_t] = pbm.f(t, k, x, u, p)/tdil
+        return F
     end)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::

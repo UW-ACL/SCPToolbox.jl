@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-using Printf
-
-include("../utils/types.jl")
-include("problem.jl")
 include("scp.jl")
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -531,7 +527,7 @@ function _gusto__original_cost(x::T_OptiVarMatrix,
     ref = spbm.ref
     N = pars.N
     t = spbm.def.common.t_grid
-    if mode!=:convex
+    if mode==:convex
         xb = ref.xd
         ub = ref.ud
         pb = ref.p
@@ -547,17 +543,21 @@ function _gusto__original_cost(x::T_OptiVarMatrix,
                        isnothing(traj.ℓ) &&
                        isnothing(traj.g))
     for k = 1:N
+        tkp = (@k(t), k, p)
+        tkxp = (@k(t), k, @k(x), p)
         if no_running_cost
             @k(cost_run_integrand) = 0.0
         elseif mode==:convex
+            tkpb = (@k(t), k, pb)
+            tkxpb = (@k(t), k, @k(xb), pb)
             Γk = 0.0
             nz = !isnothing # "nonzero" alias
             if nz(traj.S)
                 if traj.S_cvx
-                    Γk += @k(u)'*traj.S(p)*@k(u)
+                    Γk += @k(u)'*traj.S(tkp...)*@k(u)
                 else
-                    uSu = @k(ub)'*traj.S(pb)*@k(ub)
-                    ∇u_uSu = 2*traj.S(pb)*@k(ub)
+                    uSu = @k(ub)'*traj.S(tkpb...)*@k(ub)
+                    ∇u_uSu = 2*traj.S(tkpb...)*@k(ub)
                     ∇p_S = traj.dSdp(pb)
                     ∇p_uSu = [@k(ub)'*∇p_S[i]*@k(ub) for i=1:traj.np]
                     du = @k(u)-@k(ub)
@@ -568,13 +568,13 @@ function _gusto__original_cost(x::T_OptiVarMatrix,
             end
             if nz(traj.ℓ)
                 if traj.ℓ_cvx
-                    Γk += @k(u)'*traj.ℓ(@k(x), p)
+                    Γk += @k(u)'*traj.ℓ(tkxp...)
                 else
-                    uℓ = @k(ub)'*traj.ℓ(@k(xb), pb)
-                    ∇u_uℓ = traj.ℓ(@k(xb), pb)
-                    ∇x_uℓ = nz(traj.dℓdx) ? traj.dℓdx(@k(xb), pb)'*@k(ub) :
+                    uℓ = @k(ub)'*traj.ℓ(tkxpb...)
+                    ∇u_uℓ = traj.ℓ(tkxpb...)
+                    ∇x_uℓ = nz(traj.dℓdx) ? traj.dℓdx(tkxpb...)'*@k(ub) :
                         zeros(traj.nx)
-                    ∇p_uℓ = nz(traj.dℓdp) ? traj.dℓdp(@k(xb), pb)'*@k(ub) :
+                    ∇p_uℓ = nz(traj.dℓdp) ? traj.dℓdp(tkxpb...)'*@k(ub) :
                         zeros(traj.np)
                     du = @k(u)-@k(ub)
                     dx = @k(x)-@k(xb)
@@ -585,13 +585,11 @@ function _gusto__original_cost(x::T_OptiVarMatrix,
             end
             if nz(traj.g)
                 if traj.g_cvx
-                    Γk += traj.g(@k(x), p)
+                    Γk += traj.g(tkxp...)
                 else
-                    g = traj.g(@k(xb), pb)
-                    ∇x_g = nz(traj.dgdx) ? traj.dgdx(@k(xb), pb) :
-                        zeros(traj.nx)
-                    ∇p_g = nz(traj.dgdp) ? traj.dgdp(@k(xb), pb) :
-                        zeros(traj.np)
+                    g = traj.g(tkxpb...)
+                    ∇x_g = nz(traj.dgdx) ? traj.dgdx(tkxpb...) : zeros(traj.nx)
+                    ∇p_g = nz(traj.dgdp) ? traj.dgdp(tkxpb...) : zeros(traj.np)
                     dx = @k(x)-@k(xb)
                     dp = p-pb
                     g1 = g+∇x_g'*dx+∇p_g'*dp
@@ -601,9 +599,9 @@ function _gusto__original_cost(x::T_OptiVarMatrix,
             @k(cost_run_integrand) = Γk
         else
             Γk = 0.0
-            Γk += !isnothing(traj.S) ? @k(u)'*traj.S(p)*@k(u) : 0.0
-            Γk += !isnothing(traj.ℓ) ? @k(u)'*traj.ℓ(@k(x), p) : 0.0
-            Γk += !isnothing(traj.g) ? traj.g(@k(x), p) : 0.0
+            Γk += !isnothing(traj.S) ? @k(u)'*traj.S(tkp...)*@k(u) : 0.0
+            Γk += !isnothing(traj.ℓ) ? @k(u)'*traj.ℓ(tkxp...) : 0.0
+            Γk += !isnothing(traj.g) ? traj.g(tkxp...) : 0.0
             @k(cost_run_integrand) = Γk
         end
     end

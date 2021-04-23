@@ -9,6 +9,7 @@ This project contains the code for several SCP algorithms, and several examples
 of using these algorithms for trajectory generation. The examples can be found
 in the `examples/` directory, and include:
 
+- Mass-spring-damper with an actuator deadband
 - Quadrotor path planning with obstacle avoidance
 - Freeflyer flight inside of a space station environment with obstacles
 - SpaceX Starship landing "flip" maneuver

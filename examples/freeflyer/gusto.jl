@@ -2,7 +2,7 @@
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
-                   and Autonomous Systems Laboratory (Stanford University)
+and Autonomous Systems Laboratory (Stanford University)
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -16,13 +16,8 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-using ECOS
-
 include("common.jl")
-include("../../utils/helper.jl")
-include("../../core/problem.jl")
 include("../../core/gusto.jl")
-include("../../models/freeflyer.jl")
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
@@ -63,38 +58,36 @@ problem_set_dynamics!(
     pbm,
     # Dynamics f
     (t, k, x, p, pbm) -> begin
-    return _gusto_freeflyer__f(t, k, x, p, pbm)
+        return _gusto_freeflyer__f(t, k, x, p, pbm)
     end,
     # Jacobian df/dx
     (t, k, x, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    tdil = p[veh.id_t]
-    v = x[veh.id_v]
-    q = T_Quaternion(x[veh.id_q])
-    ω = x[veh.id_ω]
-    dfqdq = 0.5*skew(T_Quaternion(ω), :R)
-    dfqdω = 0.5*skew(q)
-    dfωdω = -veh.J\(skew(ω)*veh.J-skew(veh.J*ω))
-    A = [zeros(pbm.nx, pbm.nx) for i=1:pbm.nu+1]
-    A[1][veh.id_r, veh.id_v] = I(3)
-    A[1][veh.id_q, veh.id_q] = dfqdq
-    A[1][veh.id_q, veh.id_ω] = dfqdω[:, 1:3]
-    A[1][veh.id_ω, veh.id_ω] = dfωdω
-    A = [_A*tdil for _A in A]
-    return A
+        veh = pbm.mdl.vehicle
+        tdil = p[veh.id_t]
+        v = x[veh.id_v]
+        q = T_Quaternion(x[veh.id_q])
+        ω = x[veh.id_ω]
+        dfqdq = 0.5*skew(T_Quaternion(ω), :R)
+        dfqdω = 0.5*skew(q)
+        dfωdω = -veh.J\(skew(ω)*veh.J-skew(veh.J*ω))
+        A = [zeros(pbm.nx, pbm.nx) for i=1:pbm.nu+1]
+        A[1][veh.id_r, veh.id_v] = I(3)
+        A[1][veh.id_q, veh.id_q] = dfqdq
+        A[1][veh.id_q, veh.id_ω] = dfqdω[:, 1:3]
+        A[1][veh.id_ω, veh.id_ω] = dfωdω
+        A = [_A*tdil for _A in A]
+        return A
     end,
     # Jacobian df/dp
     (t, k, x, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    tdil = p[veh.id_t]
-    F = [zeros(pbm.nx, pbm.np) for i=1:pbm.nu+1]
-    _f = _gusto_freeflyer__f(t, k, x, p, pbm)
-    for i = 1:pbm.nu+1
-    # ---
-    F[i][:, veh.id_t] = _f[i]/tdil
-    # ---
-    end
-    return F
+        veh = pbm.mdl.vehicle
+        tdil = p[veh.id_t]
+        F = [zeros(pbm.nx, pbm.np) for i=1:pbm.nu+1]
+        _f = _gusto_freeflyer__f(t, k, x, p, pbm)
+        for i = 1:pbm.nu+1
+            F[i][:, veh.id_t] = _f[i]/tdil
+        end
+        return F
     end)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::

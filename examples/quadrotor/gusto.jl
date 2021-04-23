@@ -2,7 +2,7 @@
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
-                   and Autonomous Systems Laboratory (Stanford University)
+and Autonomous Systems Laboratory (Stanford University)
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -16,11 +16,7 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-using ECOS
-
 include("common.jl")
-include("../../models/quadrotor.jl")
-include("../../core/problem.jl")
 include("../../core/gusto.jl")
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -42,10 +38,8 @@ _gusto_quadrotor__f = (t, k, x, p, pbm) -> begin
     f[1][veh.id_r] = v
     f[1][veh.id_v] = g
     for j = 1:length(veh.id_u)
-        # ---
         i = veh.id_u[j]
         f[i+1][veh.id_v[j]] = 1.0
-        # ---
     end
     f = [_f*tdil for _f in f]
     return f
@@ -55,29 +49,27 @@ problem_set_dynamics!(
     pbm,
     # Dynamics f
     (t, k, x, p, pbm) -> begin
-    return _gusto_quadrotor__f(t, k, x, p, pbm)
+        return _gusto_quadrotor__f(t, k, x, p, pbm)
     end,
     # Jacobian df/dx
     (t, k, x, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    tdil = p[veh.id_t]
-    A = [zeros(pbm.nx, pbm.nx) for i=1:pbm.nu+1]
-    A[1][veh.id_r, veh.id_v] = I(3)
-    A = [_A*tdil for _A in A]
-    return A
+        veh = pbm.mdl.vehicle
+        tdil = p[veh.id_t]
+        A = [zeros(pbm.nx, pbm.nx) for i=1:pbm.nu+1]
+        A[1][veh.id_r, veh.id_v] = I(3)
+        A = [_A*tdil for _A in A]
+        return A
     end,
     # Jacobian df/dp
     (t, k, x, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    tdil = p[veh.id_t]
-    F = [zeros(pbm.nx, pbm.np) for i=1:pbm.nu+1]
-    _f = _gusto_quadrotor__f(t, k, x, p, pbm)
-    for i = 1:pbm.nu+1
-    # ---
-    F[i][:, veh.id_t] = _f[i]/tdil
-    # ---
-    end
-    return F
+        veh = pbm.mdl.vehicle
+        tdil = p[veh.id_t]
+        F = [zeros(pbm.nx, pbm.np) for i=1:pbm.nu+1]
+        _f = _gusto_quadrotor__f(t, k, x, p, pbm)
+        for i = 1:pbm.nu+1
+            F[i][:, veh.id_t] = _f[i]/tdil
+        end
+        return F
     end)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::

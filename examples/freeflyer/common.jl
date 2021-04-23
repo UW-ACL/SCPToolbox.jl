@@ -7,7 +7,7 @@ code.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
-                   and Autonomous Systems Laboratory (Stanford University)
+and Autonomous Systems Laboratory (Stanford University)
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -22,8 +22,6 @@ You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 include("../../models/freeflyer.jl")
-include("../../core/problem.jl")
-include("../../utils/helper.jl")
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
@@ -80,8 +78,8 @@ function _common__set_integration!(pbm::TrajectoryProblem)::Nothing
     problem_set_integration_action!(
         pbm, pbm.mdl.vehicle.id_q,
         (x, pbm) -> begin
-        xn = x/norm(x)
-        return xn
+            xn = x/norm(x)
+            return xn
         end)
 
     return nothing
@@ -97,89 +95,79 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
         pbm,
         (N, pbm) -> begin
 
-        # Parameters
-        veh = pbm.mdl.vehicle
-        env = pbm.mdl.env
-        traj = pbm.mdl.traj
+            # Parameters
+            veh = pbm.mdl.vehicle
+            env = pbm.mdl.env
+            traj = pbm.mdl.traj
 
-        # >> Parameter guess <<
-        p = zeros(pbm.np)
-        flight_time = 0.5*(traj.tf_min+traj.tf_max)
-        p[veh.id_t] = flight_time
+            # >> Parameter guess <<
+            p = zeros(pbm.np)
+            flight_time = 0.5*(traj.tf_min+traj.tf_max)
+            p[veh.id_t] = flight_time
 
-        # >> State guess <<
-        x = T_RealMatrix(undef, pbm.nx, N)
-        # @ Position/velocity L-shape trajectory @
-        Δτ = flight_time/(N-1)
-        speed = norm(traj.rf-traj.r0, 1)/flight_time
-        times = straightline_interpolate([0.0], [flight_time],
-                                         N)
-        flight_time_leg = abs.(traj.rf-traj.r0)/speed
-        flight_time_leg_cumul = cumsum(flight_time_leg)
-        r = view(x, veh.id_r, :)
-        v = view(x, veh.id_v, :)
-        for k = 1:N
-        # --- for k
-        tk = @k(times)[1]
-        for i = 1:3
-        # -- for i
-        if tk <= flight_time_leg_cumul[i]
-        # - if tk
-        # Current node is in i-th leg of the trajectory
-        # Endpoint times
-        t0 = (i>1) ? flight_time_leg_cumul[i-1] : 0.0
-        tf = flight_time_leg_cumul[i]
-        # Endpoint positions
-        r0 = copy(traj.r0)
-        r0[1:i-1] = traj.rf[1:i-1]
-        rf = copy(r0)
-        rf[i] = traj.rf[i]
-        @k(r) = linterp(tk, hcat(r0, rf), [t0, tf])
-        # Velocity
-        dir_vec = rf-r0
-        dir_vec /= norm(dir_vec)
-        v_leg = speed*dir_vec
-        @k(v) = v_leg
-        break
-        # - if tk
-        end
-        # -- for i
-        end
-        # --- for k
-        end
-        # @ Quaternion SLERP interpolation @
-        x[veh.id_q, :] = T_RealMatrix(undef, 4, N)
-        for k = 1:N
-        mix = (k-1)/(N-1)
-        @k(view(x, veh.id_q, :)) = vec(slerp_interpolate(
-            traj.q0, traj.qf, mix))
-        end
-        # @ Constant angular velocity @
-        rot_ang, rot_ax = Log(traj.qf*traj.q0')
-        rot_speed = rot_ang/flight_time
-        ang_vel = rot_speed*rot_ax
-        x[veh.id_ω, :] = straightline_interpolate(
-            ang_vel, ang_vel, N)
+            # >> State guess <<
+            x = T_RealMatrix(undef, pbm.nx, N)
+            # @ Position/velocity L-shape trajectory @
+            Δτ = flight_time/(N-1)
+            speed = norm(traj.rf-traj.r0, 1)/flight_time
+            times = straightline_interpolate([0.0], [flight_time],
+                                             N)
+            flight_time_leg = abs.(traj.rf-traj.r0)/speed
+            flight_time_leg_cumul = cumsum(flight_time_leg)
+            r = view(x, veh.id_r, :)
+            v = view(x, veh.id_v, :)
+            for k = 1:N
+                tk = @k(times)[1]
+                for i = 1:3
+                    if tk <= flight_time_leg_cumul[i]
+                        # Current node is in i-th leg of the trajectory
+                        # Endpoint times
+                        t0 = (i>1) ? flight_time_leg_cumul[i-1] : 0.0
+                        tf = flight_time_leg_cumul[i]
+                        # Endpoint positions
+                        r0 = copy(traj.r0)
+                        r0[1:i-1] = traj.rf[1:i-1]
+                        rf = copy(r0)
+                        rf[i] = traj.rf[i]
+                        @k(r) = linterp(tk, hcat(r0, rf), [t0, tf])
+                        # Velocity
+                        dir_vec = rf-r0
+                        dir_vec /= norm(dir_vec)
+                        v_leg = speed*dir_vec
+                        @k(v) = v_leg
+                        break
+                    end
+                end
+            end
+            # @ Quaternion SLERP interpolation @
+            x[veh.id_q, :] = T_RealMatrix(undef, 4, N)
+            for k = 1:N
+                mix = (k-1)/(N-1)
+                @k(view(x, veh.id_q, :)) = vec(slerp_interpolate(
+                    traj.q0, traj.qf, mix))
+            end
+            # @ Constant angular velocity @
+            rot_ang, rot_ax = Log(traj.qf*traj.q0')
+            rot_speed = rot_ang/flight_time
+            ang_vel = rot_speed*rot_ax
+            x[veh.id_ω, :] = straightline_interpolate(
+                ang_vel, ang_vel, N)
 
-        # Update room SDF parameter guess
-        δ = reshape(view(p, veh.id_δ), env.n_iss, :)
-        for i = 1:env.n_iss
-        # ---
-        δi = view(δ, i, :)
-        roomi = env.iss[i]
-        for k = 1:N
-        # --
-        @k(δi) = 1-norm((@k(r)-roomi.c)./roomi.s, Inf)
-        # -- for k
-        end
-        # --- for i
-        end
+            # Update room SDF parameter guess
+            δ = reshape(view(p, veh.id_δ), env.n_iss, :)
+            for i = 1:env.n_iss
+                δi = view(δ, i, :)
+                roomi = env.iss[i]
+                for k = 1:N
+                    @k(δi) = 1-norm((@k(r)-roomi.c)./roomi.s, Inf)
+                end
+            end
 
-        # >> Input guess <<
-        idle = zeros(pbm.nu)
-        u = straightline_interpolate(idle, idle, N)
+            # >> Input guess <<
+            idle = zeros(pbm.nu)
+            u = straightline_interpolate(idle, idle, N)
 
-        return x, u, p
+            return x, u, p
         end)
 
     return nothing
@@ -191,44 +179,44 @@ function _common__set_cost!(pbm::TrajectoryProblem,
     # Terminal cost
     problem_set_terminal_cost!(
         pbm, (x, p, pbm) -> begin
-        veh = pbm.mdl.vehicle
-        traj = pbm.mdl.traj
-        tdil = p[veh.id_t]
-        δ = p[veh.id_δ]
-        tdil_max = traj.tf_max
-        γ = traj.γ
-        ε_sdf = traj.ε_sdf
-        return γ*(tdil/tdil_max)^2+ε_sdf*sum(-δ)
+            veh = pbm.mdl.vehicle
+            traj = pbm.mdl.traj
+            tdil = p[veh.id_t]
+            δ = p[veh.id_δ]
+            tdil_max = traj.tf_max
+            γ = traj.γ
+            ε_sdf = traj.ε_sdf
+            return γ*(tdil/tdil_max)^2+ε_sdf*sum(-δ)
         end)
 
     # Running cost
     if algo==:scvx
         problem_set_running_cost!(
             pbm, algo,
-            (x, u, p, pbm) -> begin
-            traj = pbm.mdl.traj
-            veh = pbm.mdl.vehicle
-            T_max_sq = veh.T_max^2
-            M_max_sq = veh.M_max^2
-            T = u[veh.id_T]
-            M = u[veh.id_M]
-            γ = traj.γ
-            return (1-γ)*((T'*T)/T_max_sq+(M'*M)/M_max_sq)
+            (t, k, x, u, p, pbm) -> begin
+                traj = pbm.mdl.traj
+                veh = pbm.mdl.vehicle
+                T_max_sq = veh.T_max^2
+                M_max_sq = veh.M_max^2
+                T = u[veh.id_T]
+                M = u[veh.id_M]
+                γ = traj.γ
+                return (1-γ)*((T'*T)/T_max_sq+(M'*M)/M_max_sq)
             end)
     else
         problem_set_running_cost!(
             pbm, algo,
             # Input quadratic penalty S
-            (p, pbm) -> begin
-            traj = pbm.mdl.traj
-            veh = pbm.mdl.vehicle
-            T_max_sq = veh.T_max^2
-            M_max_sq = veh.M_max^2
-            γ = traj.γ
-            S = zeros(pbm.nu, pbm.nu)
-            S[veh.id_T, veh.id_T] = (1-γ)*I(3)/T_max_sq
-            S[veh.id_M, veh.id_M] = (1-γ)*I(3)/M_max_sq
-            return S
+            (t, k, p, pbm) -> begin
+                traj = pbm.mdl.traj
+                veh = pbm.mdl.vehicle
+                T_max_sq = veh.T_max^2
+                M_max_sq = veh.M_max^2
+                γ = traj.γ
+                S = zeros(pbm.nu, pbm.nu)
+                S[veh.id_T, veh.id_T] = (1-γ)*I(3)/T_max_sq
+                S[veh.id_M, veh.id_M] = (1-γ)*I(3)/M_max_sq
+                return S
             end)
     end
 
@@ -240,45 +228,45 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
     # Convex path constraints on the state
     problem_set_X!(
         pbm, (t, k, x, p, pbm) -> begin
-        traj = pbm.mdl.traj
-        veh = pbm.mdl.vehicle
-        env = pbm.mdl.env
+            traj = pbm.mdl.traj
+            veh = pbm.mdl.vehicle
+            env = pbm.mdl.env
 
-        room = env.iss
+            room = env.iss
 
-        r = x[veh.id_r]
-        v = x[veh.id_v]
-        ω = x[veh.id_ω]
-        tdil = p[veh.id_t]
-        δ = reshape(p[veh.id_δ], env.n_iss, :)
+            r = x[veh.id_r]
+            v = x[veh.id_v]
+            ω = x[veh.id_ω]
+            tdil = p[veh.id_t]
+            δ = reshape(p[veh.id_δ], env.n_iss, :)
 
-        C = T_ConvexConeConstraint
-        X = Array{C}(undef, 4+env.n_iss)
-        X[1:4] = [C(vcat(veh.v_max, v), :soc),
-                  C(vcat(veh.ω_max, ω), :soc),
-                  C(tdil-traj.tf_max, :nonpos),
-                  C(traj.tf_min-tdil, :nonpos)]
-        # Individual space station room SDFs
-        for i = 1:env.n_iss
-        X[i+4] = C(vcat(1-@k(δ)[i], (r-room[i].c)./room[i].s), :linf)
-        end
+            C = T_ConvexConeConstraint
+            X = Array{C}(undef, 4+env.n_iss)
+            X[1:4] = [C(vcat(veh.v_max, v), :soc),
+                      C(vcat(veh.ω_max, ω), :soc),
+                      C(tdil-traj.tf_max, :nonpos),
+                      C(traj.tf_min-tdil, :nonpos)]
+            # Individual space station room SDFs
+            for i = 1:env.n_iss
+                X[i+4] = C(vcat(1-@k(δ)[i], (r-room[i].c)./room[i].s), :linf)
+            end
 
-        return X
+            return X
         end)
 
     # Convex path constraints on the input
     problem_set_U!(
         pbm, (t, k, u, p, pbm) -> begin
-        veh = pbm.mdl.vehicle
+            veh = pbm.mdl.vehicle
 
-        T = u[veh.id_T]
-        M = u[veh.id_M]
+            T = u[veh.id_T]
+            M = u[veh.id_M]
 
-        C = T_ConvexConeConstraint
-        U = [C(vcat(veh.T_max, T), :soc),
-             C(vcat(veh.M_max, M), :soc)]
+            C = T_ConvexConeConstraint
+            U = [C(vcat(veh.T_max, T), :soc),
+                 C(vcat(veh.M_max, M), :soc)]
 
-        return U
+            return U
         end)
 
     return nothing
@@ -300,10 +288,8 @@ function _common__set_nonconvex_constraints!(
         s = zeros(env.n_obs+1)
         # Ellipsoidal obstacles
         for i = 1:env.n_obs
-            # ---
             E = env.obs[i]
             s[i] = 1-E(r)
-            # ---
         end
         # Space station flight space SDF
         d = logsumexp(δ; t=traj.hom)
@@ -323,10 +309,8 @@ function _common__set_nonconvex_constraints!(
         C = zeros(env.n_obs+1, pbm.nx)
         # Ellipsoidal obstacles
         for i = 1:env.n_obs
-            # ---
             E = env.obs[i]
             C[i, veh.id_r] = -∇(E, r)
-            # ---
         end
 
         return C
@@ -371,26 +355,26 @@ function _common__set_bcs!(pbm::TrajectoryProblem)::Nothing
         pbm, :ic,
         # Constraint g
         (x, p, pbm) -> begin
-        veh = pbm.mdl.vehicle
-        traj = pbm.mdl.traj
-        rhs = zeros(pbm.nx)
-        rhs[veh.id_r] = traj.r0
-        rhs[veh.id_v] = traj.v0
-        rhs[veh.id_q] = vec(traj.q0)
-        rhs[veh.id_ω] = traj.ω0
-        g = x-rhs
-        return g
+            veh = pbm.mdl.vehicle
+            traj = pbm.mdl.traj
+            rhs = zeros(pbm.nx)
+            rhs[veh.id_r] = traj.r0
+            rhs[veh.id_v] = traj.v0
+            rhs[veh.id_q] = vec(traj.q0)
+            rhs[veh.id_ω] = traj.ω0
+            g = x-rhs
+            return g
         end,
         # Jacobian dg/dx
         (x, p, pbm) -> begin
-        H = I(pbm.nx)
-        return H
+            H = I(pbm.nx)
+            return H
         end,
         # Jacobian dg/dp
         (x, p, pbm) -> begin
-        veh = pbm.mdl.vehicle
-        K = zeros(pbm.nx, pbm.np)
-        return K
+            veh = pbm.mdl.vehicle
+            K = zeros(pbm.nx, pbm.np)
+            return K
         end)
 
     # Terminal conditions
@@ -398,26 +382,26 @@ function _common__set_bcs!(pbm::TrajectoryProblem)::Nothing
         pbm, :tc,
         # Constraint g
         (x, p, pbm) -> begin
-        veh = pbm.mdl.vehicle
-        traj = pbm.mdl.traj
-        rhs = zeros(pbm.nx)
-        rhs[veh.id_r] = traj.rf
-        rhs[veh.id_v] = traj.vf
-        rhs[veh.id_q] = vec(traj.qf)
-        rhs[veh.id_ω] = traj.ωf
-        g = x-rhs
-        return g
+            veh = pbm.mdl.vehicle
+            traj = pbm.mdl.traj
+            rhs = zeros(pbm.nx)
+            rhs[veh.id_r] = traj.rf
+            rhs[veh.id_v] = traj.vf
+            rhs[veh.id_q] = vec(traj.qf)
+            rhs[veh.id_ω] = traj.ωf
+            g = x-rhs
+            return g
         end,
         # Jacobian dg/dx
         (x, p, pbm) -> begin
-        H = I(pbm.nx)
-        return H
+            H = I(pbm.nx)
+            return H
         end,
         # Jacobian dg/dp
         (x, p, pbm) -> begin
-        veh = pbm.mdl.vehicle
-        K = zeros(pbm.nx, pbm.np)
-        return K
+            veh = pbm.mdl.vehicle
+            K = zeros(pbm.nx, pbm.np)
+            return K
         end)
 
     return nothing
