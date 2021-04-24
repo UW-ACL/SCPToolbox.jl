@@ -37,7 +37,7 @@ iter_max = 20
 wvc = 5e2
 # wtr = 1e-4
 wtr = 5e-2
-ε_abs = 1e-5
+ε_abs = -Inf#1e-5
 ε_rel = 1e-3/100
 feas_tol = 5e-3
 q_tr = Inf
@@ -49,7 +49,7 @@ pars = PTRParameters(N, Nsub, iter_max, wvc, wtr, ε_abs, ε_rel, feas_tol,
 
 # Homotopy parameters
 Nhom = 10
-hom_κ1 = T_Homotopy(1e-8)
+hom_κ1 = T_Homotopy(1e-3; δ_max=5.0)
 hom_grid = LinRange(0.0, 1.0, Nhom)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -58,12 +58,30 @@ hom_grid = LinRange(0.0, 1.0, Nhom)
 
 ptr_pbm = PTRProblem(pars, pbm)
 
-# TODO homotopy
-sol, history = ptr_solve(ptr_pbm)
+sol, history = [], []
+for i = 1:Nhom
+    global sol, history
+
+    mdl.traj.κ1 = hom_κ1(hom_grid[i])
+    warm = (i==1) ? nothing : sol[end]
+
+    @printf("[%d/%d] Homotopy (κ=%.2e)\n", i, Nhom, mdl.traj.κ1)
+
+    sol_i, history_i = ptr_solve(ptr_pbm, warm)
+
+    push!(sol, sol_i)
+    push!(history, history_i)
+end
+
+# mdl.traj.κ1 = 1.0
+# sol, history = ptr_solve(ptr_pbm)
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+sol = sol[end]
+history = history[end]
 
 plot_final_trajectory(mdl, sol)
 plot_attitude(mdl, sol)

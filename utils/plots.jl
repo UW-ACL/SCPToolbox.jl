@@ -132,7 +132,8 @@ end
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 """
-    setup_axis!(ax, rows, cols, k, ijk[; xlabel, ylabel; tight])
+    setup_axis!(ax, rows, cols, k, ijk[; xlabel, ylabel, clabel, tight,
+                axis, cbar, cbar_aspect])
 
 Create the standard 2D axis. Note that at one of the following combination must
 be entered:
@@ -142,17 +143,19 @@ be entered:
 - nothing, which means that a single 111 subplot is generated
 
 # Arguments
-- `ax`: the axis object.
+- `ax`: an existing axis object.
 - `rows`: the number of subplot rows.
 - `cols`: the number of subplot columns.
 - `k`: the subplot number.
 - `ijk`: k-th subplot in a grid of (i, j) subplots.
+- `ijk`: a gridspec element.
 
 # Keywords
 - `xlabel`: (optional) the x-axis label.
 - `ylabel`: (optional) the y-axis label.
 - `clabel`: (optional) colorbar label.
 - `tight`: (optional) which axes to make autoscale tight.
+- `axis`: (optional) axis scaling.
 - `cbar`: (optional) colorbar colormap.
 - `cbar_aspect`: (optional) colorbar aspect ratio.
 
@@ -163,11 +166,12 @@ function setup_axis!(ax::Union{PyPlot.PyObject, Nothing},
                      rows::Union{T_Int, Nothing},
                      cols::Union{T_Int, Nothing},
                      k::Union{T_Int, Nothing},
-                     ijk::Union{T_Int, Nothing};
+                     ijk::Union{T_Int, PyPlot.PyObject, Nothing};
                      xlabel::Union{T_String, Nothing}=nothing,
                      ylabel::Union{T_String, Nothing}=nothing,
                      clabel::Union{T_String, Nothing}=nothing,
                      tight::T_String="",
+                     axis::Union{T_String, Nothing}=nothing,
                      cbar::Union{PyPlot.PyObject, Nothing}=nothing,
                      cbar_aspect::Union{T_Int, Nothing}=nothing)::
                          PyPlot.PyObject
@@ -189,6 +193,10 @@ function setup_axis!(ax::Union{PyPlot.PyObject, Nothing},
     ax.set_axisbelow(true)
     ax.set_facecolor("white")
 
+    if !isnothing(axis)
+        ax.axis(axis)
+    end
+
     if !isempty(tight)
         ax.autoscale(tight=true, axis=tight)
     end
@@ -209,13 +217,24 @@ function setup_axis!(; kwargs...)::PyPlot.PyObject
     return setup_axis!(nothing, nothing, nothing, nothing, nothing; kwargs...)
 end
 
-function setup_axis!(ax::PyPlot.PyObject; kwargs...)::PyPlot.PyObject
-    return setup_axis!(ax, nothing, nothing, nothing, nothing; kwargs...)
+function setup_axis!(ax_or_gspec::PyPlot.PyObject; kwargs...)::PyPlot.PyObject
+    try
+        # Try as an axis
+        return setup_axis!(ax_or_gspec, nothing, nothing,
+                           nothing, nothing; kwargs...)
+    catch
+        # Try as a gridspec element
+        try
+            return setup_axis!(nothing, nothing, nothing,
+                               nothing, ax_or_gspec; kwargs...)
+        catch e
+            # Some other issue than type ambiguity is going on
+            rethrow(e)
+        end
+    end
 end
 
-function setup_axis!(rows::T_Int,
-                     cols::T_Int,
-                     k::T_Int;
+function setup_axis!(rows::T_Int, cols::T_Int, k::T_Int;
                      kwargs...)::PyPlot.PyObject
     return setup_axis!(nothing, rows, cols, k, nothing; kwargs...)
 end
@@ -423,7 +442,7 @@ function plot_convergence(history, name::T_String)::Nothing
 
     # Common values
     algo = history.subproblems[1].algo
-    clr = get_colormap()(1.0)
+    clr = rgb(generate_colormap(), 1.0)
 
     # Compute concatenated solution vectors at each iteration
     num_iter = length(history.subproblems)

@@ -844,7 +844,10 @@ end
 """
     indicator(f[, ∇f][; κ1, κ2])
 
-Description.
+Like a sigmoid, except that for very small κ1 values the function is
+approximately equal to one everywhere, and not 0.5 as is the case for a
+sigmoid. This, low κ1 values are associated with "always in the set", where the
+set is defined as any time either element of f is nonnegative.
 
 # Arguments
 - `f`: the function in the exponent.
@@ -877,9 +880,11 @@ function indicator(f::T_RealVector,
 end
 
 """
-    or(p1[, p2, ..., pN][; κ1, κ2])
+    or(p1[, p2, ..., pN][; κ1, κ2, minval, maxval])
 
-A smooth logical OR.
+A smooth logical OR. By passing the `minval` and `maxval`, the function can be
+made scale invariant, i.e. the shape of the OR function will not change due to
+uniform scaling of the predicates.
 
 # Arguments
 - `predicates`: (optional) the predicates to be composed as logical
@@ -889,6 +894,8 @@ A smooth logical OR.
 # Keywords
 - `κ1`: (optional) sigmoid sharpness parameter.
 - `κ2`: (optional) normalization sharpness parameter.
+- `minval`: (optional) minimum value of predicate.
+- `maxval`: (optional) maximum value of predicate.
 
 # Returns
 - `OR`: the smooth OR value (1≡true).
@@ -896,16 +903,21 @@ A smooth logical OR.
 """
 function or(predicates...;
             κ1::T_Real=1.0,
-            κ2::T_Real=1.0)::Union{Tuple{T_Real, T_RealVector},
-                                   T_Real}
+            κ2::T_Real=1.0,
+            minval::T_Real=-1.0,
+            maxval::T_Real=1.0)::Union{Tuple{T_Real, T_RealVector}, T_Real}
     nargs = length(predicates)
+    c = (maxval+minval)/2
+    rng = (maxval-minval)/2
+    scale = (p) -> (p-c)/rng
     if typeof(predicates[1])<:Tuple
-        f = T_RealVector([p[1] for p in predicates])
-        ∇f = [p[2] for p in predicates]
+        ∇scale = (∇p) -> ∇p/(maxval-minval)
+        f = T_RealVector([scale(p[1]) for p in predicates])
+        ∇f = [∇scale(p[2]) for p in predicates]
         OR, ∇OR = indicator(f, ∇f; κ1=κ1, κ2=κ2)
         return OR, ∇OR
     else
-        f = T_RealVector([p for p in predicates])
+        f = T_RealVector([scale(p) for p in predicates])
         OR = indicator(f; κ1=κ1, κ2=κ2)
         return OR
     end

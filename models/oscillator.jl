@@ -16,6 +16,7 @@ You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 include("../core/scp.jl")
+include("../utils/plots.jl")
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -180,7 +181,7 @@ function plot_timeseries(mdl::OscillatorProblem,
     td = T_RealVector(LinRange(0.0, 1.0, pars.N))*traj.tf
     τc = T_RealVector(LinRange(0.0, 1.0, ct_res))
     tc = τc*traj.tf
-    cmap = get_colormap()
+    cmap = generate_colormap()
     cmap_offset = 0.1
     alph_offset = 0.3
     marker_darken_factor = 0.2
@@ -232,7 +233,7 @@ function plot_timeseries(mdl::OscillatorProblem,
                 trj = history.subproblems[j].sol
                 f = (off) -> (j-1)/(num_iter-1)*(1-off)+off
                 alph = f(alph_offset)
-                clr = (cmap(f(cmap_offset))..., alph)
+                clr = (rgb(cmap, f(cmap_offset))..., alph)
                 shp = "o"
             end
 
@@ -283,12 +284,10 @@ function plot_deadband(mdl::OscillatorProblem,
 
     # Common
     algo = sol.algo
-    clr = get_colormap()(1.0)
+    clr = rgb(generate_colormap(), 1.0)
     veh = mdl.vehicle
     traj = mdl.traj
     resol = 1000
-    Red = "#db6245"
-    Green = "#5da9a1"
 
     aa = sol.ud[veh.id_aa, :]
     ar = sol.ud[veh.id_ar, :]

@@ -28,7 +28,7 @@ function define_problem!(pbm::TrajectoryProblem,
     _common__set_cost!(pbm, algo)
     _common__set_dynamics!(pbm)
     _common__set_convex_constraints!(pbm)
-    # _common__set_nonconvex_constraints!(pbm, algo)
+    _common__set_nonconvex_constraints!(pbm, algo)
     _common__set_bcs!(pbm)
 
     _common__set_guess!(pbm)
@@ -38,7 +38,7 @@ end
 
 function _common__set_dims!(pbm::TrajectoryProblem)::Nothing
 
-    problem_set_dims!(pbm, 6, 6, 1)
+    problem_set_dims!(pbm, 6, 9, 1)
 
     return nothing
 end
@@ -77,8 +77,10 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
     advise!(pbm, :state, veh.id_θ, (θ_min, θ_max))
     advise!(pbm, :state, veh.id_ω, (ω_min, ω_max))
     # Inputs
-    for i in veh.id_f
-        advise!(pbm, :input, i, (-veh.f_max, veh.f_max))
+    for id in [veh.id_f, veh.id_fr]
+        for i in id
+            advise!(pbm, :input, i, (-veh.f_max, veh.f_max))
+        end
     end
     for i in veh.id_l1f
         advise!(pbm, :input, i, (0.0, veh.f_max))
@@ -240,6 +242,7 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             traj = pbm.mdl.traj
 
             fm, fp, f0 = u[veh.id_f]
+            fmr, fpr, f0r = u[veh.id_fr]
             l1fm, l1fp, l1f0 = u[veh.id_l1f]
             tdil = p[veh.id_t]
 
@@ -250,10 +253,89 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                  C(vcat(l1fm, fm), :l1),
                  C(vcat(l1fp, fp), :l1),
                  C(vcat(l1f0, f0), :l1),
+                 C(fmr-veh.f_max, :nonpos),
+                 C(fpr-veh.f_max, :nonpos),
+                 C(f0r-veh.f_max, :nonpos),
+                 C(-veh.f_max-fmr, :nonpos),
+                 C(-veh.f_max-fpr, :nonpos),
+                 C(-veh.f_max-f0r, :nonpos),
                  C(tdil-traj.tf_max, :nonpos),
                  C(traj.tf_min-tdil, :nonpos)]
 
             return U
+        end)
+
+    return nothing
+end
+
+function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
+                                             algo::T_Symbol)::Nothing
+
+    veh = pbm.mdl.vehicle
+    n_rcs = length(veh.id_f)
+    _common_s_sz = 2*n_rcs
+
+    problem_set_s!(
+        pbm, algo,
+        # Constraint s
+        (t, k, x, u, p, pbm) -> begin
+            veh = pbm.mdl.vehicle
+            traj = pbm.mdl.traj
+
+            s = zeros(_common_s_sz)
+
+            for i=1:n_rcs
+                id_f, id_fr = veh.id_f[i], veh.id_fr[i]
+                f, fr = u[id_f], u[id_fr]
+                above_db = fr-veh.f_db
+                below_db = -veh.f_db-fr
+                OR = or(above_db, below_db;
+                        κ1=traj.κ1, κ2=traj.κ2,
+                        minval=-veh.f_max-veh.f_db,
+                        maxval=veh.f_max+veh.f_db)
+                s[2*(i-1)+1] = f-OR*fr
+                s[2*(i-1)+2] = OR*fr-f
+            end
+
+            return s
+        end,
+        # Jacobian ds/dx
+        (t, k, x, u, p, pbm) -> begin
+            C = zeros(_common_s_sz, pbm.nx)
+            return C
+        end,
+        # Jacobian ds/du
+        (t, k, x, u, p, pbm) -> begin
+            veh = pbm.mdl.vehicle
+            traj = pbm.mdl.traj
+
+            D = zeros(_common_s_sz, pbm.nu)
+
+            for i = 1:n_rcs
+                id_f, id_fr = veh.id_f[i], veh.id_fr[i]
+                fr = u[id_fr]
+                above_db = fr-veh.f_db
+                ∇above_db = [1.0]
+                below_db = -veh.f_db-fr
+                ∇below_db = [-1.0]
+                OR, ∇OR = or((above_db, ∇above_db),
+                             (below_db, ∇below_db);
+                             κ1=traj.κ1, κ2=traj.κ2,
+                             minval=-veh.f_max-veh.f_db,
+                             maxval=veh.f_max+veh.f_db)
+                ∇ORfr = ∇OR[1]*fr+OR
+                D[2*(i-1)+1, id_f] = 1.0
+                D[2*(i-1)+1, id_fr] = -∇ORfr
+                D[2*(i-1)+2, id_f] = -1.0
+                D[2*(i-1)+2, id_fr] = ∇ORfr
+            end
+
+            return D
+        end,
+        # Jacobian ds/dp
+        (t, k, x, u, p, pbm) -> begin
+            G = zeros(_common_s_sz, pbm.np)
+            return G
         end)
 
     return nothing

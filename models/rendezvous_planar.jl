@@ -30,6 +30,7 @@ struct PlanarRendezvousParameters
     id_θ::T_Int         # Rotation angle (state)
     id_ω::T_Int         # Rotation rate (state)
     id_f::T_IntVector   # Thrust forces for RCS pods (input)
+    id_fr::T_IntVector  # Reference thrust forces for RCS pods (input)
     id_l1f::T_IntVector # Thrust force absolute values for RCS pods (input)
     id_t::T_Int         # Time dilation (parameter)
     # ..:: Mechanical parameters ::..
@@ -52,7 +53,7 @@ struct PlanarRendezvousEnvironmentParameters
 end
 
 """ Trajectory parameters. """
-struct PlanarRendezvousTrajectoryParameters
+mutable struct PlanarRendezvousTrajectoryParameters
     r0::T_RealVector # [m] Initial position
     v0::T_RealVector # [m/s] Initial velocity
     θ0::T_Real       # [rad] Initial rotation angle
@@ -60,6 +61,8 @@ struct PlanarRendezvousTrajectoryParameters
     vf::T_Real       # [m/s] Final approach speed
     tf_min::T_Real   # [s] Minimum flight time
     tf_max::T_Real   # [s] Maximum flight time
+    κ1::T_Real       # Sigmoid homotopy parameter
+    κ2::T_Real       # Normalization homotopy parameter
 end
 
 """ Planar rendezvous trajectory optimization problem parameters all in
@@ -100,7 +103,8 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     id_θ = 5
     id_ω = 6
     id_f = 1:3
-    id_l1f = 4:6
+    id_fr = 4:6
+    id_l1f = 7:9
     id_t = 1
     # >> Mechanical parameters <<
     m = 30e3
@@ -114,8 +118,8 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     f_db = 50.0
 
     sc = PlanarRendezvousParameters(
-        id_r, id_v, id_θ, id_ω, id_f, id_l1f, id_t, m, J, lu, lv, uh,
-        vh, f_max, f_db)
+        id_r, id_v, id_θ, id_ω, id_f, id_fr, id_l1f, id_t, m, J,
+        lu, lv, uh, vh, f_max, f_db)
 
     # ..:: Trajectory ::..
     r0 = 100.0*xh+10.0*yh
@@ -124,9 +128,11 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     ω0 = 0.0
     vf = 0.1
     tf_min = 100.0
-    tf_max = 250.0
+    tf_max = 500.0
+    κ1 = NaN
+    κ2 = 1.0
     traj = PlanarRendezvousTrajectoryParameters(
-        r0, v0, θ0, ω0, vf, tf_min, tf_max)
+        r0, v0, θ0, ω0, vf, tf_min, tf_max, κ1, κ2)
 
     mdl = PlanarRendezvousProblem(sc, env, traj)
 
@@ -306,21 +312,29 @@ function plot_thrusts(mdl::PlanarRendezvousProblem,
     # Parameters
     algo = sol.algo
     veh = mdl.vehicle
+    traj = mdl.traj
     N = size(sol.xd, 2)
     tf = sol.p[veh.id_t]
     ct_res = 500
+    polar_resol = 1000
     td = T_RealVector(LinRange(0.0, 1.0, N))*tf
     τc = T_RealVector(LinRange(0.0, 1.0, ct_res))
     tc = τc*tf
     clr = rgb(generate_colormap(), 1.0)
+    n_rcs = length(veh.id_f)
     thruster_names = [@sprintf("\$f_{%s}\$", sub) for sub in ["-", "+", "0"]]
 
-    fig = create_figure((5, 7))
+    fig = create_figure((10, 10))
+
+    gspec = fig.add_gridspec(ncols=2, nrows=n_rcs,
+                             width_ratios=[2.2, 1])
 
     axes = []
 
+    # ..:: Thrust timeseries plots ::..
+
     for i in veh.id_f
-        ax = setup_axis!(length(veh.id_f), 1, i;
+        ax = setup_axis!(gspec[i, 1];
                          xlabel="Time [s]",
                          ylabel=@sprintf("Thrust %s [N]", thruster_names[i]),
                          tight="x")
@@ -329,13 +343,13 @@ function plot_thrusts(mdl::PlanarRendezvousProblem,
         fi_d = sol.ud[i, :]
         fi_c = hcat([sample(sol.uc, τ)[i] for τ in τc]...)[:]
 
-        # ..:: Continuous-time signal ::..
+        # >> Continuous-time signal <<
         ax.plot(tc, fi_c,
                 color=clr,
                 linewidth=2,
                 zorder=10)
 
-        # ..:: Discrete-time thrust ::..
+        # >> Discrete-time thrust <<
         ax.plot(td, fi_d,
                 linestyle="none",
                 marker="o",
@@ -348,6 +362,55 @@ function plot_thrusts(mdl::PlanarRendezvousProblem,
     end
 
     fig.align_ylabels(axes)
+
+    # ..:: Thrust polar plots (showing deadband) ::..
+
+    for i=1:n_rcs
+        ax = setup_axis!(gspec[i, 2];
+                         xlabel=@sprintf("Reference %s [N]",
+                                         thruster_names[i]),
+                         tight="both",
+                         axis="square")
+
+        f = sol.ud[veh.id_f[i], :]
+        fr = sol.ud[veh.id_fr[i], :]
+
+        # >> Continuous feasible (fr, f) polar <<
+
+        fr_rng = LinRange(-veh.f_max, veh.f_max, polar_resol)
+        above_db = (fr)->fr-veh.f_db
+        below_db = (fr)->-veh.f_db-fr
+        f_polar = map((fr)->or(above_db(fr), below_db(fr);
+                               κ1=traj.κ1, κ2=traj.κ2,
+                               minval=-veh.f_max-veh.f_db,
+                               maxval=veh.f_max+veh.f_db)*fr, fr_rng)
+
+        # Without deadband
+        ax.plot(fr_rng, fr_rng,
+                color=Red,
+                linewidth=1,
+                solid_capstyle="round",
+                zorder=10)
+
+        # With deadband
+        ax.plot(fr_rng, f_polar,
+                color=Green,
+                linewidth=2,
+                solid_capstyle="round",
+                zorder=10)
+
+        # >> The discrete-time (fr, f) trajectory values <<
+        ax.plot(fr, f,
+                linestyle="none",
+                marker="o",
+                markersize=4,
+                markerfacecolor=clr,
+                markeredgecolor="white",
+                markeredgewidth=0.3,
+                clip_on=false,
+                zorder=100)
+
+    end
 
     save_figure("rendezvous_planar_thrusts", algo)
 
