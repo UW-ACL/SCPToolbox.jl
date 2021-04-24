@@ -38,7 +38,7 @@ end
 
 function _common__set_dims!(pbm::TrajectoryProblem)::Nothing
 
-    problem_set_dims!(pbm, 6, 9, 1)
+    problem_set_dims!(pbm, 6, 12, 1)
 
     return nothing
 end
@@ -84,6 +84,9 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
     end
     for i in veh.id_l1f
         advise!(pbm, :input, i, (0.0, veh.f_max))
+    end
+    for i in veh.id_l1feq
+        advise!(pbm, :input, i, (0.0, 2*veh.f_max))
     end
     # Parameters
     advise!(pbm, :parameter, veh.id_t, (traj.tf_min, traj.tf_max))
@@ -131,10 +134,13 @@ function _common__set_cost!(pbm::TrajectoryProblem,
         pbm, algo,
         (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
+            traj = pbm.mdl.traj
             l1f = u[veh.id_l1f]
+            l1feq = u[veh.id_l1feq]
             f = u[veh.id_f]
             f_nrml = veh.f_max
             runn = sum(l1f)/f_nrml
+            runn += traj.γ*sum(l1feq)/f_nrml
             # f_nrml = veh.f_max^2
             # runn = sum(f.^2)/f_nrml
             return runn
@@ -240,25 +246,23 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
         pbm, (t, k, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
+            n_rcs = length(veh.id_f)
 
             fm, fp, f0 = u[veh.id_f]
             fmr, fpr, f0r = u[veh.id_fr]
             l1fm, l1fp, l1f0 = u[veh.id_l1f]
+            l1fmeq, l1fpeq, l1f0eq = u[veh.id_l1feq]
             tdil = p[veh.id_t]
 
             C = T_ConvexConeConstraint
-            U = [C(l1fm-veh.f_max, :nonpos),
-                 C(l1fp-veh.f_max, :nonpos),
-                 C(l1f0-veh.f_max, :nonpos),
-                 C(vcat(l1fm, fm), :l1),
-                 C(vcat(l1fp, fp), :l1),
-                 C(vcat(l1f0, f0), :l1),
-                 C(fmr-veh.f_max, :nonpos),
-                 C(fpr-veh.f_max, :nonpos),
-                 C(f0r-veh.f_max, :nonpos),
-                 C(-veh.f_max-fmr, :nonpos),
-                 C(-veh.f_max-fpr, :nonpos),
-                 C(-veh.f_max-f0r, :nonpos),
+            U = [[C(u[veh.id_l1f[i]]-veh.f_max, :nonpos) for i=1:n_rcs]...,
+                 [C(u[veh.id_fr[i]]-veh.f_max, :nonpos) for i=1:n_rcs]...,
+                 [C(-veh.f_max-u[veh.id_fr[i]], :nonpos) for i=1:n_rcs]...,
+                 [C(vcat(u[veh.id_l1f[i]], u[veh.id_f[i]]), :l1)
+                  for i=1:n_rcs]...,
+                 [C(vcat(u[veh.id_l1feq[i]],
+                         u[veh.id_f[i]]-u[veh.id_fr[i]]), :l1)
+                  for i=1:n_rcs]...,
                  C(tdil-traj.tf_max, :nonpos),
                  C(traj.tf_min-tdil, :nonpos)]
 

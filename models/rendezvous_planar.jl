@@ -32,6 +32,7 @@ struct PlanarRendezvousParameters
     id_f::T_IntVector   # Thrust forces for RCS pods (input)
     id_fr::T_IntVector  # Reference thrust forces for RCS pods (input)
     id_l1f::T_IntVector # Thrust force absolute values for RCS pods (input)
+    id_l1feq::T_IntVector # Thrust force difference one-norm (input)
     id_t::T_Int         # Time dilation (parameter)
     # ..:: Mechanical parameters ::..
     m::T_Real           # [kg] Mass
@@ -63,6 +64,7 @@ mutable struct PlanarRendezvousTrajectoryParameters
     tf_max::T_Real   # [s] Maximum flight time
     κ1::T_Real       # Sigmoid homotopy parameter
     κ2::T_Real       # Normalization homotopy parameter
+    γ::T_Real        # Control weight for deadband relaxation
 end
 
 """ Planar rendezvous trajectory optimization problem parameters all in
@@ -105,6 +107,7 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     id_f = 1:3
     id_fr = 4:6
     id_l1f = 7:9
+    id_l1feq = 10:12
     id_t = 1
     # >> Mechanical parameters <<
     m = 30e3
@@ -118,8 +121,8 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     f_db = 50.0
 
     sc = PlanarRendezvousParameters(
-        id_r, id_v, id_θ, id_ω, id_f, id_fr, id_l1f, id_t, m, J,
-        lu, lv, uh, vh, f_max, f_db)
+        id_r, id_v, id_θ, id_ω, id_f, id_fr, id_l1f, id_l1feq, id_t,
+        m, J, lu, lv, uh, vh, f_max, f_db)
 
     # ..:: Trajectory ::..
     r0 = 100.0*xh+10.0*yh
@@ -131,8 +134,9 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     tf_max = 500.0
     κ1 = NaN
     κ2 = 1.0
+    γ = 1e-3
     traj = PlanarRendezvousTrajectoryParameters(
-        r0, v0, θ0, ω0, vf, tf_min, tf_max, κ1, κ2)
+        r0, v0, θ0, ω0, vf, tf_min, tf_max, κ1, κ2, γ)
 
     mdl = PlanarRendezvousProblem(sc, env, traj)
 

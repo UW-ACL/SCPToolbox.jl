@@ -33,9 +33,8 @@ define_problem!(pbm, :ptr)
 
 N = 30
 Nsub = 10
-iter_max = 20
+iter_max = 30
 wvc = 5e2
-# wtr = 1e-4
 wtr = 5e-2
 ε_abs = -Inf#1e-5
 ε_rel = 1e-3/100
@@ -58,20 +57,23 @@ hom_grid = LinRange(0.0, 1.0, Nhom)
 
 ptr_pbm = PTRProblem(pars, pbm)
 
-sol, history = [], []
+sols, historys = [], []
 for i = 1:Nhom
-    global sol, history
+    global sols, historys
 
     mdl.traj.κ1 = hom_κ1(hom_grid[i])
-    warm = (i==1) ? nothing : sol[end]
+    warm = (i==1) ? nothing : sols[end]
 
     @printf("[%d/%d] Homotopy (κ=%.2e)\n", i, Nhom, mdl.traj.κ1)
 
     sol_i, history_i = ptr_solve(ptr_pbm, warm)
 
-    push!(sol, sol_i)
-    push!(history, history_i)
+    push!(sols, sol_i)
+    push!(historys, history_i)
 end
+
+sol = sols[9]
+history = historys[9]
 
 # mdl.traj.κ1 = 1.0
 # sol, history = ptr_solve(ptr_pbm)
@@ -79,9 +81,6 @@ end
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-sol = sol[end]
-history = history[end]
 
 plot_final_trajectory(mdl, sol)
 plot_attitude(mdl, sol)
