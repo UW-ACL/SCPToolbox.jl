@@ -1320,7 +1320,7 @@ end
 The colormap is normalized to the [0, 1] interval.
 
 # Returns
-    cmap: a colormap object that can be queried for RGB color.
+- `cmap`: a colormap object that can be queried for RGB color.
 """
 function get_colormap()::PyPlot.PyObject
     cmap = plt.get_cmap("inferno_r")

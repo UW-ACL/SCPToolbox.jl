@@ -177,6 +177,7 @@ end
 
 function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
+    # Convex path constraints on the state
     problem_set_X!(
         pbm, (t, k, x, p, pbm) -> begin
             veh = pbm.mdl.vehicle
@@ -191,6 +192,7 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             return X
         end)
 
+    # Convex path constraints on the input
     problem_set_U!(
         pbm, (t, k, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle

@@ -1,4 +1,4 @@
-#= Oscillator with dead band data structures and custom methods.
+#= Oscillator with deadband data structures and custom methods.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington)
@@ -63,7 +63,10 @@ end
 """
     OscillatorProblem()
 
-Constructor for the Starship landing flip maneuver problem.
+Constructor for the oscillator with actuator deadband problem.
+
+# Arguments
+- `N`: the number of discrete time grid nodes.
 
 # Returns
 - `mdl`: the problem definition object.
