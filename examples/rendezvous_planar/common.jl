@@ -38,7 +38,7 @@ end
 
 function _common__set_dims!(pbm::TrajectoryProblem)::Nothing
 
-    problem_set_dims!(pbm, 6, 3, 1)
+    problem_set_dims!(pbm, 6, 6, 1)
 
     return nothing
 end
@@ -77,9 +77,12 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
     advise!(pbm, :state, veh.id_θ, (θ_min, θ_max))
     advise!(pbm, :state, veh.id_ω, (ω_min, ω_max))
     # Inputs
-    advise!(pbm, :input, veh.id_fm, (-veh.f_max, veh.f_max))
-    advise!(pbm, :input, veh.id_fp, (-veh.f_max, veh.f_max))
-    advise!(pbm, :input, veh.id_f0, (-veh.f_max, veh.f_max))
+    for i in veh.id_f
+        advise!(pbm, :input, i, (-veh.f_max, veh.f_max))
+    end
+    for i in veh.id_l1f
+        advise!(pbm, :input, i, (0.0, veh.f_max))
+    end
     # Parameters
     advise!(pbm, :parameter, veh.id_t, (traj.tf_min, traj.tf_max))
 
@@ -126,11 +129,12 @@ function _common__set_cost!(pbm::TrajectoryProblem,
         pbm, algo,
         (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
-            fm = u[veh.id_fm]
-            fp = u[veh.id_fp]
-            f0 = u[veh.id_f0]
-            f_nrml = veh.f_max^2
-            runn = (fm^2+fp^2+f0^2)/f_nrml
+            l1f = u[veh.id_l1f]
+            f = u[veh.id_f]
+            f_nrml = veh.f_max
+            runn = sum(l1f)/f_nrml
+            # f_nrml = veh.f_max^2
+            # runn = sum(f.^2)/f_nrml
             return runn
         end)
 
@@ -150,9 +154,7 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
             v = x[veh.id_v]
             θ = x[veh.id_θ]
             ω = x[veh.id_ω]
-            fm = u[veh.id_fm]
-            fp = u[veh.id_fp]
-            f0 = u[veh.id_f0]
+            fm, fp, f0 = u[veh.id_f]
             tdil = p[veh.id_t]
             # Derived quantities
             uh = veh.uh(θ)
@@ -177,9 +179,7 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
             env = pbm.mdl.env
             # Current (x, u, p) values
             θ = x[veh.id_θ]
-            fm = u[veh.id_fm]
-            fp = u[veh.id_fp]
-            f0 = u[veh.id_f0]
+            fm, fp, f0 = u[veh.id_f]
             tdil = p[veh.id_t]
             # Derived quantities
             ∇θ_uh = -veh.vh(θ)
@@ -206,14 +206,15 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
             # Derived quantities
             uh = veh.uh(θ)
             vh = veh.vh(θ)
+            id_fm, id_fp, id_f0 = veh.id_f
             # The Jacobian
             B = zeros(pbm.nx, pbm.nu)
-            B[veh.id_v, veh.id_fm] = uh/veh.m
-            B[veh.id_v, veh.id_fp] = uh/veh.m
-            B[veh.id_v, veh.id_f0] = vh/veh.m
-            B[veh.id_ω, veh.id_fm] = -veh.lv/veh.J
-            B[veh.id_ω, veh.id_fp] = veh.lv/veh.J
-            B[veh.id_ω, veh.id_f0] = -veh.lu/veh.J
+            B[veh.id_v, id_fm] = uh/veh.m
+            B[veh.id_v, id_fp] = uh/veh.m
+            B[veh.id_v, id_f0] = vh/veh.m
+            B[veh.id_ω, id_fm] = -veh.lv/veh.J
+            B[veh.id_ω, id_fp] = veh.lv/veh.J
+            B[veh.id_ω, id_f0] = -veh.lu/veh.J
             # Scale for absolute time
             B *= tdil
             return B
@@ -238,18 +239,17 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
 
-            fm = u[veh.id_fm]
-            fp = u[veh.id_fp]
-            f0 = u[veh.id_f0]
+            fm, fp, f0 = u[veh.id_f]
+            l1fm, l1fp, l1f0 = u[veh.id_l1f]
             tdil = p[veh.id_t]
 
             C = T_ConvexConeConstraint
-            U = [C(fm-veh.f_max, :nonpos),
-                 C(-veh.f_max-fm, :nonpos),
-                 C(fp-veh.f_max, :nonpos),
-                 C(-veh.f_max-fp, :nonpos),
-                 C(f0-veh.f_max, :nonpos),
-                 C(-veh.f_max-f0, :nonpos),
+            U = [C(l1fm-veh.f_max, :nonpos),
+                 C(l1fp-veh.f_max, :nonpos),
+                 C(l1f0-veh.f_max, :nonpos),
+                 C(vcat(l1fm, fm), :l1),
+                 C(vcat(l1fp, fp), :l1),
+                 C(vcat(l1f0, f0), :l1),
                  C(tdil-traj.tf_max, :nonpos),
                  C(traj.tf_min-tdil, :nonpos)]
 

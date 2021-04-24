@@ -16,6 +16,7 @@ You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 include("../core/scp.jl")
+include("../utils/plots.jl")
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -24,24 +25,23 @@ include("../core/scp.jl")
 """ Planar rendezvous parameters. """
 struct PlanarRendezvousParameters
     # ..:: Indices ::..
-    id_r::T_IntVector # Position (state)
-    id_v::T_IntVector # Velocity (state)
-    id_θ::T_Int       # Rotation angle (state)
-    id_ω::T_Int       # Rotation rate (state)
-    id_fm::T_Int      # Thrust force of lower (-) RCS pod (input)
-    id_fp::T_Int      # Thrust force of upper (+) RCS pod (input)
-    id_f0::T_Int      # Thrust force of vertical (0) RCS pod (input)
-    id_t::T_Int       # Time dilation (parameter)
+    id_r::T_IntVector   # Position (state)
+    id_v::T_IntVector   # Velocity (state)
+    id_θ::T_Int         # Rotation angle (state)
+    id_ω::T_Int         # Rotation rate (state)
+    id_f::T_IntVector   # Thrust forces for RCS pods (input)
+    id_l1f::T_IntVector # Thrust force absolute values for RCS pods (input)
+    id_t::T_Int         # Time dilation (parameter)
     # ..:: Mechanical parameters ::..
-    m::T_Real         # [kg] Mass
-    J::T_Real         # [kg*m²] Moment of inertia about CoM
-    lu::T_Real        # [m] CoM longitudinal distance aft of thrusters
-    lv::T_Real        # [m] CoM transverse distance from thrusters
-    uh::T_Function    # Longitudinal "forward" axis in the inertial frame
-    vh::T_Function    # Transverse "up" axis in the inertial frame
+    m::T_Real           # [kg] Mass
+    J::T_Real           # [kg*m²] Moment of inertia about CoM
+    lu::T_Real          # [m] CoM longitudinal distance aft of thrusters
+    lv::T_Real          # [m] CoM transverse distance from thrusters
+    uh::T_Function      # Longitudinal "forward" axis in the inertial frame
+    vh::T_Function      # Transverse "up" axis in the inertial frame
     # ..:: Control parameters ::..
-    f_max::T_Real     # [N] Maximum thrust force
-    f_db::T_Real      # [N] Deadband thrust force
+    f_max::T_Real       # [N] Maximum thrust force
+    f_db::T_Real        # [N] Deadband thrust force
 end
 
 """ Planar rendezvous flight environment. """
@@ -99,9 +99,8 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     id_v = 3:4
     id_θ = 5
     id_ω = 6
-    id_fm = 1
-    id_fp = 2
-    id_f0 = 3
+    id_f = 1:3
+    id_l1f = 4:6
     id_t = 1
     # >> Mechanical parameters <<
     m = 30e3
@@ -115,17 +114,17 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     f_db = 50.0
 
     sc = PlanarRendezvousParameters(
-        id_r, id_v, id_θ, id_ω, id_fm, id_fp, id_f0, id_t, m,
-        J, lu, lv, uh, vh, f_max, f_db)
+        id_r, id_v, id_θ, id_ω, id_f, id_l1f, id_t, m, J, lu, lv, uh,
+        vh, f_max, f_db)
 
     # ..:: Trajectory ::..
-    r0 = 100.0*xh+0.0*yh
+    r0 = 100.0*xh+10.0*yh
     v0 = 0.0*xh
     θ0 = deg2rad(180.0)
     ω0 = 0.0
     vf = 0.1
     tf_min = 100.0
-    tf_max = 400.0
+    tf_max = 250.0
     traj = PlanarRendezvousTrajectoryParameters(
         r0, v0, θ0, ω0, vf, tf_min, tf_max)
 
@@ -152,29 +151,21 @@ function plot_final_trajectory(mdl::PlanarRendezvousProblem,
 
     # Common values
     algo = sol.algo
-    dt_clr = get_colormap()(1.0)
+    traj = mdl.traj
+    dt_clr = rgb(generate_colormap(), 1.0)
     N = size(sol.xd, 2)
     speed = [norm(@k(sol.xd[mdl.vehicle.id_v, :])) for k=1:N]
-    v_cmap = plt.get_cmap("inferno")
-    v_nrm = matplotlib.colors.Normalize(vmin=minimum(speed),
-                                        vmax=maximum(speed))
-    v_cmap = matplotlib.cm.ScalarMappable(norm=v_nrm, cmap=v_cmap)
+    v_cmap = generate_colormap("inferno"; minval=minimum(speed),
+                               maxval=maximum(speed))
     u_scale = 0.2
 
     fig = create_figure((10, 4))
-    ax = fig.add_subplot()
 
-    ax.grid(linewidth=0.3, alpha=0.5)
-    ax.set_axisbelow(true)
-    ax.set_facecolor("white")
-
-    ax.set_xlabel("Inertial \$x\$ [m]")
-    ax.set_ylabel("Inertial \$y\$ [m]")
-
-    # Colorbar for velocity norm
-    plt.colorbar(v_cmap,
-                 aspect=40,
-                 label="Velocity \$\\|v\\|_2\$ [m/s]")
+    ax = setup_axis!(; xlabel="Inertial \$x\$ [m]",
+                     ylabel="Inertial \$y\$ [m]",
+                     clabel="Velocity \$\\|v\\|_2\$ [m/s]",
+                     cbar=v_cmap,
+                     cbar_aspect=40)
 
     # ..:: Draw the final continuous-time position trajectory ::..
 
@@ -216,8 +207,8 @@ function plot_final_trajectory(mdl::PlanarRendezvousProblem,
             label="\$r\$",
             zorder=20)
 
-    y_lim = 5
-    # set_axis_equal(ax, (-1.5, missing, -y_lim, y_lim))
+    y_min = -5
+    set_axis_equal(ax, (-1.5, traj.r0[1]+1.5, y_min, missing))
 
     save_figure("rendezvous_planar_traj", algo)
 
@@ -241,15 +232,14 @@ function plot_attitude(mdl::PlanarRendezvousProblem,
     veh = mdl.vehicle
     N = size(sol.xd, 2)
     tf = sol.p[veh.id_t]
-    veh = mdl.vehicle
     traj = mdl.traj
     ct_res = 500
     td = T_RealVector(LinRange(0.0, 1.0, N))*tf
     τc = T_RealVector(LinRange(0.0, 1.0, ct_res))
     tc = τc*tf
-    clr = get_colormap()(1.0)
+    clr = rgb(generate_colormap(), 1.0)
 
-    fig = create_figure((6, 6))
+    fig = create_figure((5, 5))
 
     # Plot data
     data = [Dict(:ylabel=>"Angle [\$^\\circ\$]",
@@ -266,16 +256,11 @@ function plot_attitude(mdl::PlanarRendezvousProblem,
     axes = []
 
     for i = 1:length(data)
-        ax = fig.add_subplot(length(data), 1, i)
+        ax = setup_axis!(length(data), 1, i;
+                         xlabel="Time [s]",
+                         ylabel=data[i][:ylabel],
+                         tight="x")
         push!(axes, ax)
-
-        ax.grid(linewidth=0.3, alpha=0.5)
-        ax.set_axisbelow(true)
-        ax.set_facecolor("white")
-        ax.autoscale(tight=true, axis="x")
-
-        ax.set_xlabel("Time [s]")
-        ax.set_ylabel(data[i][:ylabel])
 
         x = data[i][:dt_y][data[i][:id], :]
         x = map(data[i][:scale], x)
@@ -302,6 +287,69 @@ function plot_attitude(mdl::PlanarRendezvousProblem,
     fig.align_ylabels(axes)
 
     save_figure("rendezvous_planar_attitude", algo)
+
+    return nothing
+end
+
+"""
+    plot_attitude(mdl, sol)
+
+Plot the converged attitude trajectory.
+
+# Arguments
+- `mdl`: the planar rendezvous problem parameters.
+- `sol`: the trajectory solution.
+"""
+function plot_thrusts(mdl::PlanarRendezvousProblem,
+                      sol::SCPSolution)::Nothing
+
+    # Parameters
+    algo = sol.algo
+    veh = mdl.vehicle
+    N = size(sol.xd, 2)
+    tf = sol.p[veh.id_t]
+    ct_res = 500
+    td = T_RealVector(LinRange(0.0, 1.0, N))*tf
+    τc = T_RealVector(LinRange(0.0, 1.0, ct_res))
+    tc = τc*tf
+    clr = rgb(generate_colormap(), 1.0)
+    thruster_names = [@sprintf("\$f_{%s}\$", sub) for sub in ["-", "+", "0"]]
+
+    fig = create_figure((5, 7))
+
+    axes = []
+
+    for i in veh.id_f
+        ax = setup_axis!(length(veh.id_f), 1, i;
+                         xlabel="Time [s]",
+                         ylabel=@sprintf("Thrust %s [N]", thruster_names[i]),
+                         tight="x")
+        push!(axes, ax)
+
+        fi_d = sol.ud[i, :]
+        fi_c = hcat([sample(sol.uc, τ)[i] for τ in τc]...)[:]
+
+        # ..:: Continuous-time signal ::..
+        ax.plot(tc, fi_c,
+                color=clr,
+                linewidth=2,
+                zorder=10)
+
+        # ..:: Discrete-time thrust ::..
+        ax.plot(td, fi_d,
+                linestyle="none",
+                marker="o",
+                markersize=4,
+                markerfacecolor=clr,
+                markeredgewidth=0,
+                zorder=10,
+                clip_on=false)
+
+    end
+
+    fig.align_ylabels(axes)
+
+    save_figure("rendezvous_planar_thrusts", algo)
 
     return nothing
 end

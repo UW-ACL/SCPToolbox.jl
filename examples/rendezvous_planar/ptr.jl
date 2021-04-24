@@ -35,7 +35,8 @@ N = 30
 Nsub = 10
 iter_max = 20
 wvc = 5e2
-wtr = 1e-4
+# wtr = 1e-4
+wtr = 5e-2
 ε_abs = 1e-5
 ε_rel = 1e-3/100
 feas_tol = 5e-3
@@ -66,4 +67,5 @@ sol, history = ptr_solve(ptr_pbm)
 
 plot_final_trajectory(mdl, sol)
 plot_attitude(mdl, sol)
+plot_thrusts(mdl, sol)
 plot_convergence(history, "rendezvous_planar")
