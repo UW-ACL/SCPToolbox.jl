@@ -1,4 +1,4 @@
-#= Global variables and modules used by the code.
+#= Trajectory generation examples.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
@@ -16,25 +16,13 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-using LinearAlgebra
-using JuMP
-using ECOS
-using Printf
-using PyPlot
-using Colors
+module ScpTrajOptExamples
 
-# List of possible SCP statuses/errors
-@enum(SCPStatus,
-      SCP_SOLVED,
-      SCP_FAILED,
-      SCP_SCALING_FAILED,
-      SCP_GUESS_PROJECTION_FAILED,
-      SCP_BAD_ARGUMENT,
-      SCP_BAD_PROBLEM)
+module Oscillator
+include("oscillator/parameters.jl")
+include("oscillator/definition.jl")
+include("oscillator/plots.jl")
+include("oscillator/tests.jl")
+end # module
 
-# Colors
-const Yellow = "#f1d46a"
-const Red = "#db6245"
-const Blue = "#356397"
-const DarkBlue = "#26415d"
-const Green = "#5da9a1"
+end # module

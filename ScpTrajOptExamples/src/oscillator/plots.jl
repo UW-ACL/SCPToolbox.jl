@@ -1,7 +1,8 @@
-#= Oscillator with deadband data structures and custom methods.
+#= Oscillator with deadband plots.
 
 Sequential convex programming algorithms for trajectory optimization.
-Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington)
+Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
+                   and Autonomous Systems Laboratory (Stanford University)
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -15,147 +16,15 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-include("../core/scp.jl")
-include("../utils/plots.jl")
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-""" Oscillator parameters. """
-struct OscillatorParameters
-    # ..:: Indices ::..
-    id_r::T_Int        # Position (state)
-    id_v::T_Int        # Velocity (state)
-    id_aa::T_Int       # Actual acceleration (input)
-    id_ar::T_Int       # Reference acceleration (input)
-    id_l1aa::T_Int     # Actual acceleration one-norm (input)
-    id_l1adiff::T_Int  # Acceleration difference one-norm (input)
-    id_l1r::T_IntRange # Position one-norm (parameter)
-    # ..:: Mechanical parameters ::..
-    ζ::T_Real          # Damping ratio
-    ω0::T_Real         # [rad/s] Natural frequency
-    # ..:: Control parameters ::..
-    a_db::T_Real       # [m/s²] Deadband acceleration
-    a_max::T_Real      # [m/s²] Maximum acceleration
+if isdefined(@__MODULE__, :LanguageServer)
+    include("parameters.jl")
+    include("../../../ScpTrajOptSolvers/src/ScpTrajOptSolvers.jl")
+    include("../../../ScpTrajOptSolvers/src/scp.jl")
+    using .ScpTrajOptSolvers
 end
 
-""" Trajectory parameters. """
-mutable struct OscillatorTrajectoryParameters
-    r0::T_Real # [m] Initial position
-    v0::T_Real # [m/s] Initial velocity
-    tf::T_Real # [s] Trajectory duration
-    κ1::T_Real # Sigmoid homotopy parameter
-    κ2::T_Real # Normalization homotopy parameter
-    α::T_Real  # Control usage weight
-    γ::T_Real  # Control weight for deadband relaxation
-end
-
-""" Oscillator trajectory optimization problem parameters all in one. """
-struct OscillatorProblem
-    vehicle::OscillatorParameters        # The ego-vehicle
-    traj::OscillatorTrajectoryParameters # The trajectory
-end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-"""
-    OscillatorProblem()
-
-Constructor for the oscillator with actuator deadband problem.
-
-# Arguments
-- `N`: the number of discrete time grid nodes.
-
-# Returns
-- `mdl`: the problem definition object.
-"""
-function OscillatorProblem(N::T_Int)::OscillatorProblem
-
-    # ..:: Oscillator ::..
-    # >> Indices <<
-    id_r = 1
-    id_v = 2
-    id_aa = 1
-    id_ar = 2
-    id_l1aa = 3
-    id_l1adiff = 4
-    id_l1r = 1:N
-    # >> Mechanical parameters <<
-    ζ = 0.5
-    ω0 = 1.0
-    # >> Control parameters <<
-    a_db = 0.05
-    a_max = 0.3
-
-    oscillator = OscillatorParameters(
-        id_r, id_v, id_aa, id_ar, id_l1aa, id_l1adiff, id_l1r, ζ,
-        ω0, a_db, a_max)
-
-    # ..:: Trajectory ::..
-    r0 = 1.0
-    v0 = 0.0
-    tf = 10.0
-    κ1 = NaN
-    κ2 = 1.0
-    α = 0.06
-    γ = 1e-2
-
-    traj = OscillatorTrajectoryParameters(r0, v0, tf, κ1, κ2, α, γ)
-
-    mdl = OscillatorProblem(oscillator, traj)
-
-    return mdl
-end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-"""
-    dynamics(t, k, x, u, p, pbm)
-
-Oscillator dynamics.
-
-Args:
-- `t`: the current time (normalized).
-- `k`: the current discrete-time node.
-- `x`: the current state vector.
-- `u`: the current input vector.
-- `p`: the parameter vector.
-- `pbm`: the oscillator problem description.
-
-Returns:
-- `f`: the time derivative of the state vector.
-"""
-function dynamics(t::T_Real, #nowarn
-                  k::T_Int, #nowarn
-                  x::T_RealVector,
-                  u::T_RealVector,
-                  p::T_RealVector, #nowarn
-                  pbm::TrajectoryProblem)::T_RealVector
-
-    # Parameters
-    veh = pbm.mdl.vehicle
-    traj = pbm.mdl.traj
-
-    # Current (x, u, p) values
-    r = x[veh.id_r]
-    v = x[veh.id_v]
-    aa = u[veh.id_aa]
-
-    # The dynamics
-    f = zeros(pbm.nx)
-    f[veh.id_r] = v
-    f[veh.id_v] = aa-veh.ω0^2*r-2*veh.ζ*veh.ω0*v
-
-    # Scale for absolute time
-    f *= traj.tf
-
-    return f
-end
+using ScpTrajOptSolvers
+using Colors
 
 """
     plot_timeseries(mdl, history)
@@ -178,13 +47,12 @@ function plot_timeseries(mdl::OscillatorProblem,
     veh = mdl.vehicle
     traj = mdl.traj
     ct_res = 500
-    td = T_RealVector(LinRange(0.0, 1.0, pars.N))*traj.tf
-    τc = T_RealVector(LinRange(0.0, 1.0, ct_res))
+    td = Vector{Float64}(LinRange(0.0, 1.0, pars.N))*traj.tf
+    τc = Vector{Float64}(LinRange(0.0, 1.0, ct_res))
     tc = τc*traj.tf
     cmap = generate_colormap()
     cmap_offset = 0.1
     alph_offset = 0.3
-    marker_darken_factor = 0.2
     ct_clr = "#db6245"
 
     fig = create_figure((6, 6))
@@ -267,7 +135,7 @@ function plot_timeseries(mdl::OscillatorProblem,
     save_figure("oscillator_timeseries", algo)
 
     return nothing
-end
+end # function
 
 """
     plot_deadband(mdl, history)
@@ -344,4 +212,4 @@ function plot_deadband(mdl::OscillatorProblem,
     save_figure("oscillator_deadband", algo)
 
     return nothing
-end
+end # function

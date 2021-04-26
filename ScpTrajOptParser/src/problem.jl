@@ -24,62 +24,73 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-include("../utils/helper.jl")
+if isdefined(@__MODULE__, :LanguageServer)
+    include("../../ScpTrajOptUtils/src/ScpTrajOptUtils.jl")
+    using .ScpTrajOptUtils
+end
 
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+const RealTuple = Tuple{ScpTypes.RealValue, ScpTypes.RealValue}
+const VectorOfTuples = Vector{Union{Nothing, RealTuple}}
+const SIA = ScpTypes.SpecialIntegrationActions
+const Func = ScpTypes.Func
+
+export TrajectoryProblem
+export problem_set_dims!, problem_advise_scale!,
+    problem_set_integration_action!, problem_set_guess!,
+    problem_set_terminal_cost!, problem_set_running_cost!,
+    problem_set_dynamics!, problem_set_X!, problem_set_U!,
+    problem_set_s!, problem_set_bc!
 
 """ Trajectory problem definition."""
 mutable struct TrajectoryProblem
     # >> Variable sizes <<
-    nx::T_Int         # Number of state variables
-    nu::T_Int         # Number of input variables
-    np::T_Int         # Number of parameter variables
+    nx::Int         # Number of state variables
+    nu::Int         # Number of input variables
+    np::Int         # Number of parameter variables
     # >> Variable scaling advice <<
-    xrg::Vector{Union{Nothing, Tuple{T_Real, T_Real}}} # State bounds
-    urg::Vector{Union{Nothing, Tuple{T_Real, T_Real}}} # Input bounds
-    prg::Vector{Union{Nothing, Tuple{T_Real, T_Real}}} # Parameter bounds
+    xrg::VectorOfTuples # State bounds
+    urg::VectorOfTuples # Input bounds
+    prg::VectorOfTuples # Parameter bounds
     # >> Numerical integration <<
-    integ_actions::T_SpecialIntegrationActions # Special variable treatment
+    integ_actions::SIA # Special variable treatment
     # >> Initial guess <<
-    guess::T_Function # (SCvx/GuSTO) The initial trajectory guess
+    guess::Func # (SCvx/GuSTO) The initial trajectory guess
     # >> Cost function <<
-    φ::T_Function     # (SCvx/GuSTO) Terminal cost
-    Γ::T_Function     # (SCvx) Running cost
-    S::T_Function     # (GuSTO) Running cost quadratic input penalty
-    dSdp::T_Function  # (GuSTO) Jacobian of S wrt parameter vector
-    ℓ::T_Function     # (GuSTO) Running cost input-affine penalty
-    dℓdx::T_Function  # (GuSTO) Jacobian of ℓ wrt state
-    dℓdp::T_Function  # (GuSTO) Jacobian of ℓ wrt parameter
-    g::T_Function     # (GuSTO) Running cost additive penalty
-    dgdx::T_Function  # (GuSTO) Jacobian of g wrt state
-    dgdp::T_Function  # (GuSTO) Jacobian of g wrt parameter
-    S_cvx::T_Bool     # (GuSTO) Indicator if S is convex
-    ℓ_cvx::T_Bool     # (GuSTO) Indicator if ℓ is convex
-    g_cvx::T_Bool     # (GuSTO) Indicator if g is convex
+    φ::Func     # (SCvx/GuSTO) Terminal cost
+    Γ::Func     # (SCvx) Running cost
+    S::Func     # (GuSTO) Running cost quadratic input penalty
+    dSdp::Func  # (GuSTO) Jacobian of S wrt parameter vector
+    ℓ::Func     # (GuSTO) Running cost input-affine penalty
+    dℓdx::Func  # (GuSTO) Jacobian of ℓ wrt state
+    dℓdp::Func  # (GuSTO) Jacobian of ℓ wrt parameter
+    g::Func     # (GuSTO) Running cost additive penalty
+    dgdx::Func  # (GuSTO) Jacobian of g wrt state
+    dgdp::Func  # (GuSTO) Jacobian of g wrt parameter
+    S_cvx::Bool # (GuSTO) Indicator if S is convex
+    ℓ_cvx::Bool # (GuSTO) Indicator if ℓ is convex
+    g_cvx::Bool # (GuSTO) Indicator if g is convex
     # >> Dynamics <<
-    f::T_Function     # State time derivative
-    A::T_Function     # Jacobian df/dx
-    B::T_Function     # Jacobian df/du
-    F::T_Function     # Jacobian df/dp
+    f::Func     # State time derivative
+    A::Func     # Jacobian df/dx
+    B::Func     # Jacobian df/du
+    F::Func     # Jacobian df/dp
     # >> Constraints <<
-    X::T_Function     # (SCvx/GuSTO) Convex state constraints
-    U::T_Function     # (SCvx/GuSTO) Convex input constraints
-    s::T_Function     # Nonconvex inequality constraint function
-    C::T_Function     # Jacobian ds/dx
-    D::T_Function     # Jacobian ds/du
-    G::T_Function     # Jacobian ds/dp
+    X::Func     # (SCvx/GuSTO) Convex state constraints
+    U::Func     # (SCvx/GuSTO) Convex input constraints
+    s::Func     # Nonconvex inequality constraint function
+    C::Func     # Jacobian ds/dx
+    D::Func     # Jacobian ds/du
+    G::Func     # Jacobian ds/dp
     # >> Boundary conditions <<
-    gic::T_Function   # Initial condition
-    H0::T_Function    # Jacobian dgic/dx
-    K0::T_Function    # Jacobian dgic/dp
-    gtc::T_Function   # Terminal condition
-    Hf::T_Function    # Jacobian dgtc/dx
-    Kf::T_Function    # Jacobian dgtc/dp
+    gic::Func   # Initial condition
+    H0::Func    # Jacobian dgic/dx
+    K0::Func    # Jacobian dgic/dp
+    gtc::Func   # Terminal condition
+    Hf::Func    # Jacobian dgtc/dx
+    Kf::Func    # Jacobian dgtc/dp
     # >> Other <<
-    mdl::Any          # Problem-specific data structure
-    scp::Any          # SCP algorithm parameter data structure
+    mdl::Any    # Problem-specific data structure
+    scp::Any    # SCP algorithm parameter data structure
 end
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -105,7 +116,7 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     xrg = Vector{Nothing}(undef, 0)
     urg = Vector{Nothing}(undef, 0)
     prg = Vector{Nothing}(undef, 0)
-    propag_actions = T_SpecialIntegrationActions(undef, 0)
+    propag_actions = SIA(undef, 0)
     guess = nothing
     φ = nothing
     Γ = nothing
@@ -162,9 +173,7 @@ Set the problem dimensions.
 - `np`: parameter dimension.
 """
 function problem_set_dims!(pbm::TrajectoryProblem,
-                           nx::T_Int,
-                           nu::T_Int,
-                           np::T_Int)::Nothing
+                           nx::Int, nu::Int, np::Int)::Nothing
     pbm.nx = nx
     pbm.nu = nu
     pbm.np = np
@@ -187,9 +196,9 @@ variable scaling that may occur.
 - `rg`: the range itself, (min, max).
 """
 function problem_advise_scale!(pbm::TrajectoryProblem,
-                               which::T_Symbol,
-                               idx::T_ElementIndex,
-                               rg::Tuple{T_Real, T_Real})::Nothing
+                               which::Symbol,
+                               idx::ScpTypes.ElementIndex,
+                               rg::RealTuple)::Nothing
     if rg[2] < rg[1]
         err = ArgumentError("ERROR: min must be less than max.")
         throw(err)
@@ -212,10 +221,11 @@ Define an action on (part of) the state at integration update step.
 - `action`: the action to do. Receives the subset of the state, and returns the
   updated/correct value.
 """
-function problem_set_integration_action!(pbm::TrajectoryProblem,
-                                         idx::T_ElementIndex,
-                                         action::T_Function)::Nothing
+function problem_set_integration_action!(
+    pbm::TrajectoryProblem, idx::ScpTypes.ElementIndex, action::Func)::Nothing
+
     push!(pbm.integ_actions, (idx, (x) -> action(x, pbm)))
+
     return nothing
 end
 
@@ -229,7 +239,7 @@ Define the initial trajectory guess.
 - `guess`: the guess generator.
 """
 function problem_set_guess!(pbm::TrajectoryProblem,
-                            guess::T_Function)::Nothing
+                            guess::Func)::Nothing
     pbm.guess = (N) -> guess(N, pbm)
     return nothing
 end
@@ -244,14 +254,14 @@ Define the terminal cost.
 - `φ`: (optional) the terminal cost.
 """
 function problem_set_terminal_cost!(pbm::TrajectoryProblem,
-                                    φ::T_Function)::Nothing
+                                    φ::Func)::Nothing
     pbm.φ = (x, p) -> φ(x, p, pbm)
     return nothing
 end
 
 """
-    problem_set_running_cost!(pbm, algo, SΓ
-                              [, dSdp, ℓ, dℓdx, dℓdp, g, dgdx, dgdp])
+    problem_set_running_cost!(pbm, algo, SΓ[, dSdp, ℓ, dℓdx,
+                              dℓdp, g, dgdx, dgdp])
 
 Define the running cost function. SCvx just requires the first function, `Γ(x,
 u, p)`. GuSTO requires all the arguments and their Jacobians.
@@ -270,15 +280,15 @@ Args:
 - `dgdp`: (optional) the additive penalty function Jacobian wrt parameter.
 """
 function problem_set_running_cost!(pbm::TrajectoryProblem,
-                                   algo::T_Symbol,
-                                   SΓ::T_Function,
-                                   dSdp::T_Function=nothing,
-                                   ℓ::T_Function=nothing,
-                                   dℓdx::T_Function=nothing,
-                                   dℓdp::T_Function=nothing,
-                                   g::T_Function=nothing,
-                                   dgdx::T_Function=nothing,
-                                   dgdp::T_Function=nothing)::Nothing
+                                   algo::Symbol,
+                                   SΓ::Func,
+                                   dSdp::Func=nothing,
+                                   ℓ::Func=nothing,
+                                   dℓdx::Func=nothing,
+                                   dℓdp::Func=nothing,
+                                   g::Func=nothing,
+                                   dgdx::Func=nothing,
+                                   dgdp::Func=nothing)::Nothing
     if algo in (:scvx, :ptr)
         pbm.Γ = (t, k, x, u, p) -> SΓ(t, k, x, u, p, pbm)
     else
@@ -315,17 +325,17 @@ Define the dynamics (SCvx).
 - `F`: Jacobian with respect to the parameter, `df/dp`.
 """
 function problem_set_dynamics!(pbm::TrajectoryProblem,
-                               f::T_Function,
-                               A::T_Function,
-                               B::T_Function,
-                               F::T_Function)::Nothing
+                               f::Func,
+                               A::Func,
+                               B::Func,
+                               F::Func)::Nothing
     pbm.f = (t, k, x, u, p) -> f(t, k, x, u, p, pbm)
     pbm.A = !isnothing(A) ? (t, k, x, u, p) -> A(t, k, x, u, p, pbm) :
-        (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx)
+        (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx) #noinfo
     pbm.B = !isnothing(A) ? (t, k, x, u, p) -> B(t, k, x, u, p, pbm) :
-        (t, k, x, u, p) -> zeros(pbm.nx, pbm.nu)
+        (t, k, x, u, p) -> zeros(pbm.nx, pbm.nu) #noinfo
     pbm.F = !isnothing(F) ? (t, k, x, u, p) -> F(t, k, x, u, p, pbm) :
-        (x, u, p) -> zeros(pbm.nx, pbm.nu)
+        (x, u, p) -> zeros(pbm.nx, pbm.nu) #noinfo
     return nothing
 end
 
@@ -342,9 +352,9 @@ Define the input-affine dynamics (GuSTO).
 - `F`: Jacobians with respect to the parameter, `{df0/dp, df1/dp, ...}`.
 """
 function problem_set_dynamics!(pbm::TrajectoryProblem,
-                               f::T_Function,
-                               A::T_Function,
-                               F::T_Function)::Nothing
+                               f::Func,
+                               A::Func,
+                               F::Func)::Nothing
     pbm.f = (t, k, x, u, p) -> begin
         _f = f(t, k, x, p, pbm)
         _f = _f[1]+sum(u[i]*_f[i+1] for i=1:pbm.nu)
@@ -355,9 +365,9 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
         _A = A(t, k, x, p, pbm)
         _A = _A[1]+sum(u[i]*_A[i+1] for i=1:pbm.nu)
         return _A
-    end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx)
+    end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx) #noinfo
 
-    pbm.B = (t, k, x, u, p) -> begin
+    pbm.B = (t, k, x, u, p) -> begin #noinfo
         _B = zeros(pbm.nx, pbm.nu)
         _f = f(t, k, x, p, pbm)
         for i = 1:pbm.nu
@@ -370,7 +380,7 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
         _F = F(t, k, x, p, pbm)
         _F = _F[1]+sum(u[i]*_F[i+1] for i=1:pbm.nu)
         return _F
-    end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx)
+    end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx) #noinfo
 
     return nothing
 end
@@ -385,7 +395,7 @@ Define the convex state constraint set.
 - `X`: the conic constraints whose intersection defines the convex state set.
 """
 function problem_set_X!(pbm::TrajectoryProblem,
-                        X::T_Function)::Nothing
+                        X::Func)::Nothing
     pbm.X = (t, k, x, p) -> X(t, k, x, p, pbm)
     return nothing
 end
@@ -400,7 +410,7 @@ Define the convex input constraint set.
 - `U`: the conic constraints whose intersection defines the convex input set.
 """
 function problem_set_U!(pbm::TrajectoryProblem,
-                        U::T_Function)::Nothing
+                        U::Func)::Nothing
     pbm.U = (t, k, u, p) -> U(t, k, u, p, pbm)
     return nothing
 end
@@ -424,11 +434,11 @@ Args:
   if using SCvx.
 """
 function problem_set_s!(pbm::TrajectoryProblem,
-                        algo::T_Symbol,
-                        s::T_Function,
-                        C::T_Function=nothing,
-                        DG::T_Function=nothing,
-                        G::T_Function=nothing)::Nothing
+                        algo::Symbol,
+                        s::Func,
+                        C::Func=nothing,
+                        DG::Func=nothing,
+                        G::Func=nothing)::Nothing
     if isnothing(s)
         err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: must at least provide s.")
         throw(err)
@@ -464,9 +474,9 @@ Define the boundary conditions.
 """
 function problem_set_bc!(pbm::TrajectoryProblem,
                          kind::Symbol,
-                         g::T_Function,
-                         H::T_Function,
-                         K::T_Function=nothing)::Nothing
+                         g::Func,
+                         H::Func,
+                         K::Func=nothing)::Nothing
     if isnothing(g)
         err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: must at least provide g.")
         throw(err)

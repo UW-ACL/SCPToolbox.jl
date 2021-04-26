@@ -1,0 +1,11 @@
+name = "ScpTrajOptParser"
+uuid = "8531126a-8d07-4702-a998-a66a2313e289"
+authors = ["Danylo Malyuta <danylo@malyuta.name>", "Taylor P. Reynolds", "Michael Szmuk", "Thomas Lew", "Riccardo Bonalli", "Marco Pavone", "Behcet Acikmese"]
+version = "0.1.0"
+
+[deps]
+ECOS = "e2685f51-7e38-5353-a97d-a921fd2c8199"
+JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+ScpTrajOptUtils = "8b916518-a5eb-11eb-206d-83b0b19bff08"

@@ -1,0 +1,10 @@
+name = "ScpTrajOpt"
+uuid = "bd2bc758-a5dc-11eb-050f-6b2434548817"
+authors = ["Danylo Malyuta <danylo@malyuta.name>", "Taylor P. Reynolds", "Michael Szmuk", "Thomas Lew", "Riccardo Bonalli", "Marco Pavone", "Behcet Acikmese"]
+version = "1.0.0"
+
+[deps]
+ScpTrajOptExamples = "abb6aba6-a5dd-11eb-1a42-65499bd4c243"
+ScpTrajOptParser = "8531126a-8d07-4702-a998-a66a2313e289"
+ScpTrajOptSolvers = "7328b228-a5db-11eb-3781-05e2836e9a59"
+ScpTrajOptUtils = "8b916518-a5eb-11eb-206d-83b0b19bff08"

@@ -15,28 +15,35 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-include("../../models/oscillator.jl")
+if isdefined(@__MODULE__, :LanguageServer)
+    include("parameters.jl")
+    include("../../../ScpTrajOptParser/src/ScpTrajOptParser.jl")
+    include("../../../ScpTrajOptUtils/src/trajectory.jl")
+    using .ScpTrajOptParser
+end
 
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+using LinearAlgebra
+using ScpTrajOptParser
+
+const Trajectory = ST.ContinuousTimeTrajectory
 
 function define_problem!(pbm::TrajectoryProblem,
-                         algo::T_Symbol)::Nothing
-    _common__set_dims!(pbm)
-    _common__set_scale!(pbm)
-    _common__set_cost!(pbm, algo)
-    _common__set_dynamics!(pbm)
-    _common__set_convex_constraints!(pbm)
-    _common__set_nonconvex_constraints!(pbm, algo)
-    _common__set_bcs!(pbm)
+                         algo::Symbol)::Nothing
 
-    _common__set_guess!(pbm)
+    set_dims!(pbm)
+    set_scale!(pbm)
+    set_cost!(pbm, algo)
+    set_dynamics!(pbm)
+    set_convex_constraints!(pbm)
+    set_nonconvex_constraints!(pbm, algo)
+    set_bcs!(pbm)
+
+    set_guess!(pbm)
 
     return nothing
 end
 
-function _common__set_dims!(pbm::TrajectoryProblem)::Nothing
+function set_dims!(pbm::TrajectoryProblem)::Nothing
 
     # Parameters
     np = pbm.mdl.vehicle.id_l1r[end]
@@ -46,7 +53,7 @@ function _common__set_dims!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
+function set_scale!(pbm::TrajectoryProblem)::Nothing
 
     mdl = pbm.mdl
     veh = mdl.vehicle
@@ -70,7 +77,7 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
+function set_guess!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_guess!(
         pbm, (N, pbm) -> begin
@@ -82,11 +89,11 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
             x0[veh.id_r] = traj.r0
             x0[veh.id_v] = traj.v0
 
-            t_grid = T_RealVector(LinRange(0.0, 1.0, 1000))
-            τ_grid = T_RealVector(LinRange(0.0, 1.0, N))
+            t_grid = Vector{Float64}(LinRange(0.0, 1.0, 1000))
+            τ_grid = Vector{Float64}(LinRange(0.0, 1.0, N))
 
             F = (t, x) -> begin
-                k = max(floor(T_Int, t/(N-1))+1, N)
+                k = max(floor(Int, t/(N-1))+1, N)
                 u = zeros(pbm.nu)
                 p = zeros(pbm.np)
                 dxdt = dynamics(t, k, x, u, p, pbm)
@@ -94,7 +101,7 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
             end
 
             X = rk4(F, x0, t_grid; full=true)
-            Xc = T_ContinuousTimeTrajectory(t_grid, X, :linear)
+            Xc = Trajectory(t_grid, X, :linear)
             x = hcat([sample(Xc, τ) for τ in τ_grid]...)
 
             # >> Input guess <<
@@ -104,7 +111,7 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
             # >> Parameter guess <<
             p = zeros(pbm.np)
             for k = 1:N
-                @k(p) = norm(@k(x)[veh.id_r], 1)
+                p[k] = norm(x[veh.id_r, k], 1)
             end
 
             return x, u, p
@@ -113,15 +120,15 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-function _common__set_cost!(pbm::TrajectoryProblem,
-                            algo::T_Symbol)::Nothing
+function set_cost!(pbm::TrajectoryProblem,
+                            algo::Symbol)::Nothing
 
     problem_set_running_cost!(
         pbm, algo,
         (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
-            l1r = @k(p[veh.id_l1r])
+            l1r = p[veh.id_l1r[k]]
             l1aa = u[veh.id_l1aa]
             l1adiff = u[veh.id_l1adiff]
             aa = u[veh.id_aa]
@@ -137,7 +144,51 @@ function _common__set_cost!(pbm::TrajectoryProblem,
     return nothing
 end
 
-function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
+
+"""
+    dynamics(t, k, x, u, p, pbm)
+
+Oscillator dynamics.
+
+Args:
+- `t`: the current time (normalized).
+- `k`: the current discrete-time node.
+- `x`: the current state vector.
+- `u`: the current input vector.
+- `p`: the parameter vector.
+- `pbm`: the oscillator problem description.
+
+Returns:
+- `f`: the time derivative of the state vector.
+"""
+function dynamics(t::RealValue, #nowarn
+                  k::Int, #nowarn
+                  x::RealVector,
+                  u::RealVector,
+                  p::RealVector, #nowarn
+                  pbm::TrajectoryProblem)::RealVector
+
+    # Parameters
+    veh = pbm.mdl.vehicle
+    traj = pbm.mdl.traj
+
+    # Current (x, u, p) values
+    r = x[veh.id_r]
+    v = x[veh.id_v]
+    aa = u[veh.id_aa]
+
+    # The dynamics
+    f = zeros(pbm.nx)
+    f[veh.id_r] = v
+    f[veh.id_v] = aa-veh.ω0^2*r-2*veh.ζ*veh.ω0*v
+
+    # Scale for absolute time
+    f *= traj.tf
+
+    return f
+end # function
+
+function set_dynamics!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_dynamics!(
         pbm,
@@ -175,7 +226,7 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
+function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the state
     problem_set_X!(
@@ -186,8 +237,8 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             r = x[veh.id_r]
             l1r = p[veh.id_l1r]
 
-            C = T_ConvexConeConstraint
-            X = [C(vcat(@k(l1r), r), :l1)]
+            C = ConvexCone
+            X = [C(vcat(l1r[k], r), :l1)]
 
             return X
         end)
@@ -202,7 +253,7 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             l1aa = u[veh.id_l1aa]
             l1adiff = u[veh.id_l1adiff]
 
-            C = T_ConvexConeConstraint
+            C = ConvexCone
             U = [C(aa-veh.a_max, :nonpos),
                  C(-veh.a_max-aa, :nonpos),
                  C(ar-veh.a_max, :nonpos),
@@ -216,8 +267,8 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
-                                             algo::T_Symbol)::Nothing
+function set_nonconvex_constraints!(pbm::TrajectoryProblem,
+                                             algo::Symbol)::Nothing
 
     _common_s_sz = 2
 
@@ -283,7 +334,7 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
     return nothing
 end
 
-function _common__set_bcs!(pbm::TrajectoryProblem)::Nothing
+function set_bcs!(pbm::TrajectoryProblem)::Nothing
 
     # Initial conditions
     problem_set_bc!(

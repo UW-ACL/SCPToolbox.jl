@@ -16,19 +16,32 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-include("problem.jl")
+if isdefined(@__MODULE__, :LanguageServer)
+    include("../../ScpTrajOptUtils/src/ScpTrajOptUtils.jl")
+    include("../../ScpTrajOptParser/src/ScpTrajOptParser.jl")
+    using .ScpTrajOptUtils
+    using .ScpTrajOptParser
+end
 
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Abstract types :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+using LinearAlgebra
+using JuMP
+using Printf
+
+export SCPSolution, SCPHistory
+
+const ST = ScpTypes
+const RealValue = ST.RealValue
+const IntRange = ST.IntRange
+const RealVector = ST.RealVector
+const RealMatrix = ST.RealMatrix
+const Trajectory = ST.ContinuousTimeTrajectory
+const Objective = ST.Objective
+const VariableVector = ST.VariableVector
+const VariableMatrix = ST.VariableMatrix
 
 abstract type SCPParameters end
 abstract type SCPSubproblem end
 abstract type SCPSubproblemSolution end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 """ Variable scaling parameters.
 
@@ -36,16 +49,16 @@ Holds the SCP subproblem internal scaling parameters, which makes the numerical
 optimization subproblems better conditioned.
 """
 struct SCPScaling
-    Sx::T_RealMatrix  # State scaling coefficient matrix
-    cx::T_RealVector  # State scaling offset vector
-    Su::T_RealMatrix  # Input scaling coefficient matrix
-    cu::T_RealVector  # Input scaling offset vector
-    Sp::T_RealMatrix  # Parameter scaling coefficient matrix
-    cp::T_RealVector  # Parameter scaling offset matrix
-    iSx::T_RealMatrix # Inverse of state scaling matrix
-    iSu::T_RealMatrix # Inverse of input scaling matrix
-    iSp::T_RealMatrix # Inverse of parameter scaling coefficient matrix
-end
+    Sx::RealMatrix  # State scaling coefficient matrix
+    cx::RealVector  # State scaling offset vector
+    Su::RealMatrix  # Input scaling coefficient matrix
+    cu::RealVector  # Input scaling offset vector
+    Sp::RealMatrix  # Parameter scaling coefficient matrix
+    cp::RealVector  # Parameter scaling offset matrix
+    iSx::RealMatrix # Inverse of state scaling matrix
+    iSu::RealMatrix # Inverse of input scaling matrix
+    iSp::RealMatrix # Inverse of parameter scaling coefficient matrix
+end # struct
 
 """ Indexing arrays for convenient access during dynamics discretization.
 
@@ -53,31 +66,31 @@ Container of indices useful for extracting variables from the propagation
 vector during the linearized dynamics discretization process.
 """
 struct SCPDiscretizationIndices
-    x::T_IntRange  # Indices for state
-    A::T_IntRange  # Indices for A matrix
-    Bm::T_IntRange # Indices for B_{-} matrix
-    Bp::T_IntRange # Indices for B_{+} matrix
-    F::T_IntRange  # Indices for S matrix
-    r::T_IntRange  # Indices for r vector
-    E::T_IntRange  # Indices for E matrix
-    length::T_Int  # Propagation vector total length
-end
+    x::IntRange  # Indices for state
+    A::IntRange  # Indices for A matrix
+    Bm::IntRange # Indices for B_{-} matrix
+    Bp::IntRange # Indices for B_{+} matrix
+    F::IntRange  # Indices for S matrix
+    r::IntRange  # Indices for r vector
+    E::IntRange  # Indices for E matrix
+    length::Int  # Propagation vector total length
+end # struct
 
 """" Common constant terms used throughout the algorithm."""
 struct SCPCommon
     # >> Discrete-time grid <<
-    Δt::T_Real           # Discrete time step
-    t_grid::T_RealVector # Grid of scaled timed on the [0,1] interval
-    E::T_RealMatrix      # Continuous-time matrix for dynamics virtual control
+    Δt::RealValue        # Discrete time step
+    t_grid::RealVector   # Grid of scaled timed on the [0,1] interval
+    E::RealMatrix        # Continuous-time matrix for dynamics virtual control
     scale::SCPScaling    # Variable scaling
     id::SCPDiscretizationIndices # Convenience indices during propagation
-    table::T_Table       # Iteration info table (printout to REPL)
-end
+    table::ST.Table      # Iteration info table (printout to REPL)
+end # struct
 
 """ Structure which contains all the necessary information to run SCP."""
 struct SCPProblem{T<:SCPParameters}
     pars::T                 # Algorithm parameters
-    traj::TrajectoryProblem # The underlying trajectory problem
+    traj::TrajectoryProblem #noerr The underlying trajectory problem
     common::SCPCommon       # Common precomputed terms
 
     """"
@@ -106,8 +119,8 @@ struct SCPProblem{T<:SCPParameters}
         pbm = new{typeof(pars)}(pars, traj, common)
 
         return pbm
-    end
-end
+    end # function
+end # struct
 
 """ Overall trajectory solution.
 
@@ -115,24 +128,24 @@ Structure which holds the trajectory solution that the SCP algorithm returns.
 """
 struct SCPSolution
     # >> Properties <<
-    status::T_String  # Solution status (success? failure?)
-    algo::T_String    # Which algorithm was used to obtain this solution
-    iterations::T_Int # Number of SCP iterations that occurred
-    cost::T_Real      # The original convex cost function
+    status::String    # Solution status (success? failure?)
+    algo::String      # Which algorithm was used to obtain this solution
+    iterations::Int   # Number of SCP iterations that occurred
+    cost::RealValue   # The original convex cost function
     # >> Discrete-time trajectory <<
-    td::T_RealVector  # Discrete times
-    xd::T_RealMatrix  # States
-    ud::T_RealMatrix  # Inputs
-    p::T_RealVector   # Parameter vector
+    td::RealVector  # Discrete times
+    xd::RealMatrix  # States
+    ud::RealMatrix  # Inputs
+    p::RealVector   # Parameter vector
     # >> Continuous-time trajectory <<
-    xc::Union{T_ContinuousTimeTrajectory, Missing} # States
-    uc::Union{T_ContinuousTimeTrajectory, Missing} # Inputs
-end
+    xc::Union{Trajectory, Missing} # States
+    uc::Union{Trajectory, Missing} # Inputs
+end # struct
 
 """" SCP iteration history data."""
 struct SCPHistory{T<:SCPSubproblem}
     subproblems::Vector{T} # Subproblems
-end
+end # struct
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -152,7 +165,7 @@ Indexing arrays from problem definition.
 """
 function SCPDiscretizationIndices(
     traj::TrajectoryProblem,
-    E::T_RealMatrix)::SCPDiscretizationIndices
+    E::RealMatrix)::SCPDiscretizationIndices
 
     nx = traj.nx
     nu = traj.nu
@@ -169,7 +182,7 @@ function SCPDiscretizationIndices(
                                     id_r, id_E, id_sz)
 
     return idcs
-end
+end # function
 
 """
     SCPProblem(pars, traj, table)
@@ -188,20 +201,20 @@ matrices used to improve subproblem numerics.
 function SCPProblem(
     pars::T,
     traj::TrajectoryProblem,
-    table::T_Table)::SCPProblem where {T<:SCPParameters}
+    table::ST.Table)::SCPProblem where {T<:SCPParameters}
 
     # Compute the common constant terms
-    t_grid = T_RealVector(LinRange(0.0, 1.0, pars.N))
+    t_grid = Vector{Float64}(LinRange(0.0, 1.0, pars.N))
     Δt = t_grid[2]-t_grid[1]
-    E = T_RealMatrix(I(traj.nx))
-    scale = _scp__compute_scaling(pars, traj, t_grid)
+    E = Matrix{Float64}(I(traj.nx))
+    scale = compute_scaling(pars, traj, t_grid)
     idcs = SCPDiscretizationIndices(traj, E)
     consts = SCPCommon(Δt, t_grid, E, scale, idcs, table)
 
     pbm = SCPProblem(pars, traj, consts)
 
     return pbm
-end
+end # function
 
 """
     SCPSubproblemSolution!(spbm)
@@ -242,12 +255,12 @@ function SCPSubproblemSolution!(spbm::T)::Nothing where {T<:SCPSubproblem}
         if key in (:zero, :nonpos)
             spbm.ncons[key] = sum(dim(ref) for ref in refs)
         else
-            spbm.ncons[key] = T_IntVector([dim(ref) for ref in refs])
+            spbm.ncons[key] = ST.IntVector([dim(ref) for ref in refs])
         end
     end
 
     return nothing
-end
+end # function
 
 """
     SCPSolution(history)
@@ -273,18 +286,15 @@ function SCPSolution(history::SCPHistory)::SCPSolution
     pbm = last_spbm.def
     N = pbm.pars.N
     Nsub = pbm.pars.Nsub
-    nx = pbm.traj.nx
-    nu = pbm.traj.nu
-    np = pbm.traj.np
     td = pbm.common.t_grid
     algo = last_spbm.algo
 
-    if _scp__unsafe_solution(last_sol)
+    if unsafe_solution(last_sol)
         # SCP failed :(
         status = @sprintf "%s (%s)" SCP_FAILED last_sol.status
-        xd = T_RealMatrix(undef, size(last_sol.xd))
-        ud = T_RealMatrix(undef, size(last_sol.ud))
-        p = T_RealVector(undef, size(last_sol.p))
+        xd = Matrix{Float64}(undef, size(last_sol.xd))
+        ud = Matrix{Float64}(undef, size(last_sol.ud))
+        p = Vector{Float64}(undef, size(last_sol.p))
         xc = missing
         uc = missing
         cost = Inf
@@ -300,13 +310,13 @@ function SCPSolution(history::SCPHistory)::SCPSolution
         # Since within-interval integration using Nsub points worked, using
         # twice as many this time around seems like a good heuristic
         Nc = 2*Nsub*(N-1)
-        tc = T_RealVector(LinRange(0.0, 1.0, Nc))
-        uc = T_ContinuousTimeTrajectory(td, ud, :linear)
-        k = (t) -> max(floor(T_Int, t/(N-1))+1, N)
-        F = (t, x) -> pbm.traj.f(t, k(t), x, sample(uc, t), p)
-        xc_vals = rk4(F, @first(last_sol.xd), tc; full=true,
+        tc = Vector{Float64}(LinRange(0.0, 1.0, Nc))
+        uc = Trajectory(td, ud, :linear)
+        k = (t) -> max(floor(Int, t/(N-1))+1, N)
+        F = (t, x) -> pbm.traj.f(t, k(t), x, sample(uc, t), p) #noerr
+        xc_vals = rk4(F, last_sol.xd[:, 1], tc; full=true,
                       actions=pbm.traj.integ_actions)
-        xc = T_ContinuousTimeTrajectory(tc, xc_vals, :linear)
+        xc = Trajectory(tc, xc_vals, :linear)
 
         cost = last_sol.J_aug
     end
@@ -314,7 +324,7 @@ function SCPSolution(history::SCPHistory)::SCPSolution
     sol = SCPSolution(status, algo, num_iters, cost, td, xd, ud, p, xc, uc)
 
     return sol
-end
+end # function
 
 """
     SCPHistory()
@@ -328,14 +338,10 @@ function SCPHistory()::SCPHistory
     subproblems = Vector{SCPSubproblem}(undef, 0)
     history = SCPHistory(subproblems)
     return history
-end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+end # function
 
 """
-    _scp__correct_convex!(x_ref, u_ref, p_ref, pbm, constructor)
+    correct_convex!(x_ref, u_ref, p_ref, pbm, constructor)
 
 Find closest trajectory that satisfies the convex path constraints.
 
@@ -348,26 +354,23 @@ Closeness is measured in an L1-norm sense.
 - `pbm`: the SCP problem definition.
 - `constructor`: the subproblem constructor function (as a symbol).
 """
-function _scp__correct_convex!(
-    x_ref::T_RealMatrix,
-    u_ref::T_RealMatrix,
-    p_ref::T_RealVector,
+function correct_convex!(
+    x_ref::RealMatrix,
+    u_ref::RealMatrix,
+    p_ref::RealVector,
     pbm::SCPProblem,
-    constructor::T_Symbol)::Nothing
+    constructor::Symbol)::Nothing
 
     # Parameters
     N = pbm.pars.N
-    nx = pbm.traj.nx
-    nu = pbm.traj.nu
-    np = pbm.traj.np
     scale = pbm.common.scale
 
     # Initialize the problem
     opti = eval(Expr(:call, constructor, pbm))
 
     # Add the convex path constraints
-    _scp__add_convex_state_constraints!(opti)
-    _scp__add_convex_input_constraints!(opti)
+    add_convex_state_constraints!(opti)
+    add_convex_input_constraints!(opti)
 
     # Add epigraph constraints to make a convex cost for JuMP
     xh_ref = scale.iSx*(x_ref.-scale.cx)
@@ -379,12 +382,12 @@ function _scp__correct_convex!(
     epi_x = @variable(opti.mdl, [1:N], base_name="τx")
     epi_u = @variable(opti.mdl, [1:N], base_name="τu")
     epi_p = @variable(opti.mdl, base_name="τp")
-    C = T_ConvexConeConstraint
+    C = ConvexCone
     for k = 1:N
-        add_conic_constraint!(opti.mdl, C(vcat(@k(epi_x), @k(dx)), :l1))
-        add_conic_constraint!(opti.mdl, C(vcat(@k(epi_u), @k(du)), :l1))
+        add!(opti.mdl, C(vcat(epi_x[k], dx[:, k]), :l1))
+        add!(opti.mdl, C(vcat(epi_u[k], du[:, k]), :l1))
     end
-    add_conic_constraint!(opti.mdl, C(vcat(epi_p, dp), :l1))
+    add!(opti.mdl, C(vcat(epi_p, dp), :l1))
 
     # Define the cost
     cost = sum(epi_x)+sum(epi_u)+epi_p
@@ -409,10 +412,10 @@ function _scp__correct_convex!(
     end
 
     return nothing
-end
+end # function
 
 """
-    _scp__compute_scaling(pars, traj, t)
+    compute_scaling(pars, traj, t)
 
 Compute the scaling matrices given the problem definition.
 
@@ -424,10 +427,10 @@ Compute the scaling matrices given the problem definition.
 # Returns
 - `scale`: the scaling structure.
 """
-function _scp__compute_scaling(
+function compute_scaling(
     pars::T,
     traj::TrajectoryProblem,
-    t::T_RealVector)::SCPScaling where {T<:SCPParameters}
+    t::RealVector)::SCPScaling where {T<:SCPParameters}
 
     # Parameters
     nx = traj.nx
@@ -496,8 +499,7 @@ function _scp__compute_scaling(
                     # Constraints
                     if !isnothing(def[:set])
                         for k = 1:length(t)
-                            add_conic_constraints!(
-                                mdl, def[:setcall](@k(t), k, x, u, p))
+                            add!(mdl, def[:setcall](t[k], k, x, u, p))
                         end
                     end
                     # Cost
@@ -532,7 +534,7 @@ function _scp__compute_scaling(
     x_min, x_max = x_bbox[:, 1], x_bbox[:, 2]
     diag_Sx = (x_max-x_min)/wdth_x
     diag_Sx[diag_Sx .< zero_intvl_tol] .= 1.0
-    Sx = Diagonal(diag_Sx)
+    Sx = collect(Diagonal(diag_Sx))
     iSx = inv(Sx)
     cx = x_min-diag_Sx*intrvl_x[1]
 
@@ -540,7 +542,7 @@ function _scp__compute_scaling(
     u_min, u_max = u_bbox[:, 1], u_bbox[:, 2]
     diag_Su = (u_max-u_min)/wdth_u
     diag_Su[diag_Su .< zero_intvl_tol] .= 1.0
-    Su = Diagonal(diag_Su)
+    Su = collect(Diagonal(diag_Su))
     iSu = inv(Su)
     cu = u_min-diag_Su*intrvl_u[1]
 
@@ -548,17 +550,17 @@ function _scp__compute_scaling(
     p_min, p_max = p_bbox[:, 1], p_bbox[:, 2]
     diag_Sp = (p_max-p_min)/wdth_p
     diag_Sp[diag_Sp .< zero_intvl_tol] .= 1.0
-    Sp = Diagonal(diag_Sp)
+    Sp = collect(Diagonal(diag_Sp))
     iSp = inv(Sp)
     cp = p_min-diag_Sp*intrvl_p[1]
 
     scale = SCPScaling(Sx, cx, Su, cu, Sp, cp, iSx, iSu, iSp)
 
     return scale
-end
+end # function
 
 """
-    _scp__derivs(t, V, k, pbm, ref)
+    derivs(t, V, k, pbm, ref)
 
 Compute concatenanted time derivative vector for dynamics discretization.
 
@@ -572,21 +574,20 @@ Compute concatenanted time derivative vector for dynamics discretization.
 # Returns
 - `dVdt`: the time derivative of V.
 """
-function _scp__derivs(t::T_Real,
-                      V::T_RealVector,
-                      k::T_Int,
-                      pbm::SCPProblem,
-                      ref::T)::T_RealVector where {
-                          T<:SCPSubproblemSolution}
+function derivs(t::RealValue,
+                V::RealVector,
+                k::Int,
+                pbm::SCPProblem,
+                ref::T)::RealVector where {
+                    T<:SCPSubproblemSolution}
     # Parameters
     nx = pbm.traj.nx
-    N = pbm.pars.N
-    t_span = @k(pbm.common.t_grid, k, k+1)
+    t_span = pbm.common.t_grid[k:k+1]
 
     # Get current values
     idcs = pbm.common.id
     x = V[idcs.x]
-    u = linterp(t, @k(ref.ud, k, k+1), t_span)
+    u = linterp(t, ref.ud[:, k:k+1], t_span) #noerr
     p = ref.p
     Phi = reshape(V[idcs.A], (nx, nx))
     σ_m = (t_span[2]-t)/(t_span[2]-t_span[1])
@@ -616,10 +617,10 @@ function _scp__derivs(t::T_Real,
             vec(dFdt); drdt; vec(dEdt)]
 
     return dVdt
-end
+end # function
 
 """
-    _scp__discretize!(ref, pbm)
+    discretize!(ref, pbm)
 
 Discrete linear time varying dynamics computation. Compute the discrete-time
 update matrices for the linearized dynamics about a reference trajectory. As a
@@ -629,10 +630,10 @@ byproduct, this calculates the defects needed for the trust region update.
 - `ref`: reference solution about which to discretize.
 - `pbm`: the SCP problem definition.
 """
-function _scp__discretize!(
+function discretize!(
     ref::T, pbm::SCPProblem)::Nothing where {T<:SCPSubproblemSolution}
 
-    ref.dyn.timing = time_ns()
+    ref.dyn.timing = get_time()
 
     # Parameters
     traj = pbm.traj
@@ -654,11 +655,11 @@ function _scp__discretize!(
     # Propagate individually over each discrete-time interval
     for k = 1:N-1
         # Reset the state initial condition
-        V0[idcs.x] = @k(ref.xd)
+        V0[idcs.x] = ref.xd[:, k]
 
         # Integrate
-        f = (t, V) -> _scp__derivs(t, V, k, pbm, ref)
-        t_subgrid = T_RealVector(LinRange(@k(t), @kp1(t), Nsub))
+        f = (t, V) -> derivs(t, V, k, pbm, ref)
+        t_subgrid = Vector{Float64}(LinRange(t[k], t[k+1], Nsub))
         V = rk4(f, V0, t_subgrid; actions=traj.integ_actions)
 
         # Get the raw RK4 results
@@ -679,37 +680,37 @@ function _scp__discretize!(
         E_k = A_k*reshape(EV, sz_E)
 
         # Save the discrete-time update matrices
-        @k(ref.dyn.A) = A_k
-        @k(ref.dyn.Bm) = Bm_k
-        @k(ref.dyn.Bp) = Bp_k
-        @k(ref.dyn.F) = F_k
-        @k(ref.dyn.r) = r_k
-        @k(ref.dyn.E) = E_k
+        ref.dyn.A[:, :, k] = A_k
+        ref.dyn.Bm[:, :, k] = Bm_k
+        ref.dyn.Bp[:, :, k] = Bp_k
+        ref.dyn.F[:, :, k] = F_k
+        ref.dyn.r[:, k] = r_k
+        ref.dyn.E[:, :, k] = E_k
 
         # Take this opportunity to comput the defect, which will be needed
         # later for the trust region update
-        x_next = @kp1(ref.xd)
-        @k(ref.defect) = x_next-xV
-        if norm(iSx*@k(ref.defect), Inf) > pbm.pars.feas_tol
+        x_next = ref.xd[:, k+1]
+        ref.defect[:, k] = x_next-xV
+        if norm(iSx*ref.defect[:, k], Inf) > pbm.pars.feas_tol
             ref.feas = false
         end
 
     end
 
-    ref.dyn.timing = (time_ns()-ref.dyn.timing)/1e9
+    ref.dyn.timing = (get_time()-ref.dyn.timing)/1e9
 
     return nothing
-end
+end # function
 
 """
-    _scp__add_dynamics!(spbm)
+    add_dynamics!(spbm)
 
 Add dynamics constraints to the problem.
 
 # Arguments
 - `spbm`: the subproblem definition.
 """
-function _scp__add_dynamics!(
+function add_dynamics!(
     spbm::T)::Nothing where {T<:SCPSubproblem}
 
     # Variables and parameters
@@ -720,31 +721,31 @@ function _scp__add_dynamics!(
     vd = spbm.vd
 
     # Add dynamics constraint to optimization model
-    acc! = add_conic_constraint!
-    Cone = T_ConvexConeConstraint
+    acc! = add!
+    Cone = ConvexCone
     for k = 1:N-1
-        xk, xkp1, uk, ukp1, vdk = @k(x), @kp1(x), @k(u), @kp1(u), @k(vd)
-        A = @k(spbm.ref.dyn.A)
-        Bm = @k(spbm.ref.dyn.Bm)
-        Bp = @k(spbm.ref.dyn.Bp)
-        F = @k(spbm.ref.dyn.F)
-        r = @k(spbm.ref.dyn.r)
-        E = @k(spbm.ref.dyn.E)
+        xk, xkp1, uk, ukp1, vdk = x[:, k], x[:, k+1], u[:, k], u[:, k+1], vd[:, k]
+        A = spbm.ref.dyn.A[:, :, k]
+        Bm = spbm.ref.dyn.Bm[:, :, k]
+        Bp = spbm.ref.dyn.Bp[:, :, k]
+        F = spbm.ref.dyn.F[:, :, k]
+        r = spbm.ref.dyn.r[:, k]
+        E = spbm.ref.dyn.E[:, :, k]
         acc!(spbm.mdl, Cone(xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk), :zero))
     end
 
     return nothing
-end
+end # function
 
 """
-    _scp__add_convex_state_constraints!(spbm)
+    add_convex_state_constraints!(spbm)
 
 Add convex state constraints.
 
 # Arguments
 - `spbm`: the subproblem definition.
 """
-function _scp__add_convex_state_constraints!(
+function add_convex_state_constraints!(
     spbm::T)::Nothing where {T<:SCPSubproblem}
 
     # Variables and parameters
@@ -756,30 +757,30 @@ function _scp__add_convex_state_constraints!(
 
     if !isnothing(traj_pbm.X)
         for k = 1:N
-            xk_in_X = traj_pbm.X(@k(t), k, @k(x), p)
+            xk_in_X = traj_pbm.X(t[k], k, x[:, k], p)
             correct_type = typeof(xk_in_X)<:(
-                Vector{T} where {T<:T_ConvexConeConstraint})
+                Vector{T} where {T<:ConvexCone})
             if !correct_type
                 msg = string("ERROR: input constraint must be in conic form.")
                 err = SCPError(k, SCP_BAD_ARGUMENT, msg)
                 throw(err)
             end
-            add_conic_constraints!(spbm.mdl, xk_in_X)
+            add!(spbm.mdl, xk_in_X)
         end
     end
 
     return nothing
-end
+end # function
 
 """
-    _scp__add_convex_input_constraints!(spbm)
+    add_convex_input_constraints!(spbm)
 
 Add convex input constraints.
 
 # Arguments
 - `spbm`: the subproblem definition.
 """
-function _scp__add_convex_input_constraints!(
+function add_convex_input_constraints!(
     spbm::T)::Nothing where {T<:SCPSubproblem}
 
     # Variables and parameters
@@ -791,30 +792,30 @@ function _scp__add_convex_input_constraints!(
 
     if !isnothing(traj_pbm.U)
         for k = 1:N
-            uk_in_U = traj_pbm.U(@k(t), k, @k(u), p)
+            uk_in_U = traj_pbm.U(t[k], k, u[:, k], p)
             correct_type = typeof(uk_in_U)<:(
-                Vector{T} where {T<:T_ConvexConeConstraint})
+                Vector{T} where {T<:ConvexCone})
             if !correct_type
                 msg = string("ERROR: input constraint must be in conic form.")
                 err = SCPError(k, SCP_BAD_ARGUMENT, msg)
                 throw(err)
             end
-            add_conic_constraints!(spbm.mdl, uk_in_U)
+            add!(spbm.mdl, uk_in_U)
         end
     end
 
     return nothing
-end
+end # function
 
 """
-    _scp__add_nonconvex_constraints!(spbm)
+    add_nonconvex_constraints!(spbm)
 
 Add non-convex state, input, and parameter constraints.
 
 # Arguments
 - `spbm`: the subproblem definition.
 """
-function _scp__add_nonconvex_constraints!(
+function add_nonconvex_constraints!(
     spbm::T)::Nothing where {T<:SCPSubproblem}
 
     # Variables and parameters
@@ -832,24 +833,24 @@ function _scp__add_nonconvex_constraints!(
     p = spbm.p
 
     # Problem-specific convex constraints
-    acc! = add_conic_constraint!
-    Cone = T_ConvexConeConstraint
+    acc! = add!
+    Cone = ConvexCone
     for k = 1:N
         if !isnothing(traj_pbm.s)
-            tkxup = (@k(t), k, @k(xb), @k(ub), pb)
+            tkxup = (t[k], k, xb[:, k], ub[:, k], pb)
             s = traj_pbm.s(tkxup...)
             ns = length(s)
             C = !isnothing(traj_pbm.C) ? traj_pbm.C(tkxup...) : zeros(ns, nx)
             D = !isnothing(traj_pbm.D) ? traj_pbm.D(tkxup...) : zeros(ns, nu)
             G = !isnothing(traj_pbm.G) ? traj_pbm.G(tkxup...) : zeros(ns, np)
-            r = s-C*@k(xb)-D*@k(ub)-G*pb
-            lhs = C*@k(x)+D*@k(u)+G*p+r
+            r = s-C*xb[:, k]-D*ub[:, k]-G*pb
+            lhs = C*x[:, k]+D*u[:, k]+G*p+r
 
             if k==1
                 spbm.vs = @variable(spbm.mdl, [1:ns, 1:N], base_name="vs")
             end
 
-            acc!(spbm.mdl, Cone(lhs-@k(spbm.vs), :nonpos))
+            acc!(spbm.mdl, Cone(lhs-spbm.vs[:, k], :nonpos))
         else
             spbm.vs = @variable(spbm.mdl, [1:0, 1:N], base_name="vs")
             break
@@ -857,10 +858,10 @@ function _scp__add_nonconvex_constraints!(
     end
 
     return nothing
-end
+end # function
 
 """
-    _scp__original_cost(x, u, p, pbm)
+    original_cost(x, u, p, pbm)
 
 Compute the original problem cost function.
 
@@ -873,11 +874,11 @@ Compute the original problem cost function.
 # Returns
 - `cost`: the original cost.
 """
-function _scp__original_cost(
-    x::T_OptiVarMatrix,
-    u::T_OptiVarMatrix,
-    p::T_OptiVarVector,
-    pbm::SCPProblem)::T_Objective
+function original_cost(
+    x::VariableMatrix,
+    u::VariableMatrix,
+    p::VariableVector,
+    pbm::SCPProblem)::Objective
 
     # Parameters
     N = pbm.pars.N
@@ -885,24 +886,24 @@ function _scp__original_cost(
     traj_pbm = pbm.traj
 
     # Terminal cost
-    xf = @last(x)
-    J_term = isnothing(pbm.traj.φ) ? 0.0 : pbm.traj.φ(xf, p)
+    xf = x[:, end]
+    J_term = isnothing(traj_pbm.φ) ? 0.0 : traj_pbm.φ(xf, p)
 
     # Integrated running cost
-    J_run = Vector{T_Objective}(undef, N)
+    J_run = Vector{Objective}(undef, N)
     for k = 1:N
-        @k(J_run) = isnothing(pbm.traj.Γ) ? 0.0 :
-            pbm.traj.Γ(@k(t), k, @k(x), @k(u), p)
+        J_run[k] = isnothing(traj_pbm.Γ) ? 0.0 :
+            traj_pbm.Γ(t[k], k, x[:, k], u[:, k], p)
     end
     integ_J_run = trapz(J_run, t)
 
     cost = J_term+integ_J_run
 
     return cost
-end
+end # function
 
 """
-    _scp__add_bcs!(spbm[; relaxed])
+    add_bcs!(spbm[; relaxed])
 
 Add boundary condition constraints to the problem.
 
@@ -913,23 +914,23 @@ Add boundary condition constraints to the problem.
 - `relaxed`: (optional) if true then relax equalities with a virtual control,
   else impose the linearized boundary conditions exactly.
 """
-function _scp__add_bcs!(
-    spbm::T; relaxed::T_Bool=true)::Nothing where {T<:SCPSubproblem}
+function add_bcs!(
+    spbm::T; relaxed::Bool=true)::Nothing where {T<:SCPSubproblem}
 
     # Variables and parameters
     traj = spbm.def.traj
     nx = traj.nx
     np = traj.np
-    x0 = @first(spbm.x)
-    xb0 = @first(spbm.ref.xd)
-    xf = @last(spbm.x)
-    xbf = @last(spbm.ref.xd)
+    x0 = spbm.x[:, 1]
+    xb0 = spbm.ref.xd[:, 1]
+    xf = spbm.x[:, end]
+    xbf = spbm.ref.xd[:, end]
     p = spbm.p
     pb = spbm.ref.p
 
     # Initial condition
-    acc! = add_conic_constraint!
-    Cone = T_ConvexConeConstraint
+    acc! = add!
+    Cone = ConvexCone
     if !isnothing(traj.gic)
         gic = traj.gic(xb0, pb)
         nic = length(gic)
@@ -966,10 +967,10 @@ function _scp__add_bcs!(
     end
 
     return nothing
-end
+end # function
 
 """
-    _scp__solution_deviation(spbm)
+    solution_deviation(spbm)
 
 Compute the deviation of subproblem solution from the reference. It is assumed
 that the function received a solved subproblem.
@@ -980,7 +981,7 @@ that the function received a solved subproblem.
 # Returns
 - `deviation`: a measure of deviation of `spbm.sol` from `spbm.ref`.
 """
-function _scp__solution_deviation(spbm::T)::T_Real where {T<:SCPSubproblem}
+function solution_deviation(spbm::T)::RealValue where {T<:SCPSubproblem}
     # Extract values
     pbm = spbm.def
     N = pbm.pars.N
@@ -990,29 +991,29 @@ function _scp__solution_deviation(spbm::T)::T_Real where {T<:SCPSubproblem}
     sol = spbm.sol
     xh = scale.iSx*(sol.xd.-scale.cx)
     ph = scale.iSp*(sol.p-scale.cp)
-    xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
-    ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
+    xh_ref = scale.iSx*(ref.xd.-scale.cx)
+    ph_ref = scale.iSp*(ref.p-scale.cp)
 
     # Compute deviation
     dp = norm(ph-ph_ref, q)
     dx = 0.0
     for k = 1:N
-        dx = max(dx, norm(@k(xh)-@k(xh_ref), q))
+        dx = max(dx, norm(xh[:, k]-xh_ref[:, k], q))
     end
     deviation = dp+dx
 
     return deviation
-end
+end # function
 
 """
-    _scp__solve_subproblem!(spbm)
+    solve_subproblem!(spbm)
 
 Solve the SCP method's convex subproblem via numerical optimization.
 
 # Arguments
 - `spbm`: the subproblem structure.
 """
-function _scp__solve_subproblem!(spbm::T)::Nothing where {T<:SCPSubproblem}
+function solve_subproblem!(spbm::T)::Nothing where {T<:SCPSubproblem}
     # Optimize
     optimize!(spbm.mdl)
 
@@ -1023,7 +1024,7 @@ function _scp__solve_subproblem!(spbm::T)::Nothing where {T<:SCPSubproblem}
 end
 
 """
-    _scp__unsafe_solution(sol)
+    unsafe_solution(sol)
 
 Check if the subproblem optimization had issues. A solution is judged unsafe if
 the numerical optimizer exit code indicates that there were serious problems in
@@ -1035,7 +1036,7 @@ solving the subproblem.
 # Returns
 - `unsafe`: true if the subproblem solution process "failed".
 """
-function _scp__unsafe_solution(sol::Union{T, V})::T_Bool where {
+function unsafe_solution(sol::Union{T, V})::Bool where {
     T<:SCPSubproblemSolution, V<:SCPSubproblem}
 
     # If the parent subproblem passed in, then get its solution
@@ -1049,26 +1050,26 @@ function _scp__unsafe_solution(sol::Union{T, V})::T_Bool where {
     end
 
     return sol.unsafe
-end
+end # function
 
 """
-    _scp__overhead!(spbm)
+    overhead!(spbm)
 
 Compute solution time overhead introduced by the surrounding code.
 
 # Arguments
 - `spbm`: the subproblem structure.
 """
-function _scp__overhead!(spbm::T)::Nothing where {T<:SCPSubproblem}
+function overhead!(spbm::T)::Nothing where {T<:SCPSubproblem}
     useful_time = (spbm.timing[:discretize]+spbm.timing[:formulate]+
                    spbm.timing[:solve])
-    spbm.timing[:total] = (time_ns()-spbm.timing[:total])/1e9
+    spbm.timing[:total] = (get_time()-spbm.timing[:total])/1e9
     spbm.timing[:overhead] = spbm.timing[:total]-useful_time
     return nothing
-end
+end # function
 
 """
-    _scp__save!(hist, spbm)
+    save!(hist, spbm)
 
 Add subproblem to SCP history.
 
@@ -1076,9 +1077,18 @@ Add subproblem to SCP history.
 - `hist`: the history.
 - `spbm`: subproblem structure.
 """
-function _scp__save!(hist::SCPHistory,
+function save!(hist::SCPHistory,
                      spbm::T)::Nothing where {T<:SCPSubproblem}
-    spbm.timing[:formulate] = (time_ns()-spbm.timing[:formulate])/1e9
+    spbm.timing[:formulate] = (get_time()-spbm.timing[:formulate])/1e9
     push!(hist.subproblems, spbm)
     return nothing
+end # function
+
+"""
+    get_time()
+
+The the current time in nanoseconds.
+"""
+function get_time()::Int
+    return Int(time_ns())
 end
