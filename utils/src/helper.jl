@@ -482,7 +482,7 @@ function indicator(f::RealVector,
     end
 
     return δ
-end
+end # function
 
 """
     or(p1[, p2, ..., pN][; κ1, κ2, minval, maxval])
@@ -529,4 +529,4 @@ function or(predicates...;
         return OR
     end
 
-end
+end # function

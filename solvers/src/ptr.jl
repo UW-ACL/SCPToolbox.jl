@@ -20,6 +20,7 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("../../parser/src/Parser.jl")
     include("scp.jl")
     using .Utils
+    using .Utils.Types: improvement_percent
     using .Parser
 end
 
@@ -432,10 +433,6 @@ function solve(pbm::SCPProblem,
     return sol, history
 end # function
 
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
 #= Compute the initial trajectory guess.
 
 Construct the initial trajectory guess. Calls problem-specific initial guess
@@ -686,7 +683,7 @@ function print_info(spbm::Subproblem,
         max_dph = norm(ph-ph_ref, Inf)
         status = @sprintf "%s" sol.status
         status = status[1:min(8, length(status))]
-        ΔJ = improvement_percent(sol.J_aug, ref.J_aug) #noerr
+        ΔJ = improvement_percent(sol.J_aug, ref.J_aug)
         ηx_max = maximum(sol.ηx)
         ηu_max = maximum(sol.ηu)
         ηp = sol.ηp

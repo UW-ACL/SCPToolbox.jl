@@ -20,7 +20,10 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("../../utils/src/Utils.jl")
     include("../../parser/src/Parser.jl")
     using .Utils
+    using .Utils: linterp
+    using .Utils.Types: sample
     using .Parser
+    using .Parser.TrajectoryProblem
 end
 
 using LinearAlgebra
@@ -90,7 +93,7 @@ end # struct
 """ Structure which contains all the necessary information to run SCP."""
 struct SCPProblem{T<:SCPParameters}
     pars::T                 # Algorithm parameters
-    traj::TrajectoryProblem #noerr The underlying trajectory problem
+    traj::TrajectoryProblem # The underlying trajectory problem
     common::SCPCommon       # Common precomputed terms
 
     """"
@@ -146,10 +149,6 @@ end # struct
 struct SCPHistory{T<:SCPSubproblem}
     subproblems::Vector{T} # Subproblems
 end # struct
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 """
     SCPDiscretizationIndices(traj, E)
@@ -313,7 +312,7 @@ function SCPSolution(history::SCPHistory)::SCPSolution
         tc = RealVector(LinRange(0.0, 1.0, Nc))
         uc = Trajectory(td, ud, :linear)
         k = (t) -> max(floor(Int, t/(N-1))+1, N)
-        F = (t, x) -> pbm.traj.f(t, k(t), x, sample(uc, t), p) #noerr
+        F = (t, x) -> pbm.traj.f(t, k(t), x, sample(uc, t), p)
         xc_vals = rk4(F, last_sol.xd[:, 1], tc; full=true,
                       actions=pbm.traj.integ_actions)
         xc = Trajectory(tc, xc_vals, :linear)
@@ -587,7 +586,7 @@ function derivs(t::RealValue,
     # Get current values
     idcs = pbm.common.id
     x = V[idcs.x]
-    u = linterp(t, ref.ud[:, k:k+1], t_span) #noerr
+    u = linterp(t, ref.ud[:, k:k+1], t_span)
     p = ref.p
     Phi = reshape(V[idcs.A], (nx, nx))
     σ_m = (t_span[2]-t)/(t_span[2]-t_span[1])
@@ -1021,7 +1020,7 @@ function solve_subproblem!(spbm::T)::Nothing where {T<:SCPSubproblem}
     SCPSubproblemSolution!(spbm)
 
     return nothing
-end
+end # function
 
 """
     unsafe_solution(sol)
@@ -1091,4 +1090,4 @@ The the current time in nanoseconds.
 """
 function get_time()::Int
     return Int(time_ns())
-end
+end # function

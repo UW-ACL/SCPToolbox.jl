@@ -158,7 +158,7 @@ Reset table printing. This will make the column headings be printed again.
 function reset(table::Table)::Nothing
     table.__head_print = true
     return nothing
-end
+end # function
 
 """
     print(row, table)
@@ -190,7 +190,7 @@ function print(row::Dict{Symbol, T}, table::Table)::Nothing where {T}
     println()
 
     return nothing
-end
+end # function
 
 """
     improvement_percent(J_new, J_old)
@@ -220,4 +220,4 @@ function improvement_percent(J_new::RealValue,
     end
 
     return ΔJ
-end
+end # function

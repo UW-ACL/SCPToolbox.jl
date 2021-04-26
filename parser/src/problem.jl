@@ -91,11 +91,7 @@ mutable struct TrajectoryProblem
     # >> Other <<
     mdl::Any    # Problem-specific data structure
     scp::Any    # SCP algorithm parameter data structure
-end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+end # struct
 
 """
     TrajectoryProblem(mdl)
@@ -155,11 +151,7 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
                             H0, K0, gtc, Hf, Kf, mdl, scp)
 
     return pbm
-end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+end # function
 
 """
     problem_set_dims!(pbm, nx, nu, np)
@@ -181,7 +173,7 @@ function problem_set_dims!(pbm::TrajectoryProblem,
     pbm.urg = fill(nothing, nu)
     pbm.prg = fill(nothing, np)
     return nothing
-end
+end # function
 
 """
     problem_advise_scale!(pbm, which, idx, rg)
@@ -208,7 +200,7 @@ function problem_advise_scale!(pbm::TrajectoryProblem,
         getfield(pbm, map[which])[i] = rg
     end
     return nothing
-end
+end # function
 
 """
     problem_set_integration_action!(pbm, idx, action)
@@ -227,7 +219,7 @@ function problem_set_integration_action!(
     push!(pbm.integ_actions, (idx, (x) -> action(x, pbm)))
 
     return nothing
-end
+end # function
 
 """
     problem_set_guess!(pbm, guess)
@@ -242,7 +234,7 @@ function problem_set_guess!(pbm::TrajectoryProblem,
                             guess::Func)::Nothing
     pbm.guess = (N) -> guess(N, pbm)
     return nothing
-end
+end # function
 
 """
     problem_set_terminal_cost!(pbm, φ)
@@ -257,7 +249,7 @@ function problem_set_terminal_cost!(pbm::TrajectoryProblem,
                                     φ::Func)::Nothing
     pbm.φ = (x, p) -> φ(x, p, pbm)
     return nothing
-end
+end # function
 
 """
     problem_set_running_cost!(pbm, algo, SΓ[, dSdp, ℓ, dℓdx,
@@ -310,7 +302,7 @@ function problem_set_running_cost!(pbm::TrajectoryProblem,
         pbm.g_cvx = isnothing(dgdx) && isnothing(dgdp)
     end
     return nothing
-end
+end # function
 
 """
     problem_set_dynamics!(pbm, f, A, B, F)
@@ -337,7 +329,7 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
     pbm.F = !isnothing(F) ? (t, k, x, u, p) -> F(t, k, x, u, p, pbm) :
         (x, u, p) -> zeros(pbm.nx, pbm.nu) #noinfo
     return nothing
-end
+end # function
 
 """
     problem_set_dynamics!(pb, f, A, F)
@@ -383,7 +375,7 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
     end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx) #noinfo
 
     return nothing
-end
+end # function
 
 """
     problem_set_X!(pbm, X)
@@ -398,7 +390,7 @@ function problem_set_X!(pbm::TrajectoryProblem,
                         X::Func)::Nothing
     pbm.X = (t, k, x, p) -> X(t, k, x, p, pbm)
     return nothing
-end
+end # function
 
 """
     problem_set_U!(pbm, U)
@@ -413,7 +405,7 @@ function problem_set_U!(pbm::TrajectoryProblem,
                         U::Func)::Nothing
     pbm.U = (t, k, u, p) -> U(t, k, u, p, pbm)
     return nothing
-end
+end # function
 
 """
     problem_set_s!(pbm, algo, s[, C, DG, G])
@@ -458,7 +450,7 @@ function problem_set_s!(pbm::TrajectoryProblem,
     end
 
     return nothing
-end
+end # function
 
 """
     problem_set_bc!(pbm, kind, g, H[, K])
@@ -493,4 +485,4 @@ function problem_set_bc!(pbm::TrajectoryProblem,
     end
 
     return nothing
-end
+end # function

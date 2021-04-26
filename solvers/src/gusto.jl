@@ -18,10 +18,6 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 include("scp.jl")
 
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
 """ Structure holding the GuSTO algorithm parameters."""
 struct GuSTOParameters <: SCPParameters
     N::T_Int          # Number of temporal grid nodes
@@ -119,10 +115,6 @@ mutable struct GuSTOSubproblem <: SCPSubproblem
     ncons::Dict{T_Symbol, Any}     # Number of constraints
     timing::Dict{T_Symbol, T_Real} # Runtime profiling
 end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 """
     GuSTOProblem(pars, traj)
@@ -360,10 +352,6 @@ function GuSTOSubproblemSolution(spbm::GuSTOSubproblem)::T_GuSTOSubSol
     return sol
 end
 
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
 """
     gusto_solve(pbm)
 
@@ -438,10 +426,6 @@ function gusto_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution,
 
     return sol, history
 end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 """
     _gusto__generate_initial_guess(pbm)

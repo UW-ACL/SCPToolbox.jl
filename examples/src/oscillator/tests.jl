@@ -25,6 +25,7 @@ if isdefined(@__MODULE__, :LanguageServer)
     using .Solvers
     using .Parser
     using .Utils
+    using .Utils.Types: Homotopy
 end
 
 using ECOS
@@ -90,4 +91,4 @@ function ptr()::Nothing
     plot_convergence(history, "oscillator")
 
     return nothing
-end
+end # function

@@ -41,7 +41,7 @@ function define_problem!(pbm::TrajectoryProblem,
     set_guess!(pbm)
 
     return nothing
-end
+end # function
 
 function set_dims!(pbm::TrajectoryProblem)::Nothing
 
@@ -51,7 +51,7 @@ function set_dims!(pbm::TrajectoryProblem)::Nothing
     problem_set_dims!(pbm, 2, 4, np)
 
     return nothing
-end
+end # function
 
 function set_scale!(pbm::TrajectoryProblem)::Nothing
 
@@ -75,7 +75,7 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     end
 
     return nothing
-end
+end # function
 
 function set_guess!(pbm::TrajectoryProblem)::Nothing
 
@@ -118,7 +118,7 @@ function set_guess!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end
+end # function
 
 function set_cost!(pbm::TrajectoryProblem,
                             algo::Symbol)::Nothing
@@ -142,7 +142,7 @@ function set_cost!(pbm::TrajectoryProblem,
         end)
 
     return nothing
-end
+end # function
 
 
 """

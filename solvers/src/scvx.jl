@@ -18,10 +18,6 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 include("scp.jl")
 
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
 """ Structure holding the SCvx algorithm parameters."""
 struct SCvxParameters <: SCPParameters
     N::T_Int          # Number of temporal grid nodes
@@ -114,10 +110,6 @@ mutable struct SCvxSubproblem <: SCPSubproblem
     ncons::Dict{T_Symbol, Any}     # Number of constraints
     timing::Dict{T_Symbol, T_Real} # Runtime profiling
 end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 """
     SCvxProblem(pars, traj)
@@ -360,10 +352,6 @@ function SCvxSubproblemSolution(spbm::SCvxSubproblem)::SCvxSubproblemSolution
     return sol
 end
 
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
 """
     scvx_solve(pbm)
 
@@ -438,10 +426,6 @@ function scvx_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution, Nothing},
 
     return sol, history
 end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 """
     _scvx__generate_initial_guess(pbm)

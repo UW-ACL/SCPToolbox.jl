@@ -68,7 +68,7 @@ function plot_timeseries_bound!(ax::PyPlot.PyObject,
             dash_capstyle="round")
 
     return nothing
-end
+end # function
 
 """
     plot_ellipsoids!(ax, E[, axes][; label])
@@ -101,7 +101,7 @@ function plot_ellipsoids!(ax::PyPlot.PyObject,
                 label=(i==1) ? label : nothing)
     end
     return nothing
-end
+end # function
 
 """
     plot_prisms!(ax, H[, axes][; label])
@@ -134,7 +134,7 @@ function plot_prisms!(ax::PyPlot.PyObject,
                 label=(i==1) ? label : nothing)
     end
     return nothing
-end
+end # function
 
 """
     plot_convergence(history, name)
@@ -330,7 +330,7 @@ function plot_convergence(history, name::String)::Nothing
     save_figure(@sprintf("%s_convergence", name), algo)
 
     return nothing
-end
+end # function
 
 """
     setup_axis!(ax, rows, cols, k, ijk[; xlabel, ylabel, clabel, tight,
@@ -412,7 +412,7 @@ function setup_axis!(ax::Union{PyPlot.PyObject, Nothing},
     end
 
     return ax
-end
+end # function
 
 """
     setup_axis!([; ...])
@@ -447,7 +447,7 @@ function setup_axis!(ax_or_gspec::PyPlot.PyObject; kwargs...)::PyPlot.PyObject
             rethrow(e)
         end
     end
-end
+end # function
 
 """
     setup_axis!([; ...])
@@ -459,7 +459,7 @@ of (rows, cols) subplots.
 function setup_axis!(rows::Int, cols::Int, k::Int;
                      kwargs...)::PyPlot.PyObject
     return setup_axis!(nothing, rows, cols, k, nothing; kwargs...)
-end
+end # function
 
 """
     setup_axis!([; ...])
@@ -470,7 +470,7 @@ of (i rows, j columns) subplots.
 """
 function setup_axis!(ijk::Int; kwargs...)::PyPlot.PyObject
     return setup_axis!(nothing, nothing, nothing, nothing, ijk; kwargs...)
-end
+end # function
 
 """
     generate_colormap([style][; minval, maxval, midval])
@@ -501,7 +501,7 @@ function generate_colormap(style::String="inferno_r";
     end
     cmap = matplotlib.cm.ScalarMappable(norm=nrm, cmap=cmap)
     return cmap
-end
+end # function
 
 """
     rgb(cmap, v)
@@ -518,7 +518,7 @@ Sample a colormap for an RGB color at given value.
 function rgb(cmap::PyPlot.PyObject, v::RealValue)::Tuple{RealValue, RealValue, RealValue}
     clr = cmap.to_rgba(v)[1:3]
     return clr
-end
+end # function
 
 """
     rgb2pyplot(c, a)
@@ -539,7 +539,7 @@ function rgb2pyplot(c::T; a::Real=1)::Tuple{
     t = (r, g, b, a)
 
     return t
-end
+end # function
 
 """
     set_axis_equal(ax, lims)
@@ -580,7 +580,7 @@ function set_axis_equal(
     ax.set_ylim(ymin, ymax)
 
     return nothing
-end
+end # function
 
 """
     create_figure(size)
@@ -612,7 +612,7 @@ function create_figure(size::Tuple{T, V})::Figure where {T<:Real, V<:Real}
     plt.clf()
 
     return fig
-end
+end # function
 
 """
     save_figure(filename, algo[; tmp, path])
@@ -656,4 +656,4 @@ function save_figure(filename::String, algo::String;
     end
 
     return nothing
-end
+end # function

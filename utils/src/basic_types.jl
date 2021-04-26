@@ -51,7 +51,7 @@ The real array.
 """
 function (::Type{RealArray{n}})(args...)::Array{Float64, n} where n
     return Array{Float64, n}(args...)
-end
+end # function
 
 const AffineExpression = GenericAffExpr{Float64, VariableRef}
 const VariableTypes = [RealTypes..., VariableRef, AffineExpression]
