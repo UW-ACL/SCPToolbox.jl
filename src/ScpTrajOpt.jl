@@ -19,13 +19,13 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 module ScpTrajOpt
 
 if isdefined(@__MODULE__, :LanguageServer)
-    include("../ScpTrajOptUtils/src/ScpTrajOptUtils.jl")
-    include("../ScpTrajOptParser/src/ScpTrajOptParser.jl")
-    include("../ScpTrajOptSolvers/src/ScpTrajOptSolvers.jl")
+    include("../utils/src/Utils.jl")
+    include("../parser/src/Parser.jl")
+    include("../solvers/src/Solvers.jl")
 end
 
-using ScpTrajOptUtils
-using ScpTrajOptSolvers
-using ScpTrajOptParser
+using Utils
+using Solvers
+using Parser
 
 end

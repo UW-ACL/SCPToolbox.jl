@@ -129,6 +129,12 @@ git-tree-sha1 = "c11ea452ae3fb7e69dadb6a3be6ec8d9403997fe"
 uuid = "c2c64177-6a8e-5dca-99a7-64895ad7445f"
 version = "2.0.5+1"
 
+[[Examples]]
+deps = ["Colors", "ECOS", "LinearAlgebra", "Parser", "Printf", "Solvers", "Test", "Utils"]
+path = "examples"
+uuid = "abb6aba6-a5dd-11eb-1a42-65499bd4c243"
+version = "1.0.0"
+
 [[FixedPointNumbers]]
 deps = ["Statistics"]
 git-tree-sha1 = "335bfdceacc84c5cdf16aadc768aa5ddfc5383cc"
@@ -264,6 +270,12 @@ git-tree-sha1 = "4fa2ba51070ec13fcc7517db714445b4ab986bdf"
 uuid = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 version = "1.4.0"
 
+[[Parser]]
+deps = ["ECOS", "JuMP", "LinearAlgebra", "Printf", "Utils"]
+path = "parser"
+uuid = "8531126a-8d07-4702-a998-a66a2313e289"
+version = "0.1.0"
+
 [[Parsers]]
 deps = ["Dates"]
 git-tree-sha1 = "c8abc88faa3f7a3950832ac5d6e690881590d6dc"
@@ -312,30 +324,6 @@ version = "1.0.0"
 [[SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 
-[[ScpTrajOptExamples]]
-deps = ["ECOS", "LinearAlgebra", "Printf", "ScpTrajOptParser", "ScpTrajOptSolvers", "ScpTrajOptUtils", "Test"]
-path = "ScpTrajOptExamples"
-uuid = "abb6aba6-a5dd-11eb-1a42-65499bd4c243"
-version = "1.0.0"
-
-[[ScpTrajOptParser]]
-deps = ["ECOS", "JuMP", "LinearAlgebra", "Printf", "ScpTrajOptUtils"]
-path = "ScpTrajOptParser"
-uuid = "8531126a-8d07-4702-a998-a66a2313e289"
-version = "0.1.0"
-
-[[ScpTrajOptSolvers]]
-deps = ["Colors", "ECOS", "JuMP", "LinearAlgebra", "Printf", "PyPlot", "ScpTrajOptParser", "ScpTrajOptUtils"]
-path = "ScpTrajOptSolvers"
-uuid = "7328b228-a5db-11eb-3781-05e2836e9a59"
-version = "1.0.0"
-
-[[ScpTrajOptUtils]]
-deps = ["Colors", "JuMP", "LinearAlgebra", "Printf", "PyPlot"]
-path = "ScpTrajOptUtils"
-uuid = "8b916518-a5eb-11eb-206d-83b0b19bff08"
-version = "1.0.0"
-
 [[Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 
@@ -345,6 +333,12 @@ uuid = "1a1011a3-84de-559e-8e89-a11a2f7dc383"
 
 [[Sockets]]
 uuid = "6462fe0b-24de-5631-8697-dd941f90decc"
+
+[[Solvers]]
+deps = ["Colors", "ECOS", "JuMP", "LinearAlgebra", "Parser", "Printf", "PyPlot", "Utils"]
+path = "solvers"
+uuid = "7328b228-a5db-11eb-3781-05e2836e9a59"
+version = "1.0.0"
 
 [[SparseArrays]]
 deps = ["LinearAlgebra", "Random"]
@@ -393,6 +387,12 @@ uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
 [[Unicode]]
 uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
+
+[[Utils]]
+deps = ["Colors", "JuMP", "LinearAlgebra", "Printf", "PyPlot"]
+path = "utils"
+uuid = "8b916518-a5eb-11eb-206d-83b0b19bff08"
+version = "1.0.0"
 
 [[VersionParsing]]
 git-tree-sha1 = "80229be1f670524750d905f8fc8148e5a8c4537f"
