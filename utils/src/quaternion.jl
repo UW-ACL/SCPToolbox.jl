@@ -48,7 +48,7 @@ struct Quaternion
     """
     function Quaternion(v::RealVector, w::RealValue)::Quaternion
         if length(v)!=3
-            err = ArgumentError("ERROR: quaternion is a 4-element object.")
+            err = ArgumentError("quaternion is a 4-element object.")
             throw(err)
         end
 
@@ -70,7 +70,7 @@ struct Quaternion
     """
     function Quaternion(v::RealVector)::Quaternion
         if length(v)!=3 && length(v)!=4
-            msg = string("ERROR: cannot construct a quaternion from ",
+            msg = string("cannot construct a quaternion from ",
                          "fewer than 3 or more than 4 elements.")
             err = ArgumentError(msg)
             throw(err)
@@ -99,7 +99,7 @@ struct Quaternion
     """
     function Quaternion(α::RealValue, a::RealVector)::Quaternion
         if length(a)!=3
-            msg = string("ERROR: axis must be in R^3.")
+            msg = string("axis must be in R^3.")
             err = ArgumentError(msg)
             throw(err)
         end
@@ -127,7 +127,7 @@ Quaternion indexing.
 """
 function getindex(q::Quaternion, i::Int)::RealValue
     if i<0 || i>4
-        err = ArgumentError("ERROR: quaternion index out of bounds.")
+        err = ArgumentError("quaternion index out of bounds.")
         throw(err)
     end
 
@@ -192,13 +192,13 @@ function *(q::Union{Quaternion, RealVector},
            p::Union{Quaternion, RealVector})::Quaternion
     if typeof(q)<:Quaternion && typeof(p)<:RealVector
         if length(p)!=3
-            err = ArgumentError("ERROR: p must be a vector in R^3.")
+            err = ArgumentError("p must be a vector in R^3.")
             throw(err)
         end
         r = q*Quaternion(p)
     else
         if length(q)!=3
-            err = ArgumentError("ERROR: q must be a vector in R^3.")
+            err = ArgumentError("q must be a vector in R^3.")
             throw(err)
         end
         r = Quaternion(q)*p

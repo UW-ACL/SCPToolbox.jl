@@ -51,7 +51,7 @@ struct ContinuousTimeTrajectory
         interp::Symbol)::ContinuousTimeTrajectory
 
         if !(interp in [:linear, :zoh])
-            err = ArgumentError("ERROR: unknown trajectory interpolation type.")
+            err = ArgumentError("unknown trajectory interpolation type.")
             throw(err)
         end
 

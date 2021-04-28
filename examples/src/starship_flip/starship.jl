@@ -346,7 +346,7 @@ function starship_initial_guess(
     vs = dot(traj.vs, env.ey)
     k_0x = findfirst(x1[veh.id_v, :]'*env.ey.>=vs)
     if isnothing(k_0x)
-        msg = string("ERROR: no terminal velocity crossing, ",
+        msg = string("no terminal velocity crossing, ",
                      "increase time of flight (t_θcst).")
         error = ArgumentError(msg)
         throw(error)
@@ -542,7 +542,7 @@ function starship_initial_guess(
         end
         t2 += Δt2
         if t2>t2_range[2]
-            msg = string("ERROR: could not find a terminal ",
+            msg = string("could not find a terminal ",
                          "descent time of flight.")
             err = SCPError(0, SCP_BAD_PROBLEM, msg)
             throw(err)

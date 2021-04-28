@@ -855,9 +855,9 @@ function _scvx__print_info(spbm::SCvxSubproblem,
     table = spbm.def.common.table
 
     if !isnothing(err)
-        @printf "ERROR: %s, exiting\n" err.msg
+        @printf "%s, exiting\n" err.msg
     elseif _scp__unsafe_solution(sol)
-        @printf "ERROR: unsafe solution (%s), exiting\n" sol.status
+        @printf "unsafe solution (%s), exiting\n" sol.status
     else
         # Preprocess values
         scale = spbm.def.common.scale

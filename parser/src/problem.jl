@@ -29,6 +29,8 @@ if isdefined(@__MODULE__, :LanguageServer)
     using .Utils
 end
 
+using Utils
+
 const RealTuple = Tuple{Types.RealValue, Types.RealValue}
 const VectorOfTuples = Vector{Union{Nothing, RealTuple}}
 const SIA = Types.SpecialIntegrationActions
@@ -192,7 +194,7 @@ function problem_advise_scale!(pbm::TrajectoryProblem,
                                idx::Types.ElementIndex,
                                rg::RealTuple)::Nothing
     if rg[2] < rg[1]
-        err = ArgumentError("ERROR: min must be less than max.")
+        err = ArgumentError("min must be less than max")
         throw(err)
     end
     map = Dict(:state => :xrg, :input => :urg, :parameter => :prg)
@@ -432,7 +434,7 @@ function problem_set_s!(pbm::TrajectoryProblem,
                         DG::Func=nothing,
                         G::Func=nothing)::Nothing
     if isnothing(s)
-        err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: must at least provide s.")
+        err = SCPError(0, SCP_BAD_ARGUMENT, "must at least provide s")
         throw(err)
     end
 
@@ -470,7 +472,7 @@ function problem_set_bc!(pbm::TrajectoryProblem,
                          H::Func,
                          K::Func=nothing)::Nothing
     if isnothing(g)
-        err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: must at least provide g.")
+        err = SCPError(0, SCP_BAD_ARGUMENT, "must at least provide g")
         throw(err)
     end
 

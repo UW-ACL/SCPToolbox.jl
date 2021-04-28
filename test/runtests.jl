@@ -1,8 +1,7 @@
-#= Optimization problem parser.
+#= Trajectory optimization unit tests.
 
 Sequential convex programming algorithms for trajectory optimization.
-Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
-                   and Autonomous Systems Laboratory (Stanford University)
+Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington)
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -16,19 +15,17 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-module Parser
-
 if isdefined(@__MODULE__, :LanguageServer)
-    include("../../utils/src/Utils.jl")
+    include("../examples/src/Examples.jl")
+    using .Examples
 end
 
-# User-facing problem definition
-include("problem.jl")
+using Printf
+using Test
+using Examples
 
-# General optimization problem building
-module ConicLinearProgram
-include("cone.jl")
-# include("program.jl")
-end # module
-
-end # module
+@testset "Oscillator" begin
+    @printf("..:: Oscillator with PTR ::..\n\n")
+    Examples.Oscillator.ptr()
+    @printf("success!\n")
+end

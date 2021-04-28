@@ -46,7 +46,7 @@ struct Ellipsoid
     """
     function Ellipsoid(H::RealMatrix, c::RealVector)::Ellipsoid
         if size(H,2)!=length(c)
-            err = ArgumentError("ERROR: matrix size mismatch.")
+            err = ArgumentError("matrix size mismatch.")
             throw(err)
         end
         E = new(H, c)

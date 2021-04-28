@@ -16,6 +16,10 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
+using Printf
+
+import Base: showerror
+
 export SCPStatus, SCP_SOLVED, SCP_FAILED, SCP_SCALING_FAILED,
     SCP_GUESS_PROJECTION_FAILED, SCP_BAD_ARGUMENT, SCP_BAD_PROBLEM
 export SCPError
@@ -43,3 +47,19 @@ struct SCPError <: Exception
     status::SCPStatus # Error status code
     msg::String       # Error message
 end # struct
+
+"""
+    showerror(io, e)
+
+Pretty print the custom SCP error.
+
+# Arguments
+- `io`: the IO stream object.
+- `e`: the error object.
+"""
+function showerror(io::IO, e::SCPError)::Nothing
+
+    @printf(io, "%s (status: %s)", e.msg, e.status)
+
+    return nothing
+end

@@ -67,7 +67,7 @@ struct ConvexCone{T<:MOI.AbstractSet}
                         kind::Symbol;
                         dual::Bool=false)::ConvexCone
         if !(kind in (:zero, :nonpos, :l1, :soc, :linf, :geom, :exp))
-            err = SCPError(0, SCP_BAD_ARGUMENT, "ERROR: Unsupported cone.")
+            err = SCPError(0, SCP_BAD_ARGUMENT, "Unsupported cone")
             throw(err)
         end
 
@@ -91,7 +91,7 @@ struct ConvexCone{T<:MOI.AbstractSet}
             end
         elseif kind==:exp
             if dim!=3
-                msg = "ERROR: Exponential cone is in R^3."
+                msg = "Exponential cone is in R^3"
                 err = SCPError(0, SCP_BAD_ARGUMENT, msg)
                 throw(err)
             end

@@ -636,7 +636,7 @@ function save_figure(filename::String, algo::String;
     global tight_layout_applied
 
     algo = lowercase(split(algo, " "; limit=2)[1])
-    path = isnothing(path) ? "./figures/" : path
+    path = isnothing(path) ? "../figures/" : path
 
     # Apply tight layout, only do this **once** per figure
     if !tight_layout_applied

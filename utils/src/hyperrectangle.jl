@@ -49,7 +49,7 @@ struct Hyperrectangle
     """
     function Hyperrectangle(l::RealVector, u::RealVector)::Hyperrectangle
         if length(l)!=length(u)
-            err = ArgumentError("ERROR: vertex dimension mismatch.")
+            err = ArgumentError("vertex dimension mismatch.")
             throw(err)
         end
         n = length(l)
@@ -112,7 +112,7 @@ struct Hyperrectangle
                               pitch::RealValue=0.0,
                               roll::RealValue=0.0)::Hyperrectangle
         if yaw%90!=0 || pitch%90!=0 || roll%90!=0
-            err = ArgumentError("ERROR: hyperrectangle must be axis-aligned.")
+            err = ArgumentError("hyperrectangle must be axis-aligned.")
             throw(err)
         end
         # Compute the hyperrectangle min/max vertices in world frame, no offset

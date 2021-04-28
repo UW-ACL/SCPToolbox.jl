@@ -1,4 +1,4 @@
-#= Data structures and algorithm to work with an optimization problem.
+#= General conic linear (convex) optimization problem.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
@@ -16,19 +16,16 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-module OptimizationProblem
-
-include("types.jl")
+if isdefined(@__MODULE__, :LanguageServer)
+    include("../../utils/src/Utils.jl")
+end
 
 using JuMP
 using ECOS
 using Printf
-using .Types
+using Utils
 
 import Base: show
-
-export T_AtomicVariable, T_DecisionVector, T_OptimizationProblem
-export add_variable!
 
 abstract type T_AbstractDecisionVector end
 abstract type T_AbstractOptimizationProblem end
@@ -181,6 +178,4 @@ function show(io::IO, x::T_AtomicVariable)::Nothing
     @printf(io, "Atomic variable:\n")
     @printf(io, "  name = %s\n", x.name)
     @printf(io, "  id = %d:%d", x.id[1], x.id[end])
-end
-
 end

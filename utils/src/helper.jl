@@ -291,7 +291,7 @@ function rk4_generic(
 
     # Check that one and only one of the arguments tspan and h is passed
     if !xor(isnothing(tspan), isnothing(h))
-        err = ArgumentError(string("ERROR: rk4 accepts one and only one",
+        err = ArgumentError(string("rk4 accepts one and only one",
                                    " of tspan or h."))
         throw(err)
     end

@@ -666,9 +666,9 @@ function print_info(spbm::Subproblem,
     table = spbm.def.common.table
 
     if !isnothing(err)
-        @printf "ERROR: %s, exiting\n" err.msg
+        @printf "%s, exiting\n" err.msg
     elseif unsafe_solution(sol)
-        @printf "ERROR: unsafe solution (%s), exiting\n" sol.status
+        @printf "unsafe solution (%s), exiting\n" sol.status
     else
         # Preprocess values
         scale = spbm.def.common.scale

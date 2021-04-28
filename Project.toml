@@ -6,5 +6,7 @@ version = "1.0.0"
 [deps]
 Examples = "abb6aba6-a5dd-11eb-1a42-65499bd4c243"
 Parser = "8531126a-8d07-4702-a998-a66a2313e289"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Solvers = "7328b228-a5db-11eb-3781-05e2836e9a59"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 Utils = "8b916518-a5eb-11eb-206d-83b0b19bff08"

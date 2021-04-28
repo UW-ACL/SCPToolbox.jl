@@ -111,8 +111,8 @@ struct SCPProblem{T<:SCPParameters}
                         traj::TrajectoryProblem,
                         common::SCPCommon)::SCPProblem where {T<:SCPParameters}
         if !(traj.nx>=1 && traj.nu >=1)
-            msg = string("ERROR: the current implementation only supports",
-                         " problems with at least 1 state and 1 control.")
+            msg = string("the current implementation only supports",
+                         " problems with at least 1 state and 1 control")
             err = SCPError(0, SCP_BAD_PROBLEM, msg)
             throw(err)
         end
@@ -760,7 +760,7 @@ function add_convex_state_constraints!(
             correct_type = typeof(xk_in_X)<:(
                 Vector{T} where {T<:ConvexCone})
             if !correct_type
-                msg = string("ERROR: input constraint must be in conic form.")
+                msg = string("input constraint must be in conic form")
                 err = SCPError(k, SCP_BAD_ARGUMENT, msg)
                 throw(err)
             end
@@ -795,7 +795,7 @@ function add_convex_input_constraints!(
             correct_type = typeof(uk_in_U)<:(
                 Vector{T} where {T<:ConvexCone})
             if !correct_type
-                msg = string("ERROR: input constraint must be in conic form.")
+                msg = string("input constraint must be in conic form")
                 err = SCPError(k, SCP_BAD_ARGUMENT, msg)
                 throw(err)
             end
