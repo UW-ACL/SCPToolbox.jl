@@ -18,15 +18,12 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 if isdefined(@__MODULE__, :LanguageServer)
     include("../../utils/src/Utils.jl")
+    include("function.jl")
     using .Utils
 end
 
-include("../../utils/src/Utils.jl")
-
 using JuMP
 using ECOS
-using Printf
-using .Utils
 
 export ConicProgram, blocks, variable!, value
 
@@ -180,13 +177,84 @@ Support some array operations for Argument.
 Base.length(arg::Argument) = arg.numel
 Base.getindex(arg::Argument, I...) = arg.blocks[I...]
 
-# Specialize argument for variables and parameters
+# Specialize arguments to variables and parameters
 const VariableArgument = Argument{AtomicVariable}
+const VariableArgumentBlocks = ArgumentBlocks{AtomicVariable}
 const ConstantArgument = Argument{AtomicConstant}
+const ConstantArgumentBlocks = ArgumentBlocks{AtomicConstant}
 
-""" Affine function used to form conic constraints in geometric form. """
-struct Function
-    # TODO
+# Define the function, Jacobian, and Hessian typesafe types
+# const FunctionInputType = Tuple{Types.VariableVector, Types.RealVector}
+# const FunctionOutputType = Types.VariableVector
+# const JacobianOutputType = Types.RealMatrix
+# const HessianOutputType = Types.RealTensor
+# const FunctionType = TypedFunction{FunctionOutputType, FunctionInputType}
+# const JacobianType = TypedFunction{JacobianOutputType, FunctionInputType}
+# const HessianType = TypedFunction{HessianOutputType, FunctionInputType}
+
+"""
+`AffineFunction` defines an affine function that is used to create conic
+constraints in geometric form. The function accepts a list of argument blocks
+(variables and parameters). During creation time, the user specifies the value
+and Jacobians of the function. In particular, the following can be evaluated:
+
+- `f(x, p)` (via the `f` member). This returns an `n`-element
+  `Vector{Float64}`.
+- `∇x f(x, p)` (via the `Jx` member). This returns an `n,n`-element
+  `Matrix{Float64}`.
+- `∇p f(x, p)` (via the `Jp` member). This returns an `n,n`-element
+  `Matrix{Float64}`.
+- `∇px f(x, p)` (via the `Jpx` member). This returns an `n,n,d`-element
+  `Array{Float64, 3}` tensor. Each index along the third dimension represents a
+  Hessian with respect to a single parameter, i.e. a derivative of `∇x f` with
+  respect to `p[i]`.
+
+When evaluating the function, the values of `x` and `p` are passed and not the
+wrapper `ArgumentBlock` structs themselves. So the function has to be defined
+such that is is able to operate on both `AtomicVariable` and `AtomicConstant`
+types. """
+struct AffineFunction
+    x::VariableArgumentBlocks # Variable arguments
+    p::ConstantArgumentBlocks # Constant arguments
+    # f::FunctionType           # The function value
+    # Jx::JacobianType          # Jacobian df/dx
+    # Jp::JacobianType          # Jacobian df/dp
+    # Jpx::HessianType          # Hessian d(df/dx)/dp
+
+    """
+        AffineFunction(x, p, f, Jx, Jp, Jpx)
+
+    Affine function constructor.
+
+    # Arguments
+    - `x`: the variable argument blocks.
+    - `p`: the parameter argument blocks.
+    - `f`: function definition.
+    - `Jx`: Jacobian df/dx definition.
+    - `Jp`: Jacobian df/dp definition.
+    - `Jpx`: Jacobian d(df/dx)/dp definition.
+
+    # Returns
+    - `Axb`: the affine function object.
+    """
+    function AffineFunction(
+        x::VariableArgumentBlocks,
+        p::ConstantArgumentBlocks,
+        f::Function,
+        Jx::Function,
+        Jp::Function,
+        Jpx::Function)::AffineFunction
+
+        # Wrap the functions to make their calls typesafe
+        # f = FunctionType(f)
+        # Jx = FunctionType(Jx)
+        # Jp = FunctionType(Jp)
+        # Jpx = FunctionType(Jpx)
+
+        Axb = new(x, p, f, Jx, Jp, Jpx)
+
+        return Axb
+    end # function
 end # struct
 
 """ Conic clinear program main class. """
