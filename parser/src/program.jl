@@ -25,7 +25,10 @@ end
 using JuMP
 using ECOS
 
+import JuMP: value
+
 export ConicProgram, blocks, variable!, value
+export @new_variable, @new_parameter
 
 const AtomicVariable = VariableRef
 const AtomicConstant = Float64
@@ -256,7 +259,7 @@ underlying `DifferentiableFunction`, which handles the computation.
 
 # Keywords
 - `jacobians`: (optional) set to true in order to compute the Jacobians as
-  well. TODO
+  well.
 
 # Returns
 - `f`: the function value. The Jacobians can be queried later by using the
@@ -272,7 +275,7 @@ function (Axb::AffineFunction)(args::BlockValue{AtomicConstant}...;
         args = vcat(x_input, p_input)
     end
 
-    f_value = Axb.f(args...) # Core call
+    f_value = Axb.f(args...; jacobians) # Core call
 
     return f_value
 end # function
@@ -454,6 +457,82 @@ function parameter!(prog::ConicProgram, shape::Int...;
 end # function
 
 """
+    @new_argument(prog, shape, name, kind)
+
+Macro to create a new variable.
+
+# Arguments
+- `prog`: the conic program object.
+- `shape`: the shape of the argument, as a tuple or a vector.
+- `name`: the argument name.
+- `kind`: either `:variable` or `:parameter`.
+
+# Returns
+The newly created argument object.
+"""
+macro new_argument(prog, shape, name, kind)
+    @assert typeof(kind)<:QuoteNode
+    func = (kind.value==:variable) ? :(variable!) : :(parameter!)
+
+    if typeof(shape)<:Expr
+        # Array variable
+        @assert shape.head == :vect || shape.head == :tuple
+        @assert ndims(shape.args) == 1
+        shape = shape.args
+        :( $func($(esc(prog)), $(shape...); name=$name) )
+    else
+        # Scalar variable
+        :( $func($(esc(prog)), $shape; name=$name) )
+    end
+end # macro
+
+"""
+    @new_variable(prog, shape, name)
+    @new_variable(prog, shape)
+    @new_variable(prog)
+
+The following macros specialize `@new_argument` for creating variables.
+"""
+macro new_variable(prog, shape, name)
+    :( @new_argument($(esc(prog)), $shape, $name, :variable) )
+end # macro
+
+macro new_variable(prog, shape_or_name)
+    if typeof(shape_or_name)<:String
+        :( @new_variable($(esc(prog)), 1, $shape_or_name) )
+    else
+        :( @new_variable($(esc(prog)), $shape_or_name, nothing) )
+    end
+end # macro
+
+macro new_variable(prog)
+    :( @new_variable($(esc(prog)), 1, nothing) )
+end # macro
+
+"""
+    @new_parameter(prog, shape, name)
+    @new_parameter(prog, shape)
+    @new_parameter(prog)
+
+The following macros specialize `@new_argument` for creating parameters.
+"""
+macro new_parameter(prog, shape, name)
+    :( @new_argument($(esc(prog)), $shape, $name, :parameter) )
+end # macro
+
+macro new_parameter(prog, shape_or_name)
+    if typeof(shape_or_name)<:String
+        :( @new_parameter($(esc(prog)), 1, $shape_or_name) )
+    else
+        :( @new_parameter($(esc(prog)), $shape_or_name, nothing) )
+    end
+end # macro
+
+macro new_parameter(prog)
+    :( @new_parameter($(esc(prog)), 1, nothing) )
+end # macro
+
+"""
     value(blk)
 
 Get the value of the block.
@@ -548,7 +627,7 @@ function Base.show(io::IO, arg::ArgumentBlock{T})::Nothing where T
     @printf(io, "%s %s\n", qualifier, kind)
     @printf(io, "  %d elements\n", length(arg))
     @printf(io, "  %s shape\n", size(arg))
-    @printf(io, "  Name: %s\n", name)
+    @printf(io, "  Name: %s\n", arg.name)
     @printf(io, "  Block index in stack: %d\n", arg.blid)
     @printf(io, "  Indices in stack: %s\n", print_indices(arg.elid))
     @printf(io, "  Type: %s\n", typeof(arg.value))

@@ -222,6 +222,21 @@ struct DifferentiableFunction
     inputs it received, as well as a structure carrying any other values that
     are used in the core computation.
 
+    The core function is expected to have the call format:
+
+    ```julia
+    f(x_1, ..., x_args, p_1, ..., p_pargs, other, jacobian)
+    ```
+
+    The first `xargs` arguments correspond to variables, the next `pargs`
+    arguments correspond to parameters. We make the distinction between
+    variables and parameters for duality-based sensitivity analysis. In the
+    sensitivity analysis, our core interest is in how the solution varies due
+    to changes in the *parameters*. The argument `other` specifies a structure
+    of other constants that the function can use for its definition, while
+    `jacobian` is a boolean value which, if `false`, signals that the function
+    may omit Jacobian computation (which saves on compute time).
+
     # Arguments
     - `f`: the core function that does the computation of the function value
       and Jacobians.
@@ -238,7 +253,7 @@ struct DifferentiableFunction
         other::T)::DifferentiableFunction where T
 
         # Make the core function typesafe
-        in_type = Tuple{fill(InputArgumentType, xargs+pargs)..., T}
+        in_type = Tuple{fill(InputArgumentType, xargs+pargs)..., T, Bool}
         out_type = DifferentiableFunctionOutput
         F = TypedFunction(f, in_type, out_type)
 
@@ -255,7 +270,7 @@ end # struct
 const DiffblF = DifferentiableFunction
 
 """
-    F(args...)
+    F(args...[; jacobians])
 
 Call the core method. The result is cached inside the `DifferentiableFunction`
 structure. The call is done type-safely in the sense that the input and output
@@ -267,10 +282,15 @@ this is not met.
   of arguments as `xargs+pargs` specified when creating the
   `DifferentiableFunction` structure..
 
+# Keywords
+- `jacobians`: (optional) set to true in order to compute the Jacobians as
+  well.
+
 # Returns
 - `f_value`: the function value from the call.
 """
-function (F::DiffblF)(args::InputArgumentType...)::FunctionValueType
+function (F::DiffblF)(args::InputArgumentType...;
+                      jacobians::Bool=false)::FunctionValueType
     nargin = length(args)
     narg_expected = F.xargs+F.pargs
     if nargin!=narg_expected
@@ -281,7 +301,7 @@ function (F::DiffblF)(args::InputArgumentType...)::FunctionValueType
         throw(err)
     end
     # Make the call to the core function
-    F.out[] = F.f(args..., F.consts[])
+    F.out[] = F.f(args..., F.consts[], jacobians)
     f_value = value(F.out[])
     return f_value
 end # function
