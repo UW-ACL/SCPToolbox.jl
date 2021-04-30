@@ -183,15 +183,6 @@ const VariableArgumentBlocks = ArgumentBlocks{AtomicVariable}
 const ConstantArgument = Argument{AtomicConstant}
 const ConstantArgumentBlocks = ArgumentBlocks{AtomicConstant}
 
-# Define the function, Jacobian, and Hessian typesafe types
-# const FunctionInputType = Tuple{Types.VariableVector, Types.RealVector}
-# const FunctionOutputType = Types.VariableVector
-# const JacobianOutputType = Types.RealMatrix
-# const HessianOutputType = Types.RealTensor
-# const FunctionType = TypedFunction{FunctionOutputType, FunctionInputType}
-# const JacobianType = TypedFunction{JacobianOutputType, FunctionInputType}
-# const HessianType = TypedFunction{HessianOutputType, FunctionInputType}
-
 """
 `AffineFunction` defines an affine function that is used to create conic
 constraints in geometric form. The function accepts a list of argument blocks
@@ -212,54 +203,84 @@ and Jacobians of the function. In particular, the following can be evaluated:
 When evaluating the function, the values of `x` and `p` are passed and not the
 wrapper `ArgumentBlock` structs themselves. So the function has to be defined
 such that is is able to operate on both `AtomicVariable` and `AtomicConstant`
-types. """
+types.
+"""
 struct AffineFunction
+    f::DifferentiableFunction # The core computation method
     x::VariableArgumentBlocks # Variable arguments
     p::ConstantArgumentBlocks # Constant arguments
-    # f::FunctionType           # The function value
-    # Jx::JacobianType          # Jacobian df/dx
-    # Jp::JacobianType          # Jacobian df/dp
-    # Jpx::HessianType          # Hessian d(df/dx)/dp
 
     """
-        AffineFunction(x, p, f, Jx, Jp, Jpx)
+        AffineFunction(prog, x, p)
 
     Affine function constructor.
 
     # Arguments
+    - `prog`: the optimization program.
     - `x`: the variable argument blocks.
     - `p`: the parameter argument blocks.
-    - `f`: function definition.
-    - `Jx`: Jacobian df/dx definition.
-    - `Jp`: Jacobian df/dp definition.
-    - `Jpx`: Jacobian d(df/dx)/dp definition.
+    - `f`: the core method that can compute the function value and its
+      Jacobians.
 
     # Returns
     - `Axb`: the affine function object.
     """
     function AffineFunction(
+        prog::AbstractConicProgram,
         x::VariableArgumentBlocks,
         p::ConstantArgumentBlocks,
-        f::Function,
-        Jx::Function,
-        Jp::Function,
-        Jpx::Function)::AffineFunction
+        f::Function)::AffineFunction
 
-        # Wrap the functions to make their calls typesafe
-        # f = FunctionType(f)
-        # Jx = FunctionType(Jx)
-        # Jp = FunctionType(Jp)
-        # Jpx = FunctionType(Jpx)
+        # Create the differentiable function wrapper
+        xargs = length(x)
+        pargs = length(p)
+        consts = prog.pars[]
+        f = DifferentiableFunction(f, xargs, pargs, consts)
 
-        Axb = new(x, p, f, Jx, Jp, Jpx)
+        Axb = new(f, x, p)
 
         return Axb
     end # function
 end # struct
 
+"""
+    Axb([args...][; jacobians])
+
+Compute the function value and Jacobians. This basically forwards data to the
+underlying `DifferentiableFunction`, which handles the computation.
+
+# Arguments
+- `args`: (optional) evaluate the function for these input argument values. If
+  not provided, the function is evaluated at the values of the internally
+  stored blocks on which is depends.
+
+# Keywords
+- `jacobians`: (optional) set to true in order to compute the Jacobians as
+  well. TODO
+
+# Returns
+- `f`: the function value. The Jacobians can be queried later by using the
+  `jacobian` function.
+"""
+function (Axb::AffineFunction)(args::BlockValue{AtomicConstant}...;
+                               jacobians::Bool=false)::FunctionValueType
+
+    # Compute the input argument values
+    if isempty(args)
+        x_input = [value(blk) for blk in Axb.x]
+        p_input = [value(blk) for blk in Axb.p]
+        args = vcat(x_input, p_input)
+    end
+
+    f_value = Axb.f(args...) # Core call
+
+    return f_value
+end # function
+
 """ Conic clinear program main class. """
 mutable struct ConicProgram <: AbstractConicProgram
     mdl::Model          # Core JuMP optimization model
+    pars::Ref           # A parameter structure used for problem definition
     x::VariableArgument # Decision variable vector
     p::ConstantArgument # Parameter vector
 
@@ -269,9 +290,11 @@ mutable struct ConicProgram <: AbstractConicProgram
     Empty model constructor.
 
     # Arguments
-    - `solver`: (optional) the numerical convex optimizer to use.
+    - `pars`: problem parameter structure. This can be anything, and it is
+      passed down to the low-level functions defining the problem.
 
     # Keywords
+    - `solver`: (optional) the numerical convex optimizer to use.
     - `solver_options`: (optional) options to pass to the numerical convex
       optimizer.
 
@@ -279,7 +302,8 @@ mutable struct ConicProgram <: AbstractConicProgram
     - `prog`: the conic linear program data structure.
     """
     function ConicProgram(
-        solver::DataType=ECOS.Optimizer;
+        pars::Any;
+        solver::DataType=ECOS.Optimizer,
         solver_options::Union{Dict{String, Any},
                               Nothing}=nothing)::ConicProgram
 
@@ -293,11 +317,12 @@ mutable struct ConicProgram <: AbstractConicProgram
         end
 
         # Variables and parameters
+        pars = Ref(pars)
         x = VariableArgument()
         p = ConstantArgument()
 
         # Combine everything into a conic program
-        prog = new(mdl, x, p)
+        prog = new(mdl, pars, x, p)
 
         # Associate the arguments with the newly created program
         link!(x, prog)
@@ -429,22 +454,30 @@ function parameter!(prog::ConicProgram, shape::Int...;
 end # function
 
 """
-    value(arg)
+    value(blk)
 
 Get the value of the block.
 
 # Arguments
-- `arg`: the block.
+- `blk`: the block.
 
 # Returns
 - `val`: the block's value.
 """
-function value(arg::ArgumentBlock{T, N})::BlockValue{T, N} where {T, N}
+function value(blk::ArgumentBlock{T, N})::BlockValue{T, N} where {T, N}
 
     if T<:AtomicVariable
-        val = value.(arg.value)
+        mdl = blk.arg[].prog[].mdl # The underlying optimization model
+        if termination_status(mdl)==MOI.OPTIMIZE_NOT_CALLED
+            # Optimization not yet performed, so return the variables
+            # themselves
+            val = blk.value
+        else
+            # The variables have been assigned their optimal values, show these
+            val = value.(blk.value)
+        end
     else
-        val = arg.value
+        val = blk.value
     end
 
     return val

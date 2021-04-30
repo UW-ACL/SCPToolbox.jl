@@ -29,7 +29,8 @@ export ContinuousTimeTrajectory, sample
 
 Possible interpolation methods are:
 - `:linear` (linear interpolation);
-- `:zoh` (zeroth-order hold interpolation). """
+- `:zoh` (zeroth-order hold interpolation).
+"""
 struct ContinuousTimeTrajectory
     t::RealVector  # The trajectory time nodes
     x::RealArray   # The trajectory values at the corresponding times

@@ -114,6 +114,7 @@ function (fw::TypedFunction)(args...)
 end # function
 
 # Convenience typealiases
+const InputArgumentType = Types.VariableArray
 const FunctionValueType = Types.VariableArray
 const JacobianValueType = Types.VariableArray
 const JacobianKeys = Union{Int, Tuple{Int, Int}}
@@ -237,7 +238,7 @@ struct DifferentiableFunction
         other::T)::DifferentiableFunction where T
 
         # Make the core function typesafe
-        in_type = Tuple{fill(Types.VariableArray, xargs+pargs)..., T}
+        in_type = Tuple{fill(InputArgumentType, xargs+pargs)..., T}
         out_type = DifferentiableFunctionOutput
         F = TypedFunction(f, in_type, out_type)
 
@@ -269,7 +270,7 @@ this is not met.
 # Returns
 - `f_value`: the function value from the call.
 """
-function (F::DiffblF)(args::Types.VariableArray...)::Types.VariableArray
+function (F::DiffblF)(args::InputArgumentType...)::FunctionValueType
     nargin = length(args)
     narg_expected = F.xargs+F.pargs
     if nargin!=narg_expected
