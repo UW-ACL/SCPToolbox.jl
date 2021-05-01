@@ -21,8 +21,12 @@ if isdefined(@__MODULE__, :LanguageServer)
     using .Utils
 end
 
+include("../../utils/src/Utils.jl")
+
 using LinearAlgebra
 using JuMP
+using Printf
+using .Utils
 
 export ConvexCone, add!, fixed_cone, indicator!
 

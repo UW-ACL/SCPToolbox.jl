@@ -27,9 +27,10 @@ end
 
 # General optimization problem building
 module ConicLinearProgram
-# include("cone.jl")
+include("cone.jl")
 include("function.jl")
 include("program.jl")
+include("printing.jl")
 end # module
 
 using .ConicLinearProgram

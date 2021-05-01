@@ -18,13 +18,13 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 if isdefined(@__MODULE__, :LanguageServer)
     include("../../utils/src/Utils.jl")
+    include("cone.jl")
     using .Utils
 end
 
-include("../../utils/src/Utils.jl")
+import JuMP: value
 
-using Printf
-using .Utils
+export value
 
 """
 `TypedFunction{T, N}` is a wrapper class for a function which is supposed to

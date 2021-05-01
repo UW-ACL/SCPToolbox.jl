@@ -19,6 +19,7 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 if isdefined(@__MODULE__, :LanguageServer)
     include("../../utils/src/Utils.jl")
     include("function.jl")
+    include("cone.jl")
     using .Utils
 end
 
@@ -280,6 +281,59 @@ function (Axb::AffineFunction)(args::BlockValue{AtomicConstant}...;
     return f_value
 end # function
 
+"""
+Convenience methods that pass the calls down to `DifferentiableFunction`.
+"""
+value(F::AffineFunction)::FunctionValueType = value(F.f)
+jacobian(F::AffineFunction,
+         key::JacobianKeys)::JacobianValueType = jacobian(F.f, key)
+
+
+"""
+`ConicConstraint` defines a conic constraint for the optimization program. It
+is basically the following mathematical object:
+
+```math
+f(x, p)\\in \\mathcal K
+```
+
+where ``f`` is an affine function and ``\\mathcal K`` is a convex cone.
+"""
+struct ConicConstraint
+    f::AffineFunction # The affine function
+    K::ConvexCone     # The convex cone set data structure
+    constraint::Types.ConstraintRef # Underlying JuMP constraint
+    prog::Ref{AbstractConicProgram} # The parent conic program
+
+    """
+        ConicConstraint(f, kind)
+
+    Basic constructor. The function `f` value gets evaluated.
+
+    # Arguments
+    - `f`: the affine function which must belong to some convex cone.
+    - `kind`: the kind of convex cone that is to be used. All the sets allowed
+      by `ConvexCone` are supported.
+    - `prog`: the parent conic program to which the constraint belongs.
+
+    # Returns
+    - `finK`: the conic constraint.
+    """
+    function ConicConstraint(f::AffineFunction,
+                             kind::Symbol,
+                             prog::AbstractConicProgram)::ConicConstraint
+
+        # Create the underlying JuMP constraint
+        f_value = f()
+        K = ConvexCone(f_value, kind)
+        constraint = add!(prog.mdl, K)
+
+        finK = new(f, K, constraint, prog)
+
+        return finK
+    end # function
+end # struct
+
 """ Conic clinear program main class. """
 mutable struct ConicProgram <: AbstractConicProgram
     mdl::Model          # Core JuMP optimization model
@@ -489,6 +543,7 @@ end # macro
 """
     @new_variable(prog, shape, name)
     @new_variable(prog, shape)
+    @new_variable(prog, name)
     @new_variable(prog)
 
 The following macros specialize `@new_argument` for creating variables.
@@ -512,6 +567,7 @@ end # macro
 """
     @new_parameter(prog, shape, name)
     @new_parameter(prog, shape)
+    @new_parameter(prog, name)
     @new_parameter(prog)
 
 The following macros specialize `@new_argument` for creating parameters.
@@ -560,158 +616,4 @@ function value(blk::ArgumentBlock{T, N})::BlockValue{T, N} where {T, N}
     end
 
     return val
-end # function
-
-"""
-    print_indices(id[, limit])
-
-Print an vector of array linear indices, with a limit on how many to print in
-total.
-
-# Arguments
-- `id`: the index vector.
-- `limit`: (optional) half the maximum number of indices to show (at start and
-  end).
-
-# Returns
-- `ids`: the index vector in string format, ready to print.
-"""
-function print_indices(id::LocationIndices, limit::Int=3)::String
-
-    # Check if a single number
-    if ndims(id)==0 || length(id)==1
-        ids = @sprintf("%d", id[1])
-        return ids
-    end
-
-    # Check if contiguous range
-    iscontig = !any(diff(id).!=1)
-    if iscontig
-        ids = @sprintf("%d:%d", id[1], id[end])
-        return ids
-    end
-
-    # Print a limited number of indices
-    if length(id)>2*limit
-        v0 = (@sprintf("%s", id[1:limit]))[2:end-1]
-        vf = (@sprintf("%s", id[end-limit+1:end]))[2:end-1]
-        ids = @sprintf("%s, ..., %s", v0, vf)
-    else
-        ids = @sprintf("%s", id)[2:end-1]
-    end
-    return ids
-end # function
-
-"""
-    show(io, arg)
-
-Pretty print the atomic (block) function argument or a slice of it.
-
-# Arguments
-- `arg`: the argument.
-"""
-function Base.show(io::IO, arg::ArgumentBlock{T})::Nothing where T
-    compact = get(io, :compact, false) #noinfo
-
-    isvar = T==AtomicVariable
-    dim = ndims(arg)
-    qualifier = Dict(0=>"Scalar", 1=>"Vector", 2=>"Matrix", 3=>"Tensor")
-    if dim<=3
-        qualifier = qualifier[dim]
-    else
-        qualifier = "N-dimensional"
-    end
-
-    kind = isvar ? "variable" : "parameter"
-
-    @printf(io, "%s %s\n", qualifier, kind)
-    @printf(io, "  %d elements\n", length(arg))
-    @printf(io, "  %s shape\n", size(arg))
-    @printf(io, "  Name: %s\n", arg.name)
-    @printf(io, "  Block index in stack: %d\n", arg.blid)
-    @printf(io, "  Indices in stack: %s\n", print_indices(arg.elid))
-    @printf(io, "  Type: %s\n", typeof(arg.value))
-    if typeof(arg.value)<:AbstractArray
-        @printf(io, "  Value:\n")
-        io_value = IOBuffer()
-        io2_value = IOContext(io_value, :limit=>true, :displaysize=>(10, 50))
-        show(io2_value, MIME("text/plain"), arg.value)
-        value_str = String(take!(io_value))
-        # Print line by line
-        for row in split(value_str, "\n")[2:end]
-            @printf(io, "   %s\n", row)
-        end
-    else
-        @printf(io, "  Value: %s\n", arg.value)
-    end
-
-    return nothing
-end # function
-
-Base.display(arg::ArgumentBlock) = show(stdout, arg)
-
-"""
-    show(io, arg)
-
-Pretty print an argument.
-
-# Arguments
-- `arg`: argument structure.
-"""
-function Base.show(io::IO, arg::Argument{T})::Nothing where {T<:AtomicArgument}
-    compact = get(io, :compact, false) #noinfo
-
-    isvar = T<:AtomicVariable
-    kind = isvar ? "Variable" : "Parameter"
-    n_blocks = blocks(arg)
-    indent = " "^get(io, :indent, 0)
-
-    @printf(io, "%s%s argument\n", indent, kind)
-    @printf(io, "%s  %d elements\n", indent, length(arg))
-    @printf(io, "%s  %d blocks\n", indent, n_blocks)
-
-    if n_blocks==0
-        return nothing
-    end
-
-    ids = (i) -> arg.blocks[i].elid
-    make_span_str = (i) -> print_indices(ids(i))
-    span_str = [make_span_str(i) for i=1:n_blocks]
-    max_span_sz = maximum(length.(span_str))
-    for i = 1:n_blocks
-        newline = (i==n_blocks) ? "" : "\n"
-        span_str = make_span_str(i)
-        span_diff = max_span_sz-length(span_str)
-        span_str = span_str*(" "^span_diff)
-        @printf(io, "%s   %d) %s ... %s%s",
-                indent, i, span_str, arg.blocks[i].name, newline)
-    end
-
-    return nothing
-end # function
-
-"""
-    show(io, prog)
-
-Pretty print the conic program.
-
-# Arguments
-- `prog`: the conic program data structure.
-"""
-function Base.show(io::IO, prog::ConicProgram)::Nothing
-    compact = get(io, :compact, false) #noinfo
-
-    @printf(io, "Conic linear program\n")
-    @printf(io, "  %d variables (%d blocks)\n", length(prog.x), blocks(prog.x))
-    @printf(io, "  %d parameters (%d blocks)", length(prog.p), blocks(prog.p))
-
-    if !compact
-        io2 = IOContext(io, :indent=>2)
-        @printf("\n\n")
-        show(io2, prog.x)
-        @printf("\n\n")
-        show(io2, prog.p)
-    end
-
-    return nothing
 end # function
