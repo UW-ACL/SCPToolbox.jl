@@ -33,8 +33,7 @@ export ConvexCone, add!, fixed_cone, indicator!
 ST = Types
 const ConeVariable = Union{ST.Variable, ST.VariableVector}
 
-""" Convex cone constraint.
-
+"""
 A conic constraint is of the form `{z : z ∈ K}`, where `K` is a convex cone.
 
 The supported cones are:
@@ -45,6 +44,19 @@ The supported cones are:
 - `:linf` for constraints `z=(t, x), norm(x, ∞)<=t`.
 - `:geom` for constraints `z=(t, x), geomean(x)>=t`.
 - `:exp` for constraints `z=(x, y, w), y*exp(x/y)<=w, y>0`.
+"""
+const SUPPORTED_CONES = (:zero, :nonpos, :l1, :soc, :linf, :geom, :exp)
+const CONE_NAMES = Dict(:zero => "zero",
+                        :nonpos => "nonpositive orthant",
+                        :l1 => "one-norm",
+                        :soc => "second-order",
+                        :linf => "inf-norm",
+                        :geom => "geometric",
+                        :exp => "exponential")
+
+"""
+`ConvexCone` stores the information necessary to form a convex cone constraint
+in JUMP.
 """
 struct ConvexCone{T<:MOI.AbstractSet}
     z::ConeVariable # The expression to be constrained in the cone
@@ -70,7 +82,7 @@ struct ConvexCone{T<:MOI.AbstractSet}
     function ConvexCone(z::ConeVariable,
                         kind::Symbol;
                         dual::Bool=false)::ConvexCone
-        if !(kind in (:zero, :nonpos, :l1, :soc, :linf, :geom, :exp))
+        if !(kind in SUPPORTED_CONES)
             err = SCPError(0, SCP_BAD_ARGUMENT, "Unsupported cone")
             throw(err)
         end
@@ -107,6 +119,9 @@ struct ConvexCone{T<:MOI.AbstractSet}
         return constraint
     end # function
 end # struct
+
+# Get the kind of cone
+kind(cone::ConvexCone)::Symbol = cone.kind
 
 """
     add!(pbm, cone)

@@ -188,6 +188,7 @@ const ConstantArgument = Argument{AtomicConstant}
 const ConstantArgumentBlocks = ArgumentBlocks{AtomicConstant}
 
 """
+TODO update docstring
 `AffineFunction` defines an affine function that is used to create conic
 constraints in geometric form. The function accepts a list of argument blocks
 (variables and parameters). During creation time, the user specifies the value
@@ -334,12 +335,18 @@ struct ConicConstraint
     end # function
 end # struct
 
+# Get the kind of cone
+kind(finK::ConicConstraint)::Symbol = kind(finK.K)
+
+const Constraints = Vector{ConicConstraint}
+
 """ Conic clinear program main class. """
 mutable struct ConicProgram <: AbstractConicProgram
     mdl::Model          # Core JuMP optimization model
     pars::Ref           # A parameter structure used for problem definition
     x::VariableArgument # Decision variable vector
     p::ConstantArgument # Parameter vector
+    constraints::Constraints # List of conic constraints
 
     """
         ConicProgram([solver][; solver_options])
@@ -378,8 +385,11 @@ mutable struct ConicProgram <: AbstractConicProgram
         x = VariableArgument()
         p = ConstantArgument()
 
+        # Constraints
+        constraints = Constraints()
+
         # Combine everything into a conic program
-        prog = new(mdl, pars, x, p)
+        prog = new(mdl, pars, x, p, constraints)
 
         # Associate the arguments with the newly created program
         link!(x, prog)
@@ -511,13 +521,41 @@ function parameter!(prog::ConicProgram, shape::Int...;
 end # function
 
 """
+    constraint!(prog, kind, f, x, p)
+
+Create a conic constraint and add it to the problem. The heavy computation is
+done by the user-supplied function `f`, which has to satisfy the requirements
+of `DifferentiableFunction`.
+
+# Arguments
+- `prog`: the optimization program.
+- `kind`: the cone type.
+- `f`: the core method that can compute the function value and its Jacobians.
+- `x`: the variable argument blocks.
+- `p`: the parameter argument blocks.
+
+# Returns
+- `new_constraint`: the newly added constraint.
+"""
+function constraint!(prog::ConicProgram,
+                     kind::Symbol,
+                     f::Function,
+                     x::VariableArgumentBlocks,
+                     p::ConstantArgumentBlocks)
+    Axb = AffineFunction(prog, x, p, f)
+    new_constraint = ConicConstraint(Axb, kind, prog)
+    push!(prog.constraints, new_constraint)
+    return new_constraint
+end # function
+
+"""
     @new_argument(prog, shape, name, kind)
 
 Macro to create a new variable.
 
 # Arguments
 - `prog`: the conic program object.
-- `shape`: the shape of the argument, as a tuple or a vector.
+- `shape`: the shape of the argument, as a tuple/vector/integer.
 - `name`: the argument name.
 - `kind`: either `:variable` or `:parameter`.
 
@@ -586,6 +624,40 @@ end # macro
 
 macro new_parameter(prog)
     :( @new_parameter($(esc(prog)), 1, nothing) )
+end # macro
+
+"""
+    @add_constraint(prog, kind, f, x, p)
+    @add_constraint(prog, kind, f, x)
+
+Add a conic constraint to the optimization problem. This is just a wrapper of
+the function `constraint!`, so look there for more info.
+
+# Arguments
+- `prog`: the optimization program.
+- `kind`: the cone type.
+- `f`: the core method that can compute the function value and its Jacobians.
+- `x`: the variable argument blocks, as a vector/tuple/single element.
+- `p`: (optional) the parameter argument blocks, as a vector/tuple/single
+  element.
+
+# Returns
+The newly created `ConicConstraint` object.
+"""
+macro add_constraint(prog, kind, f, x, p)
+    # Convert x and p into vectors
+    x = (typeof(x)<:Symbol || x.head==:ref) ? :( [$x] ) : x
+    p = (typeof(p)<:Symbol || p.head==:ref) ? :( [$p] ) : p
+    x.head = :vect
+    p.head = :vect
+    :( constraint!($(esc(prog)), $kind, $(esc(f)),
+                   VariableArgumentBlocks($(esc(x))),
+                   ConstantArgumentBlocks($(esc(p)))) )
+end # macro
+
+macro add_constraint(prog, kind, f, x)
+    :( @add_constraint($(esc(prog)), $kind, $(esc(f)),
+                       $(esc(esc(x))), []) )
 end # macro
 
 """

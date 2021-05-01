@@ -102,21 +102,22 @@ function Base.show(io::IO, cone::ConvexCone;
     compact = get(io, :compact, false) #noinfo
 
     cone_description = Dict(
-        :zero => ("zero", "{z : z=0}"),
-        :nonpos => ("nonpositive orthant", "{z : z≤0}"),
-        :l1 => ("one-norm", "{(t, x)∈ℝ×ℝⁿ : ‖x‖₁≤t}"),
-        :soc => ("second-order", "{(t, x)∈ℝ×ℝⁿ : ‖x‖₂≤t}"),
-        :linf => ("inf-norm", "{(t, x)∈ℝ×ℝⁿ : ‖x‖∞≤t}"),
-        :geom => ("geometric", "{(t, x)∈ℝ×ℝⁿ : (x₁x₂⋯xₙ)^{1/n}≥t}"),
-        :exp => ("exponential", "{(x,y,w)∈ℝ³ : y⋅e^{x/y}≤w, y>0}"))
+        :zero => "{z : z=0}",
+        :nonpos => "{z : z≤0}",
+        :l1 => "{(t, x)∈ℝ×ℝⁿ : ‖x‖₁≤t}",
+        :soc => "{(t, x)∈ℝ×ℝⁿ : ‖x‖₂≤t}",
+        :linf => "{(t, x)∈ℝ×ℝⁿ : ‖x‖∞≤t}",
+        :geom => "{(t, x)∈ℝ×ℝⁿ : (x₁x₂⋯xₙ)^{1/n}≥t}",
+        :exp => "{(x,y,w)∈ℝ³ : y⋅e^{x/y}≤w, y>0}")
 
     @printf("Cone %s∈K, where:\n", z)
-    @printf("K is a %s cone, %s\n", cone_description[cone.kind]...)
+    @printf("K is a %s cone, %s\n", CONE_NAMES[cone.kind],
+            cone_description[cone.kind])
 
     if !compact
         # Print the value of z
         @printf("%s = \n", z)
-        io2 = IOContext(io, :indent=>3)
+        io2 = IOContext(io, :indent=>1)
         show(io2, cone.z)
     end
 
@@ -148,7 +149,7 @@ function Base.show(io::IO, F::AffineFunction)::Nothing
         try
             f_value = value(F)
             @printf("Current value =\n")
-            io2 = IOContext(io, :indent=>4)
+            io2 = IOContext(io, :indent=>1)
             show(io2, f_value)
         catch
             @printf("Not evaluated yet")
@@ -179,9 +180,51 @@ function Base.show(io::IO, cone::ConicConstraint)::Nothing
 end # function
 
 """
-    show(io, arg)
+    show(io, cone)
 
 Pretty print a conic constraint.
+
+# Arguments
+- `cone`: the affine function.
+"""
+function Base.show(io::IO, constraints::Constraints)::Nothing
+    compact = get(io, :compact, false) #noinfo
+    indent = " "^get(io, :indent, 0)
+
+    @printf(io, "%s%d constraints", indent, length(constraints))
+
+    # Print a more detailed list of constraints
+    # Collect cone types
+    cone_count = Dict(cone=>0 for cone in SUPPORTED_CONES)
+    for constraint in constraints
+        cone_count[kind(constraint)] += 1
+    end
+    # Print out
+    for cone in SUPPORTED_CONES
+        count = cone_count[cone] #noinfo
+        name = CONE_NAMES[cone] #noinfo
+        if count>0
+            @printf("\n%s  %d %s cones", indent, count, name)
+        end
+    end
+
+    if !compact
+        @printf("\n\n")
+        for cone in constraints
+            show(io, cone)
+            println()
+        end
+    end
+
+    return nothing
+end # function
+
+Base.display(constraints::Constraints) = show(stdout, constraints)
+
+"""
+    show(io, arg)
+
+Pretty print an argument block.
 
 # Arguments
 - `arg`: the argument.
@@ -269,8 +312,13 @@ function Base.show(io::IO, prog::ConicProgram)::Nothing
 
     @printf(io, "Conic linear program\n")
     @printf(io, "  %d variables (%d blocks)\n", length(prog.x), blocks(prog.x))
-    @printf(io, "  %d parameters (%d blocks)", length(prog.p), blocks(prog.p))
+    @printf(io, "  %d parameters (%d blocks)\n", length(prog.p),
+            blocks(prog.p))
 
+    io2 = IOContext(io, :indent=>2, :compact=>true)
+    show(io2, prog.constraints)
+
+    # Print a more detailed list of variables and parameters
     if !compact
         io2 = IOContext(io, :indent=>2)
         @printf("\n\n")
