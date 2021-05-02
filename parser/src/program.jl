@@ -28,7 +28,7 @@ using ECOS
 
 import JuMP: value
 
-export ConicProgram, blocks, value, constraints, cost
+export ConicProgram, blocks, value, constraints, cost, solve!
 export @new_variable, @new_parameter, @add_constraint,
     @set_cost, @set_feasibility
 
@@ -800,7 +800,7 @@ Get the value of the block.
 # Returns
 - `val`: the block's value.
 """
-function value(blk::ArgumentBlock{T, N})::BlockValue{T, N} where {T, N}
+function value(blk::ArgumentBlock{T, N})::AbstractArray where {T, N}
 
     if T<:AtomicVariable
         mdl = jump_model(blk) # The underlying optimization model
@@ -819,6 +819,46 @@ function value(blk::ArgumentBlock{T, N})::BlockValue{T, N} where {T, N}
     return val
 end # function
 
-# Convenience access functions
-constraints(prg::ConicProgram)::Constraints = prg.constraints
+"""
+    constraints(prg[, i])
+
+Get all or the `i`th constraint.
+
+# Arguments
+- `prg`: the optimization problem.
+- `i`: (optional) which constraint to get.
+
+# Returns
+The constraint(s).
+"""
+function constraints(prg::ConicProgram,
+                     i::Int=-1)::Union{Constraints, ConicConstraint}
+    if i>=0
+        return prg.constraints[i]
+    else
+        return prg.constraints
+    end
+end # function
+
+""" Get the optimization problem cost. """
 cost(prg::ConicProgram)::QuadraticCost = prg.cost[]
+
+"""
+    sovle!
+
+Description.
+
+# Arguments
+- `foo`: description.
+
+
+# Returns
+- `bar`: description.
+"""
+function solve!(prg::ConicProgram)
+    mdl = jump_model(prg)
+    optimize!(mdl)
+    status = termination_status(mdl)
+    # TODO set the dual variables
+    return status
+end # function
