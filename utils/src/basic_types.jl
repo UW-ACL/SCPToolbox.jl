@@ -54,11 +54,17 @@ function (::Type{RealArray{n}})(args...)::Array{Float64, n} where n
 end # function
 
 const AffineExpression = GenericAffExpr{Float64, VariableRef}
+const QuadraticExpression = GenericQuadExpr{Float64, VariableRef}
 const VariableTypes = [RealTypes..., VariableRef, AffineExpression]
+const QuadVariableTypes = [VariableTypes..., QuadraticExpression]
 const Variable = Union{[T for T in VariableTypes]...}
+const QuadVariable = Union{[T for T in QuadVariableTypes]...}
 const VariableArray{n} = Union{[Array{T, n} for T in VariableTypes]...}
+const QuadVariableArray{n} = Union{[Array{T, n} for T in QuadVariableTypes]...}
 const VariableVector = VariableArray{1}
 const VariableMatrix = VariableArray{2}
+const QuadVariableVector = QuadVariableArray{1}
+const QuadVariableMatrix = QuadVariableArray{2}
 
 const Constraint = ConstraintRef
 const ConstraintArray{n} = Array{Constraint, n}

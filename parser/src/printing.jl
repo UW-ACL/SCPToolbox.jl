@@ -20,6 +20,8 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("program.jl")
 end
 
+using JuMP
+
 """
     print_indices(id[, limit])
 
@@ -62,24 +64,51 @@ function print_indices(id::LocationIndices, limit::Int=3)::String
 end # function
 
 """
+    _string_round(f)
+
+Override JuMP's low level floating point printing command to print a smller
+number of decimal places.
+
+# Arguments
+- `f`: the floating point number.
+
+# Returns
+The rounded floating point number as a string.
+"""
+function JuMP._string_round(f::Float64)
+    iszero(f) && return "0" # strip sign off zero
+    precision = 3 # Number of decimal points
+    str = string(round(f; digits=precision))
+    return length(str) >= 2 && str[end-1:end] == ".0" ? str[1:end-2] : str
+end
+
+"""
     show(z)
 
 Print the value of an abstract array, which can be a variable vector.
 
 # Arguments
+- `io`: stream object.
 - `z`: the vector to be printed.
 """
-function Base.show(io::IO, z::AbstractArray)::Nothing
+function print_array(io::IO, z::AbstractArray)::Nothing
     compact = get(io, :compact, false) #noinfo
     io_value = IOBuffer()
+    max_rows, max_cols = 10, 50
     indent = " "^get(io, :indent, 0)
-    io2_value = IOContext(io_value, :limit=>true, :displaysize=>(10, 50))
+    io2_value = IOContext(io_value,
+                          :limit=>true,
+                          :displaysize=>(max_rows, max_cols),
+                          :compact=>true)
     show(io2_value, MIME("text/plain"), z)
     value_str = String(take!(io_value))
     # Print line by line
     rows = split(value_str, "\n")[2:end]
     for i=1:length(rows)
         row = rows[i]
+        if length(row) > max_cols
+            row = row[1:max_cols]*" …"
+        end
         newline = (i==length(rows)) ? "" : "\n"
         @printf(io, "%s%s%s", indent, row, newline)
     end
@@ -92,13 +121,13 @@ end
 Pretty print the cone.
 
 # Arguments
+- `io`: stream object.
 - `cone`: the cone constraint to be printed.
 
 # Keywords
 - `z`: (optional) the string to use for the value constrained inside the cone.
 """
-function Base.show(io::IO, cone::ConvexCone;
-                   z::String="z")::Nothing
+function Base.show(io::IO, cone::ConvexCone; z::String="z")::Nothing
     compact = get(io, :compact, false) #noinfo
 
     cone_description = Dict(
@@ -118,10 +147,20 @@ function Base.show(io::IO, cone::ConvexCone;
         # Print the value of z
         @printf("%s = \n", z)
         io2 = IOContext(io, :indent=>1)
-        show(io2, cone.z)
+        print_array(io2, cone.z)
     end
 
     return nothing
+end # function
+
+"""
+Get string description of the kind of function this is.
+"""
+function function_kind(F::T)::String where {T<:GeneralFunction}
+    value_type = typeof(F.f.out[].value)
+    affine_type = AffineFunctionValueType
+    kind = (value_type<:affine_type) ? "Affine" : "Quadratic"
+    return kind
 end # function
 
 """
@@ -130,19 +169,26 @@ end # function
 Pretty print an affine function.
 
 # Arguments
+- `io`: stream object.
 - `F`: the affine function.
 """
-function Base.show(io::IO, F::AffineFunction)::Nothing
+function Base.show(io::IO, F::T)::Nothing where {T<:GeneralFunction}
     compact = get(io, :compact, false) #noinfo
 
-    @printf("Arguments of f:\n")
+    @printf(io, "%s function\n", function_kind(F))
+
     all_args = vcat(F.x, F.p)
-    longest_name = maximum([length(arg.name) for arg in all_args])
-    name_fmt = @sprintf("  %%-%ds", longest_name)
-    for arg in all_args
-        @eval @printf($(name_fmt), $(arg).name)
-        @printf(" (block %d) : ", arg.blid)
-        @printf("%s\n", print_indices(arg.elid))
+    if isempty(all_args)
+        @printf("Constant\n")
+    else
+        @printf("Arguments:\n")
+        longest_name = maximum([length(arg.name) for arg in all_args])
+        name_fmt = @sprintf("  %%-%ds", longest_name)
+        for arg in all_args
+            @eval @printf($(name_fmt), $(arg).name)
+            @printf(" (block %d) : ", arg.blid)
+            @printf("%s\n", print_indices(arg.elid))
+        end
     end
 
     if !compact
@@ -150,10 +196,54 @@ function Base.show(io::IO, F::AffineFunction)::Nothing
             f_value = value(F)
             @printf("Current value =\n")
             io2 = IOContext(io, :indent=>1)
-            show(io2, f_value)
+            print_array(io2, f_value)
         catch
             @printf("Not evaluated yet")
         end
+    end
+
+    return nothing
+end # function
+
+"""
+    show(io, F)
+
+Pretty print the cost function.
+
+# Arguments
+- `io`: stream object.
+- `cost`: the cost function.
+"""
+function Base.show(io::IO, cost::QuadraticCost)::Nothing
+    compact = get(io, :compact, false) #noinfo
+    show(io, cost.J)
+    return nothing
+end # function
+
+"""
+    show(io, f)
+
+Pretty print a differentiable function object.
+
+# Arguments
+- `io`: stream object.
+- `f`: the differentiable function object.
+"""
+function Base.show(io::IO, f::DifferentiableFunction)::Nothing
+    compact = get(io, :compact, false) #noinfo
+
+    @printf("Differentiable function:\n")
+    @printf("  %d variable arguments\n", f.xargs)
+    @printf("  %d constant arguments\n", f.pargs)
+    @printf("  Parameter container: %s\n", typeof(f.consts[]))
+
+    if f.evaluated
+        @printf("  %d Jacobians available\n", length(all_jacobians(f.out[])))
+        @printf("  Current value =\n")
+        io2 = IOContext(io, :indent=>3)
+        print_array(io2, value(f))
+    else
+        @printf("  Not evaluated.")
     end
 
     return nothing
@@ -165,6 +255,7 @@ end # function
 Pretty print a conic constraint.
 
 # Arguments
+- `io`: stream object.
 - `cone`: the affine function.
 """
 function Base.show(io::IO, cone::ConicConstraint)::Nothing
@@ -185,6 +276,7 @@ end # function
 Pretty print a conic constraint.
 
 # Arguments
+- `io`: stream object.
 - `cone`: the affine function.
 """
 function Base.show(io::IO, constraints::Constraints)::Nothing
@@ -219,14 +311,13 @@ function Base.show(io::IO, constraints::Constraints)::Nothing
     return nothing
 end # function
 
-Base.display(constraints::Constraints) = show(stdout, constraints)
-
 """
     show(io, arg)
 
 Pretty print an argument block.
 
 # Arguments
+- `io`: stream object.
 - `arg`: the argument.
 """
 function Base.show(io::IO, arg::ArgumentBlock{T})::Nothing where T
@@ -252,12 +343,10 @@ function Base.show(io::IO, arg::ArgumentBlock{T})::Nothing where T
     @printf(io, "  Type: %s\n", typeof(arg.value))
     @printf(io, "  Value =\n")
     io2 = IOContext(io, :indent=>4, :compact=>true)
-    show(io2, arg.value)
+    print_array(io2, arg.value)
 
     return nothing
 end # function
-
-Base.display(arg::ArgumentBlock) = show(stdout, arg)
 
 """
     show(io, arg)
@@ -265,6 +354,7 @@ Base.display(arg::ArgumentBlock) = show(stdout, arg)
 Pretty print an argument.
 
 # Arguments
+- `io`: stream object.
 - `arg`: argument structure.
 """
 function Base.show(io::IO, arg::Argument{T})::Nothing where {T<:AtomicArgument}
@@ -305,12 +395,19 @@ end # function
 Pretty print the conic program.
 
 # Arguments
+- `io`: stream object.
 - `prog`: the conic program data structure.
 """
 function Base.show(io::IO, prog::ConicProgram)::Nothing
     compact = get(io, :compact, false) #noinfo
 
-    @printf(io, "Conic linear program\n")
+    @printf(io, "Conic linear program\n\n")
+    if is_feasibility(prog)
+        @printf("  Feasibility problem\n")
+    else
+        kind = function_kind(cost(prog).J)
+        @printf("  %s cost function\n", kind)
+    end
     @printf(io, "  %d variables (%d blocks)\n", length(prog.x), blocks(prog.x))
     @printf(io, "  %d parameters (%d blocks)\n", length(prog.p),
             blocks(prog.p))
@@ -329,3 +426,30 @@ function Base.show(io::IO, prog::ConicProgram)::Nothing
 
     return nothing
 end # function
+
+"""
+    show(io, mime, obj)
+
+A wrapper of the above `show` functions when `MIME` argument is passed in (it
+is just ignored!).
+
+# Arguments
+- `io`: stream object.
+- `obj`: the object to be printed.
+- `args...`: any other arguments the underlying `show` function accepts.
+
+# Keywords
+- `kwargs...`: any other keyword arguments the underlying `show` function
+  accepts.
+"""
+Base.show(io::IO, ::MIME"text/plain",
+          constraints::Union{
+              ConvexCone,
+              GeneralFunction,
+              DifferentiableFunction,
+              ConicConstraint,
+              Constraints,
+              ArgumentBlock,
+              Argument,
+              ConicProgram},
+          args...; kwargs...) = show(io, constraints, args...; kwargs...)

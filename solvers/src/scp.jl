@@ -671,7 +671,7 @@ function discretize!(
         EV = V[idcs.E]
 
         # Extract the discrete-time update matrices for this time interval
-	A_k = reshape(AV, (nx, nx))
+        A_k = reshape(AV, (nx, nx))
         Bm_k = A_k*reshape(BmV, (nx, nu))
         Bp_k = A_k*reshape(BpV, (nx, nu))
         F_k = A_k*reshape(FV, (nx, np))

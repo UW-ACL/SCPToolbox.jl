@@ -28,8 +28,9 @@ using ECOS
 
 import JuMP: value
 
-export ConicProgram, blocks, variable!, value
-export @new_variable, @new_parameter
+export ConicProgram, blocks, value, constraints, cost
+export @new_variable, @new_parameter, @add_constraint,
+    @set_cost, @set_feasibility
 
 const AtomicVariable = VariableRef
 const AtomicConstant = Float64
@@ -73,7 +74,7 @@ mutable struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArray{T, N}
         # Initialize the value
         if T<:AtomicVariable
             value = Array{AtomicVariable, N}(undef, shape...)
-            populate!(value, arg.prog[].mdl; name=name)
+            populate!(value, jump_model(arg); name=name)
         else
             value = fill(NaN, shape...)
         end
@@ -138,6 +139,7 @@ Base.view(blk::ArgumentBlock, I...) = ArgumentBlock(blk, I...; link=true)
 Base.setindex!(blk::ArgumentBlock{T}, v::T, i::Int) where T = blk.value[i] = v
 Base.setindex!(blk::ArgumentBlock{T}, v::T,
                I::Vararg{Int, N}) where {T, N} = blk.value[I...] = v
+Base.collect(blk::ArgumentBlock) = [blk]
 
 const BlockBroadcastStyle = Broadcast.ArrayStyle{ArgumentBlock}
 Broadcast.BroadcastStyle(::Type{<:ArgumentBlock}) = BlockBroadcastStyle()
@@ -188,37 +190,26 @@ const ConstantArgument = Argument{AtomicConstant}
 const ConstantArgumentBlocks = ArgumentBlocks{AtomicConstant}
 
 """
-TODO update docstring
-`AffineFunction` defines an affine function that is used to create conic
-constraints in geometric form. The function accepts a list of argument blocks
-(variables and parameters). During creation time, the user specifies the value
-and Jacobians of the function. In particular, the following can be evaluated:
+`GeneralFunction` defines a general (i.e., affine or quadratic) function that
+gets used as a building block in the conic program. The function accepts a list
+of argument blocks (variables and parameters) that it depends on, and the
+underlying `DifferentiableFunction` function that performs the value and
+Jacobian computation.
 
-- `f(x, p)` (via the `f` member). This returns an `n`-element
-  `Vector{Float64}`.
-- `∇x f(x, p)` (via the `Jx` member). This returns an `n,n`-element
-  `Matrix{Float64}`.
-- `∇p f(x, p)` (via the `Jp` member). This returns an `n,n`-element
-  `Matrix{Float64}`.
-- `∇px f(x, p)` (via the `Jpx` member). This returns an `n,n,d`-element
-  `Array{Float64, 3}` tensor. Each index along the third dimension represents a
-  Hessian with respect to a single parameter, i.e. a derivative of `∇x f` with
-  respect to `p[i]`.
-
-When evaluating the function, the values of `x` and `p` are passed and not the
-wrapper `ArgumentBlock` structs themselves. So the function has to be defined
-such that is is able to operate on both `AtomicVariable` and `AtomicConstant`
-types.
+By wrapping `DifferentiableFunction` in this way, the aim is to store the
+variables and parameters that this otherwise generic "mathematical object" (the
+function) depends on. With this information, we can automatically compute
+Jacobians for the KKT conditions.
 """
-struct AffineFunction
-    f::DifferentiableFunction # The core computation method
-    x::VariableArgumentBlocks # Variable arguments
-    p::ConstantArgumentBlocks # Constant arguments
+struct GeneralFunction{T<:FunctionValueType}
+    f::DifferentiableFunction{T} # The core computation method
+    x::VariableArgumentBlocks    # Variable arguments
+    p::ConstantArgumentBlocks    # Constant arguments
 
     """
-        AffineFunction(prog, x, p)
+        GeneralFunction{T}(prog, x, p)
 
-    Affine function constructor.
+    General (affine or quadratic) function constructor.
 
     # Arguments
     - `prog`: the optimization program.
@@ -228,28 +219,31 @@ struct AffineFunction
       Jacobians.
 
     # Returns
-    - `Axb`: the affine function object.
+    - `F`: the function object.
     """
-    function AffineFunction(
+    function GeneralFunction{T}(
         prog::AbstractConicProgram,
         x::VariableArgumentBlocks,
         p::ConstantArgumentBlocks,
-        f::Function)::AffineFunction
+        f::Function)::GeneralFunction{T} where {T<:FunctionValueType}
 
         # Create the differentiable function wrapper
         xargs = length(x)
         pargs = length(p)
         consts = prog.pars[]
-        f = DifferentiableFunction(f, xargs, pargs, consts)
+        f = DifferentiableFunction{T}(f, xargs, pargs, consts)
 
-        Axb = new(f, x, p)
+        F = new{T}(f, x, p)
 
-        return Axb
+        return F
     end # function
 end # struct
 
+const AffineFunction = GeneralFunction{AffineFunctionValueType}
+const QuadraticFunction = GeneralFunction{QuadraticFunctionValueType}
+
 """
-    Axb([args...][; jacobians])
+    F([args...][; jacobians])
 
 Compute the function value and Jacobians. This basically forwards data to the
 underlying `DifferentiableFunction`, which handles the computation.
@@ -257,7 +251,7 @@ underlying `DifferentiableFunction`, which handles the computation.
 # Arguments
 - `args`: (optional) evaluate the function for these input argument values. If
   not provided, the function is evaluated at the values of the internally
-  stored blocks on which is depends.
+  stored blocks on which it depends.
 
 # Keywords
 - `jacobians`: (optional) set to true in order to compute the Jacobians as
@@ -267,17 +261,18 @@ underlying `DifferentiableFunction`, which handles the computation.
 - `f`: the function value. The Jacobians can be queried later by using the
   `jacobian` function.
 """
-function (Axb::AffineFunction)(args::BlockValue{AtomicConstant}...;
-                               jacobians::Bool=false)::FunctionValueType
+function (F::GeneralFunction{T})(
+    args::BlockValue{AtomicConstant}...;
+    jacobians::Bool=false)::T where {T<:FunctionValueType}
 
     # Compute the input argument values
     if isempty(args)
-        x_input = [value(blk) for blk in Axb.x]
-        p_input = [value(blk) for blk in Axb.p]
+        x_input = [value(blk) for blk in F.x]
+        p_input = [value(blk) for blk in F.p]
         args = vcat(x_input, p_input)
     end
 
-    f_value = Axb.f(args...; jacobians) # Core call
+    f_value = F.f(args...; jacobians) # Core call
 
     return f_value
 end # function
@@ -285,10 +280,9 @@ end # function
 """
 Convenience methods that pass the calls down to `DifferentiableFunction`.
 """
-value(F::AffineFunction)::FunctionValueType = value(F.f)
-jacobian(F::AffineFunction,
+value(F::GeneralFunction{T}) where T = value(F.f)
+jacobian(F::GeneralFunction,
          key::JacobianKeys)::JacobianValueType = jacobian(F.f, key)
-
 
 """
 `ConicConstraint` defines a conic constraint for the optimization program. It
@@ -327,7 +321,7 @@ struct ConicConstraint
         # Create the underlying JuMP constraint
         f_value = f()
         K = ConvexCone(f_value, kind)
-        constraint = add!(prog.mdl, K)
+        constraint = add!(jump_model(prog), K)
 
         finK = new(f, K, constraint, prog)
 
@@ -335,18 +329,62 @@ struct ConicConstraint
     end # function
 end # struct
 
+const Constraints = Vector{ConicConstraint}
+
 # Get the kind of cone
 kind(finK::ConicConstraint)::Symbol = kind(finK.K)
 
-const Constraints = Vector{ConicConstraint}
+"""
+`QuadraticCost` stores the objective function of the problem. The goal is to
+minimize this function. The function can be at most quadratic, however for
+robustness (in JuMP) it has been observed that it is best to reformulate the
+problem (via epigraph form) such that this function is affine. """
+struct QuadraticCost
+    J::QuadraticFunction            # The core function
+    jump::Types.QuadraticExpression # JuMP function object
+    prog::Ref{AbstractConicProgram} # The parent conic program
+
+    """
+        QuadraticCost(J)
+
+    Basic constructor. This will also call the appropriate JuMP function to
+    associate the cost with the JuMP optimization model object.
+
+    # Arguments
+    - `J`: at most a quadratic function, that is to be minimized.
+    - `prog`: the parent conic program which this is to be the cost of.
+
+    # Returns
+    - `cost`: the newly created cost function object.
+    """
+    function QuadraticCost(J::QuadraticFunction,
+                           prog::AbstractConicProgram)::QuadraticCost
+
+        # Create the underlying JuMP cost
+        J_value = J()[1]
+        set_objective_function(jump_model(prog), J_value)
+        jump = objective_function(jump_model(prog))
+        set_objective_sense(jump_model(prog), MOI.MIN_SENSE)
+
+        cost = new(J, jump, prog)
+
+        return cost
+    end # function
+end # struct
+
+# Get the current objective function value
+value(J::QuadraticCost) = value(J.J)[1]
 
 """ Conic clinear program main class. """
 mutable struct ConicProgram <: AbstractConicProgram
-    mdl::Model          # Core JuMP optimization model
-    pars::Ref           # A parameter structure used for problem definition
-    x::VariableArgument # Decision variable vector
-    p::ConstantArgument # Parameter vector
-    constraints::Constraints # List of conic constraints
+    mdl::Model                # Core JuMP optimization model
+    pars::Ref                 # Problem definition parameters
+    x::VariableArgument       # Decision variable vector
+    p::ConstantArgument       # Parameter vector
+    cost::Ref{QuadraticCost}  # The cost function to minimize
+    constraints::Constraints  # List of conic constraints
+
+    _feasibility::Bool        # Flag if feasibility problem
 
     """
         ConicProgram([solver][; solver_options])
@@ -388,16 +426,32 @@ mutable struct ConicProgram <: AbstractConicProgram
         # Constraints
         constraints = Constraints()
 
+        # Objective to minimize (empty for now)
+        cost = Ref{QuadraticCost}()
+        _feasibility = true
+
         # Combine everything into a conic program
-        prog = new(mdl, pars, x, p, constraints)
+        prog = new(mdl, pars, x, p, cost, constraints,
+                   _feasibility)
 
         # Associate the arguments with the newly created program
         link!(x, prog)
         link!(p, prog)
 
+        # Add a zero objective (feasibility problem)
+        cost!(prog, feasibility_cost, [], [])
+
         return prog
     end # function
 end # struct
+
+"""
+Get the underlying JuMP optimization model object, starting from various
+structures composing the conic program.
+"""
+jump_model(prog::ConicProgram)::Model = prog.mdl
+jump_model(arg::Argument)::Model = arg.prog[].mdl
+jump_model(blk::ArgumentBlock)::Model = blk.arg[].prog[].mdl
 
 """
     populate!(X, mdl[, sub][; name])
@@ -416,11 +470,11 @@ recursive function.
 """
 function populate!(X, mdl::Model, sub::String=""; name::String="")::Nothing
     if length(X)==1
-        full_name = isempty(sub) ? name : name*"_"*sub
+        full_name = isempty(sub) ? name : name*"["*sub[1:end-1]*"]"
         X[1] = @variable(mdl, base_name=full_name) #noinfo
     else
         for i=1:size(X, 1)
-            nsub = sub*string(i)
+            nsub = sub*string(i)*","
             populate!(view(X, i, :), mdl, nsub; name=name)
         end
     end
@@ -525,7 +579,7 @@ end # function
 
 Create a conic constraint and add it to the problem. The heavy computation is
 done by the user-supplied function `f`, which has to satisfy the requirements
-of `DifferentiableFunction`.
+of `AffineDifferentiableFunction`.
 
 # Arguments
 - `prog`: the optimization program.
@@ -540,8 +594,9 @@ of `DifferentiableFunction`.
 function constraint!(prog::ConicProgram,
                      kind::Symbol,
                      f::Function,
-                     x::VariableArgumentBlocks,
-                     p::ConstantArgumentBlocks)
+                     x, p)::ConicConstraint
+    x = VariableArgumentBlocks(collect(x))
+    p = ConstantArgumentBlocks(collect(p))
     Axb = AffineFunction(prog, x, p, f)
     new_constraint = ConicConstraint(Axb, kind, prog)
     push!(prog.constraints, new_constraint)
@@ -549,9 +604,37 @@ function constraint!(prog::ConicProgram,
 end # function
 
 """
-    @new_argument(prog, shape, name, kind)
+    cost!(prog, J, x, p)
 
-Macro to create a new variable.
+Set the cost of the conic program. The heavy computation is done by the
+user-supplied function `J`, which has to satisfy the requirements of
+`QuadraticDifferentiableFunction`.
+
+# Arguments
+- `prog`: the optimization program.
+- `J`: the core method that can compute the function value and its Jacobians.
+- `x`: the variable argument blocks.
+- `p`: the parameter argument blocks.
+
+# Returns
+- `new_cost`: the newly created cost.
+"""
+function cost!(prog::ConicProgram,
+               J::Function,
+               x, p)::QuadraticCost
+    x = VariableArgumentBlocks(collect(x))
+    p = ConstantArgumentBlocks(collect(p))
+    J = QuadraticFunction(prog, x, p, J)
+    new_cost = QuadraticCost(J, prog)
+    prog.cost[] = new_cost
+    prog._feasibility = false
+    return new_cost
+end # function
+
+"""
+    new_argument(prog, shape, name, kind)
+
+Add a new argument to the problem.
 
 # Arguments
 - `prog`: the conic program object.
@@ -562,21 +645,14 @@ Macro to create a new variable.
 # Returns
 The newly created argument object.
 """
-macro new_argument(prog, shape, name, kind)
-    @assert typeof(kind)<:QuoteNode
-    func = (kind.value==:variable) ? :(variable!) : :(parameter!)
-
-    if typeof(shape)<:Expr
-        # Array variable
-        @assert shape.head == :vect || shape.head == :tuple
-        @assert ndims(shape.args) == 1
-        shape = shape.args
-        :( $func($(esc(prog)), $(shape...); name=$name) )
-    else
-        # Scalar variable
-        :( $func($(esc(prog)), $shape; name=$name) )
-    end
-end # macro
+function new_argument(prog::ConicProgram,
+                      shape,
+                      name::Union{String, Nothing},
+                      kind::Symbol)::ArgumentBlock
+    f = (kind==:variable) ? variable! : parameter!
+    shape = collect(shape)
+    return f(prog, shape...; name=name)
+end # function
 
 """
     @new_variable(prog, shape, name)
@@ -587,19 +663,21 @@ end # macro
 The following macros specialize `@new_argument` for creating variables.
 """
 macro new_variable(prog, shape, name)
-    :( @new_argument($(esc(prog)), $shape, $name, :variable) )
+    var = QuoteNode(:variable)
+    :( new_argument($(esc.([prog, shape, name, var])...)) )
 end # macro
 
 macro new_variable(prog, shape_or_name)
+    var = QuoteNode(:variable)
     if typeof(shape_or_name)<:String
-        :( @new_variable($(esc(prog)), 1, $shape_or_name) )
+        :( new_argument($(esc.([prog, 1, shape_or_name, var])...)) )
     else
-        :( @new_variable($(esc(prog)), $shape_or_name, nothing) )
+        :( new_argument($(esc.([prog, shape_or_name, nothing, var])...)) )
     end
 end # macro
 
 macro new_variable(prog)
-    :( @new_variable($(esc(prog)), 1, nothing) )
+    :( new_argument($(esc(prog)), 1, nothing, :variable) )
 end # macro
 
 """
@@ -611,19 +689,21 @@ end # macro
 The following macros specialize `@new_argument` for creating parameters.
 """
 macro new_parameter(prog, shape, name)
-    :( @new_argument($(esc(prog)), $shape, $name, :parameter) )
+    var = QuoteNode(:parameter)
+    :( new_argument($(esc.([prog, shape, name, var])...)) )
 end # macro
 
 macro new_parameter(prog, shape_or_name)
+    var = QuoteNode(:parameter)
     if typeof(shape_or_name)<:String
-        :( @new_parameter($(esc(prog)), 1, $shape_or_name) )
+        :( new_argument($(esc.([prog, 1, shape_or_name, var])...)) )
     else
-        :( @new_parameter($(esc(prog)), $shape_or_name, nothing) )
+        :( new_argument($(esc.([prog, shape_or_name, nothing, var])...)) )
     end
 end # macro
 
 macro new_parameter(prog)
-    :( @new_parameter($(esc(prog)), 1, nothing) )
+    :( new_argument($(esc(prog)), 1, nothing, :parameter) )
 end # macro
 
 """
@@ -645,20 +725,69 @@ the function `constraint!`, so look there for more info.
 The newly created `ConicConstraint` object.
 """
 macro add_constraint(prog, kind, f, x, p)
-    # Convert x and p into vectors
-    x = (typeof(x)<:Symbol || x.head==:ref) ? :( [$x] ) : x
-    p = (typeof(p)<:Symbol || p.head==:ref) ? :( [$p] ) : p
-    x.head = :vect
-    p.head = :vect
-    :( constraint!($(esc(prog)), $kind, $(esc(f)),
-                   VariableArgumentBlocks($(esc(x))),
-                   ConstantArgumentBlocks($(esc(p)))) )
+    :( constraint!($(esc.([prog, kind, f, x, p])...)) )
 end # macro
 
 macro add_constraint(prog, kind, f, x)
-    :( @add_constraint($(esc(prog)), $kind, $(esc(f)),
-                       $(esc(esc(x))), []) )
+    :( constraint!($(esc.([prog, kind, f, x, []])...)) )
 end # macro
+
+"""
+    @set_cost(prog, J, x, p)
+    @set_cost(prog, J, x)
+    @set_feasibility(prog, J)
+
+Set the optimization problem cost. This is just a wrapper of the function
+`cost!`, so look there for more info. When both `x` and `p` arguments are
+ommitted, the cost is constant so this must be a feasibility problem. In this
+case, the macro name is `@set_feasibility`
+
+# Arguments
+- `prog`: the optimization program.
+- `J`: the core method that can compute the function value and its Jacobians.
+- `x`: (optional) the variable argument blocks, as a vector/tuple/single
+  element.
+- `p`: (optional) the parameter argument blocks, as a vector/tuple/single
+  element.
+
+# Returns
+- `bar`: description.
+"""
+macro set_cost(prog, J, x, p)
+    :( cost!($(esc.([prog, J, x, p])...)) )
+end # macro
+
+macro set_cost(prog, J, x)
+    :( cost!($(esc.([prog, J, x, []])...)) )
+end # macro
+
+macro set_feasibility(prog)
+    quote
+        $(esc(prog))._feasibility = true
+        cost!($(esc(prog)), feasibility_cost, [], [])
+    end
+end # macro
+
+is_feasibility(prog::ConicProgram)::Bool = prog._feasibility
+
+"""
+    feasibility_cost(pars, jacobians)
+
+A dummy function which represents a feasibility cost.
+
+# Arguments
+- `args...`: all arguments are ignored.
+
+# Returns
+- `J`: a constant-zero function representing the cost of a feasibility
+  optimization problem.
+"""
+function feasibility_cost(
+    args...)::DifferentiableFunctionOutput #nowarn
+
+    J = DifferentiableFunctionOutput(0.0)
+    return J
+end # function
 
 """
     value(blk)
@@ -674,7 +803,7 @@ Get the value of the block.
 function value(blk::ArgumentBlock{T, N})::BlockValue{T, N} where {T, N}
 
     if T<:AtomicVariable
-        mdl = blk.arg[].prog[].mdl # The underlying optimization model
+        mdl = jump_model(blk) # The underlying optimization model
         if termination_status(mdl)==MOI.OPTIMIZE_NOT_CALLED
             # Optimization not yet performed, so return the variables
             # themselves
@@ -689,3 +818,7 @@ function value(blk::ArgumentBlock{T, N})::BlockValue{T, N} where {T, N}
 
     return val
 end # function
+
+# Convenience access functions
+constraints(prg::ConicProgram)::Constraints = prg.constraints
+cost(prg::ConicProgram)::QuadraticCost = prg.cost[]

@@ -35,5 +35,6 @@ end # module
 
 using .ConicLinearProgram
 export ConicProgram, blocks, variable!, value
+export @new_variable, @new_parameter
 
 end # module
