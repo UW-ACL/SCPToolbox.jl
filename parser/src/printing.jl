@@ -78,12 +78,14 @@ The rounded floating point number as a string.
 function JuMP._string_round(f::Float64)
     iszero(f) && return "0" # strip sign off zero
     precision = 3 # Number of decimal points
-    str = string(round(f; digits=precision))
+    # str = string(round(f; digits=precision))
+    fmt = @sprintf("%%.%de", precision)
+    str = @eval @sprintf($fmt, $f)
     return length(str) >= 2 && str[end-1:end] == ".0" ? str[1:end-2] : str
 end
 
 """
-    show(z)
+    print_array(io, z)
 
 Print the value of an abstract array, which can be a variable vector.
 
@@ -116,7 +118,7 @@ function print_array(io::IO, z::AbstractArray)::Nothing
 end
 
 """
-    show(cone)
+    show(io, cone[; z])
 
 Pretty print the cone.
 
@@ -130,18 +132,22 @@ Pretty print the cone.
 function Base.show(io::IO, cone::ConvexCone; z::String="z")::Nothing
     compact = get(io, :compact, false) #noinfo
 
-    cone_description = Dict(
-        :zero => "{z : z=0}",
-        :nonpos => "{z : z≤0}",
-        :l1 => "{(t, x)∈ℝ×ℝⁿ : ‖x‖₁≤t}",
-        :soc => "{(t, x)∈ℝ×ℝⁿ : ‖x‖₂≤t}",
-        :linf => "{(t, x)∈ℝ×ℝⁿ : ‖x‖∞≤t}",
-        :geom => "{(t, x)∈ℝ×ℝⁿ : (x₁x₂⋯xₙ)^{1/n}≥t}",
-        :exp => "{(x,y,w)∈ℝ³ : y⋅e^{x/y}≤w, y>0}")
+    if kind(cone)==:free
+        @printf("Unconstrained %s\n", z)
+    else
+        cone_description = Dict(
+            :zero => "{z : z=0}",
+            :nonpos => "{z : z≤0}",
+            :l1 => "{(t, x)∈ℝ×ℝⁿ : ‖x‖₁≤t}",
+            :soc => "{(t, x)∈ℝ×ℝⁿ : ‖x‖₂≤t}",
+            :linf => "{(t, x)∈ℝ×ℝⁿ : ‖x‖∞≤t}",
+            :geom => "{(t, x)∈ℝ×ℝⁿ : (x₁x₂⋯xₙ)^{1/n}≥t}",
+            :exp => "{(x,y,w)∈ℝ³ : y⋅e^{x/y}≤w, y>0}")
 
-    @printf("Cone %s∈K, where:\n", z)
-    @printf("K is a %s cone, %s\n", CONE_NAMES[cone.kind],
-            cone_description[cone.kind])
+        @printf("Cone %s∈K, where:\n", z)
+        @printf("K is a %s cone, %s\n", CONE_NAMES[cone.kind],
+                cone_description[cone.kind])
+    end
 
     if !compact
         # Print the value of z
@@ -261,6 +267,8 @@ Pretty print a conic constraint.
 function Base.show(io::IO, cone::ConicConstraint)::Nothing
     compact = get(io, :compact, false) #noinfo
 
+    @printf(io, "Name: %s\n", name(cone))
+
     show(io, cone.K; z="f(x,p)")
     println()
 
@@ -362,7 +370,7 @@ function Base.show(io::IO, arg::Argument{T})::Nothing where {T<:AtomicArgument}
 
     isvar = T<:AtomicVariable
     kind = isvar ? "Variable" : "Parameter"
-    n_blocks = blocks(arg)
+    n_blocks = num_blocks(arg)
     indent = " "^get(io, :indent, 0)
 
     @printf(io, "%s%s argument\n", indent, kind)
@@ -408,12 +416,12 @@ function Base.show(io::IO, prog::ConicProgram)::Nothing
         kind = function_kind(cost(prog).J)
         @printf("  %s cost function\n", kind)
     end
-    @printf(io, "  %d variables (%d blocks)\n", length(prog.x), blocks(prog.x))
+    @printf(io, "  %d variables (%d blocks)\n", length(prog.x), num_blocks(prog.x))
     @printf(io, "  %d parameters (%d blocks)\n", length(prog.p),
-            blocks(prog.p))
+            num_blocks(prog.p))
 
     io2 = IOContext(io, :indent=>2, :compact=>true)
-    show(io2, prog.constraints)
+    show(io2, constraints(prog))
 
     # Print a more detailed list of variables and parameters
     if !compact

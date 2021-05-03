@@ -28,7 +28,8 @@ using ECOS
 
 import JuMP: value, dual
 
-export ConicProgram, blocks, value, dual, constraints, cost, solve!
+export ConicProgram, num_blocks, value, dual, constraints, name, cost, solve!,
+    vary!
 export @new_variable, @new_parameter, @add_constraint,
     @set_cost, @set_feasibility
 
@@ -38,11 +39,15 @@ const AtomicArgument = Union{AtomicVariable, AtomicConstant}
 const BlockValue{T,N} = AbstractArray{T,N}
 const LocationIndices = Array{Int}
 
+# Symbols denoting a variable or a parameter
+const VARIABLE = :variable
+const PARAMETER = :parameter
+
 abstract type AbstractArgument{T<:AtomicArgument} end
 abstract type AbstractConicProgram end
 
 """ A block in the overall argument. """
-mutable struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArray{T, N}
+struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArray{T, N}
     value::BlockValue{T, N}       # The value of the block
     name::String                  # Argument name
     blid::Int                     # Block number in the argument
@@ -140,10 +145,23 @@ Base.setindex!(blk::ArgumentBlock{T}, v::T, i::Int) where T = blk.value[i] = v
 Base.setindex!(blk::ArgumentBlock{T}, v::T,
                I::Vararg{Int, N}) where {T, N} = blk.value[I...] = v
 Base.collect(blk::ArgumentBlock) = [blk]
+Base.iterate(blk::ArgumentBlock, state::Int=1) = iterate(blk.value, state)
 
 const BlockBroadcastStyle = Broadcast.ArrayStyle{ArgumentBlock}
 Broadcast.BroadcastStyle(::Type{<:ArgumentBlock}) = BlockBroadcastStyle()
 Broadcast.broadcastable(blk::ArgumentBlock) = blk
+
+""" Get the block name. """
+name(blk::ArgumentBlock)::String = blk.name
+
+""" Get the kind of block (`VARIABLE` or `PARAMETER`). """
+function kind(::ArgumentBlock{T})::Symbol where {T<:AtomicArgument}
+    if T<:AtomicVariable
+        return VARIABLE
+    else
+        return PARAMETER
+    end
+end # function
 
 const ArgumentBlocks{T} = Vector{ArgumentBlock{T}}
 
@@ -174,14 +192,36 @@ mutable struct Argument{T<:AtomicArgument} <: AbstractArgument{T}
     end # function
 end # struct
 
-# Some helper functions for Argument
-blocks(arg::Argument) = length(arg.blocks)
+""" Get the number of blocks. """
+num_blocks(arg::Argument) = length(arg.blocks)
 
 """
 Support some array operations for Argument.
 """
 Base.length(arg::Argument) = arg.numel
 Base.getindex(arg::Argument, I...) = arg.blocks[I...]
+
+"""
+    iterate(arg[, state])
+
+Iterate over the blocks of an argument.
+
+# Arguments
+- `arg`: the argument object.
+- `state`: (internal) the current iterator state.
+
+# Returns
+The current block and the next state, or `nothing` if at the end.
+"""
+function Base.iterate(arg::Argument,
+                      state::Int=1)::Union{
+                          Nothing, Tuple{ArgumentBlock, Int}}
+    if state > num_blocks(arg)
+        return nothing
+    else
+        return arg.blocks[state], state+1
+    end
+end # function
 
 # Specialize arguments to variables and parameters
 const VariableArgument = Argument{AtomicVariable}
@@ -299,9 +339,10 @@ struct ConicConstraint
     K::ConvexCone     # The convex cone set data structure
     constraint::Types.ConstraintRef # Underlying JuMP constraint
     prog::Ref{AbstractConicProgram} # The parent conic program
+    name::String      # A name for the constraint
 
     """
-        ConicConstraint(f, kind)
+        ConicConstraint(f, kind, prog[; name, dual])
 
     Basic constructor. The function `f` value gets evaluated.
 
@@ -311,19 +352,32 @@ struct ConicConstraint
       by `ConvexCone` are supported.
     - `prog`: the parent conic program to which the constraint belongs.
 
+    # Keywords
+    - `name`: (optional) a name for the constraint, which can be used to more
+      easily search for it in the constraints list.
+    - `dual`: (optional) if true, then constrain f to lie inside the dual cone.
+
     # Returns
     - `finK`: the conic constraint.
     """
     function ConicConstraint(f::AffineFunction,
                              kind::Symbol,
-                             prog::AbstractConicProgram)::ConicConstraint
+                             prog::AbstractConicProgram;
+                             name::Union{String, Nothing}=nothing,
+                             dual::Bool=false)::ConicConstraint
 
         # Create the underlying JuMP constraint
         f_value = f()
-        K = ConvexCone(f_value, kind)
+        K = ConvexCone(f_value, kind; dual=dual)
         constraint = add!(jump_model(prog), K)
 
-        finK = new(f, K, constraint, prog)
+        # Generate a name
+        if isnothing(name)
+            constraint_count = length(constraints(prog))
+            name = @sprintf("f%d", constraint_count+1)
+        end
+
+        finK = new(f, K, constraint, prog, name)
 
         return finK
     end # function
@@ -333,6 +387,9 @@ const Constraints = Vector{ConicConstraint}
 
 """ Get the kind of cone. """
 kind(C::ConicConstraint)::Symbol = kind(C.K)
+
+""" Get the cone name. """
+name(C::ConicConstraint)::String = C.name
 
 """ Get the cone dual variable. """
 dual(C::ConicConstraint)::Types.RealVector = dual(C.constraint)
@@ -390,13 +447,13 @@ mutable struct ConicProgram <: AbstractConicProgram
     _feasibility::Bool        # Flag if feasibility problem
 
     """
-        ConicProgram([solver][; solver_options])
+        ConicProgram([pars][; solver, solver_options])
 
     Empty model constructor.
 
     # Arguments
-    - `pars`: problem parameter structure. This can be anything, and it is
-      passed down to the low-level functions defining the problem.
+    - `pars`: (optional )problem parameter structure. This can be anything, and
+      it is passed down to the low-level functions defining the problem.
 
     # Keywords
     - `solver`: (optional) the numerical convex optimizer to use.
@@ -407,7 +464,7 @@ mutable struct ConicProgram <: AbstractConicProgram
     - `prog`: the conic linear program data structure.
     """
     function ConicProgram(
-        pars::Any;
+        pars::Any=nothing;
         solver::DataType=ECOS.Optimizer,
         solver_options::Union{Dict{String, Any},
                               Nothing}=nothing)::ConicProgram
@@ -517,7 +574,7 @@ Append a new block to the end of the argument.
 function Base.push!(arg::Argument, name::String, shape::Int...)::ArgumentBlock
 
     # Create the new block
-    blid = blocks(arg)+1
+    blid = num_blocks(arg)+1
     elid1 = length(arg)+1
     block = ArgumentBlock(arg, shape, blid, elid1, name)
 
@@ -535,7 +592,7 @@ Add a new argument block to the optimization program.
 
 # Arguments
 - `prog`: the optimization program.
-- `kind`: the kind of argument (`:variable` or `:parameter`).
+- `kind`: the kind of argument (`VARIABLE` or `PARAMETER`).
 - `shape...`: the shape of the argument block.
 
 # Returns
@@ -544,23 +601,31 @@ Add a new argument block to the optimization program.
 function Base.push!(prog::ConicProgram,
                     kind::Symbol,
                     shape::Int...;
-                    name::Union{String, Nothing}=nothing)::ArgumentBlock
+                    blk_name::Union{String, Nothing}=nothing)::ArgumentBlock
 
-    if !(kind in (:variable, :parameter))
+    if !(kind in (VARIABLE, PARAMETER))
         err = SCPError(0, SCP_BAD_ARGUMENT,
-                       "specify either :variable or :parameter")
+                       "specify either VARIABLE or PARAMETER")
         throw(err)
     end
 
-    z = (kind==:variable) ? prog.x : prog.p
+    z = (kind==VARIABLE) ? prog.x : prog.p
 
-    # Assign a default name if the user does not provide one
-    if isnothing(name)
-        base_name = (kind==:variable) ? "x" : "p"
-        name = base_name*@sprintf("%d", blocks(z)+1)
+    # Assign the name if the user does not provide one
+    if isnothing(blk_name)
+        # Create a default name
+        base_name = (kind==VARIABLE) ? "x" : "p"
+        blk_name = base_name*@sprintf("%d", num_blocks(z)+1)
+    else
+        # Deconflict duplicate name by appending a number suffix
+        all_names = [name(blk) for blk in z]
+        matches = length(findall((this_name)->this_name==blk_name, all_names))
+        if matches>0
+            blk_name = @sprintf("%s%d", blk_name, matches)
+        end
     end
 
-    block = push!(z, name, shape...)
+    block = push!(z, blk_name, shape...)
 
     return block
 end
@@ -568,13 +633,13 @@ end
 """ Specialize `push!` for variables. """
 function variable!(prog::ConicProgram, shape::Int...;
                    name::Union{String, Nothing}=nothing)::ArgumentBlock
-    push!(prog, :variable, shape...; name=name)
+    push!(prog, VARIABLE, shape...; blk_name=name)
 end # function
 
 """ Specialize `push!` for parameters. """
 function parameter!(prog::ConicProgram, shape::Int...;
                     name::Union{String, Nothing}=nothing)::ArgumentBlock
-    push!(prog, :parameter, shape...; name=name)
+    push!(prog, PARAMETER, shape...; blk_name=name)
 end # function
 
 """
@@ -591,17 +656,24 @@ of `AffineDifferentiableFunction`.
 - `x`: the variable argument blocks.
 - `p`: the parameter argument blocks.
 
+# Keywords
+- `name`: (optional) a name for the constraint, which can be used to more
+  easily search for it in the constraints list.
+- `dual`: (optional) if true, then constrain f to lie inside the dual cone.
+
 # Returns
 - `new_constraint`: the newly added constraint.
 """
 function constraint!(prog::ConicProgram,
                      kind::Symbol,
                      f::Function,
-                     x, p)::ConicConstraint
+                     x, p;
+                     name::Union{String, Nothing}=nothing,
+                     dual::Bool=false)::ConicConstraint
     x = VariableArgumentBlocks(collect(x))
     p = ConstantArgumentBlocks(collect(p))
     Axb = AffineFunction(prog, x, p, f)
-    new_constraint = ConicConstraint(Axb, kind, prog)
+    new_constraint = ConicConstraint(Axb, kind, prog; name=name, dual=dual)
     push!(prog.constraints, new_constraint)
     return new_constraint
 end # function
@@ -643,7 +715,7 @@ Add a new argument to the problem.
 - `prog`: the conic program object.
 - `shape`: the shape of the argument, as a tuple/vector/integer.
 - `name`: the argument name.
-- `kind`: either `:variable` or `:parameter`.
+- `kind`: either `VARIABLE` or `PARAMETER`.
 
 # Returns
 The newly created argument object.
@@ -652,7 +724,7 @@ function new_argument(prog::ConicProgram,
                       shape,
                       name::Union{String, Nothing},
                       kind::Symbol)::ArgumentBlock
-    f = (kind==:variable) ? variable! : parameter!
+    f = (kind==VARIABLE) ? variable! : parameter!
     shape = collect(shape)
     return f(prog, shape...; name=name)
 end # function
@@ -666,12 +738,12 @@ end # function
 The following macros specialize `@new_argument` for creating variables.
 """
 macro new_variable(prog, shape, name)
-    var = QuoteNode(:variable)
+    var = QuoteNode(VARIABLE)
     :( new_argument($(esc.([prog, shape, name, var])...)) )
 end # macro
 
 macro new_variable(prog, shape_or_name)
-    var = QuoteNode(:variable)
+    var = QuoteNode(VARIABLE)
     if typeof(shape_or_name)<:String
         :( new_argument($(esc.([prog, 1, shape_or_name, var])...)) )
     else
@@ -680,7 +752,7 @@ macro new_variable(prog, shape_or_name)
 end # macro
 
 macro new_variable(prog)
-    :( new_argument($(esc(prog)), 1, nothing, :variable) )
+    :( new_argument($(esc(prog)), 1, nothing, VARIABLE) )
 end # macro
 
 """
@@ -692,12 +764,12 @@ end # macro
 The following macros specialize `@new_argument` for creating parameters.
 """
 macro new_parameter(prog, shape, name)
-    var = QuoteNode(:parameter)
+    var = QuoteNode(PARAMETER)
     :( new_argument($(esc.([prog, shape, name, var])...)) )
 end # macro
 
 macro new_parameter(prog, shape_or_name)
-    var = QuoteNode(:parameter)
+    var = QuoteNode(PARAMETER)
     if typeof(shape_or_name)<:String
         :( new_argument($(esc.([prog, 1, shape_or_name, var])...)) )
     else
@@ -706,10 +778,12 @@ macro new_parameter(prog, shape_or_name)
 end # macro
 
 macro new_parameter(prog)
-    :( new_argument($(esc(prog)), 1, nothing, :parameter) )
+    :( new_argument($(esc(prog)), 1, nothing, PARAMETER) )
 end # macro
 
 """
+    @add_constraint(prog, kind, name, f, x, p)
+    @add_constraint(prog, kind, name, f, x)
     @add_constraint(prog, kind, f, x, p)
     @add_constraint(prog, kind, f, x)
 
@@ -719,6 +793,7 @@ the function `constraint!`, so look there for more info.
 # Arguments
 - `prog`: the optimization program.
 - `kind`: the cone type.
+- `name`: (optional) the constraint name.
 - `f`: the core method that can compute the function value and its Jacobians.
 - `x`: the variable argument blocks, as a vector/tuple/single element.
 - `p`: (optional) the parameter argument blocks, as a vector/tuple/single
@@ -727,12 +802,50 @@ the function `constraint!`, so look there for more info.
 # Returns
 The newly created `ConicConstraint` object.
 """
-macro add_constraint(prog, kind, f, x, p)
-    :( constraint!($(esc.([prog, kind, f, x, p])...)) )
+macro add_constraint(prog, kind, name, f, x, p)
+    :( constraint!($(esc.([prog, kind, f, x, p])...);
+                   name=$name) )
+end # macro
+
+macro add_constraint(prog, kind, name_f, f_x, x_p)
+    if typeof(name_f)<:String
+        :( constraint!($(esc.([prog, kind, f_x, x_p, []])...);
+                       name=$name_f) )
+    else
+        :( constraint!($(esc.([prog, kind, name_f, f_x, x_p])...)) )
+    end
 end # macro
 
 macro add_constraint(prog, kind, f, x)
     :( constraint!($(esc.([prog, kind, f, x, []])...)) )
+end # macro
+
+"""
+    @add_dual_constraint(prog, kind, name, f, x, p)
+    @add_dual_constraint(prog, kind, name, f, x)
+    @add_dual_constraint(prog, kind, f, x, p)
+    @add_dual_constraint(prog, kind, f, x)
+
+These macros work exactly like `@add_constraint`, except the value `f` is
+imposed to lie inside the dual of the cone `kind`.
+"""
+macro add_dual_constraint(prog, kind, name, f, x, p)
+    :( constraint!($(esc.([prog, kind, f, x, p])...);
+                   name=$name, dual=true) )
+end # macro
+
+macro add_dual_constraint(prog, kind, name_f, f_x, x_p)
+    if typeof(name_f)<:String
+        :( constraint!($(esc.([prog, kind, f_x, x_p, []])...);
+                       name=$name_f, dual=true) )
+    else
+        :( constraint!($(esc.([prog, kind, name_f, f_x, x_p])...)) )
+    end
+end # macro
+
+macro add_dual_constraint(prog, kind, f, x)
+    :( constraint!($(esc.([prog, kind, f, x, []])...);
+                   dual=true) )
 end # macro
 
 """
@@ -823,23 +936,37 @@ function value(blk::ArgumentBlock{T, N})::AbstractArray where {T, N}
 end # function
 
 """
-    constraints(prg[, i])
+    constraints(prg[, ref])
 
-Get all or the `i`th constraint.
+Get all or some of the constraints. If `ref` is a number or slice, then get
+constraints from the list by regular array slicing operation. If `ref` is a
+string, return all the constraints whose name contains the string `ref`.
 
 # Arguments
 - `prg`: the optimization problem.
-- `i`: (optional) which constraint to get.
+- `ref`: (optional) which constraint to get.
 
 # Returns
 The constraint(s).
 """
 function constraints(prg::ConicProgram,
-                     i::Int=-1)::Union{Constraints, ConicConstraint}
-    if i>=0
-        return prg.constraints[i]
+                     ref=-1)::Union{Constraints, ConicConstraint}
+    if typeof(ref)<:String
+        # Search for all constraints the match `ref`
+        match_list = Vector{ConicConstraint}(undef, 0)
+        for constraint in prg.constraints
+            if occursin(ref, name(constraint))
+                push!(match_list, constraint)
+            end
+        end
+        return match_list
     else
-        return prg.constraints
+        # Get the constraint by numerical reference
+        if ref>=0
+            return prg.constraints[ref]
+        else
+            return prg.constraints
+        end
     end
 end # function
 
@@ -862,4 +989,114 @@ function solve!(prg::ConicProgram)::MOI.TerminationStatusCode
     optimize!(mdl)
     status = termination_status(mdl)
     return status
+end # function
+
+"""
+    hash(blk)
+
+Hash function for the argument block.
+
+# Arguments
+- `blk`: the argument block.
+
+# Returns
+Hash number.
+"""
+function Base.hash(blk::ArgumentBlock)::UInt64
+    return hash(blk.name)
+end # function
+
+"""
+    copy(blk, prg)
+
+Copy the argument block (in aspects like shape and name) to a different
+optimization problem. The newly created argument gets inserted at the end of
+the corresponding argument of the new problem
+
+# Arguments
+- `foo`: description.
+- `prg`: the destination optimization problem for the new variable.
+
+# Keywords
+- `new_name`: (optional) a format string for creating the new name from the
+  original block's name.
+- `copyas`: (optional) force copy the block as a `VARIABLE` or `PARAMETER`.
+
+# Returns
+- `new_blk`: the newly created argument block.
+"""
+function Base.copy(blk::ArgumentBlock{T},
+                   prg::ConicProgram;
+                   new_name::String="%s",
+                   copyas::Union{Symbol,
+                                 Nothing}=nothing)::ArgumentBlock where T
+
+    blk_shape = size(blk)
+    blk_kind = isnothing(copyas) ? kind(blk) : copyas
+    blk_name = name(blk)
+    new_name = @eval @sprintf($new_name, $blk_name)
+
+    new_blk = new_argument(prg, blk_shape, new_name, blk_kind)
+
+    return new_blk
+end # function
+
+"""
+    vary!(prg)
+
+Compute the variation of the optimal solution with respect to changes in the
+constant arguments of the problem. This sets the appropriate data such that
+afterwards the `sensitivity` function can be called for each variable argument.
+
+Internally, this function formulates the linearized KKT optimality conditions
+around the optimal solution.
+
+# Arguments
+- `prg`: the optimization problem structure.
+
+# Returns
+- `bar`: description.
+"""
+function vary!(prg::ConicProgram)::ConicProgram
+
+    # Initialize the variational problem
+    kkt = ConicProgram()
+
+    # Initialize the primal variables, and populate a map from the original
+    # problem's blocks to the variational problem's blocks
+    varmap = Dict{ArgumentBlock, Any}()
+    for z in [prg.x, prg.p]
+        for z_blk in z
+            δz_blk = copy(z_blk, kkt; new_name="δ%s", copyas=VARIABLE)
+            varmap[z_blk] = δz_blk # original -> kkt
+            varmap[δz_blk] = z_blk # kkt -> original
+        end
+    end
+
+    # Initialize the dual variables
+    n_cones = length(constraints(prg))
+    λ = dual.(constraints(prg))
+    δλ = VariableArgumentBlocks(undef, n_cones)
+    for i = 1:n_cones
+        blk_name = @sprintf("δλ%d", i)
+        δλ[i] = @new_variable(kkt, length(λ[i]), blk_name)
+    end
+
+    # Primal feasibility
+    # TODO
+
+    # Dual feasibility
+    for i = 1:n_cones
+        K = kind(constraints(prg, i))
+        f = (δλ, _, _) -> @value(λ[i]+δλ)
+        @add_dual_constraint(kkt, K, "dual_feas", f, δλ[i])
+    end
+
+    # Complementary slackness
+    # TODO
+
+    # Stationarity
+    # TODO
+
+    return kkt
 end # function

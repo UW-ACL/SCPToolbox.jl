@@ -45,8 +45,20 @@ The supported cones are:
 - `:geom` for constraints `z=(t, x), geomean(x)>=t`.
 - `:exp` for constraints `z=(x, y, w), y*exp(x/y)<=w, y>0`.
 """
-const SUPPORTED_CONES = (:zero, :nonpos, :l1, :soc, :linf, :geom, :exp)
-const CONE_NAMES = Dict(:zero => "zero",
+const SUPPORTED_CONES = (:free, :zero, :nonpos, :l1, :soc, :linf, :geom, :exp)
+
+# Maps from the origin cone to the dual cone
+const DUAL_CONE_MAP = Dict(:free => :zero,
+                           :zero => :free,
+                           :nonpos => :nonpos,
+                           :l1 => :linf,
+                           :soc => :soc,
+                           :linf => :l1,
+                           :geom => :geom,
+                           :exp => :exp)
+
+const CONE_NAMES = Dict(:free => "unconstrained",
+                        :zero => "zero",
                         :nonpos => "nonpositive orthant",
                         :l1 => "one-norm",
                         :soc => "second-order",
@@ -82,6 +94,7 @@ struct ConvexCone{T<:MOI.AbstractSet}
     function ConvexCone(z::ConeVariable,
                         kind::Symbol;
                         dual::Bool=false)::ConvexCone
+
         if !(kind in SUPPORTED_CONES)
             err = SCPError(0, SCP_BAD_ARGUMENT, "Unsupported cone")
             throw(err)
@@ -90,28 +103,42 @@ struct ConvexCone{T<:MOI.AbstractSet}
         z = (typeof(z) <: Array) ? z : [z]
         dim = length(z)
 
-        if kind==:zero
-            K = dual ? MOI.Reals(dim) : MOI.Zeros(dim)
+        if kind==:exp && dim!=3
+            msg = "Exponential cone is in R^3"
+            err = SCPError(0, SCP_BAD_ARGUMENT, msg)
+            throw(err)
+        end
+
+        # Convert to dual cone
+        if dual
+            kind_dual = DUAL_CONE_MAP[kind]
+            if kind==:geom
+                t, x = z[1], z[2:end]
+                n = length(x)
+                z = [-t/n; x]
+            elseif kind==:exp
+                u, v, w = z
+                z = [-u; -v; exp(1)*w]
+            end
+            return ConvexCone(z, kind_dual)
+        end
+
+        if kind==:free
+            K = MOI.Reals(dim)
+        elseif kind==:zero
+            K = MOI.Zeros(dim)
         elseif kind==:nonpos
             K = MOI.Nonpositives(dim)
-        elseif kind==:l1 || (dual && kind==:linf)
+        elseif kind==:l1
             K = MOI.NormOneCone(dim)
         elseif kind==:soc
             K = MOI.SecondOrderCone(dim)
-        elseif kind==:linf || (dual && kind==:l1)
+        elseif kind==:linf
             K = MOI.NormInfinityCone(dim)
         elseif kind==:geom
             K = MOI.GeometricMeanCone(dim)
-            if dual
-                z = [-z[1]; z[2:end]]
-            end
         elseif kind==:exp
-            if dim!=3
-                msg = "Exponential cone is in R^3"
-                err = SCPError(0, SCP_BAD_ARGUMENT, msg)
-                throw(err)
-            end
-            K = dual ? MOI.DualExponentialCone() : MOI.ExponentialCone()
+            K = MOI.ExponentialCone()
         end
 
         constraint = new{typeof(K)}(z, K, dim, kind)
@@ -185,6 +212,8 @@ end # function
 
 """
     indicator!(pbm, cone)
+
+TODO update to latest ConvexCone structure (there is now also a :free cone)
 
 Generate a vector which indicates conic constraint satisfaction.
 
