@@ -221,6 +221,14 @@ function set_jacobian!(out::DFOut, key::JacobianKeys,
     return nothing
 end # function
 
+"""
+Simple wrapper of `DifferentiableFunctionOutput` constructor, see its
+documentation.
+"""
+macro value(f)
+    :( DifferentiableFunctionOutput($(esc(f))) )
+end # macro
+
 """ Simple wrapper of `set_jacobian!`, see its documentation. """
 macro jacobian(out, key, J)
     :( set_jacobian!($(esc.([out, key, J])...)) )

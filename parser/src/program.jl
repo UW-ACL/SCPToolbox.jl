@@ -26,9 +26,9 @@ end
 using JuMP
 using ECOS
 
-import JuMP: value
+import JuMP: value, dual
 
-export ConicProgram, blocks, value, constraints, cost, solve!
+export ConicProgram, blocks, value, dual, constraints, cost, solve!
 export @new_variable, @new_parameter, @add_constraint,
     @set_cost, @set_feasibility
 
@@ -331,8 +331,11 @@ end # struct
 
 const Constraints = Vector{ConicConstraint}
 
-# Get the kind of cone
-kind(finK::ConicConstraint)::Symbol = kind(finK.K)
+""" Get the kind of cone. """
+kind(C::ConicConstraint)::Symbol = kind(C.K)
+
+""" Get the cone dual variable. """
+dual(C::ConicConstraint)::Types.RealVector = dual(C.constraint)
 
 """
 `QuadraticCost` stores the objective function of the problem. The goal is to
@@ -844,21 +847,19 @@ end # function
 cost(prg::ConicProgram)::QuadraticCost = prg.cost[]
 
 """
-    sovle!
+    solve!(prg)
 
-Description.
+Solve the optimization problem.
 
 # Arguments
-- `foo`: description.
-
+- `prg`: the optimization problem structure.
 
 # Returns
-- `bar`: description.
+- `status`: the termination status code.
 """
-function solve!(prg::ConicProgram)
+function solve!(prg::ConicProgram)::MOI.TerminationStatusCode
     mdl = jump_model(prg)
     optimize!(mdl)
     status = termination_status(mdl)
-    # TODO set the dual variables
     return status
 end # function
