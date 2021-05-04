@@ -230,24 +230,24 @@ const ConstantArgument = Argument{AtomicConstant}
 const ConstantArgumentBlocks = ArgumentBlocks{AtomicConstant}
 
 """
-`GeneralFunction` defines a general (i.e., affine or quadratic) function that
-gets used as a building block in the conic program. The function accepts a list
-of argument blocks (variables and parameters) that it depends on, and the
-underlying `DifferentiableFunction` function that performs the value and
-Jacobian computation.
+`ProgramFunction` defines an affine or quadratic function that gets used as a
+building block in the conic program. The function accepts a list of argument
+blocks (variables and parameters) that it depends on, and the underlying
+`DifferentiableFunction` function that performs the value and Jacobian
+computation.
 
 By wrapping `DifferentiableFunction` in this way, the aim is to store the
 variables and parameters that this otherwise generic "mathematical object" (the
 function) depends on. With this information, we can automatically compute
 Jacobians for the KKT conditions.
 """
-struct GeneralFunction{T<:FunctionValueType}
-    f::DifferentiableFunction{T} # The core computation method
-    x::VariableArgumentBlocks    # Variable arguments
-    p::ConstantArgumentBlocks    # Constant arguments
+struct ProgramFunction
+    f::DifferentiableFunction # The core computation method
+    x::VariableArgumentBlocks # Variable arguments
+    p::ConstantArgumentBlocks # Constant arguments
 
     """
-        GeneralFunction{T}(prog, x, p)
+        ProgramFunction(prog, x, p)
 
     General (affine or quadratic) function constructor.
 
@@ -261,26 +261,23 @@ struct GeneralFunction{T<:FunctionValueType}
     # Returns
     - `F`: the function object.
     """
-    function GeneralFunction{T}(
+    function ProgramFunction(
         prog::AbstractConicProgram,
         x::VariableArgumentBlocks,
         p::ConstantArgumentBlocks,
-        f::Function)::GeneralFunction{T} where {T<:FunctionValueType}
+        f::Function)::ProgramFunction
 
         # Create the differentiable function wrapper
         xargs = length(x)
         pargs = length(p)
         consts = prog.pars[]
-        f = DifferentiableFunction{T}(f, xargs, pargs, consts)
+        f = DifferentiableFunction(f, xargs, pargs, consts)
 
-        F = new{T}(f, x, p)
+        F = new(f, x, p)
 
         return F
     end # function
 end # struct
-
-const AffineFunction = GeneralFunction{AffineFunctionValueType}
-const QuadraticFunction = GeneralFunction{QuadraticFunctionValueType}
 
 """
     F([args...][; jacobians])
@@ -301,9 +298,9 @@ underlying `DifferentiableFunction`, which handles the computation.
 - `f`: the function value. The Jacobians can be queried later by using the
   `jacobian` function.
 """
-function (F::GeneralFunction{T})(
+function (F::ProgramFunction)(
     args::BlockValue{AtomicConstant}...;
-    jacobians::Bool=false)::T where {T<:FunctionValueType}
+    jacobians::Bool=false)::FunctionValueType
 
     # Compute the input argument values
     if isempty(args)
@@ -320,13 +317,13 @@ end # function
 """
 Convenience methods that pass the calls down to `DifferentiableFunction`.
 """
-value(F::GeneralFunction{T}) where T = value(F.f)
-jacobian(F::GeneralFunction,
+value(F::ProgramFunction) = value(F.f)
+jacobian(F::ProgramFunction,
          key::JacobianKeys)::JacobianValueType = jacobian(F.f, key)
 
 """ Convenience getters. """
-variables(F::GeneralFunction)::VariableArgumentBlocks = F.x
-parameters(F::GeneralFunction)::ConstantArgumentBlocks = F.p
+variables(F::ProgramFunction)::VariableArgumentBlocks = F.x
+parameters(F::ProgramFunction)::ConstantArgumentBlocks = F.p
 
 """
 `ConicConstraint` defines a conic constraint for the optimization program. It
@@ -339,11 +336,11 @@ f(x, p)\\in \\mathcal K
 where ``f`` is an affine function and ``\\mathcal K`` is a convex cone.
 """
 struct ConicConstraint
-    f::AffineFunction # The affine function
-    K::ConvexCone     # The convex cone set data structure
-    constraint::Types.ConstraintRef # Underlying JuMP constraint
+    f::ProgramFunction              # The affine function
+    K::ConvexCone                   # The convex cone set data structure
+    constraint::ConstraintRef       # Underlying JuMP constraint
     prog::Ref{AbstractConicProgram} # The parent conic program
-    name::String      # A name for the constraint
+    name::String                    # A name for the constraint
 
     """
         ConicConstraint(f, kind, prog[; refname, dual])
@@ -364,7 +361,7 @@ struct ConicConstraint
     # Returns
     - `finK`: the conic constraint.
     """
-    function ConicConstraint(f::AffineFunction,
+    function ConicConstraint(f::ProgramFunction,
                              kind::Symbol,
                              prog::AbstractConicProgram;
                              refname::Union{String, Nothing}=nothing,
@@ -408,7 +405,7 @@ name(C::ConicConstraint)::String = C.name
 dual(C::ConicConstraint)::Types.RealVector = dual(C.constraint)
 
 """ Get the underlying affine function. """
-lhs(C::ConicConstraint)::AffineFunction = C.f
+lhs(C::ConicConstraint)::ProgramFunction = C.f
 
 """
 `QuadraticCost` stores the objective function of the problem. The goal is to
@@ -416,8 +413,8 @@ minimize this function. The function can be at most quadratic, however for
 robustness (in JuMP) it has been observed that it is best to reformulate the
 problem (via epigraph form) such that this function is affine. """
 struct QuadraticCost
-    J::QuadraticFunction            # The core function
-    jump::Types.QuadraticExpression # JuMP function object
+    J::ProgramFunction              # The core function
+    jump::Types.Variable            # JuMP function object
     prog::Ref{AbstractConicProgram} # The parent conic program
 
     """
@@ -433,7 +430,7 @@ struct QuadraticCost
     # Returns
     - `cost`: the newly created cost function object.
     """
-    function QuadraticCost(J::QuadraticFunction,
+    function QuadraticCost(J::ProgramFunction,
                            prog::AbstractConicProgram)::QuadraticCost
 
         # Create the underlying JuMP cost
@@ -688,7 +685,7 @@ function constraint!(prog::ConicProgram,
                      dual::Bool=false)::ConicConstraint
     x = VariableArgumentBlocks(collect(x))
     p = ConstantArgumentBlocks(collect(p))
-    Axb = AffineFunction(prog, x, p, f)
+    Axb = ProgramFunction(prog, x, p, f)
     new_constraint = ConicConstraint(Axb, kind, prog; refname=name, dual=dual)
     push!(prog.constraints, new_constraint)
     return new_constraint
@@ -715,7 +712,7 @@ function cost!(prog::ConicProgram,
                x, p)::QuadraticCost
     x = VariableArgumentBlocks(collect(x))
     p = ConstantArgumentBlocks(collect(p))
-    J = QuadraticFunction(prog, x, p, J)
+    J = ProgramFunction(prog, x, p, J)
     new_cost = QuadraticCost(J, prog)
     prog.cost[] = new_cost
     prog._feasibility = false
@@ -1120,7 +1117,7 @@ function vary!(prg::ConicProgram)::ConicProgram
         Dp = map((i) -> jacobian(F, i), idcs_p)
 
         # Save data
-        jacmap[i] = (nx, np, x, p, δx, δp, f, Dx, Dp)
+        jacmap[i] = (nx, np, x, p, λ[i], δx, δp, δλ[i], f, Dx, Dp)
     end
 
     # Primal feasibility
@@ -1128,17 +1125,18 @@ function vary!(prg::ConicProgram)::ConicProgram
         C = constraints(prg, i)
         K = kind(C)
 
-        nx, np, _, _, δx, δp, f, Dx, Dp = jacmap[i]
+        nx, np, _, _, _, δx, δp, _, f, Dx, Dp = jacmap[i]
 
         # Formulate the constraint
         f_vary = (args...) -> begin
             δx = args[1:nx]
-            δp = args[nx+1:end]
+            δp = args[(1:np).+nx]
             out = f
             for i = 1:nx; out += Dx[i]*δx[i]; end
             for i = 1:np; out += Dp[i]*δp[i]; end
             @value(out)
         end
+
         @add_constraint(kkt, K, "primal_feas", f_vary, (δx..., δp...))
     end
 
@@ -1150,7 +1148,22 @@ function vary!(prg::ConicProgram)::ConicProgram
     end
 
     # Complementary slackness
-    # TODO
+    for i = 1:n_cones
+        nx, np, _, _, λ, δx, δp, δλ, f, Dx, Dp = jacmap[i]
+
+        f_slack = (args...) -> begin
+            δx = args[1:nx]
+            δp = args[(1:np).+nx]
+            δλ = args[np+nx+1]
+            out = dot(f, δλ)
+            for i = 1:nx; out += dot(λ, Dx[i]*δx[i]); end
+            for i = 1:np; out += dot(λ, Dp[i]*δp[i]); end
+            @value(out)
+        end
+
+        @add_constraint(kkt, :zero, "compl_slack", f_slack,
+                        (δx..., δp..., δλ))
+    end
 
     # Stationarity
     # TODO

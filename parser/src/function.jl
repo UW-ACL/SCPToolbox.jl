@@ -116,11 +116,8 @@ end # function
 
 # Convenience typealiases
 const InputArgumentType = Types.VariableArray
-const AffineFunctionValueType = Types.VariableArray
-const QuadraticFunctionValueType = Types.QuadVariableArray
-const FunctionValueType = Union{AffineFunctionValueType,
-                                QuadraticFunctionValueType}
-const JacobianValueType = AffineFunctionValueType
+const FunctionValueType = Types.VariableArray
+const JacobianValueType = Types.VariableArray
 const JacobianKeys = Union{Int, Tuple{Int, Int}}
 const JacobianDictType = Dict{JacobianKeys, JacobianValueType}
 
@@ -129,9 +126,9 @@ const JacobianDictType = Dict{JacobianKeys, JacobianValueType}
 function value and its Jacobians are evaluated. It stores the function value
 and a dictionary representing the Jacobian values. Methods are provided for
 accessing this data in a more user-friendly manner. """
-struct DifferentiableFunctionOutput{T<:FunctionValueType}
-    value::T            # Function value
-    J::JacobianDictType # Jacobian values
+struct DifferentiableFunctionOutput
+    value::FunctionValueType # Function value
+    J::JacobianDictType      # Jacobian values
 
     """
         DifferentiableFunctionOutput(f)
@@ -154,11 +151,7 @@ struct DifferentiableFunctionOutput{T<:FunctionValueType}
 
         J = JacobianDictType()
 
-        if T<:AffineFunctionValueType
-            fout = new{AffineFunctionValueType}(f, J)
-        else
-            fout = new{QuadraticFunctionValueType}(f, J)
-        end
+        fout = new(f, J)
 
         return fout
     end # function
@@ -239,12 +232,12 @@ end # macro
 structure that can be queried for the resulting function value and its
 Jacobians.
 """
-mutable struct DifferentiableFunction{T<:FunctionValueType}
+mutable struct DifferentiableFunction
     f::TypedFunction    # The core function doing the computation
     xargs::Int          # Number of variable arguments
     pargs::Int          # Number of parameter arguments
     consts::Ref         # Other constants that the function depends on
-    out::Ref{DFOut{T}}  # The result from the most recent call to f
+    out::Ref{DFOut}  # The result from the most recent call to f
     evaluated::Bool     # Status lag if function has been evaluated
 
     """
@@ -281,32 +274,29 @@ mutable struct DifferentiableFunction{T<:FunctionValueType}
     # Returns
     - `DF`: the differentiable function structure.
     """
-    function DifferentiableFunction{T}(
+    function DifferentiableFunction(
         f::Function,
         xargs::Int,
         pargs::Int,
-        other::V)::DifferentiableFunction{T} where {T<:FunctionValueType, V}
+        other)::DifferentiableFunction
 
         # Make the core function typesafe
-        in_type = Tuple{fill(InputArgumentType, xargs+pargs)..., V, Bool}
-        out_type = DifferentiableFunctionOutput{T}
+        in_type = Tuple{fill(InputArgumentType, xargs+pargs)...,
+                        typeof(other), Bool}
+        out_type = DifferentiableFunctionOutput
         F = TypedFunction(f, in_type, out_type)
 
         # Other parameters
-        out = Ref{DFOut{T}}()
+        out = Ref{DFOut}()
         evaluated = false
         consts = Ref(other)
 
-        DF = new{T}(F, xargs, pargs, consts, out, evaluated)
+        DF = new(F, xargs, pargs, consts, out, evaluated)
 
         return DF
     end # function
 end # struct
 
-const AffineDifferentiableFunction =
-    DifferentiableFunction{AffineFunctionValueType}
-const QuadraticDifferentiableFunction =
-    DifferentiableFunction{QuadraticFunctionValueType}
 const DiffblF = DifferentiableFunction
 
 """

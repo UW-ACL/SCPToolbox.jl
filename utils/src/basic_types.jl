@@ -25,17 +25,36 @@ using JuMP
 
 import ..SCPStatus
 
-const RealTypes = [Int, Float64]
-
-const BoolVector = Vector{Bool}
+const RealTypes = Union{Int, Float64}
 const IntVector = Vector{Int}
 const IntRange = UnitRange{Int}
+const Index = Union{Int, IntRange, Colon}
 
-const RealValue = Union{[T for T in RealTypes]...}
-const RealArray{n} = Union{[Array{T, n} for T in RealTypes]...}
+const RealArray{n} = Array{T, n} where {T<:RealTypes}
 const RealVector = RealArray{1}
 const RealMatrix = RealArray{2}
 const RealTensor = RealArray{3}
+
+const Vref = VariableRef
+const AExpr = GenericAffExpr{Float64, Vref}
+const QExpr = GenericQuadExpr{Float64, Vref}
+const Variable = Union{RealTypes, VariableRef, AExpr, QExpr}
+const VariableArray{n} = Array{T, n} where {T<:Variable}
+const VariableVector = VariableArray{1}
+const VariableMatrix = VariableArray{2}
+
+const Constraint = ConstraintRef
+const ConstraintArray{n} = Array{Constraint, n}
+const ConstraintVector = ConstraintArray{1}
+const ConstraintMatrix = ConstraintArray{2}
+
+const Objective = Union{Missing, Variable}
+
+const ExitStatus = Union{SCPStatus, MOI.TerminationStatusCode}
+
+const Func = Union{Nothing, Function}
+
+const SpecialIntegrationActions = Vector{Tuple{Index, Function}}
 
 """
     RealVector(x) or RealMatrix(x) or RealTensor(x)
@@ -52,33 +71,3 @@ The real array.
 function (::Type{RealArray{n}})(args...)::Array{Float64, n} where n
     return Array{Float64, n}(args...)
 end # function
-
-const AffineExpression = GenericAffExpr{Float64, VariableRef}
-const QuadraticExpression = GenericQuadExpr{Float64, VariableRef}
-const VariableTypes = [RealTypes..., VariableRef, AffineExpression]
-const QuadVariableTypes = [VariableTypes..., QuadraticExpression]
-const Variable = Union{[T for T in VariableTypes]...}
-const QuadVariable = Union{[T for T in QuadVariableTypes]...}
-const VariableArray{n} = Union{[Array{T, n} for T in VariableTypes]...}
-const QuadVariableArray{n} = Union{[Array{T, n} for T in QuadVariableTypes]...}
-const VariableVector = VariableArray{1}
-const VariableMatrix = VariableArray{2}
-const QuadVariableVector = QuadVariableArray{1}
-const QuadVariableMatrix = QuadVariableArray{2}
-
-const Constraint = ConstraintRef
-const ConstraintArray{n} = Array{Constraint, n}
-const ConstraintVector = ConstraintArray{1}
-const ConstraintMatrix = ConstraintArray{2}
-
-const Objective = Union{Missing, RealTypes..., VariableRef,
-                        GenericAffExpr{Float64, VariableRef},
-                        GenericQuadExpr{Float64, VariableRef}}
-
-const ExitStatus = Union{SCPStatus, MOI.TerminationStatusCode}
-
-const Func = Union{Nothing, Function}
-const FuncVector = Vector{Function}
-
-const ElementIndex = Union{Int, IntRange, Colon}
-const SpecialIntegrationActions = Vector{Tuple{ElementIndex, Function}}

@@ -162,10 +162,10 @@ end # function
 """
 Get string description of the kind of function this is.
 """
-function function_kind(F::T)::String where {T<:GeneralFunction}
+function function_kind(F::ProgramFunction)::String
     value_type = typeof(F.f.out[].value)
-    affine_type = AffineFunctionValueType
-    kind = (value_type<:affine_type) ? "Affine" : "Quadratic"
+    quadratic_type = Types.QExpr
+    kind = (value_type<:quadratic_type) ? "Quadratic" : "Affine"
     return kind
 end # function
 
@@ -178,7 +178,7 @@ Pretty print an affine function.
 - `io`: stream object.
 - `F`: the affine function.
 """
-function Base.show(io::IO, F::T)::Nothing where {T<:GeneralFunction}
+function Base.show(io::IO, F::ProgramFunction)::Nothing
     compact = get(io, :compact, false) #noinfo
 
     @printf(io, "%s function\n", function_kind(F))
@@ -453,7 +453,7 @@ is just ignored!).
 Base.show(io::IO, ::MIME"text/plain",
           constraints::Union{
               ConvexCone,
-              GeneralFunction,
+              ProgramFunction,
               DifferentiableFunction,
               ConicConstraint,
               Constraints,
