@@ -324,6 +324,10 @@ value(F::GeneralFunction{T}) where T = value(F.f)
 jacobian(F::GeneralFunction,
          key::JacobianKeys)::JacobianValueType = jacobian(F.f, key)
 
+""" Convenience getters. """
+variables(F::GeneralFunction)::VariableArgumentBlocks = F.x
+parameters(F::GeneralFunction)::ConstantArgumentBlocks = F.p
+
 """
 `ConicConstraint` defines a conic constraint for the optimization program. It
 is basically the following mathematical object:
@@ -342,7 +346,7 @@ struct ConicConstraint
     name::String      # A name for the constraint
 
     """
-        ConicConstraint(f, kind, prog[; name, dual])
+        ConicConstraint(f, kind, prog[; refname, dual])
 
     Basic constructor. The function `f` value gets evaluated.
 
@@ -353,7 +357,7 @@ struct ConicConstraint
     - `prog`: the parent conic program to which the constraint belongs.
 
     # Keywords
-    - `name`: (optional) a name for the constraint, which can be used to more
+    - `refname`: (optional) a name for the constraint, which can be used to more
       easily search for it in the constraints list.
     - `dual`: (optional) if true, then constrain f to lie inside the dual cone.
 
@@ -363,7 +367,7 @@ struct ConicConstraint
     function ConicConstraint(f::AffineFunction,
                              kind::Symbol,
                              prog::AbstractConicProgram;
-                             name::Union{String, Nothing}=nothing,
+                             refname::Union{String, Nothing}=nothing,
                              dual::Bool=false)::ConicConstraint
 
         # Create the underlying JuMP constraint
@@ -371,13 +375,22 @@ struct ConicConstraint
         K = ConvexCone(f_value, kind; dual=dual)
         constraint = add!(jump_model(prog), K)
 
-        # Generate a name
-        if isnothing(name)
+        # Assign the name
+        if isnothing(refname)
+            # Create a default name
             constraint_count = length(constraints(prog))
-            name = @sprintf("f%d", constraint_count+1)
+            refname = @sprintf("f%d", constraint_count+1)
+        else
+            # Deconflict duplicate name by appending a number suffix
+            all_names = [name(C) for C in constraints(prog)]
+            matches = length(findall(
+                (this_name)->occursin(this_name, refname), all_names))
+            if matches>0
+                refname = @sprintf("%s%d", refname, matches)
+            end
         end
 
-        finK = new(f, K, constraint, prog, name)
+        finK = new(f, K, constraint, prog, refname)
 
         return finK
     end # function
@@ -393,6 +406,9 @@ name(C::ConicConstraint)::String = C.name
 
 """ Get the cone dual variable. """
 dual(C::ConicConstraint)::Types.RealVector = dual(C.constraint)
+
+""" Get the underlying affine function. """
+lhs(C::ConicConstraint)::AffineFunction = C.f
 
 """
 `QuadraticCost` stores the objective function of the problem. The goal is to
@@ -466,8 +482,7 @@ mutable struct ConicProgram <: AbstractConicProgram
     function ConicProgram(
         pars::Any=nothing;
         solver::DataType=ECOS.Optimizer,
-        solver_options::Union{Dict{String, Any},
-                              Nothing}=nothing)::ConicProgram
+        solver_options::Union{Dict{String}, Nothing}=nothing)::ConicProgram
 
         # Configure JuMP model
         mdl = Model()
@@ -611,7 +626,7 @@ function Base.push!(prog::ConicProgram,
 
     z = (kind==VARIABLE) ? prog.x : prog.p
 
-    # Assign the name if the user does not provide one
+    # Assign the name
     if isnothing(blk_name)
         # Create a default name
         base_name = (kind==VARIABLE) ? "x" : "p"
@@ -619,7 +634,8 @@ function Base.push!(prog::ConicProgram,
     else
         # Deconflict duplicate name by appending a number suffix
         all_names = [name(blk) for blk in z]
-        matches = length(findall((this_name)->this_name==blk_name, all_names))
+        matches = length(findall(
+            (this_name)->occursin(this_name, blk_name), all_names))
         if matches>0
             blk_name = @sprintf("%s%d", blk_name, matches)
         end
@@ -673,7 +689,7 @@ function constraint!(prog::ConicProgram,
     x = VariableArgumentBlocks(collect(x))
     p = ConstantArgumentBlocks(collect(p))
     Axb = AffineFunction(prog, x, p, f)
-    new_constraint = ConicConstraint(Axb, kind, prog; name=name, dual=dual)
+    new_constraint = ConicConstraint(Axb, kind, prog; refname=name, dual=dual)
     push!(prog.constraints, new_constraint)
     return new_constraint
 end # function
@@ -1082,14 +1098,55 @@ function vary!(prg::ConicProgram)::ConicProgram
         δλ[i] = @new_variable(kkt, length(λ[i]), blk_name)
     end
 
+    # Get the constraint function Jacobians
+    jacmap = Dict{Int, Any}()
+    for i = 1:n_cones
+        # Get the underlying function being constrained
+        C = constraints(prg, i)
+        F = lhs(C)
+
+        # Get the variables
+        x = variables(F)
+        p = parameters(F)
+        δx = map((xi) -> varmap[xi], x)
+        δp = map((pi) -> varmap[pi], p)
+
+        # Evaluate the Jacobians
+        f = F(jacobians=true)
+        nx, np = length(x), length(p)
+        idcs_x = 1:nx
+        idcs_p = (1:np).+nx
+        Dx = map((i) -> jacobian(F, i), idcs_x)
+        Dp = map((i) -> jacobian(F, i), idcs_p)
+
+        # Save data
+        jacmap[i] = (nx, np, x, p, δx, δp, f, Dx, Dp)
+    end
+
     # Primal feasibility
-    # TODO
+    for i = 1:n_cones
+        C = constraints(prg, i)
+        K = kind(C)
+
+        nx, np, _, _, δx, δp, f, Dx, Dp = jacmap[i]
+
+        # Formulate the constraint
+        f_vary = (args...) -> begin
+            δx = args[1:nx]
+            δp = args[nx+1:end]
+            out = f
+            for i = 1:nx; out += Dx[i]*δx[i]; end
+            for i = 1:np; out += Dp[i]*δp[i]; end
+            @value(out)
+        end
+        @add_constraint(kkt, K, "primal_feas", f_vary, (δx..., δp...))
+    end
 
     # Dual feasibility
     for i = 1:n_cones
         K = kind(constraints(prg, i))
-        f = (δλ, _, _) -> @value(λ[i]+δλ)
-        @add_dual_constraint(kkt, K, "dual_feas", f, δλ[i])
+        λ_vary = (δλ, _, _) -> @value(λ[i]+δλ)
+        @add_dual_constraint(kkt, K, "dual_feas", λ_vary, δλ[i])
     end
 
     # Complementary slackness
