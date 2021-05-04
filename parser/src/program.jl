@@ -37,7 +37,7 @@ const AtomicVariable = VariableRef
 const AtomicConstant = Float64
 const AtomicArgument = Union{AtomicVariable, AtomicConstant}
 const BlockValue{T,N} = AbstractArray{T,N}
-const LocationIndices = Array{Int}
+const LocationIndices = Types.IntVector
 
 # Symbols denoting a variable or a parameter
 const VARIABLE = :variable
@@ -660,7 +660,7 @@ end # function
 
 Create a conic constraint and add it to the problem. The heavy computation is
 done by the user-supplied function `f`, which has to satisfy the requirements
-of `AffineDifferentiableFunction`.
+of `DifferentiableFunction`.
 
 # Arguments
 - `prog`: the optimization program.

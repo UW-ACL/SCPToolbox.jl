@@ -25,12 +25,19 @@ using JuMP
 
 import ..SCPStatus
 
+""" Get the types composing a Union. """
+Base.collect(t::Union{Type, DataType, Union{}}) = _collect(t, [])
+_collect(t::Type, list) = t<:Union{} ? push!(list, t) :
+    _collect(t.b, push!(list, t.a))
+_collect(t::Union{DataType,Core.TypeofBottom}, list) = push!(list, t)
+
 const RealTypes = Union{Int, Float64}
+
 const IntVector = Vector{Int}
 const IntRange = UnitRange{Int}
 const Index = Union{Int, IntRange, Colon}
 
-const RealArray{n} = Array{T, n} where {T<:RealTypes}
+const RealArray{n} = Union{[Array{T, n} for T in collect(RealTypes)]...}
 const RealVector = RealArray{1}
 const RealMatrix = RealArray{2}
 const RealTensor = RealArray{3}
@@ -39,7 +46,7 @@ const Vref = VariableRef
 const AExpr = GenericAffExpr{Float64, Vref}
 const QExpr = GenericQuadExpr{Float64, Vref}
 const Variable = Union{RealTypes, VariableRef, AExpr, QExpr}
-const VariableArray{n} = Array{T, n} where {T<:Variable}
+const VariableArray{n} = Union{[Array{T, n} for T in collect(Variable)]...}
 const VariableVector = VariableArray{1}
 const VariableMatrix = VariableArray{2}
 
@@ -57,17 +64,37 @@ const Func = Union{Nothing, Function}
 const SpecialIntegrationActions = Vector{Tuple{Index, Function}}
 
 """
-    RealVector(x) or RealMatrix(x) or RealTensor(x)
+    RealArray(x)
 
 Real array constructor.
 
 # Arguments
-- `args...`: initialization arguments that you would normally pass to a
-  constructor like `Vector{Float64}`.
+- `X`: initialization arguments that you would normally pass to a constructor
+  like `Vector{Float64}`.
 
 # Returns
 The real array.
 """
-function (::Type{RealArray{n}})(args...)::Array{Float64, n} where n
-    return Array{Float64, n}(args...)
+function (::Type{RealArray})(
+    X::Array{T, n})::Array{T, n} where {T<:RealTypes, n}
+
+    return Array{T, n}(X)
+end # function
+
+"""
+#     VariableArray(x)
+
+Variable array constructor.
+
+# Arguments
+- `X`: initialization arguments that you would normally pass to a constructor
+  like `Vector{Float64}`.
+
+# Returns
+The variable array.
+"""
+function (::Type{VariableArray})(
+    X::Array{T, n})::Array{T, n} where {T<:Variable, n}
+
+    return Array{T, n}(X)
 end # function
