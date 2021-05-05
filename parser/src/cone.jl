@@ -147,8 +147,11 @@ struct ConvexCone{T<:MOI.AbstractSet}
     end # function
 end # struct
 
-# Get the kind of cone
+""" Get the kind of cone """
 kind(cone::ConvexCone)::Symbol = cone.kind
+
+""" Ambient space dimension of the cone """
+Base.ndims(cone::ConvexCone)::Int = cone.dim
 
 """
     add!(pbm, cone)

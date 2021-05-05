@@ -163,7 +163,7 @@ const DFOut = DifferentiableFunctionOutput
 value(out::DFOut)::FunctionValueType = out.value
 
 """
-    jacobian(out, key)
+    jacobian(out, key[; permute])
 
 Get the Jacobian value. Suppose that the function depends on N arguments,
 i.e. ``f(x_1, \\dots, x_N)``. The key can be either an integer (e.g. `i`) or a
@@ -172,20 +172,32 @@ derivative of ``f`` with respect to the variables indicated by `key`. For
 example, ``\\frac{\\partial f}{\\partial x_i}`` or ``\\frac{\\partial^2
 f}{\\partial x_i\\partial x_j}``.
 
-Because matrix Jacobians are symmetric, this function will permute `key` if
-necessary in order to retrived the corresponding Jacobian.
+Because the derivatives can be exchanged places, the function will permute
+`key` is necessary in order to retrive the corresponding Jacobian. If such a
+permutation is successful, the transposed Jacobian is returned.
 
 # Arguments
 - `out`: the function output structure.
 - `key`: which Jacobian to retrieve.
 
+# Keywords
+- `permute`: (optiona) whether to permute the key in order to try to get the
+  Jacobian.
+
 # Returns
 - `J`: the Jacobian value. Most generally a tensor, which happens when ``f`` is
   a matrix-value function being differentiated with respect to a vector.
 """
-function jacobian(out::DFOut, key::JacobianKeys)::JacobianValueType
+function jacobian(out::DFOut, key::JacobianKeys;
+                  permute::Bool=true)::JacobianValueType
+    tuple_key = length(key)>1
     if !haskey(out.J, key)
-        plural = (length(key)>1) ? "s" : ""
+        if permute && tuple_key
+            # Try permuting the key
+            key = reverse(key)
+            return transpose(jacobian(out, key; permute=false))
+        end
+        plural = tuple_key ? "s" : ""
         msg = @sprintf("Jacobian with respect to argument%s %s not defined",
                        plural, key)
         err = SCPError(0, SCP_BAD_ARGUMENT, msg)
@@ -237,7 +249,7 @@ mutable struct DifferentiableFunction
     xargs::Int          # Number of variable arguments
     pargs::Int          # Number of parameter arguments
     consts::Ref         # Other constants that the function depends on
-    out::Ref{DFOut}  # The result from the most recent call to f
+    out::Ref{DFOut}     # The result from the most recent call to f
     evaluated::Bool     # Status lag if function has been evaluated
 
     """
@@ -341,5 +353,5 @@ end # function
 Convenience methods that pass the calls down to `DifferentiableFunctionOutput`.
 """
 value(F::DiffblF)::FunctionValueType = value(F.out[])
-jacobian(F::DiffblF,
-         key::JacobianKeys)::JacobianValueType = jacobian(F.out[], key)
+jacobian(F::DiffblF, key::JacobianKeys)::JacobianValueType =
+    jacobian(F.out[], key)

@@ -370,11 +370,11 @@ function Base.show(io::IO, arg::Argument{T})::Nothing where {T<:AtomicArgument}
 
     isvar = T<:AtomicVariable
     kind = isvar ? "Variable" : "Parameter"
-    n_blocks = num_blocks(arg)
+    n_blocks = length(arg)
     indent = " "^get(io, :indent, 0)
 
     @printf(io, "%s%s argument\n", indent, kind)
-    @printf(io, "%s  %d elements\n", indent, length(arg))
+    @printf(io, "%s  %d elements\n", indent, numel(arg))
     @printf(io, "%s  %d blocks\n", indent, n_blocks)
 
     if n_blocks==0
@@ -416,9 +416,10 @@ function Base.show(io::IO, prog::ConicProgram)::Nothing
         kind = function_kind(cost(prog).J)
         @printf("  %s cost function\n", kind)
     end
-    @printf(io, "  %d variables (%d blocks)\n", length(prog.x), num_blocks(prog.x))
+    @printf(io, "  %d variables (%d blocks)\n", length(prog.x),
+            length(prog.x))
     @printf(io, "  %d parameters (%d blocks)\n", length(prog.p),
-            num_blocks(prog.p))
+            length(prog.p))
 
     io2 = IOContext(io, :indent=>2, :compact=>true)
     show(io2, constraints(prog))

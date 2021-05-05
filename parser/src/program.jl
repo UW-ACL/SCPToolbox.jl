@@ -28,7 +28,7 @@ using ECOS
 
 import JuMP: value, dual
 
-export ConicProgram, num_blocks, value, dual, constraints, name, cost, solve!,
+export ConicProgram, numel, value, dual, constraints, name, cost, solve!,
     vary!
 export @new_variable, @new_parameter, @add_constraint,
     @set_cost, @set_feasibility
@@ -163,6 +163,12 @@ function kind(::ArgumentBlock{T})::Symbol where {T<:AtomicArgument}
     end
 end # function
 
+""" Get the indices in the argument block. """
+slice_indices(blk::ArgumentBlock)::LocationIndices = blk.elid
+
+""" Get the block index in the argument. """
+block_index(blk::ArgumentBlock)::Int = blk.blid
+
 const ArgumentBlocks{T} = Vector{ArgumentBlock{T}}
 
 """ Stacked function argument. """
@@ -192,13 +198,13 @@ mutable struct Argument{T<:AtomicArgument} <: AbstractArgument{T}
     end # function
 end # struct
 
-""" Get the number of blocks. """
-num_blocks(arg::Argument) = length(arg.blocks)
+""" Get the total number of atomic arguments. """
+numel(arg::Argument) = arg.numel
 
 """
 Support some array operations for Argument.
 """
-Base.length(arg::Argument) = arg.numel
+Base.length(arg::Argument) = length(arg.blocks)
 Base.getindex(arg::Argument, I...) = arg.blocks[I...]
 
 """
@@ -216,7 +222,7 @@ The current block and the next state, or `nothing` if at the end.
 function Base.iterate(arg::Argument,
                       state::Int=1)::Union{
                           Nothing, Tuple{ArgumentBlock, Int}}
-    if state > num_blocks(arg)
+    if state > length(arg)
         return nothing
     else
         return arg.blocks[state], state+1
@@ -395,8 +401,11 @@ end # struct
 
 const Constraints = Vector{ConicConstraint}
 
+""" Get the cone. """
+cone(C::ConicConstraint)::ConvexCone = C.K
+
 """ Get the kind of cone. """
-kind(C::ConicConstraint)::Symbol = kind(C.K)
+kind(C::ConicConstraint)::Symbol = kind(cone(C))
 
 """ Get the cone name. """
 name(C::ConicConstraint)::String = C.name
@@ -586,8 +595,8 @@ Append a new block to the end of the argument.
 function Base.push!(arg::Argument, name::String, shape::Int...)::ArgumentBlock
 
     # Create the new block
-    blid = num_blocks(arg)+1
-    elid1 = length(arg)+1
+    blid = length(arg)+1
+    elid1 = numel(arg)+1
     block = ArgumentBlock(arg, shape, blid, elid1, name)
 
     # Update the arguemnt
@@ -627,7 +636,7 @@ function Base.push!(prog::ConicProgram,
     if isnothing(blk_name)
         # Create a default name
         base_name = (kind==VARIABLE) ? "x" : "p"
-        blk_name = base_name*@sprintf("%d", num_blocks(z)+1)
+        blk_name = base_name*@sprintf("%d", length(z)+1)
     else
         # Deconflict duplicate name by appending a number suffix
         all_names = [name(blk) for blk in z]
@@ -1055,6 +1064,95 @@ function Base.copy(blk::ArgumentBlock{T},
 end # function
 
 """
+    function_args_id(F, args)
+
+Get the input argument indices of `args` for the function `F`.
+
+# Arguments
+- `F`: the function.
+- `args`: the arguments of the function, a function which is either `variables`
+  or `parameters`.
+
+# Returns
+The index numbers of the arguments.
+"""
+function function_args_id(F::ProgramFunction,
+                          args::Function)::LocationIndices
+    nargs = length(args(F))
+    if args==variables
+        return 1:nargs
+    else
+        return (1:nargs).+length(variables(F))
+    end
+end # function
+
+"""
+    fill_jacobian!(Df, args, F)
+
+Fill the blocks of the Jacobian of a vector-valued function. Let the function
+be ``f(x)``. The method fills in the blocks of ``D_x f(x)``.
+
+# Arguments
+- `Df`: a pre-initialized zero matrix to store the Jacobian.
+- `args`: the arguments of the function.
+- `F`: the function itself.
+"""
+function fill_jacobian!(Df::Types.RealMatrix,
+                        args::Function,
+                        F::ProgramFunction)::Nothing
+    j = function_args_id(F, args)
+    args = args(F)
+    narg = length(args)
+    for i = 1:narg
+        try
+            J = jacobian(F, j[i])
+            # If here, the Jacobian was defined
+            id_x = slice_indices(args[i])
+            Df[:, id_x] = J
+        catch e
+            typeof(e)==SCPError || rethrow(e)
+        end
+    end
+    return nothing
+end # function
+
+"""
+    fill_jacobian!(Df, xargs, yargs, F)
+
+Fill the blocks of the Jacobian of a matrix-valued function. Let the function
+be ``f(x,y)``. This method fills in the blocks of ``D_{xy} f(x,y)``.
+
+# Arguments
+- `Df`: a pre-initialized zero matrix to store the Jacobian.
+- `xargs`: the ``x``-arguments of the function.
+- `yargs`: the ``y``-arguments of the function.
+- `F`: the function itself.
+"""
+function fill_jacobian!(Df::Types.RealTensor,
+                        xargs::Function,
+                        yargs::Function,
+                        F::ProgramFunction)::Nothing
+    ki = function_args_id(F, xargs)
+    kj = function_args_id(F, yargs)
+    xargs, yargs = xargs(F), yargs(F)
+    nargx, nargy = length(xargs), length(yargs)
+    for i = 1:nargx
+        for j = 1:nargy
+            try
+                H = jacobian(F, (ki[i], kj[j]))
+                # If here, the Hessian was defined
+                id_x = slice_indices(xargs[i])
+                id_y = slice_indices(yargs[j])
+                Df[:, id_x, id_y] = H
+            catch e
+                typeof(e)==SCPError || rethrow(e)
+            end
+        end
+    end
+    return nothing
+end # function
+
+"""
     vary!(prg)
 
 Compute the variation of the optimal solution with respect to changes in the
@@ -1074,6 +1172,70 @@ function vary!(prg::ConicProgram)::ConicProgram
 
     # Initialize the variational problem
     kkt = ConicProgram()
+
+    # Create the concatenated primal variable perturbation
+    nx = numel(prg.x)
+    np = numel(prg.p)
+    δx = @new_variable(kkt, nx, "δx")
+    δp = @new_variable(kkt, np, "δp")
+
+    # Create the dual variable perturbations
+    n_cones = length(constraints(prg))
+    λ = dual.(constraints(prg))
+    δλ = VariableArgumentBlocks(undef, n_cones)
+    for i = 1:n_cones
+        blk_name = @sprintf("δλ%d", i)
+        δλ[i] = @new_variable(kkt, length(λ[i]), blk_name)
+    end
+
+    # Build the constraint function Jacobians
+    f = Vector{Types.RealVector}(undef, n_cones)
+    Dxf = Vector{Types.RealMatrix}(undef, n_cones)
+    Dpf = Vector{Types.RealMatrix}(undef, n_cones)
+    Dpxf = Vector{Types.RealTensor}(undef, n_cones)
+    for i = 1:n_cones
+        C = constraints(prg, i)
+        F = lhs(C)
+        K = cone(C)
+        nf = ndims(K)
+
+        f[i] = F(jacobians=true)
+
+        Dxf[i] = zeros(nf, nx)
+        Dpf[i] = zeros(nf, np)
+        Dpxf[i] = zeros(nf, nx, np)
+
+        fill_jacobian!(Dxf[i], variables, F)
+        fill_jacobian!(Dpf[i], parameters, F)
+        fill_jacobian!(Dpxf[i], parameters, variables, F)
+    end
+
+    # Primal feasibility
+    for i = 1:n_cones
+        C = constraints(prg, i)
+        K = kind(C)
+        primal_feas = (δx, δp, _, _) -> @value(f[i]+Dxf[i]*δx+Dpf[i]*δp)
+        @add_constraint(kkt, K, "primal_feas", primal_feas, (δx, δp))
+    end
+
+    # Dual feasibility
+    for i = 1:n_cones
+        K = kind(constraints(prg, i))
+        dual_feas = (δλ, _, _) -> @value(λ[i]+δλ)
+        @add_dual_constraint(kkt, K, "dual_feas", dual_feas, δλ[i])
+    end
+
+    # Complementary slackness
+    for i = 1:n_cones
+        compl_slack = (δx, δp, δλ, _, _) -> @value(dot(f[i], δλ)+
+            dot(Dxf[i]*δx+Dpf[i]*δp, λ[i]))
+        @add_constraint(kkt, :zero, "compl_slack", compl_slack,
+                        (δx, δp, δλ[i]))
+    end
+
+    # Stationarity
+
+    return kkt
 
     # Initialize the primal variables, and populate a map from the original
     # problem's blocks to the variational problem's blocks
