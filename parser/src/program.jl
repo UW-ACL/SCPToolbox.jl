@@ -370,7 +370,7 @@ struct ConicConstraint
     function ConicConstraint(f::ProgramFunction,
                              kind::Symbol,
                              prog::AbstractConicProgram;
-                             refname::Union{String, Nothing}=nothing,
+                             refname::Types.Optional{String}=nothing,
                              dual::Bool=false)::ConicConstraint
 
         # Create the underlying JuMP constraint
@@ -491,7 +491,7 @@ mutable struct ConicProgram <: AbstractConicProgram
     function ConicProgram(
         pars::Any=nothing;
         solver::DataType=ECOS.Optimizer,
-        solver_options::Union{Dict{String}, Nothing}=nothing)::ConicProgram
+        solver_options::Types.Optional{Dict{String}}=nothing)::ConicProgram
 
         # Configure JuMP model
         mdl = Model()
@@ -625,7 +625,7 @@ Add a new argument block to the optimization program.
 function Base.push!(prog::ConicProgram,
                     kind::Symbol,
                     shape::Int...;
-                    blk_name::Union{String, Nothing}=nothing)::ArgumentBlock
+                    blk_name::Types.Optional{String}=nothing)::ArgumentBlock
 
     if !(kind in (VARIABLE, PARAMETER))
         err = SCPError(0, SCP_BAD_ARGUMENT,
@@ -657,13 +657,13 @@ end
 
 """ Specialize `push!` for variables. """
 function variable!(prog::ConicProgram, shape::Int...;
-                   name::Union{String, Nothing}=nothing)::ArgumentBlock
+                   name::Types.Optional{String}=nothing)::ArgumentBlock
     push!(prog, VARIABLE, shape...; blk_name=name)
 end # function
 
 """ Specialize `push!` for parameters. """
 function parameter!(prog::ConicProgram, shape::Int...;
-                    name::Union{String, Nothing}=nothing)::ArgumentBlock
+                    name::Types.Optional{String}=nothing)::ArgumentBlock
     push!(prog, PARAMETER, shape...; blk_name=name)
 end # function
 
@@ -693,7 +693,7 @@ function constraint!(prog::ConicProgram,
                      kind::Symbol,
                      f::Function,
                      x, p;
-                     name::Union{String, Nothing}=nothing,
+                     name::Types.Optional{String}=nothing,
                      dual::Bool=false)::ConicConstraint
     x = VariableArgumentBlocks(collect(x))
     p = ConstantArgumentBlocks(collect(p))
@@ -747,7 +747,7 @@ The newly created argument object.
 """
 function new_argument(prog::ConicProgram,
                       shape,
-                      name::Union{String, Nothing},
+                      name::Types.Optional{String},
                       kind::Symbol)::ArgumentBlock
     f = (kind==VARIABLE) ? variable! : parameter!
     shape = collect(shape)
