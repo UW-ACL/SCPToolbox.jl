@@ -521,6 +521,8 @@ function Base.copy(blk::ArgumentBlock{T},
 end # function
 
 const ArgumentBlockMap = Dict{ArgumentBlock, ArgumentBlock}
+const PerturbationSet{T, N} = Dict{ConstantArgumentBlock{N}, T} where {
+    T<:Types.RealArray}
 
 """
     vary!(prg[; perturbation])
@@ -544,26 +546,24 @@ around the optimal solution.
 """
 function vary!(prg::ConicProgram;
                perturbation::Types.Optional{
-                   Types.RealVector}=nothing)::Tuple{ArgumentBlockMap,
-                                                     ConicProgram}
+                   PerturbationSet}=nothing)::Tuple{ArgumentBlockMap,
+                                                    ConicProgram}
 
     # Initialize the variational problem
     kkt = ConicProgram(solver=prg._solver,
                        solver_options=prg._solver_options)
 
     # Create the concatenated primal variable perturbation
-    nx = numel(prg.x)
-    np = numel(prg.p)
-    δx = @new_variable(kkt, nx, "δx")
-    δp = @new_variable(kkt, np, "δp")
-
-    # Associate the variable perturbation back to the primal problem's blocks
-    varmap = ArgumentBlockMap()
-    for (Z, δz) in [(prg.x, δx), (prg.p, δp)]
-        for z in Z
-            varmap[z] = δz[slice_indices(z)]
+    varmap = Dict{ArgumentBlock, Any}()
+    for z in [prg.x, prg.p]
+        for z_blk in z
+            δz_blk = copy(z_blk, kkt; new_name="δ%s", copyas=VARIABLE)
+            varmap[z_blk] = δz_blk # original -> kkt
+            varmap[δz_blk] = z_blk # kkt -> original
         end
     end
+    δx_blks = [varmap[z_blk][:] for z_blk in prg.x]
+    δp_blks = [varmap[z_blk][:] for z_blk in prg.p]
 
     # Create the dual variable perturbations
     n_cones = length(constraints(prg))
@@ -575,6 +575,8 @@ function vary!(prg::ConicProgram;
     end
 
     # Build the constraint function Jacobians
+    nx = numel(prg.x)
+    np = numel(prg.p)
     f = Vector{Types.RealVector}(undef, n_cones)
     Dxf = Vector{Types.RealMatrix}(undef, n_cones)
     Dpf = Vector{Types.RealMatrix}(undef, n_cones)
@@ -610,31 +612,43 @@ function vary!(prg::ConicProgram;
     DpxJ = DpxJ[1, :, :]
 
     # Primal feasibility
+    idcs_x = 1:nx
+    idcs_p = (1:np).+idcs_x[end]
     for i = 1:n_cones
         C = constraints(prg, i)
         K = kind(C)
-        primal_feas = (δx, δp, _, _) -> @value(f[i]+Dxf[i]*δx+Dpf[i]*δp)
-        @add_constraint(kkt, K, "primal_feas", primal_feas, (δx, δp))
+        primal_feas = (args...) -> begin
+            local δx = vcat(args[idcs_x]...)
+            local δp = vcat(args[idcs_p]...)
+            @value(f[i]+Dxf[i]*δx+Dpf[i]*δp)
+        end
+        @add_constraint(kkt, K, "primal_feas", primal_feas, (δx_blks..., δp_blks...))
     end
 
     # Dual feasibility
     for i = 1:n_cones
         K = kind(constraints(prg, i))
-        dual_feas = (δλ, _, _) -> @value(λ[i]+δλ)
+        dual_feas = (δλ, _...) -> @value(λ[i]+δλ)
         @add_dual_constraint(kkt, K, "dual_feas", dual_feas, δλ[i])
     end
 
     # Complementary slackness
     for i = 1:n_cones
-        compl_slack = (δx, δp, δλ, _, _) -> @value(dot(f[i], δλ)+
-            dot(Dxf[i]*δx+Dpf[i]*δp, λ[i]))
+        compl_slack = (args...) -> begin
+            local δx = vcat(args[idcs_x]...)
+            local δp = vcat(args[idcs_p]...)
+            local δλ = args[idcs_p[end]+1]
+            @value(dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i]))
+        end
         @add_constraint(kkt, :zero, "compl_slack", compl_slack,
-                        (δx, δp, δλ[i]))
+                        (δx_blks..., δp_blks..., δλ[i]))
     end
 
     # Stationarity
-    stat = (δx, δp, args...) -> begin
-        δλ = args[1:end-2]
+    stat = (args...) -> begin
+        local δx = vcat(args[idcs_x]...)
+        local δp = vcat(args[idcs_p]...)
+        local δλ = args[(1:n_cones).+idcs_p[end]]
         out = DxxJ*δx+DpxJ*δp
         Dxf_vary_p = (i) -> sum(Dpxf[i][:, :, j]*δp[j] for j=1:np)
         for i = 1:n_cones
@@ -642,12 +656,15 @@ function vary!(prg::ConicProgram;
         end
         @value(out)
     end
-    @add_constraint(kkt, :zero, "stat", stat, (δx, δp, δλ...))
+    @add_constraint(kkt, :zero, "stat", stat, (δx_blks..., δp_blks..., δλ...))
 
     # Fix the perturbation amount
     if !isnothing(perturbation)
-        δp_fix = (δp, _, _) -> @value(δp-perturbation)
-        @add_constraint(kkt, :zero, "fixed_perturbation", δp_fix, δp)
+        for (p, δp_setting) in perturbation
+            δp = varmap[p]
+            δp_fix = (δp, _, _) -> @value(δp-δp_setting)
+            @add_constraint(kkt, :zero, "fixed_perturbation", δp_fix, δp)
+        end
     end
 
     return varmap, kkt
