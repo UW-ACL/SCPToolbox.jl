@@ -31,6 +31,8 @@ _collect(t::Type, list) = t<:Union{} ? push!(list, t) :
     _collect(t.b, push!(list, t.a))
 _collect(t::Union{DataType,Core.TypeofBottom}, list) = push!(list, t)
 
+const Optional{T} = Union{T, Nothing}
+
 const RealTypes = Union{Int, Float64}
 
 const IntVector = Vector{Int}

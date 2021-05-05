@@ -458,7 +458,7 @@ end # struct
 core_function(J::QuadraticCost)::ProgramFunction = J.J
 
 """ Get the current objective function value. """
-value(J::QuadraticCost) = value(J.J)[1]
+value(J::QuadraticCost) = value(core_function(J))[1]
 
 """ Conic clinear program main class. """
 mutable struct ConicProgram <: AbstractConicProgram
@@ -1160,7 +1160,7 @@ function fill_jacobian!(Df::Types.RealTensor,
 end # function
 
 """
-    vary!(prg)
+    vary!(prg[; perturbation])
 
 Compute the variation of the optimal solution with respect to changes in the
 constant arguments of the problem. This sets the appropriate data such that
@@ -1172,10 +1172,16 @@ around the optimal solution.
 # Arguments
 - `prg`: the optimization problem structure.
 
+# Keywords
+- `perturbation`: (optional) a fixed perturbation to set for the parameter
+  vector.
+
 # Returns
 - `bar`: description.
 """
-function vary!(prg::ConicProgram)::ConicProgram
+function vary!(prg::ConicProgram;
+               perturbation::Types.Optional{
+                   Types.RealVector}=nothing)::ConicProgram
 
     # Initialize the variational problem
     kkt = ConicProgram()
@@ -1264,6 +1270,12 @@ function vary!(prg::ConicProgram)::ConicProgram
         @value(out)
     end
     @add_constraint(kkt, :zero, "stat", stat, (δx, δp, δλ...))
+
+    # Fix the perturbation amount
+    if !isnothing(perturbation)
+        δp_fix = (δp, _, _) -> @value(δp-perturbation)
+        @add_constraint(kkt, :zero, "fixed_perturbation", δp_fix, δp)
+    end
 
     return kkt
 end # function
