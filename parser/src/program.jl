@@ -454,7 +454,10 @@ struct QuadraticCost
     end # function
 end # struct
 
-# Get the current objective function value
+""" Get the actual underlying cost function. """
+core_function(J::QuadraticCost)::ProgramFunction = J.J
+
+""" Get the current objective function value. """
 value(J::QuadraticCost) = value(J.J)[1]
 
 """ Conic clinear program main class. """
@@ -1134,6 +1137,7 @@ function fill_jacobian!(Df::Types.RealTensor,
                         F::ProgramFunction)::Nothing
     ki = function_args_id(F, xargs)
     kj = function_args_id(F, yargs)
+    symm = xargs==yargs
     xargs, yargs = xargs(F), yargs(F)
     nargx, nargy = length(xargs), length(yargs)
     for i = 1:nargx
@@ -1144,6 +1148,9 @@ function fill_jacobian!(Df::Types.RealTensor,
                 id_x = slice_indices(xargs[i])
                 id_y = slice_indices(yargs[j])
                 Df[:, id_x, id_y] = H
+                if symm
+                    Df[:, id_y, id_x] = H'
+                end
             catch e
                 typeof(e)==SCPError || rethrow(e)
             end
@@ -1210,6 +1217,19 @@ function vary!(prg::ConicProgram)::ConicProgram
         fill_jacobian!(Dpxf[i], parameters, variables, F)
     end
 
+    # Build the cost function Jacobians
+    J = core_function(cost(prg))
+    J(jacobians=true)
+    DxJ = zeros(1, nx)
+    DxxJ = zeros(1, nx, nx)
+    DpxJ = zeros(1, nx, np)
+    fill_jacobian!(DxJ, variables, J)
+    fill_jacobian!(DxxJ, variables, variables, J)
+    fill_jacobian!(DpxJ, parameters, variables, J)
+    DxJ = DxJ[:]
+    DxxJ = DxxJ[1, :, :]
+    DpxJ = DpxJ[1, :, :]
+
     # Primal feasibility
     for i = 1:n_cones
         C = constraints(prg, i)
@@ -1234,101 +1254,16 @@ function vary!(prg::ConicProgram)::ConicProgram
     end
 
     # Stationarity
-
-    return kkt
-
-    # Initialize the primal variables, and populate a map from the original
-    # problem's blocks to the variational problem's blocks
-    varmap = Dict{ArgumentBlock, Any}()
-    for z in [prg.x, prg.p]
-        for z_blk in z
-            δz_blk = copy(z_blk, kkt; new_name="δ%s", copyas=VARIABLE)
-            varmap[z_blk] = δz_blk # original -> kkt
-            varmap[δz_blk] = z_blk # kkt -> original
+    stat = (δx, δp, args...) -> begin
+        δλ = args[1:end-2]
+        out = DxxJ*δx+DpxJ*δp
+        Dxf_vary_p = (i) -> sum(Dpxf[i][:, :, j]*δp[j] for j=1:np)
+        for i = 1:n_cones
+            out -= Dxf_vary_p(i)'*λ[i]+Dxf[i]'*δλ[i]
         end
+        @value(out)
     end
-
-    # Initialize the dual variables
-    n_cones = length(constraints(prg))
-    λ = dual.(constraints(prg))
-    δλ = VariableArgumentBlocks(undef, n_cones)
-    for i = 1:n_cones
-        blk_name = @sprintf("δλ%d", i)
-        δλ[i] = @new_variable(kkt, length(λ[i]), blk_name)
-    end
-
-    # Get the constraint function Jacobians
-    jacmap = Dict{Int, Any}()
-    for i = 1:n_cones
-        # Get the underlying function being constrained
-        C = constraints(prg, i)
-        F = lhs(C)
-
-        # Get the variables
-        x = variables(F)
-        p = parameters(F)
-        δx = map((xi) -> varmap[xi], x)
-        δp = map((pi) -> varmap[pi], p)
-
-        # Evaluate the Jacobians
-        f = F(jacobians=true)
-        nx, np = length(x), length(p)
-        idcs_x = 1:nx
-        idcs_p = (1:np).+nx
-        Dx = map((i) -> jacobian(F, i), idcs_x)
-        Dp = map((i) -> jacobian(F, i), idcs_p)
-
-        # Save data
-        jacmap[i] = (nx, np, x, p, λ[i], δx, δp, δλ[i], f, Dx, Dp)
-    end
-
-    # Primal feasibility
-    for i = 1:n_cones
-        C = constraints(prg, i)
-        K = kind(C)
-
-        nx, np, _, _, _, δx, δp, _, f, Dx, Dp = jacmap[i]
-
-        # Formulate the constraint
-        f_vary = (args...) -> begin
-            δx = args[1:nx]
-            δp = args[(1:np).+nx]
-            out = f
-            for i = 1:nx; out += Dx[i]*δx[i]; end
-            for i = 1:np; out += Dp[i]*δp[i]; end
-            @value(out)
-        end
-
-        @add_constraint(kkt, K, "primal_feas", f_vary, (δx..., δp...))
-    end
-
-    # Dual feasibility
-    for i = 1:n_cones
-        K = kind(constraints(prg, i))
-        λ_vary = (δλ, _, _) -> @value(λ[i]+δλ)
-        @add_dual_constraint(kkt, K, "dual_feas", λ_vary, δλ[i])
-    end
-
-    # Complementary slackness
-    for i = 1:n_cones
-        nx, np, _, _, λ, δx, δp, δλ, f, Dx, Dp = jacmap[i]
-
-        f_slack = (args...) -> begin
-            δx = args[1:nx]
-            δp = args[(1:np).+nx]
-            δλ = args[np+nx+1]
-            out = dot(f, δλ)
-            for i = 1:nx; out += dot(λ, Dx[i]*δx[i]); end
-            for i = 1:np; out += dot(λ, Dp[i]*δp[i]); end
-            @value(out)
-        end
-
-        @add_constraint(kkt, :zero, "compl_slack", f_slack,
-                        (δx..., δp..., δλ))
-    end
-
-    # Stationarity
-    # TODO
+    @add_constraint(kkt, :zero, "stat", stat, (δx, δp, δλ...))
 
     return kkt
 end # function
