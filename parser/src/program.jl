@@ -42,6 +42,8 @@ mutable struct ConicProgram <: AbstractConicProgram
     constraints::Constraints  # List of conic constraints
 
     _feasibility::Bool        # Flag if feasibility problem
+    _solver::DataType         # The solver input to the constructor
+    _solver_options::Types.Optional{Dict{String}} # Solver options
 
     """
         ConicProgram([pars][; solver, solver_options])
@@ -88,7 +90,7 @@ mutable struct ConicProgram <: AbstractConicProgram
 
         # Combine everything into a conic program
         prog = new(mdl, pars, x, p, cost, constraints,
-                   _feasibility)
+                   _feasibility, solver, solver_options)
 
         # Associate the arguments with the newly created program
         link!(x, prog)
@@ -518,6 +520,8 @@ function Base.copy(blk::ArgumentBlock{T},
     return new_blk
 end # function
 
+const ArgumentBlockMap = Dict{ArgumentBlock, ArgumentBlock}
+
 """
     vary!(prg[; perturbation])
 
@@ -540,16 +544,26 @@ around the optimal solution.
 """
 function vary!(prg::ConicProgram;
                perturbation::Types.Optional{
-                   Types.RealVector}=nothing)::ConicProgram
+                   Types.RealVector}=nothing)::Tuple{ArgumentBlockMap,
+                                                     ConicProgram}
 
     # Initialize the variational problem
-    kkt = ConicProgram()
+    kkt = ConicProgram(solver=prg._solver,
+                       solver_options=prg._solver_options)
 
     # Create the concatenated primal variable perturbation
     nx = numel(prg.x)
     np = numel(prg.p)
     δx = @new_variable(kkt, nx, "δx")
     δp = @new_variable(kkt, np, "δp")
+
+    # Associate the variable perturbation back to the primal problem's blocks
+    varmap = ArgumentBlockMap()
+    for (Z, δz) in [(prg.x, δx), (prg.p, δp)]
+        for z in Z
+            varmap[z] = δz[slice_indices(z)]
+        end
+    end
 
     # Create the dual variable perturbations
     n_cones = length(constraints(prg))
@@ -636,5 +650,5 @@ function vary!(prg::ConicProgram;
         @add_constraint(kkt, :zero, "fixed_perturbation", δp_fix, δp)
     end
 
-    return kkt
+    return varmap, kkt
 end # function

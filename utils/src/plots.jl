@@ -27,7 +27,8 @@ using Printf
 using PyPlot
 using Colors
 
-export plot_timeseries_bound!, plot_ellipsoids!, plot_prisms!, plot_convergence,
+export plot_timeseries_bound!, # plot_ellipsoids!, plot_prisms!,
+    plot_convergence,
     setup_axis!, generate_colormap, rgb, rgb2pyplot, set_axis_equal,
     create_figure, save_figure
 
@@ -44,10 +45,10 @@ Plot a constant y-value bound keep-out zone of a timeseries. Supposedly to show 
 - `height`: the "thickness" of the keep-out slab on the plot.
 """
 function plot_timeseries_bound!(ax::PyPlot.PyObject,
-                                x_min::RealValue,
-                                x_max::RealValue,
-                                y_bnd::RealValue,
-                                height::RealValue)::Nothing
+                                x_min::Types.RealTypes,
+                                x_max::Types.RealTypes,
+                                y_bnd::Types.RealTypes,
+                                height::Types.RealTypes)::Nothing
 
     y_other = y_bnd+height
     x = [x_min, x_max, x_max, x_min, x_min]
@@ -83,25 +84,25 @@ Draw ellipsoids on the currently active plot.
 # Keywords
 - `label`: (optional) legend label.
 """
-function plot_ellipsoids!(ax::PyPlot.PyObject,
-                          E::Vector{Ellipsoid},
-                          axes::Types.IntVector=[1, 2];
-                          label::Union{String,Nothing}=nothing)::Nothing
-    θ = LinRange(0.0, 2*pi, 100)
-    circle = hcat(cos.(θ), sin.(θ))'
-    for i = 1:length(E)
-        Ep = project(E[i], axes)
-        vertices = Ep.H\circle.+Ep.c
-        x, y = vertices[1, :], vertices[2, :]
-        fc = parse(RGB, "#db6245")
-        ax.fill(x, y,
-                facecolor=rgb2pyplot(fc, a=0.5),
-                edgecolor="#26415d",
-                linewidth=1,
-                label=(i==1) ? label : nothing)
-    end
-    return nothing
-end # function
+# function plot_ellipsoids!(ax::PyPlot.PyObject,
+#                           E::Vector{Ellipsoid},
+#                           axes::Types.IntVector=[1, 2];
+#                           label::Union{String,Nothing}=nothing)::Nothing
+#     θ = LinRange(0.0, 2*pi, 100)
+#     circle = hcat(cos.(θ), sin.(θ))'
+#     for i = 1:length(E)
+#         Ep = project(E[i], axes)
+#         vertices = Ep.H\circle.+Ep.c
+#         x, y = vertices[1, :], vertices[2, :]
+#         fc = parse(RGB, "#db6245")
+#         ax.fill(x, y,
+#                 facecolor=rgb2pyplot(fc, a=0.5),
+#                 edgecolor="#26415d",
+#                 linewidth=1,
+#                 label=(i==1) ? label : nothing)
+#     end
+#     return nothing
+# end # function
 
 """
     plot_prisms!(ax, H[, axes][; label])
@@ -116,25 +117,25 @@ Draw rectangular prisms on the current active plot.
 # Keywords
 - `label`: (optional) legend label.
 """
-function plot_prisms!(ax::PyPlot.PyObject,
-                      H::Vector{Hyperrectangle},
-                      axes::Types.IntVector=[1, 2];
-                      label::Union{String,Nothing}=nothing)::Nothing
-    for i = 1:length(H)
-        Hi = H[i]
-        x, y = axes
-        vertices = RealMatrix([Hi.l[x] Hi.u[x] Hi.u[x] Hi.l[x] Hi.l[x];
-                               Hi.l[y] Hi.l[y] Hi.u[y] Hi.u[y] Hi.l[y]])
-        x, y = vertices[1, :], vertices[2, :]
-        fc = parse(RGB, "#5da9a1")
-        ax.fill(x, y,
-                linewidth=1,
-                facecolor=rgb2pyplot(fc, a=0.5),
-                edgecolor="#427d77",
-                label=(i==1) ? label : nothing)
-    end
-    return nothing
-end # function
+# function plot_prisms!(ax::PyPlot.PyObject,
+#                       H::Vector{Hyperrectangle},
+#                       axes::Types.IntVector=[1, 2];
+#                       label::Union{String,Nothing}=nothing)::Nothing
+#     for i = 1:length(H)
+#         Hi = H[i]
+#         x, y = axes
+#         vertices = RealMatrix([Hi.l[x] Hi.u[x] Hi.u[x] Hi.l[x] Hi.l[x];
+#                                Hi.l[y] Hi.l[y] Hi.u[y] Hi.u[y] Hi.l[y]])
+#         x, y = vertices[1, :], vertices[2, :]
+#         fc = parse(RGB, "#5da9a1")
+#         ax.fill(x, y,
+#                 linewidth=1,
+#                 facecolor=rgb2pyplot(fc, a=0.5),
+#                 edgecolor="#427d77",
+#                 label=(i==1) ? label : nothing)
+#     end
+#     return nothing
+# end # function
 
 """
     plot_convergence(history, name)
@@ -489,9 +490,9 @@ Get a plotting colormap.
 - `cmap`: a colormap object.
 """
 function generate_colormap(style::String="inferno_r";
-                           minval::RealValue=0.0,
-                           maxval::RealValue=1.0,
-                           midval::RealValue=NaN)::PyPlot.PyObject
+                           minval::Types.RealTypes=0.0,
+                           maxval::Types.RealTypes=1.0,
+                           midval::Types.RealTypes=NaN)::PyPlot.PyObject
     cmap = plt.get_cmap(style)
     if isnan(midval)
         nrm = matplotlib.colors.Normalize(vmin=minval, vmax=maxval)
@@ -515,7 +516,7 @@ Sample a colormap for an RGB color at given value.
 # Returns
 - `clr`: the RGB color 3-tuple.
 """
-function rgb(cmap::PyPlot.PyObject, v::RealValue)::Tuple{RealValue, RealValue, RealValue}
+function rgb(cmap::PyPlot.PyObject, v::Types.RealTypes)::Tuple{Types.RealTypes, Types.RealTypes, Types.RealTypes}
     clr = cmap.to_rgba(v)[1:3]
     return clr
 end # function

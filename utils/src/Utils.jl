@@ -47,6 +47,6 @@ using .Types
 # export Table, improvement_percent
 
 # include("helper.jl")
-# include("plots.jl")
+include("plots.jl")
 
 end # module
