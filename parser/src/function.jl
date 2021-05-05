@@ -17,9 +17,8 @@ You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 if isdefined(@__MODULE__, :LanguageServer)
-    include("../../utils/src/Utils.jl")
+    include("general.jl")
     include("cone.jl")
-    using .Utils
 end
 
 import JuMP: value

@@ -44,9 +44,9 @@ const RealVector = RealArray{1}
 const RealMatrix = RealArray{2}
 const RealTensor = RealArray{3}
 
-const Vref = VariableRef
-const AExpr = GenericAffExpr{Float64, Vref}
-const QExpr = GenericQuadExpr{Float64, Vref}
+const VRef = VariableRef
+const AExpr = GenericAffExpr{Float64, VRef}
+const QExpr = GenericQuadExpr{Float64, VRef}
 const Variable = Union{RealTypes, VariableRef, AExpr, QExpr}
 const VariableArray{n} = Union{[Array{T, n} for T in collect(Variable)]...}
 const VariableVector = VariableArray{1}

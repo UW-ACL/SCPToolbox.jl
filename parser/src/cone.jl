@@ -17,21 +17,12 @@ You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 if isdefined(@__MODULE__, :LanguageServer)
-    include("../../utils/src/Utils.jl")
-    using .Utils
+    include("general.jl")
 end
-
-include("../../utils/src/Utils.jl")
-
-using LinearAlgebra
-using JuMP
-using Printf
-using .Utils
 
 export ConvexCone, add!, fixed_cone, indicator!
 
-ST = Types
-const ConeVariable = Union{ST.Variable, ST.VariableVector}
+const ConeVariable = Union{Types.Variable, Types.VariableVector}
 
 """
 A conic constraint is of the form `{z : z ∈ K}`, where `K` is a convex cone.
@@ -165,7 +156,7 @@ Add a conic constraint to the optimization problem.
 # Returns
 - `constraint`: the conic constraint reference.
 """
-function add!(pbm::Model, cone::T)::ST.Constraint where {T<:ConvexCone}
+function add!(pbm::Model, cone::T)::Types.Constraint where {T<:ConvexCone}
 
     constraint = @constraint(pbm, cone.z in cone.K)
 
@@ -185,9 +176,9 @@ Add several conic constraints to the optimization problem.
 - `constraints`: the conic constraint references.
 """
 function add!(
-    pbm::Model, cones::Vector{T})::ST.ConstraintVector where {T<:ConvexCone}
+    pbm::Model, cones::Vector{T})::Types.ConstraintVector where {T<:ConvexCone}
 
-    constraints = ST.ConstraintVector(undef, 0)
+    constraints = Types.ConstraintVector(undef, 0)
 
     for cone in cones
         push!(constraints, add!(pbm, cone))
@@ -209,7 +200,7 @@ optimization).
 - `is_fixed`: true if the cone is purely numerical.
 """
 function fixed_cone(cone::ConvexCone)::Bool
-    is_fixed = typeof(cone.z)<:ST.RealArray
+    is_fixed = typeof(cone.z)<:Types.RealArray
     return is_fixed
 end # function
 
@@ -233,7 +224,7 @@ relationship: q<=0 if and only if x∈K.
 # Returns
 - `q`: the indicator vector.
 """
-function indicator!(pbm::Model, cone::ConvexCone)::ST.Variable
+function indicator!(pbm::Model, cone::ConvexCone)::Types.Variable
 
     # Parameters
     mode = (fixed_cone(cone)) ? :numerical : :jump

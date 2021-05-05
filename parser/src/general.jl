@@ -1,4 +1,4 @@
-#= Optimization problem parser.
+#= General aspects of conic linear optimization problem.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
@@ -16,27 +16,23 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-module Parser
-
 if isdefined(@__MODULE__, :LanguageServer)
     include("../../utils/src/Utils.jl")
+    using .Utils
 end
 
-# User-facing problem definition
-# include("problem.jl")
+include("../../utils/src/Utils.jl")
 
-# General optimization problem building
-module ConicLinearProgram
-include("general.jl")
-include("argument.jl")
-include("function.jl")
-include("cone.jl")
-include("constraint.jl")
-include("cost.jl")
-include("program.jl")
-include("printing.jl")
-end # module
+using LinearAlgebra
+using JuMP
+using ECOS
+using Printf
+using .Utils
 
-using .ConicLinearProgram
+const AtomicVariable = Types.VRef
+const AtomicConstant = Float64
+const AtomicArgument = Union{AtomicVariable, AtomicConstant}
 
-end # module
+abstract type AbstractConicProgram end
+
+abstract type AbstractArgument{T<:AtomicArgument} end
