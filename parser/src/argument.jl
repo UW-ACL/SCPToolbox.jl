@@ -23,15 +23,85 @@ end
 import JuMP: value
 
 export value, name
+export @scale
 
 const BlockValue{T,N} = AbstractArray{T,N}
-const LocationIndices = Types.IntVector
+const LocationIndices = Array{Int}
+const RealArray{N} = Types.RealArray{N}
+const AbstractRealArray{N} = AbstractArray{Float64, N}
 
 # Symbols denoting a variable or a parameter
 const VARIABLE = :variable
 const PARAMETER = :parameter
 
 # ..:: Data structures ::..
+
+"""
+`Scaling` holds the data used to numerically scale an `ArgumentBlock`. As a
+concrete example, if the original variable is `x`, then scaling replaces the
+variable with the affine expression `x=(S.*xh).+c` where `xh` is a new "scaled"
+variable and (`S`, `c`) are the dilation and offset coefficients of the same
+size. Elementwise, scaling looks like:
+
+```julia
+x[i,j,...] = S[i,j,...]*xh[i,j,...]+c[i,j,...]
+```
+
+The implementation uses elementwise/broadcasting operations to allow it to
+naturally extend to multiple dimensions.
+"""
+mutable struct Scaling{N} <: AbstractRealArray{N}
+    S::AbstractRealArray{N} # Dilation coefficients
+    c::AbstractRealArray{N} # Scaling coefficients
+
+    """
+        Scaling(blk, S, c)
+
+    Scaling constructor.
+
+    # Arguments
+    - `blk`: the argument block that is to be scaled.
+    - `S`: (optional) the dilation coefficients.
+    - `c`: (optional) the offset coefficients.
+
+    # Returns
+    - `scaling`: the resulting scaling object.
+    """
+    function Scaling(blk::AbstractArgumentBlock{T, N},
+                     S::Types.Optional{RealArray}=nothing,
+                     c::Types.Optional{RealArray}=nothing)::Scaling{N} where {
+                         T<:AtomicArgument, N}
+        blk_shape = size(blk)
+        S = isnothing(S) ? ones(blk_shape) :
+            repeat(S, outer=blk_shape.÷size(S))
+        c = isnothing(c) ? zeros(blk_shape) :
+            repeat(c, outer=blk_shape.÷size(S))
+        scaling = new{N}(S, c)
+        return scaling
+    end # function
+
+    """
+        Scaling(sc, Id...)
+
+    A "move constructor" for slicking the scaling object. By applying the same
+    slicing commands as to the `ArgumentBlock`, we can recover the scaling that
+    is associated with the sliced `ArgumentBlock` object.
+
+    # Arguments
+    - `sc`: the original scaling object.
+    - `Id...`: the slicing indices/colons.
+
+    # Returns
+    - `sliced_scaling`: the sliced scaling object.
+    """
+    function Scaling(sc::Scaling, Id...)::Scaling
+        sliced_S = view(sc.S, Id...)
+        sliced_c = view(sc.c, Id...)
+        N = ndims(sliced_S)
+        sliced_scaling = new{N}(sliced_S, sliced_c)
+        return sliced_scaling
+    end # function
+end # struct
 
 """
 `ArgumentBlock` provides a data structure that holds a subset of the arguments
@@ -44,11 +114,12 @@ to find out the indices of the particular arguments within the total argument
 vector. This becomes important for creating the variation problem in the
 `vary!` function.
 """
-struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArray{T, N}
+struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArgumentBlock{T, N}
     value::BlockValue{T, N}       # The value of the block
     name::String                  # Argument name
     blid::Int                     # Block number in the argument
     elid::LocationIndices         # Element indices in the argument
+    scale::Ref{Scaling{N}}        # Scaling parameter
     arg::Ref{AbstractArgument{T}} # Reference to owning argument
 
     """
@@ -71,7 +142,8 @@ struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArray{T, N}
         shape::NTuple{N, Int},
         blid::Int,
         elid1::Int,
-        name::String)::ArgumentBlock{T, N} where {T<:AtomicArgument, N}
+        name::String)::ArgumentBlock{
+            T, N} where {T<:AtomicArgument, N}
 
         # Initialize the value
         if T<:AtomicVariable
@@ -81,51 +153,53 @@ struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArray{T, N}
             value = fill(NaN, shape...)
         end
 
-        # Building indices
         elid = (1:length(value)).+(elid1-1)
+        arg_ref = Ref{AbstractArgument{T}}(arg)
+        scale_ref = Ref{Scaling{N}}()
 
-        arg_ptr = Ref{AbstractArgument{T}}(arg)
-        blk = new{T, N}(value, name, blid, elid, arg_ptr)
+        blk = new{T, N}(value, name, blid, elid, scale_ref, arg_ref)
+
+        # Apply unit scaling (i.e. "no scaling")
+        scale = Scaling(blk)
+        apply_scaling!(blk, scale; override=true)
 
         return blk
     end # function
 
     """
-        ArgumentBlock(block, Id...[; link])
+        ArgumentBlock(block, Id...)
 
-    A kind of "move constructor" for slicing a block.
+    A kind of "move constructor" for slicing a block. This will **always** use
+    a view into the array, so that no copy of the internal values is made. This
+    means that changes the values in the resulting `ArgumentBlock` slice will
+    also change the values of the original.
 
     # Arguments
     - `block`: the original block.
     - `Id...`: the slicing indices/colons.
-
-    # Keywords
-    - `link`: (optional) whether to return a view instead of a regular
-      slice. If not, an array is returned (which may produce a copy).
 
     # Returns
     - `sliced_block`: the sliced block.
     """
     function ArgumentBlock(
         block::ArgumentBlock{T, N},
-        Id...; link::Bool=false)::ArgumentBlock{T} where {T<:AtomicArgument, N}
+        Id...)::ArgumentBlock{T} where {T<:AtomicArgument, N}
 
         # Slice the block value
-        sliced_value = (link) ? view(block.value, Id...) : block.value[Id...]
-        if !(typeof(sliced_value)<:AbstractArray)
-            sliced_value = fill(sliced_value, ())
-        end
+        sliced_value = view(block.value, Id...)
 
         # Get the element indices for the slice (which are a subset of the
         # original)
         sliced_elid = block.elid[LinearIndices(block.value)[Id...]]
-        if !(typeof(sliced_elid)<:AbstractArray)
-            sliced_elid = fill(sliced_elid, ())
+        if ndims(sliced_elid)<1
+            sliced_elid = fill(sliced_elid)
         end
 
-        K = ndims(sliced_elid)
+        K = ndims(sliced_value)
+        scale_ref = Ref{Scaling{K}}(scale(block)[Id...])
+
         sliced_block = new{T, K}(sliced_value, block.name, block.blid,
-                                 sliced_elid, block.arg)
+                                 sliced_elid, scale_ref, block.arg)
 
         return sliced_block
     end # function
@@ -176,15 +250,26 @@ const ConstantArgumentBlocks = ArgumentBlocks{AtomicConstant}
 # ..:: Methods ::..
 
 """
+Provide an interface to make `Scaling` behave like an array. See the
+[documentation](https://docs.julialang.org/en/v1/manual/interfaces/#man-interface-array).
+"""
+Base.size(sc::Scaling) = size(sc.S)
+Base.getindex(sc::Scaling, I...) = Scaling(sc, I...)
+Base.view(sc::Scaling, I...) = Scaling(sc, I...)
+Base.collect(sc::Scaling) = [sc]
+Base.iterate(sc::Scaling, state::Int=1) = iterate(sc.S, state)
+
+"""
 Provide an interface to make `ArgumentBlock` behave like an array. See the
 [documentation](https://docs.julialang.org/en/v1/manual/interfaces/#man-interface-array).
 """
 Base.size(blk::ArgumentBlock) = size(blk.value)
 Base.getindex(blk::ArgumentBlock, I...) = ArgumentBlock(blk, I...)
-Base.view(blk::ArgumentBlock, I...) = ArgumentBlock(blk, I...; link=true)
-Base.setindex!(blk::ArgumentBlock{T}, v::T, i::Int) where T = blk.value[i] = v
-Base.setindex!(blk::ArgumentBlock{T}, v::T,
-               I::Vararg{Int, N}) where {T, N} = blk.value[I...] = v
+Base.view(blk::ArgumentBlock, I...) = ArgumentBlock(blk, I...)
+Base.setindex!(blk::ArgumentBlock{T},
+               v::V, i::Int) where {T, V} = blk.value[i] = v
+Base.setindex!(blk::ArgumentBlock{T}, v::V,
+               I::Vararg{Int, N}) where {T, V, N} = blk.value[I...] = v
 Base.collect(blk::ArgumentBlock) = [blk]
 Base.iterate(blk::ArgumentBlock, state::Int=1) = iterate(blk.value, state)
 
@@ -275,6 +360,90 @@ function populate!(X, mdl::Model, sub::String=""; name::String="")::Nothing
 end # function
 
 """
+    apply_scaling!(blk, scale[; override])
+
+Apply new scaling to the argument block.
+
+# Arguments
+- `blk`: the argument block.
+- `scale`: the scaling to apply.
+
+# Keywords
+- `override`: (optional) write over the existing scaling if true. You shouldn't
+  use this if you want to update an existing scaling.
+"""
+function apply_scaling!(blk::ArgumentBlock{T, N},
+                        scale::Scaling{N};
+                        override::Bool=false)::Nothing where {
+                            T<:AtomicArgument, N}
+    if override
+        blk.scale[] = scale
+    else
+        blk.scale[].S .= dilation(scale)
+        blk.scale[].c .= offset(scale)
+    end
+    return nothing
+end # function
+
+""" Simple getters for scaling terms. """
+dilation(scale::Scaling)::AbstractRealArray = scale.S
+offset(scale::Scaling)::AbstractRealArray = scale.c
+scale(blk::ArgumentBlock)::Scaling = blk.scale[]
+
+"""
+    set_scale!(blk, dil, off)
+
+Set the scaling parameters for an argument block. For the scalar case, this
+sets `x=dil*xh+off` so that `x` ends up being passed to the user functions that
+define the problem, and `xh` is what the numerical optimizer works with "under
+the hood".
+
+# Arguments
+- `blk`: the argument block.
+- `dil`: the scaling dilation.
+- `off`: the scaling offset.
+"""
+function set_scale!(blk::ArgumentBlock,
+                    dil::Union{Real, RealArray},
+                    off::Types.Optional{Union{Real,
+                                              RealArray}}=nothing)::Nothing
+    dil = (dil isa RealArray) ? dil : [dil]
+    off = (isnothing(off) || off isa RealArray) ? off : [off]
+    new_scaling = Scaling(blk, dil, off)
+    apply_scaling!(blk, new_scaling)
+    return nothing
+end # function
+
+"""
+    @scale(blk, S, c)
+    @scale(blk, S)
+
+Scale an argument block, or a slice thereof. This is just a wrapper of the
+function `set_scale!`, so look there for more info. If the internal block value
+is `xh` that gets optimized by the numerical solver, then scaling will make the
+user-defined functions operate on the affine-transformed value `x=(S.*xh).+c`
+(not the **elementwise** multiplication and addition used in this
+implementation).
+
+# Arguments
+- `blk`: the argument block.
+- `S`: the scaling dilation. Can be any scalar or array, as long as it properly
+  broadcasts to elemntwise multiplication.
+- `c`: the scalinf osset. Can be any scalar or array, as long as it properly
+  broadcasts to elemntwise edition.
+
+# Returns
+- `bar`: description.
+"""
+macro scale(blk, S, c)
+    :( set_scale!($(esc.([blk, S, c])...)) )
+end # macro
+
+macro scale(blk, S)
+    :( set_scale!($(esc.([blk, S, nothing])...)) )
+end # macro
+
+"""
     push!(arg, name, shape...)
 
 Append a new block to the end of the argument.
@@ -334,17 +503,40 @@ function Base.hash(blk::ArgumentBlock)::UInt64
 end # function
 
 """
-    value(blk)
+    scale(sc, x)
 
-Get the value of the block.
+Apply scaling (dilation and offset) to an array.
+
+# Arguments
+- `sc`: the scaling definition object.
+- `xh`: the array to be scaled.
+"""
+function scale(sc::Scaling, xh::AbstractArray)::AbstractArray
+    S = dilation(sc)
+    c = offset(sc)
+    return (S.*xh).+c
+end # function
+
+""" Wrapper to call `scale` directly with `ArgumentBlock`. """
+scale(blk::ArgumentBlock, xh::AbstractArray) = scale(scale(blk), xh)
+
+"""
+    value(blk[; raw])
+
+Get the value of the block, optionally the raw pre-scaling value.
 
 # Arguments
 - `blk`: the block.
 
+# Keywords
+- `raw`: (optional) if true then return the raw underlying scaled value. It is
+  to be understood that scaling does `x=S*xh+c`, and `raw=true` returns `xh`
+  while `raw=false` returns `x`.
+
 # Returns
 - `val`: the block's value.
 """
-function value(blk::ArgumentBlock{T, N})::AbstractArray where {T, N}
+function value(blk::ArgumentBlock{T}; raw::Bool=false)::AbstractArray where T
 
     if T<:AtomicVariable
         mdl = jump_model(blk) # The underlying optimization model
@@ -356,6 +548,8 @@ function value(blk::ArgumentBlock{T, N})::AbstractArray where {T, N}
             # The variables have been assigned their optimal values, show these
             val = value.(blk.value)
         end
+        # Scale the value
+        val = raw ? val : scale(blk, val)
     else
         val = blk.value
     end

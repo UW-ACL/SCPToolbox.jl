@@ -270,7 +270,7 @@ function Base.show(io::IO, cone::ConicConstraint)::Nothing
     @printf(io, "Name: %s\n", name(cone))
 
     show(io, cone.K; z="f(x,p)")
-    println()
+    @printf(io, "\n")
 
     io2 = IOContext(io, :compact=>true)
     show(io2, cone.f)
@@ -300,24 +300,51 @@ function Base.show(io::IO, constraints::Constraints)::Nothing
         cone_count[kind(constraint)] += 1
     end
     # Print out
-    for cone in SUPPORTED_CONES
+    for cone in SUPPORTED_CONES #noinfo
         count = cone_count[cone] #noinfo
         name = CONE_NAMES[cone] #noinfo
         if count>0
-            @printf("\n%s  %d %s cones", indent, count, name)
+            @printf(io, "\n%s  %d %s cones", indent, count, name)
         end
     end
 
     if !compact
         @printf("\n\n")
-        for cone in constraints
+        for cone in constraints #noinfo
             show(io, cone)
-            println()
+            @printf(io, "\n")
         end
     end
 
     return nothing
 end # function
+
+"""
+    show(io, sc)
+
+Pretty print the argument block scaling.
+
+# Arguments
+- `io`: stream object.
+- `sc`: the scaling object.
+"""
+function Base.show(io::IO, sc::Scaling)::Nothing
+    compact = get(io, :compact, false) #noinfo
+
+    @printf(io, "Affine scaling x=(S.*xh).+c\n")
+
+    @printf(io, "S =\n")
+    io2 = IOContext(io, :indent=>1, :compact=>true)
+    print_array(io2, dilation(sc))
+    @printf(io, "\n")
+
+    @printf(io, "c =\n")
+    io2 = IOContext(io, :indent=>1, :compact=>true)
+    print_array(io2, offset(sc))
+
+    return nothing
+end # function
+
 
 """
     show(io, arg)
@@ -326,13 +353,13 @@ Pretty print an argument block.
 
 # Arguments
 - `io`: stream object.
-- `arg`: the argument.
+- `blk`: the argument block.
 """
-function Base.show(io::IO, arg::ArgumentBlock{T})::Nothing where T
+function Base.show(io::IO, blk::ArgumentBlock{T})::Nothing where T
     compact = get(io, :compact, false) #noinfo
 
     isvar = T==AtomicVariable
-    dim = ndims(arg)
+    dim = ndims(blk)
     qualifier = Dict(0=>"Scalar", 1=>"Vector", 2=>"Matrix", 3=>"Tensor")
     if dim<=3
         qualifier = qualifier[dim]
@@ -343,15 +370,15 @@ function Base.show(io::IO, arg::ArgumentBlock{T})::Nothing where T
     kind = isvar ? "variable" : "parameter"
 
     @printf(io, "%s %s\n", qualifier, kind)
-    @printf(io, "  %d elements\n", length(arg))
-    @printf(io, "  %s shape\n", size(arg))
-    @printf(io, "  Name: %s\n", arg.name)
-    @printf(io, "  Block index in stack: %d\n", arg.blid)
-    @printf(io, "  Indices in stack: %s\n", print_indices(arg.elid))
-    @printf(io, "  Type: %s\n", typeof(arg.value))
+    @printf(io, "  %d elements\n", length(blk))
+    @printf(io, "  %s shape\n", size(blk))
+    @printf(io, "  Name: %s\n", blk.name)
+    @printf(io, "  Block index in stack: %d\n", blk.blid)
+    @printf(io, "  Indices in stack: %s\n", print_indices(blk.elid))
+    @printf(io, "  Type: %s\n", typeof(blk.value))
     @printf(io, "  Value =\n")
     io2 = IOContext(io, :indent=>4, :compact=>true)
-    print_array(io2, arg.value)
+    print_array(io2, blk.value)
 
     return nothing
 end # function
@@ -458,6 +485,7 @@ Base.show(io::IO, ::MIME"text/plain",
               DifferentiableFunction,
               ConicConstraint,
               Constraints,
+              Scaling,
               ArgumentBlock,
               Argument,
               ConicProgram},

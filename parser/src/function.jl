@@ -114,9 +114,9 @@ function (fw::TypedFunction)(args...)
 end # function
 
 # Convenience typealiases
-const InputArgumentType = Types.VariableArray
-const FunctionValueType = Types.VariableArray
-const JacobianValueType = Types.VariableArray
+const InputArgumentType = Types.VariableAbstractArray
+const FunctionValueType = Types.VariableAbstractArray
+const JacobianValueType = Types.VariableAbstractArray
 const JacobianKeys = Union{Int, Tuple{Int, Int}}
 const JacobianDictType = Dict{JacobianKeys, JacobianValueType}
 

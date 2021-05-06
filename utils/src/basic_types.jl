@@ -48,6 +48,8 @@ const VRef = VariableRef
 const AExpr = GenericAffExpr{Float64, VRef}
 const QExpr = GenericQuadExpr{Float64, VRef}
 const Variable = Union{RealTypes, VariableRef, AExpr, QExpr}
+const VariableAbstractArray{n} = Union{[AbstractArray{T, n} for T
+                                            in collect(Variable)]...}
 const VariableArray{n} = Union{[Array{T, n} for T in collect(Variable)]...}
 const VariableVector = VariableArray{1}
 const VariableMatrix = VariableArray{2}

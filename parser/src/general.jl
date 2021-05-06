@@ -29,10 +29,12 @@ using ECOS
 using Printf
 using .Utils
 
-const AtomicVariable = Types.VRef
+const AtomicVariable = Types.AExpr
 const AtomicConstant = Float64
 const AtomicArgument = Union{AtomicVariable, AtomicConstant}
 
 abstract type AbstractConicProgram end
 
+abstract type AbstractArgumentBlock{T<:AtomicArgument, N} <:
+    AbstractArray{T, N} end
 abstract type AbstractArgument{T<:AtomicArgument} end

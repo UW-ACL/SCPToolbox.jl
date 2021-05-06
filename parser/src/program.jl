@@ -488,9 +488,9 @@ end # function
 """
     copy(blk, prg)
 
-Copy the argument block (in aspects like shape and name) to a different
-optimization problem. The newly created argument gets inserted at the end of
-the corresponding argument of the new problem
+Copy the argument block (in aspects like shape, name, and scaling) to a
+different optimization problem. The newly created argument gets inserted at the
+end of the corresponding argument of the new problem
 
 # Arguments
 - `foo`: description.
@@ -516,6 +516,7 @@ function Base.copy(blk::ArgumentBlock{T},
     new_name = @eval @sprintf($new_name, $blk_name)
 
     new_blk = new_argument(prg, blk_shape, new_name, blk_kind)
+    apply_scaling!(new_blk, scale(blk))
 
     return new_blk
 end # function
@@ -558,6 +559,11 @@ function vary!(prg::ConicProgram;
     for z in [prg.x, prg.p]
         for z_blk in z
             δz_blk = copy(z_blk, kkt; new_name="δ%s", copyas=VARIABLE)
+
+            # Remove any scaling offset (since perturbations are around zero)
+            @scale(δz_blk, dilation(scale(z_blk)))
+
+            # Record in the variable correspondence map
             varmap[z_blk] = δz_blk # original -> kkt
             varmap[δz_blk] = z_blk # kkt -> original
         end
