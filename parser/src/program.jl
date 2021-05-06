@@ -618,8 +618,10 @@ function vary!(prg::ConicProgram;
     DpxJ = DpxJ[1, :, :]
 
     # Primal feasibility
-    idcs_x = 1:nx
-    idcs_p = (1:np).+idcs_x[end]
+    num_x_blk = length(prg.x)
+    num_p_blk = length(prg.p)
+    idcs_x = 1:num_x_blk
+    idcs_p = (1:num_p_blk).+idcs_x[end]
     for i = 1:n_cones
         C = constraints(prg, i)
         K = kind(C)
