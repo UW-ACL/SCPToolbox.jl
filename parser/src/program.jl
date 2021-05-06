@@ -125,7 +125,7 @@ Add a new argument block to the optimization program.
 - `block`: the new argument block.
 """
 function Base.push!(prog::ConicProgram,
-                    kind::Symbol,
+                    kind::ArgumentKind,
                     shape::Int...;
                     blk_name::Types.Optional{String}=nothing)::ArgumentBlock
 
@@ -266,7 +266,7 @@ The newly created argument object.
 function new_argument(prog::ConicProgram,
                       shape,
                       name::Types.Optional{String},
-                      kind::Symbol)::ArgumentBlock
+                      kind::ArgumentKind)::ArgumentBlock
     f = (kind==VARIABLE) ? variable! : parameter!
     shape = collect(shape)
     return f(prog, shape...; name=name)
@@ -545,10 +545,8 @@ around the optimal solution.
 # Returns
 - `bar`: description.
 """
-function vary!(prg::ConicProgram;
-               perturbation::Types.Optional{
-                   PerturbationSet}=nothing)::Tuple{ArgumentBlockMap,
-                                                    ConicProgram}
+function vary!(prg::ConicProgram)::Tuple{ArgumentBlockMap,
+                                         ConicProgram}
 
     # Initialize the variational problem
     kkt = ConicProgram(solver=prg._solver,
@@ -630,7 +628,8 @@ function vary!(prg::ConicProgram;
             local δp = vcat(args[idcs_p]...)
             @value(f[i]+Dxf[i]*δx+Dpf[i]*δp)
         end
-        @add_constraint(kkt, K, "primal_feas", primal_feas, (δx_blks..., δp_blks...))
+        @add_constraint(kkt, K, "primal_feas", primal_feas,
+                        (δx_blks..., δp_blks...))
     end
 
     # Dual feasibility
@@ -664,7 +663,8 @@ function vary!(prg::ConicProgram;
         end
         @value(out)
     end
-    @add_constraint(kkt, :zero, "stat", stat, (δx_blks..., δp_blks..., δλ...))
+    @add_constraint(kkt, :zero, "stat", stat,
+                    (δx_blks..., δp_blks..., δλ...))
 
     # Fix the perturbation amount
     if !isnothing(perturbation)

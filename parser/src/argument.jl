@@ -25,30 +25,34 @@ import JuMP: value
 export value, name
 export @scale
 
+# Constants to denote variable or a parameter
+@enum(ArgumentKind, VARIABLE, PARAMETER)
+
+# Constants to denote perturbationkind
+@enum(PerturbationKind, FREE, FIXED, ABSOLUTE, RELATIVE)
+
 const BlockValue{T,N} = AbstractArray{T,N}
 const LocationIndices = Array{Int}
 const RealArray{N} = Types.RealArray{N}
 const AbstractRealArray{N} = AbstractArray{Float64, N}
-
-# Symbols denoting a variable or a parameter
-const VARIABLE = :variable
-const PARAMETER = :parameter
+const PerturbationKindArray{N} = AbstractArray{PerturbationKind, N}
 
 # ..:: Data structures ::..
 
 """
-`Scaling` holds the data used to numerically scale an `ArgumentBlock`. As a
+`Scaling` holds the data used to diagonally scale an `ArgumentBlock`. As a
 concrete example, if the original variable is `x`, then scaling replaces the
 variable with the affine expression `x=(S.*xh).+c` where `xh` is a new "scaled"
 variable and (`S`, `c`) are the dilation and offset coefficients of the same
 size. Elementwise, scaling looks like:
 
 ```julia
-x[i,j,...] = S[i,j,...]*xh[i,j,...]+c[i,j,...]
+x[i,j,...] = S[i,j,...]*xh[i,j,...]+c[i,j,...] for all i,j,...
 ```
 
 The implementation uses elementwise/broadcasting operations to allow it to
-naturally extend to multiple dimensions.
+naturally extend to multiple dimensions. The only limitation is that scaling
+must be diagonal, i.e. 'mixing' between the elements of `xh`.
 """
 mutable struct Scaling{N} <: AbstractRealArray{N}
     S::AbstractRealArray{N} # Dilation coefficients
@@ -71,11 +75,26 @@ mutable struct Scaling{N} <: AbstractRealArray{N}
                      S::Types.Optional{RealArray}=nothing,
                      c::Types.Optional{RealArray}=nothing)::Scaling{N} where {
                          T<:AtomicArgument, N}
-        blk_shape = size(blk)
-        S = isnothing(S) ? ones(blk_shape) :
-            repeat(S, outer=blk_shape.÷size(S))
-        c = isnothing(c) ? zeros(blk_shape) :
-            repeat(c, outer=blk_shape.÷size(S))
+
+        if ndims(blk)>0
+
+            blk_shape = size(blk)
+            S = isnothing(S) ? ones(blk_shape) :
+                repeat(S, outer=blk_shape.÷size(S))
+            c = isnothing(c) ? zeros(blk_shape) :
+                repeat(c, outer=blk_shape.÷size(S))
+
+        elseif ((!isnothing(S) && length(S)>1) ||
+            (!isnothing(c) && length(c)>1))
+
+            msg = "S and c must be single-element vectors"
+            err = SCPError(0, SCP_BAD_ARGUMENT, msg)
+            throw(err)
+        else
+            S = isnothing(S) ? fill(1.0) : fill(S[1])
+            c = isnothing(c) ? fill(0.0) : fill(c[1])
+        end
+
         scaling = new{N}(S, c)
         return scaling
     end # function
@@ -83,7 +102,7 @@ mutable struct Scaling{N} <: AbstractRealArray{N}
     """
         Scaling(sc, Id...)
 
-    A "move constructor" for slicking the scaling object. By applying the same
+    A "move constructor" for slicing the scaling object. By applying the same
     slicing commands as to the `ArgumentBlock`, we can recover the scaling that
     is associated with the sliced `ArgumentBlock` object.
 
@@ -104,6 +123,92 @@ mutable struct Scaling{N} <: AbstractRealArray{N}
 end # struct
 
 """
+`Perturbation` holds information on how much to perturb an argument block by
+for the variation problem in the `vary!` function.
+"""
+struct Perturbation{N} <: AbstractRealArray{N}
+    kind::PerturbationKindArray{N} # The perturbation style
+    amount::AbstractRealArray{N}   # Perturbation amount
+
+    """
+        Perturbation(kind[, amount])
+
+    Basic constructor for the perturbation type.
+
+    # Arguments
+    - `blk`: the argument block that this perturbation corresponds to.
+    - `kind`: the kind of perturbation.
+    - `amount`: (optional) the amount of perturbation, which gets interpreted
+      based on `mode`.
+
+    # Returns
+    - `perturb`: the perturbation object.
+    """
+    function Perturbation(
+        blk::AbstractArgumentBlock{T, N},
+        kind::PerturbationKindArray,
+        amount::Types.Optional{
+            RealArray}=nothing)::Perturbation{N} where { #nowarn
+                T<:AtomicArgument, N}
+
+        if ndims(blk)>0
+            blk_shape = size(blk)
+            kind = repeat(kind, outer=blk_shape.÷size(kind))
+            amount = isnothing(amount) ? fill(NaN, blk_shape) :
+                repeat(amount, outer=blk_shape.÷size(amount))
+        elseif (length(kind)>1 || (!isnothing(amount) && length(amount)>1))
+            msg = "kind and amount must be single-element vectors"
+            err = SCPError(0, SCP_BAD_ARGUMENT, msg)
+            throw(err)
+        else
+            kind = fill(kind[1])
+            amount = isnothing(amount) ? fill(NaN) : fill(amount[1])
+        end
+
+        for i=1:length(kind)
+            if kind[i]==FREE
+                amount[i] = Inf
+            elseif kind[i]==FIXED
+                amount[i] = 0
+            elseif isnan(amount[i])
+                # ABSOLUTE or RELATIVE perturbation, but the perturbation
+                # amount was not specified
+                msg = "Perturbation is %s but amount was not specified"
+                err = SCPError(
+                    0, SCP_BAD_ARGUMENT, @eval @sprintf($msg, $(kind[i])))
+                throw(err)
+            end
+        end
+
+        perturbation = new{N}(kind, amount)
+
+        return perturbation
+    end # function
+
+    """
+        Perturbation(δ, Id...)
+
+    A "move constructor" for slicing the scaling object. By applying the same
+    slicing commands as to the `ArgumentBlock`, we can recover the perturbation
+    that is associated with the sliced `ArgumentBlock` object.
+
+    # Arguments
+    - `δ`: the original perturbation object.
+    - `Id...`: the slicing indices/colons.
+
+    # Returns
+    - `sliced_δ`: the sliced perturbation object.
+    """
+    function Perturbation(δ::Perturbation, Id...)::Perturbation
+        sliced_kind = view(δ.kind, Id...)
+        sliced_amount = view(δ.amount, Id...)
+        N = ndims(sliced_amount)
+        sliced_δ = new{N}(sliced_kind, sliced_amount)
+        return sliced_δ
+    end # function
+end # struct
+
+"""
 `ArgumentBlock` provides a data structure that holds a subset of the arguments
 in the optimization problem. This can be any **within-block** selection of the
 arguments, meaning that variables stored in `ArgumentBlock` cannot come from
@@ -120,6 +225,7 @@ struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArgumentBlock{T, N}
     blid::Int                     # Block number in the argument
     elid::LocationIndices         # Element indices in the argument
     scale::Ref{Scaling{N}}        # Scaling parameter
+    perturb::Ref{Perturbation{N}} # Allowable perturbation
     arg::Ref{AbstractArgument{T}} # Reference to owning argument
 
     """
@@ -156,12 +262,17 @@ struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArgumentBlock{T, N}
         elid = (1:length(value)).+(elid1-1)
         arg_ref = Ref{AbstractArgument{T}}(arg)
         scale_ref = Ref{Scaling{N}}()
+        preturb_ref = Ref{Perturbation{N}}()
 
-        blk = new{T, N}(value, name, blid, elid, scale_ref, arg_ref)
+        blk = new{T, N}(value, name, blid, elid, scale_ref,
+                        preturb_ref, arg_ref)
 
         # Apply unit scaling (i.e. "no scaling")
         scale = Scaling(blk)
         apply_scaling!(blk, scale; override=true)
+
+        # Set a free perturbation
+        set_perturbation!(blk, Inf; override=true)
 
         return blk
     end # function
@@ -197,9 +308,11 @@ struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArgumentBlock{T, N}
 
         K = ndims(sliced_value)
         scale_ref = Ref{Scaling{K}}(scale(block)[Id...])
+        perturb_ref = Ref{Perturbation{K}}(perturbation(block)[Id...])
 
         sliced_block = new{T, K}(sliced_value, block.name, block.blid,
-                                 sliced_elid, scale_ref, block.arg)
+                                 sliced_elid, scale_ref, perturb_ref,
+                                 block.arg)
 
         return sliced_block
     end # function
@@ -260,6 +373,16 @@ Base.collect(sc::Scaling) = [sc]
 Base.iterate(sc::Scaling, state::Int=1) = iterate(sc.S, state)
 
 """
+Provide an interface to make `Perturbation` behave like an array. See the
+[documentation](https://docs.julialang.org/en/v1/manual/interfaces/#man-interface-array).
+"""
+Base.size(δ::Perturbation) = size(δ.amount)
+Base.getindex(δ::Perturbation, I...) = Perturbation(δ, I...)
+Base.view(δ::Perturbation, I...) = Perturbation(δ, I...)
+Base.collect(δ::Perturbation) = [δ]
+Base.iterate(δ::Perturbation, state::Int=1) = iterate(δ.amount, state)
+
+"""
 Provide an interface to make `ArgumentBlock` behave like an array. See the
 [documentation](https://docs.julialang.org/en/v1/manual/interfaces/#man-interface-array).
 """
@@ -288,6 +411,10 @@ function kind(::ArgumentBlock{T})::Symbol where {T<:AtomicArgument}
         return PARAMETER
     end
 end # function
+
+""" Get the kind of perturbation """
+kind(δ::Perturbation)::PerturbationKindArray = δ.kind
+amount(δ::Perturbation)::AbstractRealArray = δ.amount
 
 """ Get the indices in the argument block. """
 slice_indices(blk::ArgumentBlock)::LocationIndices = blk.elid
@@ -385,10 +512,40 @@ function apply_scaling!(blk::ArgumentBlock{T, N},
     return nothing
 end # function
 
+"""
+    apply_perturbation!(blk, perturb[; override])
+
+Apply new perturbation to the argument block.
+
+# Arguments
+- `blk`: the argument block.
+- `perturb`: the perturbation to apply.
+
+# Keywords
+- `override`: (optional) write over the existing perturbation if true. You
+  shouldn't use this if you want to update an existing perturbation.
+"""
+function apply_perturbation!(blk::ArgumentBlock{T, N},
+                             perturb::Perturbation{N};
+                             override::Bool=false)::Nothing where {
+                                 T<:AtomicArgument, N}
+    if override
+        blk.perturb[] = perturb
+    else
+        blk.perturb[].kind .= kind(perturb)
+        blk.perturb[].amount .= amount(perturb)
+    end
+    return nothing
+end # function
+
 """ Simple getters for scaling terms. """
 dilation(scale::Scaling)::AbstractRealArray = scale.S
 offset(scale::Scaling)::AbstractRealArray = scale.c
 scale(blk::ArgumentBlock)::Scaling = blk.scale[]
+
+""" Simple getters for perturbation. """
+amount(perturb::Perturbation)::AbstractRealArray = perturb.amount
+perturbation(blk::ArgumentBlock)::Perturbation = blk.perturb[]
 
 """
     set_scale!(blk, dil, off)
@@ -441,6 +598,89 @@ end # macro
 
 macro scale(blk, S)
     :( set_scale!($(esc.([blk, S, nothing])...)) )
+end # macro
+
+"""
+    set_perturbation!(blk, amount[, kind][; override])
+
+Set the allowable perturbation amount for this argument block. To allow any
+perturbation use `amount=Inf`. To disallow any perturbation using
+`amount=0`. Otherwise, pass a scalar or vector to set the allowed perturbation
+(according to array broadcasting rules) and specify if the perturbation is
+absolute (`ABSOLUTE`) or relative (`RELATIVE`).
+
+# Arguments
+- `blk`: the argument block.
+- `amount`: the perturbation amount.
+- `kind`: the kind of perturbation (`ABSOLUTE` or `RELATIVE`).
+
+# Keywords
+- `override`: (optional) write over the existing perturbation if true. You
+  shouldn't use this if you want to update an existing perturbation.
+"""
+function set_perturbation!(blk::ArgumentBlock,
+                           amount::Union{Real, RealArray},
+                           kind::Types.Optional{
+                               Union{PerturbationKind,
+                                     PerturbationKindArray}}=nothing;
+                           override::Bool=false)::Nothing
+    if amount==0
+        new_perturb = Perturbation(blk, [FIXED])
+    elseif amount==Inf
+        new_perturb = Perturbation(blk, [FREE])
+    else
+        if isnothing(kind)
+            err = SCPError(0, SCP_BAD_ARGUMENT,
+                           "Perturbation kind must be specified")
+            throw(err)
+        end
+
+        kind = (kind isa PerturbationKindArray) ? kind : [kind]
+
+        if any(kind.==FIXED) || any(kind.==FREE)
+            msg = "FIXED or FREE perturbation incompatible with non-zero"*
+                " and non-Inf perturbation amounts"
+            err = SCPError(0, SCP_BAD_ARGUMENT, msg)
+            throw(err)
+        end
+
+        amount = (amount isa RealArray) ? amount : [amount]
+        new_perturb = Perturbation(blk, kind, amount)
+    end
+
+    apply_perturbation!(blk, new_perturb; override=override)
+
+    return nothing
+end # function
+
+"""
+    @perturb_fix(blk)
+    @perturb_free(blk)
+    @perturb_relative(blk, amount)
+    @perturb_absolute(blk, amount)
+
+Set the perturbation amount for the block. These macros just wrap
+`set_perturbation!`, so look there for more info.
+
+# Arguments
+- `blk`: the argument block.
+- `amount`: (optional) the amount to perturb by. Only needed for relative and
+  absolute perturbatnion.
+"""
+macro perturb_fix(blk)
+    :( set_perturbation!($(esc(blk)), 0) )
+end # macro
+
+macro perturb_free(blk)
+    :( set_perturbation!($(esc(blk)), Inf) )
+end # macro
+
+macro perturb_relative(blk, amount)
+    :( set_perturbation!($(esc(blk)), $(esc(amount)), RELATIVE) )
+end # macro
+
+macro perturb_absolute(blk, amount)
+    :( set_perturbation!($(esc(blk)), $(esc(amount)), ABSOLUTE) )
 end # macro
 
 """

@@ -108,6 +108,7 @@ function print_array(io::IO, z::AbstractArray)::Nothing
     rows = split(value_str, "\n")[2:end]
     for i=1:length(rows)
         row = rows[i]
+        row = replace(row, "\""=>"")
         if length(row) > max_cols
             row = row[1:max_cols]*" …"
         end
@@ -345,6 +346,55 @@ function Base.show(io::IO, sc::Scaling)::Nothing
     return nothing
 end # function
 
+"""
+    show(io, pert)
+
+Pretty print the argument block perturbation.
+
+# Arguments
+- `io`: stream object.
+- `pert`: the perturbation object.
+"""
+function Base.show(io::IO, pert::Perturbation)::Nothing
+    compact = get(io, :compact, false) #noinfo
+
+    if all(kind(pert).==FIXED)
+        @printf(io, "No perturbation allowed\n")
+        mode = :fixed
+    elseif all(kind(pert).==FREE)
+        @printf(io, "Free variable\n")
+        mode = :free
+    elseif all(kind(pert).==ABSOLUTE)
+        @printf(io, "Absolute perturbation\n")
+        mode = :all_absolute
+    elseif all(kind(pert).==RELATIVE)
+        @printf(io, "Relative perturbation\n")
+        mode = :all_relative
+    else
+        @printf(io, "Mixed perturbation\n")
+        mode = :mixed
+    end
+
+    if mode==:fixed || mode==:free
+        return nothing
+    elseif mode==:all_absolute || mode==:all_relative
+        @printf(io, "Amount =\n")
+        io2 = IOContext(io, :indent=>1, :compact=>true)
+        print_array(io2, amount(pert))
+    else
+        @printf(io, "Kind =\n")
+        kind_strings = map((kind) -> @sprintf("%s", kind), kind(pert))
+        io2 = IOContext(io, :indent=>1, :compact=>true)
+        print_array(io2, kind_strings)
+        @printf(io, "\n")
+
+        @printf(io, "Amount =\n")
+        io2 = IOContext(io, :indent=>1, :compact=>true)
+        print_array(io2, amount(pert))
+    end
+
+    return nothing
+end # function
 
 """
     show(io, arg)
@@ -486,6 +536,7 @@ Base.show(io::IO, ::MIME"text/plain",
               ConicConstraint,
               Constraints,
               Scaling,
+              Perturbation,
               ArgumentBlock,
               Argument,
               ConicProgram},
