@@ -23,6 +23,22 @@ end
 using JuMP
 
 """
+    make_indent(io)
+
+Make an indent string prefix.
+
+# Arguments
+- `io`: stream object.
+
+# Returns
+- `indeint`: the indent string.
+"""
+function make_indent(io::IO)::String
+    indent = " "^get(io, :indent, 0)
+    return indent
+end
+
+"""
     print_indices(id[, limit])
 
 Print an vector of array linear indices, with a limit on how many to print in
@@ -97,7 +113,7 @@ function print_array(io::IO, z::AbstractArray)::Nothing
     compact = get(io, :compact, false) #noinfo
     io_value = IOBuffer()
     max_rows, max_cols = 10, 50
-    indent = " "^get(io, :indent, 0)
+    indent = make_indent(io)
     io2_value = IOContext(io_value,
                           :limit=>true,
                           :displaysize=>(max_rows, max_cols),
@@ -290,7 +306,7 @@ Pretty print a conic constraint.
 """
 function Base.show(io::IO, constraints::Constraints)::Nothing
     compact = get(io, :compact, false) #noinfo
-    indent = " "^get(io, :indent, 0)
+    indent = make_indent(io)
 
     @printf(io, "%s%d constraints", indent, length(constraints))
 
@@ -331,17 +347,41 @@ Pretty print the argument block scaling.
 """
 function Base.show(io::IO, sc::Scaling)::Nothing
     compact = get(io, :compact, false) #noinfo
+    this_indent = get(io, :indent, 0)
+    indent = make_indent(io)
 
-    @printf(io, "Affine scaling x=(S.*xh).+c\n")
+    S = dilation(sc)
+    c = offset(sc)
 
-    @printf(io, "S =\n")
-    io2 = IOContext(io, :indent=>1, :compact=>true)
-    print_array(io2, dilation(sc))
-    @printf(io, "\n")
+    if all(S.==1) && all(c.==0)
+        @printf(io, "%sNo scaling (x=xh)\n", indent)
+        mode=:none
+    elseif all(c.==0)
+        @printf(io, "%sAffine dilation x=S.*xh\n", indent)
+        mode=:linear
+    elseif all(S.==1)
+        @printf(io, "%sAffine offset x=xh.+c\n", indent)
+        mode=:offset
+    else
+        @printf(io, "%sAffine scaling x=(S.*xh).+c\n", indent)
+        mode=:affine
+    end
 
-    @printf(io, "c =\n")
-    io2 = IOContext(io, :indent=>1, :compact=>true)
-    print_array(io2, offset(sc))
+    if !compact
+        if mode==:none
+            return nothing
+        end
+        io2 = IOContext(io, :indent=>this_indent+1, :compact=>true)
+        if mode==:linear || mode==:affine
+            @printf(io, "%sS =\n", indent)
+            print_array(io2, dilation(sc))
+            @printf(io, "%s\n", indent)
+        end
+        if mode==:offset || mode==:affine
+            @printf(io, "%sc =\n", indent)
+            print_array(io2, offset(sc))
+        end
+    end
 
     return nothing
 end # function
@@ -357,45 +397,47 @@ Pretty print the argument block perturbation.
 """
 function Base.show(io::IO, pert::Perturbation)::Nothing
     compact = get(io, :compact, false) #noinfo
+    this_indent = get(io, :indent, 0)
+    indent = make_indent(io)
 
     if all(kind(pert).==FIXED)
         if all(amount(pert).==0)
-            @printf(io, "No perturbation allowed\n")
+            @printf(io, "%sNo perturbation allowed\n", indent)
             mode = :fixed
         else
-            @printf(io, "Constant perturbation\n")
+            @printf(io, "%sConstant perturbation\n", indent)
             mode = :fixed_nonzero
         end
     elseif all(kind(pert).==FREE)
-        @printf(io, "Free variable\n")
+        @printf(io, "%sAny perturbation allowed\n", indent)
         mode = :free
     elseif all(kind(pert).==ABSOLUTE)
-        @printf(io, "Absolute perturbation\n")
+        @printf(io, "%sAbsolute perturbation\n", indent)
         mode = :all_absolute
     elseif all(kind(pert).==RELATIVE)
-        @printf(io, "Relative perturbation\n")
+        @printf(io, "%sRelative perturbation\n", indent)
         mode = :all_relative
     else
-        @printf(io, "Mixed perturbation\n")
+        @printf(io, "%sMixed perturbation\n", indent)
         mode = :mixed
     end
 
-    if mode==:fixed || mode==:free
-        return nothing
-    elseif mode==:all_absolute || mode==:all_relative || mode==:fixed_nonzero
-        @printf(io, "Amount =\n")
-        io2 = IOContext(io, :indent=>1, :compact=>true)
-        print_array(io2, amount(pert))
-    else
-        @printf(io, "Kind =\n")
-        kind_strings = map((kind) -> @sprintf("%s", kind), kind(pert))
-        io2 = IOContext(io, :indent=>1, :compact=>true)
-        print_array(io2, kind_strings)
-        @printf(io, "\n")
+    if !compact
+        io2 = IOContext(io, :indent=>this_indent+1, :compact=>true)
+        if mode==:fixed || mode==:free
+            return nothing
+        elseif mode==:all_absolute || mode==:all_relative || mode==:fixed_nonzero
+            @printf(io, "%sAmount =\n", indent)
+            print_array(io2, amount(pert))
+        else
+            @printf(io, "%sKind =\n", indent)
+            kind_strings = map((kind) -> @sprintf("%s", kind), kind(pert))
+            print_array(io2, kind_strings)
+            @printf(io, "%s\n", indent)
 
-        @printf(io, "Amount =\n")
-        io2 = IOContext(io, :indent=>1, :compact=>true)
-        print_array(io2, amount(pert))
+            @printf(io, "%sAmount =\n", indent)
+            print_array(io2, amount(pert))
+        end
     end
 
     return nothing
@@ -431,6 +473,11 @@ function Base.show(io::IO, blk::ArgumentBlock{T})::Nothing where T
     @printf(io, "  Block index in stack: %d\n", blk.blid)
     @printf(io, "  Indices in stack: %s\n", print_indices(blk.elid))
     @printf(io, "  Type: %s\n", typeof(blk.value))
+
+    io2 = IOContext(io, :indent=>2, :compact=>true)
+    show(io2, scale(blk))
+    show(io2, perturbation(blk))
+
     @printf(io, "  Value =\n")
     io2 = IOContext(io, :indent=>4, :compact=>true)
     print_array(io2, blk.value)
@@ -453,7 +500,7 @@ function Base.show(io::IO, arg::Argument{T})::Nothing where {T<:AtomicArgument}
     isvar = T<:AtomicVariable
     kind = isvar ? "Variable" : "Parameter"
     n_blocks = length(arg)
-    indent = " "^get(io, :indent, 0)
+    indent = make_indent(io)
 
     @printf(io, "%s%s argument\n", indent, kind)
     @printf(io, "%s  %d elements\n", indent, numel(arg))

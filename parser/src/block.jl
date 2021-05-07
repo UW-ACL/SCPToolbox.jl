@@ -366,7 +366,6 @@ function value(blk::ArgumentBlock{T}; raw::Bool=false)::AbstractArray where T
     return val
 end # function
 
-
 """
     populate!(X, mdl[, sub][; name])
 
