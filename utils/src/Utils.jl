@@ -46,7 +46,7 @@ using .Types
 # export Homotopy
 # export Table, improvement_percent
 
-# include("helper.jl")
+include("helper.jl")
 include("plots.jl")
 
 end # module

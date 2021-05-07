@@ -20,7 +20,7 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("general.jl")
 end
 
-export ConvexCone, add!, fixed_cone, indicator!
+export ConvexCone, add!, isfixed, indicator!
 
 const ConeVariable = Union{Types.Variable, Types.VariableVector}
 
@@ -158,7 +158,12 @@ Add a conic constraint to the optimization problem.
 """
 function add!(pbm::Model, cone::T)::Types.Constraint where {T<:ConvexCone}
 
-    constraint = @constraint(pbm, cone.z in cone.K)
+    if isfree(cone)
+        # Just skip the "all of R^n" cone, since it means unconstrained
+        constraint = nothing
+    else
+        constraint = @constraint(pbm, cone.z in cone.K)
+    end
 
     return constraint
 end # function
@@ -188,7 +193,7 @@ function add!(
 end # function
 
 """
-    fixed_cone(cone)
+    isfixed(cone)
 
 Check if the cone is fixed (i.e. just numerical values, not used inside an
 optimization).
@@ -199,10 +204,13 @@ optimization).
 # Returns
 - `is_fixed`: true if the cone is purely numerical.
 """
-function fixed_cone(cone::ConvexCone)::Bool
+function isfixed(cone::ConvexCone)::Bool
     is_fixed = typeof(cone.z)<:Types.RealArray
     return is_fixed
 end # function
+
+""" Find out whether the cone is all of ``\\reals^n``. """
+isfree(cone::ConvexCone)::Bool = kind(cone)==:free
 
 """
     indicator!(pbm, cone)
@@ -227,7 +235,7 @@ relationship: q<=0 if and only if x∈K.
 function indicator!(pbm::Model, cone::ConvexCone)::Types.Variable
 
     # Parameters
-    mode = (fixed_cone(cone)) ? :numerical : :jump
+    mode = (isfixed(cone)) ? :numerical : :jump
     C = ConvexCone
 
     # Compute the indicator

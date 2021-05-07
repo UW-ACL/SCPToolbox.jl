@@ -118,6 +118,31 @@ structures composing the conic program.
 jump_model(prog::ConicProgram)::Model = prog.mdl
 
 """
+    deconflict_name(new_name, existing_names)
+
+Modify `new_name` so that it is not a duplicate of an existing name in the list
+`existing_names`.
+
+# Arguments
+- `new_name`: the new name.
+- `existing_names`: list of existing names.
+
+# Returns
+- `new_name`: updated `new_name` (only if necessary to deconflict).
+"""
+function deconflict_name(new_name::String,
+                         existing_names::Vector{String})::String
+    regex = Regex(@sprintf("^%s", new_name))
+    regex_match = (s) -> !isempty(findall(regex, s))
+    duplicate_count = length(findall(
+        (this_name)->regex_match(this_name), existing_names))
+    if duplicate_count>0
+        new_name = @sprintf("%s%d", new_name, duplicate_count)
+    end
+    return new_name
+end # function
+
+"""
     push!(prog, kind, shape[; name])
 
 Add a new argument block to the optimization program.
@@ -151,11 +176,7 @@ function Base.push!(prog::ConicProgram,
     else
         # Deconflict duplicate name by appending a number suffix
         all_names = [name(blk) for blk in z]
-        matches = length(findall(
-            (this_name)->occursin(this_name, blk_name), all_names))
-        if matches>0
-            blk_name = @sprintf("%s%d", blk_name, matches)
-        end
+        blk_name = deconflict_name(blk_name, all_names)
     end
 
     block = push!(z, blk_name, shape...)
@@ -215,11 +236,7 @@ function constraint!(prog::ConicProgram,
     else
         # Deconflict duplicate name by appending a number suffix
         all_names = [name(C) for C in constraints(prog)]
-        matches = length(findall(
-            (this_name)->occursin(this_name, refname), all_names))
-        if matches>0
-            refname = @sprintf("%s%d", refname, matches)
-        end
+        refname = deconflict_name(refname, all_names)
     end
 
     new_constraint = ConicConstraint(Axb, kind, prog; name=refname, dual=dual)

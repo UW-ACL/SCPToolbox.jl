@@ -545,9 +545,9 @@ function Base.show(io::IO, prog::ConicProgram)::Nothing
         kind = function_kind(cost(prog).J)
         @printf("  %s cost function\n", kind)
     end
-    @printf(io, "  %d variables (%d blocks)\n", length(prog.x),
+    @printf(io, "  %d variables (%d blocks)\n", numel(prog.x),
             length(prog.x))
-    @printf(io, "  %d parameters (%d blocks)\n", length(prog.p),
+    @printf(io, "  %d parameters (%d blocks)\n", numel(prog.p),
             length(prog.p))
 
     io2 = IOContext(io, :indent=>2, :compact=>true)

@@ -23,6 +23,76 @@ end
 # ..:: Methods ::..
 
 """
+    fill_jacobian!(Df, args, F)
+
+Fill the blocks of the Jacobian of a vector-valued function. Let the function
+be ``f(x)``. The method fills in the blocks of ``D_x f(x)``.
+
+# Arguments
+- `Df`: a pre-initialized zero matrix to store the Jacobian.
+- `args`: the arguments of the function.
+- `F`: the function itself.
+"""
+function fill_jacobian!(Df::Types.RealMatrix,
+                        args::Function,
+                        F::ProgramFunction)::Nothing
+    j = function_args_id(F, args)
+    args = args(F)
+    narg = length(args)
+    for i = 1:narg
+        try
+            J = jacobian(F, j[i])
+            # If here, the Jacobian was defined
+            id_x = slice_indices(args[i])
+            Df[:, id_x] = J
+        catch e
+            typeof(e)==SCPError || rethrow(e)
+        end
+    end
+    return nothing
+end # function
+
+"""
+    fill_jacobian!(Df, xargs, yargs, F)
+
+Fill the blocks of the Jacobian of a matrix-valued function. Let the function
+be ``f(x,y)``. This method fills in the blocks of ``D_{xy} f(x,y)``.
+
+# Arguments
+- `Df`: a pre-initialized zero matrix to store the Jacobian.
+- `xargs`: the ``x``-arguments of the function.
+- `yargs`: the ``y``-arguments of the function.
+- `F`: the function itself.
+"""
+function fill_jacobian!(Df::Types.RealTensor,
+                        xargs::Function,
+                        yargs::Function,
+                        F::ProgramFunction)::Nothing
+    ki = function_args_id(F, xargs)
+    kj = function_args_id(F, yargs)
+    symm = xargs==yargs
+    xargs, yargs = xargs(F), yargs(F)
+    nargx, nargy = length(xargs), length(yargs)
+    for i = 1:nargx
+        for j = 1:nargy
+            try
+                H = jacobian(F, (ki[i], kj[j]))
+                # If here, the Hessian was defined
+                id_x = slice_indices(xargs[i])
+                id_y = slice_indices(yargs[j])
+                Df[:, id_y, id_x] = H
+                if symm
+                    Df[:, id_x, id_y] = H'
+                end
+            catch e
+                typeof(e)==SCPError || rethrow(e)
+            end
+        end
+    end
+    return nothing
+end # function
+
+"""
     set_perturbation!(prg, x, dx)
 
 Set the perturbation constraint for the given argument block.
@@ -94,6 +164,8 @@ function vary!(prg::ConicProgram)::Tuple{ArgumentBlockMap,
     kkt = ConicProgram(solver=prg._solver,
                        solver_options=prg._solver_options)
 
+    println("Creating variables")
+
     # Create the concatenated primal variable perturbation
     varmap = Dict{ArgumentBlock, Any}()
     for z in [prg.x, prg.p]
@@ -111,6 +183,8 @@ function vary!(prg::ConicProgram)::Tuple{ArgumentBlockMap,
     δx_blks = [varmap[z_blk][:] for z_blk in prg.x]
     δp_blks = [varmap[z_blk][:] for z_blk in prg.p]
 
+    println("Creating dual variables")
+
     # Create the dual variable perturbations
     n_cones = length(constraints(prg))
     λ = dual.(constraints(prg))
@@ -119,6 +193,8 @@ function vary!(prg::ConicProgram)::Tuple{ArgumentBlockMap,
         blk_name = @sprintf("δλ%d", i)
         δλ[i] = @new_variable(kkt, length(λ[i]), blk_name)
     end
+
+    println("Building constraint Jacobians")
 
     # Build the constraint function Jacobians
     nx = numel(prg.x)
@@ -144,6 +220,8 @@ function vary!(prg::ConicProgram)::Tuple{ArgumentBlockMap,
         fill_jacobian!(Dpxf[i], parameters, variables, F)
     end
 
+    println("Building cost function Jacobians")
+
     # Build the cost function Jacobians
     J = core_function(cost(prg))
     J(jacobians=true)
@@ -156,6 +234,8 @@ function vary!(prg::ConicProgram)::Tuple{ArgumentBlockMap,
     DxJ = DxJ[:]
     DxxJ = DxxJ[1, :, :]
     DpxJ = DpxJ[1, :, :]
+
+    println("Setting KKT primal feasibility")
 
     # Primal feasibility
     num_x_blk = length(prg.x)
@@ -174,12 +254,16 @@ function vary!(prg::ConicProgram)::Tuple{ArgumentBlockMap,
                         (δx_blks..., δp_blks...))
     end
 
+    println("Setting KKT dual feasibility")
+
     # Dual feasibility
     for i = 1:n_cones
         K = kind(constraints(prg, i))
         dual_feas = (δλ, _...) -> @value(λ[i]+δλ)
         @add_dual_constraint(kkt, K, "dual_feas", dual_feas, δλ[i])
     end
+
+    println("Setting KKT complementary slackness")
 
     # Complementary slackness
     for i = 1:n_cones
@@ -192,6 +276,8 @@ function vary!(prg::ConicProgram)::Tuple{ArgumentBlockMap,
         @add_constraint(kkt, :zero, "compl_slack", compl_slack,
                         (δx_blks..., δp_blks..., δλ[i]))
     end
+
+    println("Setting KKT stationarity")
 
     # Stationarity
     stat = (args...) -> begin
@@ -208,11 +294,16 @@ function vary!(prg::ConicProgram)::Tuple{ArgumentBlockMap,
     @add_constraint(kkt, :zero, "stat", stat,
                     (δx_blks..., δp_blks..., δλ...))
 
+    println("Setting perturbation constraints")
+
     # Set the perturbation constraints
-    for δz_blks in [δx_blks, δp_blks]
-        for δz in δz_blks
-            z = varmap[δz]
-            set_perturbation_constraint!(kkt, z, δz)
+    for z_blks in [prg.x, prg.p]
+        for z_blk in z_blks
+            δz_blk = varmap[z_blk]
+            for i=1:length(δz_blk)
+                z, δz = z_blk[i], δz_blk[i]
+                set_perturbation_constraint!(kkt, z, δz)
+            end
         end
     end
 

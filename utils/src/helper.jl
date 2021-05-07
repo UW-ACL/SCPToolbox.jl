@@ -22,7 +22,7 @@ if isdefined(@__MODULE__, :LanguageServer)
 end
 
 const T = Types
-const RealValue = T.RealValue
+const RealValue = T.RealTypes
 const RealArray = T.RealArray
 const RealVector = T.RealVector
 const RealMatrix = T.RealMatrix
@@ -331,6 +331,47 @@ function rk4_generic(
     end
 
     return X
+end # function
+
+"""
+    expm_diff(A, DA[, c][; resol])
+
+Compute the derivative of the matrix exponential [1]:
+
+```math
+\\frac{d}{d\\lambda} e^{c A} = \\int_0^c e^{xA} \\frac{dA}{d\\lambda}
+ e^{(c-x)A}dx.
+```
+
+References:
+
+[1] R. M. Wilcox (1967). "Exponential Operators and Parameter Differentiation
+in Quantum Physics". Journal of Mathematical Physics. 8 (4):
+962–982. doi:10.1063/1.1705306
+
+# Arguments
+- `A`: the matrix, which depends on a parameter ``\\lambda``,
+  i.e. ``A(\\lambda)``.
+- `DA`: the derivative of `A` with respect the parameter, i.e. ``dA/d\\lambda``.
+- `c`: (optional) coefficient multiplying `A` in the matrix exponential, see
+  the formula in the above description. Defaults to 1.
+
+# Keywords
+- `resol`: (optional) how many nodes to use of the integration grid.
+
+# Returns
+- `DecA`: the value ``\\frac{d}{d\\lambda} e^{c A}``.
+"""
+function expm_diff(A::RealMatrix, DA::RealMatrix, c::RealValue=1.0;
+                   resol::Int=1000)::RealMatrix
+    integrand = (t, _) -> begin
+        dXdt = exp(t*A)*DA*exp((c-t)*A)
+        dXdt = vec(dXdt)
+        return dXdt
+    end
+    integ_grid = collect(LinRange(0, c, resol))
+    DecA = reshape(rk4(integrand, zeros(length(A)), integ_grid), size(A))
+    return DecA
 end # function
 
 """

@@ -54,7 +54,7 @@ const VariableArray{n} = Union{[Array{T, n} for T in collect(Variable)]...}
 const VariableVector = VariableArray{1}
 const VariableMatrix = VariableArray{2}
 
-const Constraint = ConstraintRef
+const Constraint = Optional{ConstraintRef}
 const ConstraintArray{n} = Array{Constraint, n}
 const ConstraintVector = ConstraintArray{1}
 const ConstraintMatrix = ConstraintArray{2}

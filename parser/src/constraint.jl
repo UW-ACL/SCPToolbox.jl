@@ -100,7 +100,7 @@ where ``f`` is an affine function and ``\\mathcal K`` is a convex cone.
 struct ConicConstraint
     f::ProgramFunction              # The affine function
     K::ConvexCone                   # The convex cone set data structure
-    constraint::ConstraintRef       # Underlying JuMP constraint
+    constraint::Types.Constraint    # Underlying JuMP constraint
     prog::Ref{AbstractConicProgram} # The parent conic program
     name::String                    # A name for the constraint
 
@@ -231,74 +231,4 @@ function function_args_id(F::ProgramFunction,
     else
         return (1:nargs).+length(variables(F))
     end
-end # function
-
-"""
-    fill_jacobian!(Df, args, F)
-
-Fill the blocks of the Jacobian of a vector-valued function. Let the function
-be ``f(x)``. The method fills in the blocks of ``D_x f(x)``.
-
-# Arguments
-- `Df`: a pre-initialized zero matrix to store the Jacobian.
-- `args`: the arguments of the function.
-- `F`: the function itself.
-"""
-function fill_jacobian!(Df::Types.RealMatrix,
-                        args::Function,
-                        F::ProgramFunction)::Nothing
-    j = function_args_id(F, args)
-    args = args(F)
-    narg = length(args)
-    for i = 1:narg
-        try
-            J = jacobian(F, j[i])
-            # If here, the Jacobian was defined
-            id_x = slice_indices(args[i])
-            Df[:, id_x] = J
-        catch e
-            typeof(e)==SCPError || rethrow(e)
-        end
-    end
-    return nothing
-end # function
-
-"""
-    fill_jacobian!(Df, xargs, yargs, F)
-
-Fill the blocks of the Jacobian of a matrix-valued function. Let the function
-be ``f(x,y)``. This method fills in the blocks of ``D_{xy} f(x,y)``.
-
-# Arguments
-- `Df`: a pre-initialized zero matrix to store the Jacobian.
-- `xargs`: the ``x``-arguments of the function.
-- `yargs`: the ``y``-arguments of the function.
-- `F`: the function itself.
-"""
-function fill_jacobian!(Df::Types.RealTensor,
-                        xargs::Function,
-                        yargs::Function,
-                        F::ProgramFunction)::Nothing
-    ki = function_args_id(F, xargs)
-    kj = function_args_id(F, yargs)
-    symm = xargs==yargs
-    xargs, yargs = xargs(F), yargs(F)
-    nargx, nargy = length(xargs), length(yargs)
-    for i = 1:nargx
-        for j = 1:nargy
-            try
-                H = jacobian(F, (ki[i], kj[j]))
-                # If here, the Hessian was defined
-                id_x = slice_indices(xargs[i])
-                id_y = slice_indices(yargs[j])
-                Df[:, id_x, id_y] = H
-                if symm
-                    Df[:, id_y, id_x] = H'
-                end
-            catch e
-                typeof(e)==SCPError || rethrow(e)
-            end
-        end
-    end
-    return nothing
 end # function
