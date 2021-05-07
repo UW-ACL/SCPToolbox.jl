@@ -24,7 +24,18 @@ end
 import JuMP: value
 
 export value, jacobian, set_jacobian!
-export @jacobian
+export @value, @jacobian
+
+# ..:: Globals ::..
+
+# Convenience typealiases
+const InputArgumentType = Types.VariableAbstractArray
+const FunctionValueType = Types.VariableAbstractArray
+const JacobianValueType = Types.VariableAbstractArray
+const JacobianKeys = Union{Int, Tuple{Int, Int}}
+const JacobianDictType = Dict{JacobianKeys, JacobianValueType}
+
+# ..:: Data structures ::..
 
 """
 `TypedFunction{T, N}` is a wrapper class for a function which is supposed to
@@ -64,63 +75,6 @@ struct TypedFunction
 end # struct
 
 """
-    throw_type_error(fw, which, args...)
-
-Throw a type error because `args...` is not the expected type for the function.
-
-# Arguments
-- `fw`: the function wrapper object.
-- `which`: either "input" or "output".
-- `args...`: the argument list whose type is to be checked.
-
-# Throws
-- `SCP_BAD_ARGUMENT`: if there is a type mismatch.
-"""
-function throw_type_error(fw::TypedFunction, which::String, args)
-    expected_type = (which=="input") ? fw.input_type : fw.output_type
-    msg = @sprintf("bad %s argument type.", which)
-    msg *= @sprintf(" Expected %s", expected_type)
-    msg *= @sprintf(" but got %s", typeof(args))
-    err = SCPError(0, SCP_BAD_ARGUMENT, msg)
-    throw(err)
-end
-
-"""
-    fw(arg...)
-
-Evaluate the function, type safely.
-
-# Arguments
-- `args...`: the argument list to the core function being wrapped.
-
-# Returns
-- `out`: the output of the core function being wrapped.
-"""
-function (fw::TypedFunction)(args...)
-
-    # Check the input type
-    if !( typeof(args)<:fw.input_type )
-        throw_type_error(fw, "input", args)
-    end
-
-    out = fw.f(args...) # Core wrapped function call
-
-    # Check the return value type
-    if !( typeof(out)<:fw.output_type )
-        throw_type_error(fw, "output", out)
-    end
-
-    return out
-end # function
-
-# Convenience typealiases
-const InputArgumentType = Types.VariableAbstractArray
-const FunctionValueType = Types.VariableAbstractArray
-const JacobianValueType = Types.VariableAbstractArray
-const JacobianKeys = Union{Int, Tuple{Int, Int}}
-const JacobianDictType = Dict{JacobianKeys, JacobianValueType}
-
-"""
 `DifferentialFunctionOutput` is a convenience structure to systematize how the
 function value and its Jacobians are evaluated. It stores the function value
 and a dictionary representing the Jacobian values. Methods are provided for
@@ -157,86 +111,6 @@ struct DifferentiableFunctionOutput
 end # struct
 
 const DFOut = DifferentiableFunctionOutput
-
-""" Get the function value. """
-value(out::DFOut)::FunctionValueType = out.value
-
-"""
-    jacobian(out, key[; permute])
-
-Get the Jacobian value. Suppose that the function depends on N arguments,
-i.e. ``f(x_1, \\dots, x_N)``. The key can be either an integer (e.g. `i`) or a
-two-element tuple (e.g. `(i, j)`). In both cases, this function returns the
-derivative of ``f`` with respect to the variables indicated by `key`. For
-example, ``\\frac{\\partial f}{\\partial x_i}`` or ``\\frac{\\partial^2
-f}{\\partial x_i\\partial x_j}``.
-
-Because the derivatives can be exchanged places, the function will permute
-`key` is necessary in order to retrive the corresponding Jacobian. If such a
-permutation is successful, the transposed Jacobian is returned.
-
-# Arguments
-- `out`: the function output structure.
-- `key`: which Jacobian to retrieve.
-
-# Keywords
-- `permute`: (optiona) whether to permute the key in order to try to get the
-  Jacobian.
-
-# Returns
-- `J`: the Jacobian value. Most generally a tensor, which happens when ``f`` is
-  a matrix-value function being differentiated with respect to a vector.
-"""
-function jacobian(out::DFOut, key::JacobianKeys;
-                  permute::Bool=true)::JacobianValueType
-    tuple_key = length(key)>1
-    if !haskey(out.J, key)
-        if permute && tuple_key
-            # Try permuting the key
-            key = reverse(key)
-            return transpose(jacobian(out, key; permute=false))
-        end
-        plural = tuple_key ? "s" : ""
-        msg = @sprintf("Jacobian with respect to argument%s %s not defined",
-                       plural, key)
-        err = SCPError(0, SCP_BAD_ARGUMENT, msg)
-        throw(err)
-    end
-    J = out.J[key]
-    return J
-end # function
-
-# Get the dictionary of all jacobians
-all_jacobians(out::DFOut)::JacobianDictType = out.J
-
-"""
-    set_jacobian!(our, key, J)
-
-Set the Jacobian value. For more information see the docstring of `jacobian`.
-
-# Arguments
-- `our`: the function output structure.
-- `key`: which Jacobian to set.
-- `J`: the Jacobian value.
-"""
-function set_jacobian!(out::DFOut, key::JacobianKeys,
-                       J::JacobianValueType)::Nothing
-    out.J[key] = J
-    return nothing
-end # function
-
-"""
-Simple wrapper of `DifferentiableFunctionOutput` constructor, see its
-documentation.
-"""
-macro value(f)
-    :( DifferentiableFunctionOutput($(esc(f))) )
-end # macro
-
-""" Simple wrapper of `set_jacobian!`, see its documentation. """
-macro jacobian(out, key, J)
-    :( set_jacobian!($(esc.([out, key, J])...)) )
-end # macro
 
 """
 `DifferentiableFunction` wraps a core user-defined function call in a data
@@ -310,6 +184,125 @@ end # struct
 
 const DiffblF = DifferentiableFunction
 
+# ..:: Methods ::..
+
+"""
+    throw_type_error(fw, which, args...)
+
+Throw a type error because `args...` is not the expected type for the function.
+
+# Arguments
+- `fw`: the function wrapper object.
+- `which`: either "input" or "output".
+- `args...`: the argument list whose type is to be checked.
+
+# Throws
+- `SCP_BAD_ARGUMENT`: if there is a type mismatch.
+"""
+function throw_type_error(fw::TypedFunction, which::String, args)
+    expected_type = (which=="input") ? fw.input_type : fw.output_type
+    msg = @sprintf("bad %s argument type.", which)
+    msg *= @sprintf(" Expected %s", expected_type)
+    msg *= @sprintf(" but got %s", typeof(args))
+    err = SCPError(0, SCP_BAD_ARGUMENT, msg)
+    throw(err)
+end
+
+"""
+    fw(arg...)
+
+Evaluate the function, type safely.
+
+# Arguments
+- `args...`: the argument list to the core function being wrapped.
+
+# Returns
+- `out`: the output of the core function being wrapped.
+"""
+function (fw::TypedFunction)(args...)
+
+    # Check the input type
+    if !( typeof(args)<:fw.input_type )
+        throw_type_error(fw, "input", args)
+    end
+
+    out = fw.f(args...) # Core wrapped function call
+
+    # Check the return value type
+    if !( typeof(out)<:fw.output_type )
+        throw_type_error(fw, "output", out)
+    end
+
+    return out
+end # function
+
+""" Get the function value. """
+value(out::DFOut)::FunctionValueType = out.value
+
+"""
+    jacobian(out, key[; permute])
+
+Get the Jacobian value. Suppose that the function depends on N arguments,
+i.e. ``f(x_1, \\dots, x_N)``. The key can be either an integer (e.g. `i`) or a
+two-element tuple (e.g. `(i, j)`). In both cases, this function returns the
+derivative of ``f`` with respect to the variables indicated by `key`. For
+example, ``\\frac{\\partial f}{\\partial x_i}`` or ``\\frac{\\partial^2
+f}{\\partial x_i\\partial x_j}``.
+
+Because the derivatives can be exchanged places, the function will permute
+`key` is necessary in order to retrive the corresponding Jacobian. If such a
+permutation is successful, the transposed Jacobian is returned.
+
+# Arguments
+- `out`: the function output structure.
+- `key`: which Jacobian to retrieve.
+
+# Keywords
+- `permute`: (optiona) whether to permute the key in order to try to get the
+  Jacobian.
+
+# Returns
+- `J`: the Jacobian value. Most generally a tensor, which happens when ``f`` is
+  a matrix-value function being differentiated with respect to a vector.
+"""
+function jacobian(out::DFOut, key::JacobianKeys;
+                  permute::Bool=true)::JacobianValueType
+    tuple_key = length(key)>1
+    if !haskey(out.J, key)
+        if permute && tuple_key
+            # Try permuting the key
+            key = reverse(key)
+            return transpose(jacobian(out, key; permute=false))
+        end
+        plural = tuple_key ? "s" : ""
+        msg = @sprintf("Jacobian with respect to argument%s %s not defined",
+                       plural, key)
+        err = SCPError(0, SCP_BAD_ARGUMENT, msg)
+        throw(err)
+    end
+    J = out.J[key]
+    return J
+end # function
+
+""" Get the dictionary of all jacobians """
+all_jacobians(out::DFOut)::JacobianDictType = out.J
+
+"""
+    set_jacobian!(our, key, J)
+
+Set the Jacobian value. For more information see the docstring of `jacobian`.
+
+# Arguments
+- `our`: the function output structure.
+- `key`: which Jacobian to set.
+- `J`: the Jacobian value.
+"""
+function set_jacobian!(out::DFOut, key::JacobianKeys,
+                       J::JacobianValueType)::Nothing
+    out.J[key] = J
+    return nothing
+end # function
+
 """
     F(args...[; jacobians])
 
@@ -354,3 +347,19 @@ Convenience methods that pass the calls down to `DifferentiableFunctionOutput`.
 value(F::DiffblF)::FunctionValueType = value(F.out[])
 jacobian(F::DiffblF, key::JacobianKeys)::JacobianValueType =
     jacobian(F.out[], key)
+all_jacobians(F::DiffblF)::JacobianDictType = all_jacobians(F.out[])
+
+# ..:: Macros ::..
+
+"""
+Simple wrapper of `DifferentiableFunctionOutput` constructor, see its
+documentation.
+"""
+macro value(f)
+    :( DifferentiableFunctionOutput($(esc(f))) )
+end # macro
+
+""" Simple wrapper of `set_jacobian!`, see its documentation. """
+macro jacobian(out, key, J)
+    :( set_jacobian!($(esc.([out, key, J])...)) )
+end # macro

@@ -190,6 +190,7 @@ Convenience methods that pass the calls down to `DifferentiableFunction`.
 value(F::ProgramFunction) = value(F.f)
 jacobian(F::ProgramFunction,
          key::JacobianKeys)::JacobianValueType = jacobian(F.f, key)
+all_jacobians(F::ProgramFunction)::JacobianDictType = all_jacobians(F.f)
 
 """ Convenience getters. """
 variables(F::ProgramFunction)::VariableArgumentBlocks = F.x
@@ -231,4 +232,9 @@ function function_args_id(F::ProgramFunction,
     else
         return (1:nargs).+length(variables(F))
     end
+end # function
+
+function function_args_id(F::ProgramFunction)::LocationIndices
+    idx_map = [1:length(variables(F)); 1:length(parameters(F))]
+    return idx_map
 end # function
