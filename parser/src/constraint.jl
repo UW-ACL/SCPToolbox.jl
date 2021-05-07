@@ -27,6 +27,14 @@ import JuMP: dual
 
 export value, name, dual, cone
 
+# ..:: Globals ::..
+
+# Specialize arguments to variables and parameters
+const VariableArgument = Argument{AtomicVariable}
+const VariableArgumentBlocks = ArgumentBlocks{AtomicVariable}
+const ConstantArgument = Argument{AtomicConstant}
+const ConstantArgumentBlocks = ArgumentBlocks{AtomicConstant}
+
 # ..:: Data structures ::..
 
 """

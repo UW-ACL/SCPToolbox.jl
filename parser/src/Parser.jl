@@ -28,12 +28,16 @@ end
 # General optimization problem building
 module ConicLinearProgram
 include("general.jl")
+include("scaling.jl")
+include("perturbation.jl")
+include("block.jl")
 include("argument.jl")
 include("function.jl")
 include("cone.jl")
 include("constraint.jl")
 include("cost.jl")
 include("program.jl")
+include("variation.jl")
 include("printing.jl")
 end # module
 

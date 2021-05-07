@@ -29,6 +29,10 @@ using ECOS
 using Printf
 using .Utils
 
+const LocationIndices = Array{Int}
+const RealArray{N} = Types.RealArray{N}
+const AbstractRealArray{N} = AbstractArray{Float64, N}
+
 const AtomicVariable = Types.AExpr
 const AtomicConstant = Float64
 const AtomicArgument = Union{AtomicVariable, AtomicConstant}

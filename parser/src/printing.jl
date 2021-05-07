@@ -359,8 +359,13 @@ function Base.show(io::IO, pert::Perturbation)::Nothing
     compact = get(io, :compact, false) #noinfo
 
     if all(kind(pert).==FIXED)
-        @printf(io, "No perturbation allowed\n")
-        mode = :fixed
+        if all(amount(pert).==0)
+            @printf(io, "No perturbation allowed\n")
+            mode = :fixed
+        else
+            @printf(io, "Constant perturbation\n")
+            mode = :fixed_nonzero
+        end
     elseif all(kind(pert).==FREE)
         @printf(io, "Free variable\n")
         mode = :free
@@ -377,7 +382,7 @@ function Base.show(io::IO, pert::Perturbation)::Nothing
 
     if mode==:fixed || mode==:free
         return nothing
-    elseif mode==:all_absolute || mode==:all_relative
+    elseif mode==:all_absolute || mode==:all_relative || mode==:fixed_nonzero
         @printf(io, "Amount =\n")
         io2 = IOContext(io, :indent=>1, :compact=>true)
         print_array(io2, amount(pert))

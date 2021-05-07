@@ -30,6 +30,12 @@ export ConicProgram, numel, value, dual, constraints, name, cost, solve!,
 export @new_variable, @new_parameter, @add_constraint,
     @set_cost, @set_feasibility
 
+# ..:: Globals ::..
+
+const ArgumentBlockMap = Dict{ArgumentBlock, ArgumentBlock}
+const PerturbationSet{T, N} = Dict{ConstantArgumentBlock{N}, T} where {
+    T<:Types.RealArray}
+
 # ..:: Data structures ::..
 
 """ Conic clinear program main class. """
@@ -272,6 +278,103 @@ function new_argument(prog::ConicProgram,
     return f(prog, shape...; name=name)
 end # function
 
+""" Check if this is a feasibility problem """
+is_feasibility(prog::ConicProgram)::Bool = prog._feasibility
+
+"""
+    constraints(prg[, ref])
+
+Get all or some of the constraints. If `ref` is a number or slice, then get
+constraints from the list by regular array slicing operation. If `ref` is a
+string, return all the constraints whose name contains the string `ref`.
+
+# Arguments
+- `prg`: the optimization problem.
+- `ref`: (optional) which constraint to get.
+
+# Returns
+The constraint(s).
+"""
+function constraints(prg::ConicProgram,
+                     ref=-1)::Union{Constraints, ConicConstraint}
+    if typeof(ref)<:String
+        # Search for all constraints the match `ref`
+        match_list = Vector{ConicConstraint}(undef, 0)
+        for constraint in prg.constraints
+            if occursin(ref, name(constraint))
+                push!(match_list, constraint)
+            end
+        end
+        return match_list
+    else
+        # Get the constraint by numerical reference
+        if ref>=0
+            return prg.constraints[ref]
+        else
+            return prg.constraints
+        end
+    end
+end # function
+
+""" Get the optimization problem cost. """
+cost(prg::ConicProgram)::QuadraticCost = prg.cost[]
+
+"""
+    solve!(prg)
+
+Solve the optimization problem.
+
+# Arguments
+- `prg`: the optimization problem structure.
+
+# Returns
+- `status`: the termination status code.
+"""
+function solve!(prg::ConicProgram)::MOI.TerminationStatusCode
+    mdl = jump_model(prg)
+    optimize!(mdl)
+    status = termination_status(mdl)
+    return status
+end # function
+
+"""
+    copy(blk, prg)
+
+Copy the argument block (in aspects like shape, name, and scaling) to a
+different optimization problem. The newly created argument gets inserted at the
+end of the corresponding argument of the new problem
+
+# Arguments
+- `foo`: description.
+- `prg`: the destination optimization problem for the new variable.
+
+# Keywords
+- `new_name`: (optional) a format string for creating the new name from the
+  original block's name.
+- `copyas`: (optional) force copy the block as a `VARIABLE` or `PARAMETER`.
+
+# Returns
+- `new_blk`: the newly created argument block.
+"""
+function Base.copy(blk::ArgumentBlock{T},
+                   prg::ConicProgram;
+                   new_name::String="%s",
+                   copyas::Types.Optional{
+                       ArgumentKind}=nothing)::ArgumentBlock where T
+
+    blk_shape = size(blk)
+    blk_kind = isnothing(copyas) ? kind(blk) : copyas
+    blk_name = name(blk)
+    new_name = @eval @sprintf($new_name, $blk_name)
+
+    new_blk = new_argument(prg, blk_shape, new_name, blk_kind)
+    apply_scaling!(new_blk, scale(blk))
+
+    return new_blk
+end # function
+
+# ..:: Macros ::..
+
 """
     @new_variable(prog, shape, name)
     @new_variable(prog, shape)
@@ -426,254 +529,3 @@ macro set_feasibility(prog)
         cost!($(esc(prog)), feasibility_cost, [], [])
     end
 end # macro
-
-is_feasibility(prog::ConicProgram)::Bool = prog._feasibility
-
-"""
-    constraints(prg[, ref])
-
-Get all or some of the constraints. If `ref` is a number or slice, then get
-constraints from the list by regular array slicing operation. If `ref` is a
-string, return all the constraints whose name contains the string `ref`.
-
-# Arguments
-- `prg`: the optimization problem.
-- `ref`: (optional) which constraint to get.
-
-# Returns
-The constraint(s).
-"""
-function constraints(prg::ConicProgram,
-                     ref=-1)::Union{Constraints, ConicConstraint}
-    if typeof(ref)<:String
-        # Search for all constraints the match `ref`
-        match_list = Vector{ConicConstraint}(undef, 0)
-        for constraint in prg.constraints
-            if occursin(ref, name(constraint))
-                push!(match_list, constraint)
-            end
-        end
-        return match_list
-    else
-        # Get the constraint by numerical reference
-        if ref>=0
-            return prg.constraints[ref]
-        else
-            return prg.constraints
-        end
-    end
-end # function
-
-""" Get the optimization problem cost. """
-cost(prg::ConicProgram)::QuadraticCost = prg.cost[]
-
-"""
-    solve!(prg)
-
-Solve the optimization problem.
-
-# Arguments
-- `prg`: the optimization problem structure.
-
-# Returns
-- `status`: the termination status code.
-"""
-function solve!(prg::ConicProgram)::MOI.TerminationStatusCode
-    mdl = jump_model(prg)
-    optimize!(mdl)
-    status = termination_status(mdl)
-    return status
-end # function
-
-"""
-    copy(blk, prg)
-
-Copy the argument block (in aspects like shape, name, and scaling) to a
-different optimization problem. The newly created argument gets inserted at the
-end of the corresponding argument of the new problem
-
-# Arguments
-- `foo`: description.
-- `prg`: the destination optimization problem for the new variable.
-
-# Keywords
-- `new_name`: (optional) a format string for creating the new name from the
-  original block's name.
-- `copyas`: (optional) force copy the block as a `VARIABLE` or `PARAMETER`.
-
-# Returns
-- `new_blk`: the newly created argument block.
-"""
-function Base.copy(blk::ArgumentBlock{T},
-                   prg::ConicProgram;
-                   new_name::String="%s",
-                   copyas::Union{Symbol,
-                                 Nothing}=nothing)::ArgumentBlock where T
-
-    blk_shape = size(blk)
-    blk_kind = isnothing(copyas) ? kind(blk) : copyas
-    blk_name = name(blk)
-    new_name = @eval @sprintf($new_name, $blk_name)
-
-    new_blk = new_argument(prg, blk_shape, new_name, blk_kind)
-    apply_scaling!(new_blk, scale(blk))
-
-    return new_blk
-end # function
-
-const ArgumentBlockMap = Dict{ArgumentBlock, ArgumentBlock}
-const PerturbationSet{T, N} = Dict{ConstantArgumentBlock{N}, T} where {
-    T<:Types.RealArray}
-
-"""
-    vary!(prg[; perturbation])
-
-Compute the variation of the optimal solution with respect to changes in the
-constant arguments of the problem. This sets the appropriate data such that
-afterwards the `sensitivity` function can be called for each variable argument.
-
-Internally, this function formulates the linearized KKT optimality conditions
-around the optimal solution.
-
-# Arguments
-- `prg`: the optimization problem structure.
-
-# Keywords
-- `perturbation`: (optional) a fixed perturbation to set for the parameter
-  vector.
-
-# Returns
-- `bar`: description.
-"""
-function vary!(prg::ConicProgram)::Tuple{ArgumentBlockMap,
-                                         ConicProgram}
-
-    # Initialize the variational problem
-    kkt = ConicProgram(solver=prg._solver,
-                       solver_options=prg._solver_options)
-
-    # Create the concatenated primal variable perturbation
-    varmap = Dict{ArgumentBlock, Any}()
-    for z in [prg.x, prg.p]
-        for z_blk in z
-            δz_blk = copy(z_blk, kkt; new_name="δ%s", copyas=VARIABLE)
-
-            # Remove any scaling offset (since perturbations are around zero)
-            @scale(δz_blk, dilation(scale(z_blk)))
-
-            # Record in the variable correspondence map
-            varmap[z_blk] = δz_blk # original -> kkt
-            varmap[δz_blk] = z_blk # kkt -> original
-        end
-    end
-    δx_blks = [varmap[z_blk][:] for z_blk in prg.x]
-    δp_blks = [varmap[z_blk][:] for z_blk in prg.p]
-
-    # Create the dual variable perturbations
-    n_cones = length(constraints(prg))
-    λ = dual.(constraints(prg))
-    δλ = VariableArgumentBlocks(undef, n_cones)
-    for i = 1:n_cones
-        blk_name = @sprintf("δλ%d", i)
-        δλ[i] = @new_variable(kkt, length(λ[i]), blk_name)
-    end
-
-    # Build the constraint function Jacobians
-    nx = numel(prg.x)
-    np = numel(prg.p)
-    f = Vector{Types.RealVector}(undef, n_cones)
-    Dxf = Vector{Types.RealMatrix}(undef, n_cones)
-    Dpf = Vector{Types.RealMatrix}(undef, n_cones)
-    Dpxf = Vector{Types.RealTensor}(undef, n_cones)
-    for i = 1:n_cones
-        C = constraints(prg, i)
-        F = lhs(C)
-        K = cone(C)
-        nf = ndims(K)
-
-        f[i] = F(jacobians=true)
-
-        Dxf[i] = zeros(nf, nx)
-        Dpf[i] = zeros(nf, np)
-        Dpxf[i] = zeros(nf, nx, np)
-
-        fill_jacobian!(Dxf[i], variables, F)
-        fill_jacobian!(Dpf[i], parameters, F)
-        fill_jacobian!(Dpxf[i], parameters, variables, F)
-    end
-
-    # Build the cost function Jacobians
-    J = core_function(cost(prg))
-    J(jacobians=true)
-    DxJ = zeros(1, nx)
-    DxxJ = zeros(1, nx, nx)
-    DpxJ = zeros(1, nx, np)
-    fill_jacobian!(DxJ, variables, J)
-    fill_jacobian!(DxxJ, variables, variables, J)
-    fill_jacobian!(DpxJ, parameters, variables, J)
-    DxJ = DxJ[:]
-    DxxJ = DxxJ[1, :, :]
-    DpxJ = DpxJ[1, :, :]
-
-    # Primal feasibility
-    num_x_blk = length(prg.x)
-    num_p_blk = length(prg.p)
-    idcs_x = 1:num_x_blk
-    idcs_p = (1:num_p_blk).+idcs_x[end]
-    for i = 1:n_cones
-        C = constraints(prg, i)
-        K = kind(C)
-        primal_feas = (args...) -> begin
-            local δx = vcat(args[idcs_x]...)
-            local δp = vcat(args[idcs_p]...)
-            @value(f[i]+Dxf[i]*δx+Dpf[i]*δp)
-        end
-        @add_constraint(kkt, K, "primal_feas", primal_feas,
-                        (δx_blks..., δp_blks...))
-    end
-
-    # Dual feasibility
-    for i = 1:n_cones
-        K = kind(constraints(prg, i))
-        dual_feas = (δλ, _...) -> @value(λ[i]+δλ)
-        @add_dual_constraint(kkt, K, "dual_feas", dual_feas, δλ[i])
-    end
-
-    # Complementary slackness
-    for i = 1:n_cones
-        compl_slack = (args...) -> begin
-            local δx = vcat(args[idcs_x]...)
-            local δp = vcat(args[idcs_p]...)
-            local δλ = args[idcs_p[end]+1]
-            @value(dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i]))
-        end
-        @add_constraint(kkt, :zero, "compl_slack", compl_slack,
-                        (δx_blks..., δp_blks..., δλ[i]))
-    end
-
-    # Stationarity
-    stat = (args...) -> begin
-        local δx = vcat(args[idcs_x]...)
-        local δp = vcat(args[idcs_p]...)
-        local δλ = args[(1:n_cones).+idcs_p[end]]
-        out = DxxJ*δx+DpxJ*δp
-        Dxf_vary_p = (i) -> sum(Dpxf[i][:, :, j]*δp[j] for j=1:np)
-        for i = 1:n_cones
-            out -= Dxf_vary_p(i)'*λ[i]+Dxf[i]'*δλ[i]
-        end
-        @value(out)
-    end
-    @add_constraint(kkt, :zero, "stat", stat,
-                    (δx_blks..., δp_blks..., δλ...))
-
-    # Fix the perturbation amount
-    if !isnothing(perturbation)
-        for (p, δp_setting) in perturbation
-            δp = varmap[p]
-            δp_fix = (δp, _, _) -> @value(δp-δp_setting)
-            @add_constraint(kkt, :zero, "fixed_perturbation", δp_fix, δp)
-        end
-    end
-
-    return varmap, kkt
-end # function
