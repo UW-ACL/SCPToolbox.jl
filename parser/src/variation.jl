@@ -106,10 +106,10 @@ function set_perturbation_constraint!(prg::ConicProgram,
         δx = dx[i]
         if pert_kind[i]==FIXED
             func = (δx, _, _) -> @value(δx[1]-ε)
-            @add_constraint(prg, :zero, "perturb", func, (δx,))
+            @add_constraint(prg, ZERO, "perturb", func, (δx,))
         elseif pert_kind[i]==ABSOLUTE
             func = (δx, _, _) -> @value(vcat(ε, δx[1]))
-            @add_constraint(prg, :l1, "perturb", func, (δx,))
+            @add_constraint(prg, L1, "perturb", func, (δx,))
         elseif pert_kind[i]==RELATIVE
             abs_xref = abs(xref)
             if abs_xref<=sqrt(eps())
@@ -120,7 +120,7 @@ function set_perturbation_constraint!(prg::ConicProgram,
                 throw(err)
             end
             func = (δx, _, _) -> @value(vcat(ε*abs_xref, δx[1]))
-            @add_constraint(prg, :l1, "perturb", func, (δx,))
+            @add_constraint(prg, L1, "perturb", func, (δx,))
         end
     end
 
@@ -249,7 +249,7 @@ function vary!(prg::ConicProgram)::Tuple{ArgumentBlockMap,
             local δλ = args[idcs_p[end]+1]
             @value(dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i]))
         end
-        @add_constraint(kkt, :zero, "compl_slack", compl_slack,
+        @add_constraint(kkt, ZERO, "compl_slack", compl_slack,
                         (δx_blks..., δp_blks..., δλ[i]))
     end
 
@@ -265,8 +265,7 @@ function vary!(prg::ConicProgram)::Tuple{ArgumentBlockMap,
         end
         @value(out)
     end
-    @add_constraint(kkt, :zero, "stat", stat,
-                    (δx_blks..., δp_blks..., δλ...))
+    @add_constraint(kkt, ZERO, "stat", stat, (δx_blks..., δp_blks..., δλ...))
 
     # Set the perturbation constraints
     for z_blks in [prg.x, prg.p]

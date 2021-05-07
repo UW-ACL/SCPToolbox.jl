@@ -219,7 +219,7 @@ of `DifferentiableFunction`.
 - `new_constraint`: the newly added constraint.
 """
 function constraint!(prog::ConicProgram,
-                     kind::Symbol,
+                     kind::SuppotedCone,
                      f::Function,
                      x, p;
                      refname::Types.Optional{String}=nothing,

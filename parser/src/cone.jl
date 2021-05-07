@@ -28,44 +28,45 @@ const ConeVariable = Union{Types.Variable, Types.VariableVector}
 A conic constraint is of the form `{z : z ∈ K}`, where `K` is a convex cone.
 
 The supported cones are:
-- `:zero` for constraints `z==0`.
-- `:nonpos` for constraints `z<=0`.
-- `:l1` for constraints `z=(t, x), norm(x, 1)<=t`.
-- `:soc` for constraints `z=(t, x), norm(x, 2)<=t`.
-- `:linf` for constraints `z=(t, x), norm(x, ∞)<=t`.
-- `:geom` for constraints `z=(t, x), geomean(x)>=t`.
-- `:exp` for constraints `z=(x, y, w), y*exp(x/y)<=w, y>0`.
+- `UNCONSTRAINED` for unconstrained.
+- `ZERO` for constraints `z==0`.
+- `NONPOS` for constraints `z<=0`.
+- `L1` for constraints `z=(t, x), norm(x, 1)<=t`.
+- `SOC` for constraints `z=(t, x), norm(x, 2)<=t`.
+- `LINF` for constraints `z=(t, x), norm(x, ∞)<=t`.
+- `GEOM` for constraints `z=(t, x), geomean(x)>=t`.
+- `EXP` for constraints `z=(x, y, w), y*exp(x/y)<=w, y>0`.
 """
-const SUPPORTED_CONES = (:free, :zero, :nonpos, :l1, :soc, :linf, :geom, :exp)
+@enum(SuppotedCone, UNCONSTRAINED, ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP)
 
 # Maps from the origin cone to the dual cone
-const DUAL_CONE_MAP = Dict(:free => :zero,
-                           :zero => :free,
-                           :nonpos => :nonpos,
-                           :l1 => :linf,
-                           :soc => :soc,
-                           :linf => :l1,
-                           :geom => :geom,
-                           :exp => :exp)
+const DUAL_CONE_MAP = Dict(UNCONSTRAINED => ZERO,
+                           ZERO => UNCONSTRAINED,
+                           NONPOS => NONPOS,
+                           L1 => LINF,
+                           SOC => SOC,
+                           LINF => L1,
+                           GEOM => GEOM,
+                           EXP => EXP)
 
-const CONE_NAMES = Dict(:free => "unconstrained",
-                        :zero => "zero",
-                        :nonpos => "nonpositive orthant",
-                        :l1 => "one-norm",
-                        :soc => "second-order",
-                        :linf => "inf-norm",
-                        :geom => "geometric",
-                        :exp => "exponential")
+const CONE_NAMES = Dict(UNCONSTRAINED => "unconstrained",
+                        ZERO => "zero",
+                        NONPOS => "nonpositive orthant",
+                        L1 => "one-norm",
+                        SOC => "second-order",
+                        LINF => "inf-norm",
+                        GEOM => "geometric",
+                        EXP => "exponential")
 
 """
 `ConvexCone` stores the information necessary to form a convex cone constraint
 in JUMP.
 """
 struct ConvexCone{T<:MOI.AbstractSet}
-    z::ConeVariable # The expression to be constrained in the cone
-    K::T            # The cone set
-    dim::Int        # Cone admbient space dimension
-    kind::Symbol    # The kind of cone (:nonpos, :l1, etc.)
+    z::ConeVariable    # The expression to be constrained in the cone
+    K::T               # The cone set
+    dim::Int           # Cone admbient space dimension
+    kind::SuppotedCone # The kind of cone (NONPOS, L1, etc.)
 
     """
         add_conic_constraint!(z, kind[; dual])
@@ -83,18 +84,13 @@ struct ConvexCone{T<:MOI.AbstractSet}
     - `constraint`: the conic constraint.
     """
     function ConvexCone(z::ConeVariable,
-                        kind::Symbol;
+                        kind::SuppotedCone;
                         dual::Bool=false)::ConvexCone
-
-        if !(kind in SUPPORTED_CONES)
-            err = SCPError(0, SCP_BAD_ARGUMENT, "Unsupported cone")
-            throw(err)
-        end
 
         z = (typeof(z) <: Array) ? z : [z]
         dim = length(z)
 
-        if kind==:exp && dim!=3
+        if kind==EXP && dim!=3
             msg = "Exponential cone is in R^3"
             err = SCPError(0, SCP_BAD_ARGUMENT, msg)
             throw(err)
@@ -103,32 +99,32 @@ struct ConvexCone{T<:MOI.AbstractSet}
         # Convert to dual cone
         if dual
             kind_dual = DUAL_CONE_MAP[kind]
-            if kind==:geom
+            if kind==GEOM
                 t, x = z[1], z[2:end]
                 n = length(x)
                 z = [-t/n; x]
-            elseif kind==:exp
+            elseif kind==EXP
                 u, v, w = z
                 z = [-u; -v; exp(1)*w]
             end
             return ConvexCone(z, kind_dual)
         end
 
-        if kind==:free
+        if kind==UNCONSTRAINED
             K = MOI.Reals(dim)
-        elseif kind==:zero
+        elseif kind==ZERO
             K = MOI.Zeros(dim)
-        elseif kind==:nonpos
+        elseif kind==NONPOS
             K = MOI.Nonpositives(dim)
-        elseif kind==:l1
+        elseif kind==L1
             K = MOI.NormOneCone(dim)
-        elseif kind==:soc
+        elseif kind==SOC
             K = MOI.SecondOrderCone(dim)
-        elseif kind==:linf
+        elseif kind==LINF
             K = MOI.NormInfinityCone(dim)
-        elseif kind==:geom
+        elseif kind==GEOM
             K = MOI.GeometricMeanCone(dim)
-        elseif kind==:exp
+        elseif kind==EXP
             K = MOI.ExponentialCone()
         end
 
@@ -139,7 +135,7 @@ struct ConvexCone{T<:MOI.AbstractSet}
 end # struct
 
 """ Get the kind of cone """
-kind(cone::ConvexCone)::Symbol = cone.kind
+kind(cone::ConvexCone)::SuppotedCone = cone.kind
 
 """ Ambient space dimension of the cone """
 Base.ndims(cone::ConvexCone)::Int = cone.dim
@@ -210,12 +206,12 @@ function isfixed(cone::ConvexCone)::Bool
 end # function
 
 """ Find out whether the cone is all of ``\\reals^n``. """
-isfree(cone::ConvexCone)::Bool = kind(cone)==:free
+isfree(cone::ConvexCone)::Bool = kind(cone)==UNCONSTRAINED
 
 """
     indicator!(pbm, cone)
 
-TODO update to latest ConvexCone structure (there is now also a :free cone)
+TODO update to latest ConvexCone structure (there is now also a UNCONSTRAINED cone)
 
 Generate a vector which indicates conic constraint satisfaction.
 
@@ -241,41 +237,41 @@ function indicator!(pbm::Model, cone::ConvexCone)::Types.Variable
     # Compute the indicator
     if mode==:numerical
         z = cone.z
-        if cone.kind==:zero
+        if cone.kind==ZERO
             q = abs.(z)
-        elseif cone.kind==:nonpos
+        elseif cone.kind==NONPOS
             q = z
-        elseif cone.kind in (:l1, :soc, :linf)
+        elseif cone.kind in (L1, SOC, LINF)
             t = z[1]
             x = z[2:end]
-            nrm = Dict(:l1 => 1, :soc => 2, :linf => Inf)
+            nrm = Dict(L1 => 1, SOC => 2, LINF => Inf)
             q = norm(x, nrm[cone.kind])-t
-        elseif cone.kind==:geom
+        elseif cone.kind==GEOM
             t, x = z[1], z[2:end]
             dim = cone.dim-1
             q = t-exp(1/dim*sum(log.(x)))
-        elseif cone.kind==:exp
+        elseif cone.kind==EXP
             x, y, w = z
             q = y*exp(x/y)-w
         end
     else
         z = cone.z
-        if cone.kind in (:zero, :nonpos)
+        if cone.kind in (ZERO, NONPOS)
             q = @variable(pbm, [1:cone.dim], base_name="q")
-            add!(pbm, C(z-q, :nonpos))
-            if cone.kind==:zero
-                add!(pbm, C(-q-z, :nonpos))
+            add!(pbm, C(z-q, NONPOS))
+            if cone.kind==ZERO
+                add!(pbm, C(-q-z, NONPOS))
             end
         else
             q = @variable(pbm, base_name="q")
-            if cone.kind in (:l1, :soc, :linf)
+            if cone.kind in (L1, SOC, LINF)
                 t = z[1]
                 x = z[2:end]
                 add!(pbm, C(vcat(t+q, x), cone.kind))
-            elseif cone.kind==:geom
+            elseif cone.kind==GEOM
                 t, x = z[1], z[2:end]
                 add!(pbm, C(vcat(x, t-q), cone.kind))
-            elseif cone.kind==:exp
+            elseif cone.kind==EXP
                 x, y, w = z
                 add!(pbm, C(vcat(x, y, w+q), cone.kind))
             end

@@ -124,7 +124,7 @@ struct ConicConstraint
     - `finK`: the conic constraint.
     """
     function ConicConstraint(f::ProgramFunction,
-                             kind::Symbol,
+                             kind::SuppotedCone,
                              prog::AbstractConicProgram;
                              name::Types.Optional{String}=nothing,
                              dual::Bool=false)::ConicConstraint
@@ -200,7 +200,7 @@ parameters(F::ProgramFunction)::ConstantArgumentBlocks = F.p
 cone(C::ConicConstraint)::ConvexCone = C.K
 
 """ Get the kind of cone. """
-kind(C::ConicConstraint)::Symbol = kind(cone(C))
+kind(C::ConicConstraint)::SuppotedCone = kind(cone(C))
 
 """ Get the cone name. """
 name(C::ConicConstraint)::String = C.name
