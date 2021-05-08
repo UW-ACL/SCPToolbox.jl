@@ -204,8 +204,8 @@ Compute the relative cost improvement (as a string to be put into a table).
 # Returns
 - `ΔJ`: the relative cost improvement.
 """
-function improvement_percent(J_new::RealValue,
-                             J_old::RealValue)::String
+function improvement_percent(J_new::RealTypes,
+                             J_old::RealTypes)::String
     if isnan(J_old)
         ΔJ = ""
     else

@@ -29,7 +29,7 @@ end
 using Utils
 
 const T = Types
-const RealValue = T.RealValue
+const RealValue = T.RealTypes
 const RealVector = T.RealVector
 
 """ Oscillator parameters. """

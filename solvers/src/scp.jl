@@ -26,6 +26,9 @@ if isdefined(@__MODULE__, :LanguageServer)
     using .Parser.TrajectoryProblem
 end
 
+using Utils
+using Parser
+
 using LinearAlgebra
 using JuMP
 using Printf
@@ -33,7 +36,9 @@ using Printf
 export SCPSolution, SCPHistory
 
 const ST = Types
-const RealValue = ST.RealValue
+const CLP = ConicLinearProgram
+
+const RealTypes = ST.RealTypes
 const IntRange = ST.IntRange
 const RealVector = ST.RealVector
 const RealMatrix = ST.RealMatrix
@@ -82,7 +87,7 @@ end # struct
 """" Common constant terms used throughout the algorithm."""
 struct SCPCommon
     # >> Discrete-time grid <<
-    Δt::RealValue        # Discrete time step
+    Δt::RealTypes        # Discrete time step
     t_grid::RealVector   # Grid of scaled timed on the [0,1] interval
     E::RealMatrix        # Continuous-time matrix for dynamics virtual control
     scale::SCPScaling    # Variable scaling
@@ -134,7 +139,7 @@ struct SCPSolution
     status::String    # Solution status (success? failure?)
     algo::String      # Which algorithm was used to obtain this solution
     iterations::Int   # Number of SCP iterations that occurred
-    cost::RealValue   # The original convex cost function
+    cost::RealTypes   # The original convex cost function
     # >> Discrete-time trajectory <<
     td::RealVector  # Discrete times
     xd::RealMatrix  # States
@@ -205,7 +210,7 @@ function SCPProblem(
     # Compute the common constant terms
     t_grid = RealVector(LinRange(0.0, 1.0, pars.N))
     Δt = t_grid[2]-t_grid[1]
-    E = RealMatrix(I(traj.nx))
+    E = RealMatrix(collect(Int, I(traj.nx)))
     scale = compute_scaling(pars, traj, t_grid)
     idcs = SCPDiscretizationIndices(traj, E)
     consts = SCPCommon(Δt, t_grid, E, scale, idcs, table)
@@ -238,20 +243,20 @@ function SCPSubproblemSolution!(spbm::T)::Nothing where {T<:SCPSubproblem}
     spbm.timing[:solve] = solve_time(spbm.mdl)
     spbm.timing[:discretize] = spbm.sol.dyn.timing
     spbm.nvar = num_variables(spbm.mdl)
-    moi2sym = Dict("MathOptInterface.Zeros" => :zero,
-                   "MathOptInterface.Nonpositives" => :nonpos,
-                   "MathOptInterface.NormOneCone" => :l1,
-                   "MathOptInterface.SecondOrderCone" => :soc,
-                   "MathOptInterface.NormInfinityCone" => :linf,
-                   "MathOptInterface.GeometricMeanCone" => :geom,
-                   "MathOptInterface.ExponentialCone" => :exp)
+    moi2sym = Dict("MathOptInterface.Zeros" => CLP.ZERO,
+                   "MathOptInterface.Nonpositives" => CLP.NONPOS,
+                   "MathOptInterface.NormOneCone" => CLP.L1,
+                   "MathOptInterface.SecondOrderCone" => CLP.SOC,
+                   "MathOptInterface.NormInfinityCone" => CLP.LINF,
+                   "MathOptInterface.GeometricMeanCone" => CLP.GEOM,
+                   "MathOptInterface.ExponentialCone" => CLP.EXP)
     dim = (ref) -> MOI.dimension(moi_set(constraint_object(ref)))
     cons_types = list_of_constraint_types(spbm.mdl)
     for cons_type in cons_types
         function_type, set_type = cons_type
         key = moi2sym[string(set_type)]
         refs = all_constraints(spbm.mdl, function_type, set_type)
-        if key in (:zero, :nonpos)
+        if key in (CLP.ZERO, CLP.NONPOS)
             spbm.ncons[key] = sum(dim(ref) for ref in refs)
         else
             spbm.ncons[key] = ST.IntVector([dim(ref) for ref in refs])
@@ -381,12 +386,13 @@ function correct_convex!(
     epi_x = @variable(opti.mdl, [1:N], base_name="τx")
     epi_u = @variable(opti.mdl, [1:N], base_name="τu")
     epi_p = @variable(opti.mdl, base_name="τp")
-    C = ConvexCone
+    C = CLP.ConvexCone
+    add! = CLP.add!
     for k = 1:N
-        add!(opti.mdl, C(vcat(epi_x[k], dx[:, k]), :l1))
-        add!(opti.mdl, C(vcat(epi_u[k], du[:, k]), :l1))
+        add!(opti.mdl, C(vcat(epi_x[k], dx[:, k]), CLP.L1))
+        add!(opti.mdl, C(vcat(epi_u[k], du[:, k]), CLP.L1))
     end
-    add!(opti.mdl, C(vcat(epi_p, dp), :l1))
+    add!(opti.mdl, C(vcat(epi_p, dp), CLP.L1))
 
     # Define the cost
     cost = sum(epi_x)+sum(epi_u)+epi_p
@@ -427,9 +433,9 @@ Compute the scaling matrices given the problem definition.
 - `scale`: the scaling structure.
 """
 function compute_scaling(
-    pars::T,
+    pars::SCPParameters,
     traj::TrajectoryProblem,
-    t::RealVector)::SCPScaling where {T<:SCPParameters}
+    t::RealVector)::SCPScaling
 
     # Parameters
     nx = traj.nx
@@ -438,6 +444,7 @@ function compute_scaling(
     solver = pars.solver
     solver_opts = pars.solver_opts
     zero_intvl_tol = sqrt(eps())
+    add! = CLP.add!
 
     # Map varaibles to these scaled intervals
     intrvl_x = [0.0; 1.0]
@@ -573,12 +580,11 @@ Compute concatenanted time derivative vector for dynamics discretization.
 # Returns
 - `dVdt`: the time derivative of V.
 """
-function derivs(t::RealValue,
+function derivs(t::RealTypes,
                 V::RealVector,
                 k::Int,
                 pbm::SCPProblem,
-                ref::T)::RealVector where {
-                    T<:SCPSubproblemSolution}
+                ref::SCPSubproblemSolution)::RealVector
     # Parameters
     nx = pbm.traj.nx
     t_span = pbm.common.t_grid[k:k+1]
@@ -720,17 +726,17 @@ function add_dynamics!(
     vd = spbm.vd
 
     # Add dynamics constraint to optimization model
-    acc! = add!
-    Cone = ConvexCone
+    add! = (f) -> CLP.add!(spbm.mdl, CLP.ConvexCone(f, CLP.ZERO))
     for k = 1:N-1
-        xk, xkp1, uk, ukp1, vdk = x[:, k], x[:, k+1], u[:, k], u[:, k+1], vd[:, k]
+        xk, xkp1 = x[:, k], x[:, k+1]
+        uk, ukp1, vdk = u[:, k], u[:, k+1], vd[:, k]
         A = spbm.ref.dyn.A[:, :, k]
         Bm = spbm.ref.dyn.Bm[:, :, k]
         Bp = spbm.ref.dyn.Bp[:, :, k]
         F = spbm.ref.dyn.F[:, :, k]
         r = spbm.ref.dyn.r[:, k]
         E = spbm.ref.dyn.E[:, :, k]
-        acc!(spbm.mdl, Cone(xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk), :zero))
+        add!(xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk))
     end
 
     return nothing
@@ -758,13 +764,13 @@ function add_convex_state_constraints!(
         for k = 1:N
             xk_in_X = traj_pbm.X(t[k], k, x[:, k], p)
             correct_type = typeof(xk_in_X)<:(
-                Vector{T} where {T<:ConvexCone})
+                Vector{T} where {T<:CLP.ConvexCone})
             if !correct_type
                 msg = string("input constraint must be in conic form")
                 err = SCPError(k, SCP_BAD_ARGUMENT, msg)
                 throw(err)
             end
-            add!(spbm.mdl, xk_in_X)
+            CLP.add!(spbm.mdl, xk_in_X)
         end
     end
 
@@ -793,13 +799,13 @@ function add_convex_input_constraints!(
         for k = 1:N
             uk_in_U = traj_pbm.U(t[k], k, u[:, k], p)
             correct_type = typeof(uk_in_U)<:(
-                Vector{T} where {T<:ConvexCone})
+                Vector{T} where {T<:CLP.ConvexCone})
             if !correct_type
                 msg = string("input constraint must be in conic form")
                 err = SCPError(k, SCP_BAD_ARGUMENT, msg)
                 throw(err)
             end
-            add!(spbm.mdl, uk_in_U)
+            CLP.add!(spbm.mdl, uk_in_U)
         end
     end
 
@@ -832,8 +838,7 @@ function add_nonconvex_constraints!(
     p = spbm.p
 
     # Problem-specific convex constraints
-    acc! = add!
-    Cone = ConvexCone
+    Cone = CLP.ConvexCone
     for k = 1:N
         if !isnothing(traj_pbm.s)
             tkxup = (t[k], k, xb[:, k], ub[:, k], pb)
@@ -849,7 +854,7 @@ function add_nonconvex_constraints!(
                 spbm.vs = @variable(spbm.mdl, [1:ns, 1:N], base_name="vs")
             end
 
-            acc!(spbm.mdl, Cone(lhs-spbm.vs[:, k], :nonpos))
+            CLP.add!(spbm.mdl, Cone(lhs-spbm.vs[:, k], CLP.NONPOS))
         else
             spbm.vs = @variable(spbm.mdl, [1:0, 1:N], base_name="vs")
             break
@@ -928,8 +933,8 @@ function add_bcs!(
     pb = spbm.ref.p
 
     # Initial condition
-    acc! = add!
-    Cone = ConvexCone
+    add! = CLP.add!
+    Cone = CLP.ConvexCone
     if !isnothing(traj.gic)
         gic = traj.gic(xb0, pb)
         nic = length(gic)
@@ -939,9 +944,9 @@ function add_bcs!(
         lhs = H0*x0+K0*p+ℓ0
         if relaxed
             spbm.vic = @variable(spbm.mdl, [1:nic], base_name="vic")
-            acc!(spbm.mdl, Cone(lhs+spbm.vic, :zero))
+            add!(spbm.mdl, Cone(lhs+spbm.vic, CLP.ZERO))
         else
-            acc!(spbm.mdl, Cone(lhs, :zero))
+            add!(spbm.mdl, Cone(lhs, CLP.ZERO))
         end
     elseif relaxed
         spbm.vic = @variable(spbm.mdl, [1:0], base_name="vic")
@@ -957,9 +962,9 @@ function add_bcs!(
         lhs = Hf*xf+Kf*p+ℓf
         if relaxed
             spbm.vtc = @variable(spbm.mdl, [1:ntc], base_name="vtc")
-            acc!(spbm.mdl, Cone(lhs+spbm.vtc, :zero))
+            add!(spbm.mdl, Cone(lhs+spbm.vtc, CLP.ZERO))
         else
-            acc!(spbm.mdl, Cone(lhs, :zero))
+            add!(spbm.mdl, Cone(lhs, CLP.ZERO))
         end
     elseif relaxed
         spbm.vtc = @variable(spbm.mdl, [1:0], base_name="vtc")
@@ -980,7 +985,7 @@ that the function received a solved subproblem.
 # Returns
 - `deviation`: a measure of deviation of `spbm.sol` from `spbm.ref`.
 """
-function solution_deviation(spbm::T)::RealValue where {T<:SCPSubproblem}
+function solution_deviation(spbm::T)::RealTypes where {T<:SCPSubproblem}
     # Extract values
     pbm = spbm.def
     N = pbm.pars.N
@@ -1077,7 +1082,7 @@ Add subproblem to SCP history.
 - `spbm`: subproblem structure.
 """
 function save!(hist::SCPHistory,
-                     spbm::T)::Nothing where {T<:SCPSubproblem}
+               spbm::SCPSubproblem)::Nothing
     spbm.timing[:formulate] = (get_time()-spbm.timing[:formulate])/1e9
     push!(hist.subproblems, spbm)
     return nothing

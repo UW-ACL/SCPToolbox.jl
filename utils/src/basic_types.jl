@@ -68,21 +68,19 @@ const Func = Union{Nothing, Function}
 const SpecialIntegrationActions = Vector{Tuple{Index, Function}}
 
 """
-    RealArray(x)
+    RealArray(args...)
 
 Real array constructor.
 
 # Arguments
-- `X`: initialization arguments that you would normally pass to a constructor
-  like `Vector{Float64}`.
+- `args...`: initialization arguments that you would normally pass to a
+  constructor like `Vector{Float64}`.
 
 # Returns
 The real array.
 """
-function (::Type{RealArray})(
-    X::Array{T, n})::Array{T, n} where {T<:RealTypes, n}
-
-    return Array{T, n}(X)
+function (::Type{RealArray{n}})(args...)::Array{Float64, n} where n
+    return Array{Float64, n}(args...)
 end # function
 
 """

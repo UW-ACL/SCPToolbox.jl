@@ -37,7 +37,7 @@ The supported cones are:
 - `GEOM` for constraints `z=(t, x), geomean(x)>=t`.
 - `EXP` for constraints `z=(x, y, w), y*exp(x/y)<=w, y>0`.
 """
-@enum(SuppotedCone, UNCONSTRAINED, ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP)
+@enum(SupportedCone, UNCONSTRAINED, ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP)
 
 # Maps from the origin cone to the dual cone
 const DUAL_CONE_MAP = Dict(UNCONSTRAINED => ZERO,
@@ -63,10 +63,10 @@ const CONE_NAMES = Dict(UNCONSTRAINED => "unconstrained",
 in JUMP.
 """
 struct ConvexCone{T<:MOI.AbstractSet}
-    z::ConeVariable    # The expression to be constrained in the cone
-    K::T               # The cone set
-    dim::Int           # Cone admbient space dimension
-    kind::SuppotedCone # The kind of cone (NONPOS, L1, etc.)
+    z::ConeVariable     # The expression to be constrained in the cone
+    K::T                # The cone set
+    dim::Int            # Cone admbient space dimension
+    kind::SupportedCone # The kind of cone (NONPOS, L1, etc.)
 
     """
         add_conic_constraint!(z, kind[; dual])
@@ -84,7 +84,7 @@ struct ConvexCone{T<:MOI.AbstractSet}
     - `constraint`: the conic constraint.
     """
     function ConvexCone(z::ConeVariable,
-                        kind::SuppotedCone;
+                        kind::SupportedCone;
                         dual::Bool=false)::ConvexCone
 
         z = (typeof(z) <: Array) ? z : [z]
@@ -135,7 +135,7 @@ struct ConvexCone{T<:MOI.AbstractSet}
 end # struct
 
 """ Get the kind of cone """
-kind(cone::ConvexCone)::SuppotedCone = cone.kind
+kind(cone::ConvexCone)::SupportedCone = cone.kind
 
 """ Ambient space dimension of the cone """
 Base.ndims(cone::ConvexCone)::Int = cone.dim
@@ -152,7 +152,7 @@ Add a conic constraint to the optimization problem.
 # Returns
 - `constraint`: the conic constraint reference.
 """
-function add!(pbm::Model, cone::T)::Types.Constraint where {T<:ConvexCone}
+function add!(pbm::Model, cone::ConvexCone)::Types.Constraint
 
     if isfree(cone)
         # Just skip the "all of R^n" cone, since it means unconstrained
@@ -176,8 +176,9 @@ Add several conic constraints to the optimization problem.
 # Returns
 - `constraints`: the conic constraint references.
 """
-function add!(
-    pbm::Model, cones::Vector{T})::Types.ConstraintVector where {T<:ConvexCone}
+function add!(pbm::Model,
+              cones::Vector{T})::Types.ConstraintVector where {
+                  T<:ConvexCone}
 
     constraints = Types.ConstraintVector(undef, 0)
 
@@ -232,7 +233,6 @@ function indicator!(pbm::Model, cone::ConvexCone)::Types.Variable
 
     # Parameters
     mode = (isfixed(cone)) ? :numerical : :jump
-    C = ConvexCone
 
     # Compute the indicator
     if mode==:numerical
@@ -258,22 +258,22 @@ function indicator!(pbm::Model, cone::ConvexCone)::Types.Variable
         z = cone.z
         if cone.kind in (ZERO, NONPOS)
             q = @variable(pbm, [1:cone.dim], base_name="q")
-            add!(pbm, C(z-q, NONPOS))
+            add!(pbm, ConvexCone(z-q, NONPOS))
             if cone.kind==ZERO
-                add!(pbm, C(-q-z, NONPOS))
+                add!(pbm, ConvexCone(-q-z, NONPOS))
             end
         else
             q = @variable(pbm, base_name="q")
             if cone.kind in (L1, SOC, LINF)
                 t = z[1]
                 x = z[2:end]
-                add!(pbm, C(vcat(t+q, x), cone.kind))
+                add!(pbm, ConvexCone(vcat(t+q, x), cone.kind))
             elseif cone.kind==GEOM
                 t, x = z[1], z[2:end]
-                add!(pbm, C(vcat(x, t-q), cone.kind))
+                add!(pbm, ConvexCone(vcat(x, t-q), cone.kind))
             elseif cone.kind==EXP
                 x, y, w = z
-                add!(pbm, C(vcat(x, y, w+q), cone.kind))
+                add!(pbm, ConvexCone(vcat(x, y, w+q), cone.kind))
             end
             q = [q]
         end

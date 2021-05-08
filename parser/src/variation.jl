@@ -20,6 +20,8 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("program.jl")
 end
 
+export vary!
+
 # ..:: Methods ::..
 
 """

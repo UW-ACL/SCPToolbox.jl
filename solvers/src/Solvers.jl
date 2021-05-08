@@ -23,9 +23,6 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("../../parser/src/Parser.jl")
 end
 
-using Utils
-using Parser
-
 # General (common) definitions
 include("scp.jl")
 

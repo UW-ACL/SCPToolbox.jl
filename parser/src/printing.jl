@@ -20,8 +20,6 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("program.jl")
 end
 
-using JuMP
-
 """
     make_indent(io)
 
@@ -312,12 +310,12 @@ function Base.show(io::IO, constraints::Constraints)::Nothing
 
     # Print a more detailed list of constraints
     # Collect cone types
-    cone_count = Dict(cone=>0 for cone in SUPPORTED_CONES)
+    cone_count = Dict(cone=>0 for cone in SupportedCone)
     for constraint in constraints
         cone_count[kind(constraint)] += 1
     end
     # Print out
-    for cone in SUPPORTED_CONES #noinfo
+    for cone in SupportedCone #noinfo
         count = cone_count[cone] #noinfo
         name = CONE_NAMES[cone] #noinfo
         if count>0

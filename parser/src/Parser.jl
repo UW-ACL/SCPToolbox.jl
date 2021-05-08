@@ -22,8 +22,10 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("../../utils/src/Utils.jl")
 end
 
+export ConicLinearProgram
+
 # User-facing problem definition
-# include("problem.jl")
+include("problem.jl")
 
 # General optimization problem building
 module ConicLinearProgram

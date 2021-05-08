@@ -30,7 +30,7 @@ using Printf
 using Utils
 using Parser
 
-import ..ST, ..RealValue, ..IntRange, ..RealVector, ..RealMatrix, ..Trajectory,
+import ..ST, ..RealTypes, ..IntRange, ..RealVector, ..RealMatrix, ..Trajectory,
     ..Objective, ..VariableVector, ..VariableMatrix
 
 import ..SCPParameters, ..SCPSubproblem, ..SCPSubproblemSolution, ..SCPProblem,
@@ -41,6 +41,7 @@ import ..discretize!, ..add_dynamics!, ..add_convex_state_constraints!,
     ..original_cost, ..solution_deviation, ..solve_subproblem!,
     ..unsafe_solution, ..overhead!, ..save!, ..get_time
 
+const CLP = ConicLinearProgram #noerr
 const Variable = ST.Variable
 
 export Parameters, create, solve
@@ -50,13 +51,13 @@ struct Parameters <: SCPParameters
     N::Int               # Number of temporal grid nodes
     Nsub::Int            # Number of subinterval integration time nodes
     iter_max::Int        # Maximum number of iterations
-    wvc::RealValue       # Virtual control weight
-    wtr::RealValue       # Trust region weight
-    ε_abs::RealValue     # Absolute convergence tolerance
-    ε_rel::RealValue     # Relative convergence tolerance
-    feas_tol::RealValue  # Dynamic feasibility tolerance
-    q_tr::RealValue      # Trust region norm (possible: 1, 2, 4 (2^2), Inf)
-    q_exit::RealValue    # Stopping criterion norm
+    wvc::RealTypes       # Virtual control weight
+    wtr::RealTypes       # Trust region weight
+    ε_abs::RealTypes     # Absolute convergence tolerance
+    ε_rel::RealTypes     # Relative convergence tolerance
+    feas_tol::RealTypes  # Dynamic feasibility tolerance
+    q_tr::RealTypes      # Trust region norm (possible: 1, 2, 4 (2^2), Inf)
+    q_exit::RealTypes    # Stopping criterion norm
     solver::Module       # The numerical solver to use for the subproblems
     solver_opts::Dict{String, Any} # Numerical solver options
 end # struct
@@ -74,18 +75,18 @@ mutable struct SubproblemSolution <: SCPSubproblemSolution
     vic::RealVector       # Initial conditions virtual control
     vtc::RealVector       # Terminal conditions virtual control
     # >> Cost values <<
-    J::RealValue          # The original cost
-    J_tr::RealValue       # The trust region penalty
-    J_vc::RealValue       # The virtual control penalty
-    J_aug::RealValue      # Overall cost
+    J::RealTypes          # The original cost
+    J_tr::RealTypes       # The trust region penalty
+    J_vc::RealTypes       # The virtual control penalty
+    J_aug::RealTypes      # Overall cost
     # >> Trajectory properties <<
     ηx::RealVector        # State trust region radii
     ηu::RealVector        # Input trust region radii
-    ηp::RealValue         # Parameter trust region radii
+    ηp::RealTypes         # Parameter trust region radii
     status::ST.ExitStatus # Numerical optimizer exit status
     feas::Bool            # Dynamic feasibility flag
     defect::RealMatrix    # "Defect" linearization accuracy metric
-    deviation::RealValue  # Deviation from reference trajectory
+    deviation::RealTypes  # Deviation from reference trajectory
     unsafe::Bool          # Indicator that the solution is unsafe to use
     dyn::ST.DLTV          # The dynamics
 end # struct
@@ -123,9 +124,9 @@ mutable struct Subproblem <: SCPSubproblem
     ηu::VariableVector  # Input trust region radii
     ηp::Variable        # Parameter trust region radii
     # >> Statistics <<
-    nvar::Int                       # Total number of decision variables
-    ncons::Dict{Symbol, Any}        # Number of constraints
-    timing::Dict{Symbol, RealValue} # Runtime profiling
+    nvar::Int                           # Total number of decision variables
+    ncons::Dict{CLP.SupportedCone, Any} # Number of constraints
+    timing::Dict{Symbol, RealTypes} # Runtime profiling
 end # struct
 
 #= Construct the PTR problem definition.
@@ -501,19 +502,20 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     dp = ph-ph_ref
 
     # >> Trust region constraint <<
-    q2cone = Dict(1 => :l1, 2 => :soc, 4 => :soc, Inf => :linf)
+    q2cone = Dict(1 => CLP.L1, 2 => CLP.SOC, 4 => CLP.SOC, Inf => CLP.LINF)
     cone = q2cone[q]
-    C = ConvexCone
+    C = CLP.ConvexCone
+    add! = CLP.add!
 
     # Parameter trust region
     dp_lq = @variable(spbm.mdl, base_name="dp_lq")
     add!(spbm.mdl, C(vcat(dp_lq, dp), cone))
     if q==4
         wp = @variable(spbm.mdl, base_name="wp")
-        add!(spbm.mdl, C(vcat(wp, dp_lq), :soc))
-        add!(spbm.mdl, C(vcat(wp, ηp, 1), :geom))
+        add!(spbm.mdl, C(vcat(wp, dp_lq), CLP.SOC))
+        add!(spbm.mdl, C(vcat(wp, ηp, 1), CLP.GEOM))
     else
-        add!(spbm.mdl, C(dp_lq-ηp, :nonpos))
+        add!(spbm.mdl, C(dp_lq-ηp, CLP.NONPOS))
     end
 
     # State and input trust regions
@@ -525,17 +527,17 @@ function add_trust_region!(spbm::Subproblem)::Nothing
         if q==4
             # State
             wx = @variable(spbm.mdl, base_name="wx")
-            add!(spbm.mdl, C(vcat(wx, dx_lq[k]), :soc))
-            add!(spbm.mdl, C(vcat(wx, ηx[k], 1), :geom))
+            add!(spbm.mdl, C(vcat(wx, dx_lq[k]), CLP.SOC))
+            add!(spbm.mdl, C(vcat(wx, ηx[k], 1), CLP.GEOM))
             # Input
             wu = @variable(spbm.mdl, base_name="wu")
-            add!(spbm.mdl, C(vcat(wu, du_lq[k]), :soc))
-            add!(spbm.mdl, C(vcat(wu, ηu[k], 1), :geom))
+            add!(spbm.mdl, C(vcat(wu, du_lq[k]), CLP.SOC))
+            add!(spbm.mdl, C(vcat(wu, ηu[k], 1), CLP.GEOM))
         else
             # State
-            add!(spbm.mdl, C(dx_lq[k]-ηx[k], :nonpos))
+            add!(spbm.mdl, C(dx_lq[k]-ηx[k], CLP.NONPOS))
             # Input
-            add!(spbm.mdl, C(du_lq[k]-ηu[k], :nonpos))
+            add!(spbm.mdl, C(du_lq[k]-ηu[k], CLP.NONPOS))
         end
     end
 
@@ -603,7 +605,8 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
     vtc = spbm.vtc
 
     # Compute virtual control penalty
-    C = ConvexCone
+    C = CLP.ConvexCone
+    add! = CLP.add!
     P = @variable(spbm.mdl, [1:N], base_name="P")
     Pf = @variable(spbm.mdl, [1:2], base_name="Pf")
     for k = 1:N
@@ -612,10 +615,10 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
         else
             tmp = vcat(P[k], vs[:, k])
         end
-        add!(spbm.mdl, C(tmp, :l1))
+        add!(spbm.mdl, C(tmp, CLP.L1))
     end
-    add!(spbm.mdl, C(vcat(Pf[1], vic), :l1))
-    add!(spbm.mdl, C(vcat(Pf[2], vtc), :l1))
+    add!(spbm.mdl, C(vcat(Pf[1], vic), CLP.L1))
+    add!(spbm.mdl, C(vcat(Pf[2], vtc), CLP.L1))
     spbm.J_vc = wvc*(trapz(P, t)+sum(Pf))
 
     return nothing

@@ -28,23 +28,23 @@ function zohinterp end # function
 
 module Types
 include("basic_types.jl")
-# include("quaternion.jl")
-# include("ellipsoid.jl")
-# include("hyperrectangle.jl")
-# include("dltv.jl")
-# include("trajectory.jl")
-# include("homotopy.jl")
-# include("table.jl")
+include("quaternion.jl")
+include("ellipsoid.jl")
+include("hyperrectangle.jl")
+include("dltv.jl")
+include("trajectory.jl")
+include("homotopy.jl")
+include("table.jl")
 end # module
 
 using .Types
-# export Quaternion, dcm, rpy, slerp_interpolate
-# export Ellipsoid, project, ∇
-# export Hyperrectangle
-# export DLTV
-# export ContinuousTimeTrajectory, sample
-# export Homotopy
-# export Table, improvement_percent
+export Quaternion, dcm, rpy, slerp_interpolate
+export Ellipsoid, project, ∇
+export Hyperrectangle
+export DLTV
+export ContinuousTimeTrajectory, sample
+export Homotopy
+export Table, improvement_percent
 
 include("helper.jl")
 include("plots.jl")

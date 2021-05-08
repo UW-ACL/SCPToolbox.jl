@@ -31,7 +31,7 @@ end
 
 using Utils
 
-const RealTuple = Tuple{Types.RealValue, Types.RealValue}
+const RealTuple = Tuple{Types.RealTypes, Types.RealTypes}
 const VectorOfTuples = Vector{Union{Nothing, RealTuple}}
 const SIA = Types.SpecialIntegrationActions
 const Func = Types.Func
@@ -191,7 +191,7 @@ variable scaling that may occur.
 """
 function problem_advise_scale!(pbm::TrajectoryProblem,
                                which::Symbol,
-                               idx::Types.ElementIndex,
+                               idx::Types.Index,
                                rg::RealTuple)::Nothing
     if rg[2] < rg[1]
         err = ArgumentError("min must be less than max")
@@ -216,7 +216,7 @@ Define an action on (part of) the state at integration update step.
   updated/correct value.
 """
 function problem_set_integration_action!(
-    pbm::TrajectoryProblem, idx::Types.ElementIndex, action::Func)::Nothing
+    pbm::TrajectoryProblem, idx::Types.Index, action::Func)::Nothing
 
     push!(pbm.integ_actions, (idx, (x) -> action(x, pbm)))
 

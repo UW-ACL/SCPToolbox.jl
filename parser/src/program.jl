@@ -25,16 +25,17 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("cost.jl")
 end
 
-export ConicProgram, numel, value, dual, constraints, name, cost, solve!,
-    vary!
+import Base: copy
+
+export ConicProgram, numel, value, dual, constraints, name, cost, solve!
 export @new_variable, @new_parameter, @add_constraint,
     @set_cost, @set_feasibility
 
 # ..:: Globals ::..
 
 const ArgumentBlockMap = Dict{ArgumentBlock, ArgumentBlock}
-const PerturbationSet{T, N} = Dict{ConstantArgumentBlock{N}, T} where {
-    T<:Types.RealArray}
+const PerturbationSet = Dict{ConstantArgumentBlock{N}, T} where {
+    T<:Types.RealArray, N}
 
 # ..:: Data structures ::..
 
@@ -219,7 +220,7 @@ of `DifferentiableFunction`.
 - `new_constraint`: the newly added constraint.
 """
 function constraint!(prog::ConicProgram,
-                     kind::SuppotedCone,
+                     kind::SupportedCone,
                      f::Function,
                      x, p;
                      refname::Types.Optional{String}=nothing,
@@ -373,11 +374,11 @@ end of the corresponding argument of the new problem
 # Returns
 - `new_blk`: the newly created argument block.
 """
-function Base.copy(blk::ArgumentBlock{T},
-                   prg::ConicProgram;
-                   new_name::String="%s",
-                   copyas::Types.Optional{
-                       ArgumentKind}=nothing)::ArgumentBlock where T
+function copy(blk::ArgumentBlock{T},
+              prg::ConicProgram;
+              new_name::String="%s",
+              copyas::Types.Optional{
+                  ArgumentKind}=nothing)::ArgumentBlock where T
 
     blk_shape = size(blk)
     blk_kind = isnothing(copyas) ? kind(blk) : copyas

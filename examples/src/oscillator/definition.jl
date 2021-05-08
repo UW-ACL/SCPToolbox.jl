@@ -26,6 +26,7 @@ using LinearAlgebra
 using Parser
 
 const Trajectory = T.ContinuousTimeTrajectory
+const CLP = ConicLinearProgram
 
 function define_problem!(pbm::TrajectoryProblem,
                          algo::Symbol)::Nothing
@@ -237,8 +238,8 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             r = x[veh.id_r]
             l1r = p[veh.id_l1r]
 
-            C = ConvexCone
-            X = [C(vcat(l1r[k], r), :l1)]
+            C = CLP.ConvexCone
+            X = [C(vcat(l1r[k], r), CLP.L1)]
 
             return X
         end)
@@ -253,13 +254,13 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             l1aa = u[veh.id_l1aa]
             l1adiff = u[veh.id_l1adiff]
 
-            C = ConvexCone
-            U = [C(aa-veh.a_max, :nonpos),
-                 C(-veh.a_max-aa, :nonpos),
-                 C(ar-veh.a_max, :nonpos),
-                 C(-veh.a_max-ar, :nonpos),
-                 C(vcat(l1aa, aa), :l1),
-                 C(vcat(l1adiff, aa-ar), :l1)]
+            C = CLP.ConvexCone
+            U = [C(aa-veh.a_max, CLP.NONPOS),
+                 C(-veh.a_max-aa, CLP.NONPOS),
+                 C(ar-veh.a_max, CLP.NONPOS),
+                 C(-veh.a_max-ar, CLP.NONPOS),
+                 C(vcat(l1aa, aa), CLP.L1),
+                 C(vcat(l1adiff, aa-ar), CLP.L1)]
 
             return U
         end)

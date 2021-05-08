@@ -71,7 +71,7 @@ struct Hyperrectangle
     - `H`: the hyperrectangle set.
     """
     function Hyperrectangle(
-        range::Tuple{RealValue, RealValue}...)::Hyperrectangle
+        range::Tuple{RealTypes, RealTypes}...)::Hyperrectangle
 
         n = length(range)
         l = RealVector([range[i][1] for i=1:n])
@@ -105,12 +105,12 @@ struct Hyperrectangle
     - `H`: the hyperrectangle set.
     """
     function Hyperrectangle(offset::RealVector,
-                              width::RealValue,
-                              height::RealValue,
-                              depth::RealValue;
-                              yaw::RealValue=0.0,
-                              pitch::RealValue=0.0,
-                              roll::RealValue=0.0)::Hyperrectangle
+                              width::RealTypes,
+                              height::RealTypes,
+                              depth::RealTypes;
+                              yaw::RealTypes=0.0,
+                              pitch::RealTypes=0.0,
+                              roll::RealTypes=0.0)::Hyperrectangle
         if yaw%90!=0 || pitch%90!=0 || roll%90!=0
             err = ArgumentError("hyperrectangle must be axis-aligned.")
             throw(err)

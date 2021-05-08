@@ -21,17 +21,15 @@ if isdefined(@__MODULE__, :LanguageServer)
     using .Utils
 end
 
-include("../../utils/src/Utils.jl")
-
 using LinearAlgebra
 using JuMP
 using ECOS
 using Printf
-using .Utils
+using Utils
 
 const LocationIndices = Array{Int}
-const RealArray{N} = Types.RealArray{N}
-const AbstractRealArray{N} = AbstractArray{Float64, N}
+const RealArray = Types.RealArray{N} where N
+const AbstractRealArray = AbstractArray{Float64, N} where N
 
 const AtomicVariable = Types.AExpr
 const AtomicConstant = Float64

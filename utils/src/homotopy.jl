@@ -25,11 +25,11 @@ export Homotopy
 """ Homotopy (continuation) object. """
 struct Homotopy
     # Raw parameters
-    ε::RealValue     # Error with respect to exact 1 or 0
-    δ_min::RealValue # Most precise transition half-width
-    δ_max::RealValue # Most coarse transition half-width
+    ε::RealTypes     # Error with respect to exact 1 or 0
+    δ_min::RealTypes # Most precise transition half-width
+    δ_max::RealTypes # Most coarse transition half-width
     # Derived parameters
-    ρ::RealValue     # Exponential growth factor
+    ρ::RealTypes     # Exponential growth factor
 
     """
         Homotopy(δ_min[; δ_max, ε])
@@ -47,7 +47,7 @@ struct Homotopy
     - `h`: the homotopy object.
     """
     function Homotopy(
-        δ_min::RealValue; δ_max::RealValue=1.0, ε::RealValue=1e-2)::Homotopy
+        δ_min::RealTypes; δ_max::RealTypes=1.0, ε::RealTypes=1e-2)::Homotopy
 
         ρ = δ_min/δ_max
         h = new(ε, δ_min, δ_max, ρ)
@@ -68,7 +68,7 @@ Interpolate the homotopy parameter value.
 # Returns
 - `h`: homotopy value for x.
 """
-function (hom::Homotopy)(x::RealValue)::RealValue
+function (hom::Homotopy)(x::RealTypes)::RealTypes
     h = log(1/hom.ε-1)/(hom.ρ^(x)*hom.δ_max)
     return h
 end # function

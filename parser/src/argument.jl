@@ -27,7 +27,7 @@ export value, name
 # Specialize argument blocks to variables and parameters
 const VariableArgumentBlock = ArgumentBlock{AtomicVariable}
 const ConstantArgumentBlock = ArgumentBlock{AtomicConstant}
-const ArgumentBlocks{T} = Vector{ArgumentBlock{T}}
+const ArgumentBlocks = Vector{ArgumentBlock{T}} where T
 
 # ..:: Data structures ::..
 

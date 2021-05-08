@@ -72,7 +72,7 @@ end # struct
 - `x`: the trajectory value at time t.
 """
 function sample(traj::ContinuousTimeTrajectory,
-                t::RealValue)::Union{RealValue, RealArray}
+                t::RealTypes)::Union{RealTypes, RealArray}
 
     if traj.interp==:linear
         x = linterp(t, traj.x, traj.t)

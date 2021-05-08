@@ -33,7 +33,7 @@ export @scale, @perturb_free, @perturb_fix, @perturb_relative,
 # Constants to denote variable or a parameter
 @enum(ArgumentKind, VARIABLE, PARAMETER)
 
-const BlockValue{T,N} = AbstractArray{T,N}
+const BlockValue = AbstractArray{T,N} where {T,N}
 
 # ..:: Data structures ::..
 

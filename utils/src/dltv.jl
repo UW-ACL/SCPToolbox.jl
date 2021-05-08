@@ -31,7 +31,7 @@ mutable struct DLTV
     F::RealTensor     # ... +F[:, :, k]*p+ ...
     r::RealMatrix     # ... +r[:, k]+ ...
     E::RealTensor     # ... +E[:, :, k]*v
-    timing::RealValue # [s] Time taken to discretize
+    timing::RealTypes # [s] Time taken to discretize
 
     """
         DLTV(nx, nu, np, nv, N)

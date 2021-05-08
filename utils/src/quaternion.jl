@@ -32,7 +32,7 @@ In vectorized form/indexing, use the scalar last convention.
 """
 struct Quaternion
     v::RealVector # Vector part
-    w::RealValue  # Scalar part
+    w::RealTypes  # Scalar part
 
     """
         Quaternion(v, w)
@@ -46,7 +46,7 @@ struct Quaternion
     # Returns
     - `q`: the quaternion.
     """
-    function Quaternion(v::RealVector, w::RealValue)::Quaternion
+    function Quaternion(v::RealVector, w::RealTypes)::Quaternion
         if length(v)!=3
             err = ArgumentError("quaternion is a 4-element object.")
             throw(err)
@@ -97,7 +97,7 @@ struct Quaternion
     # Returns
     - `q`: the unit quaternion.
     """
-    function Quaternion(α::RealValue, a::RealVector)::Quaternion
+    function Quaternion(α::RealTypes, a::RealVector)::Quaternion
         if length(a)!=3
             msg = string("axis must be in R^3.")
             err = ArgumentError(msg)
@@ -125,7 +125,7 @@ Quaternion indexing.
 # Returns
 - `v`: the value.
 """
-function getindex(q::Quaternion, i::Int)::RealValue
+function getindex(q::Quaternion, i::Int)::RealTypes
     if i<0 || i>4
         err = ArgumentError("quaternion index out of bounds.")
         throw(err)
@@ -338,7 +338,7 @@ References:
 """
 function slerp_interpolate(q0::Quaternion,
                            q1::Quaternion,
-                           τ::RealValue)::Quaternion
+                           τ::RealTypes)::Quaternion
     τ = max(0.0, min(1.0, τ))
     Δq = q1*q0' # Error quaternion correcting q0 to q1
     Δα, Δa = Log(Δq)

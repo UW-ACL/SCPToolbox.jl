@@ -25,7 +25,7 @@ end
 # Constants to denote perturbationkind
 @enum(PerturbationKind, FREE, FIXED, ABSOLUTE, RELATIVE)
 
-const PerturbationKindArray{N} = AbstractArray{PerturbationKind, N}
+const PerturbationKindArray = AbstractArray{PerturbationKind, N} where N
 
 # ..:: Data structures ::..
 
