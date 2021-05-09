@@ -20,7 +20,8 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("general.jl")
 end
 
-export ConvexCone, add!, isfixed, indicator!
+export ConvexCone, add!, isfixed, isfree, indicator!
+export SupportedCone, UNCONSTRAINED, ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
 
 const ConeVariable = Union{Types.Variable, Types.VariableVector}
 

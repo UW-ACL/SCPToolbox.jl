@@ -78,27 +78,6 @@ function print_indices(id::LocationIndices, limit::Int=3)::String
 end # function
 
 """
-    _string_round(f)
-
-Override JuMP's low level floating point printing command to print a smller
-number of decimal places.
-
-# Arguments
-- `f`: the floating point number.
-
-# Returns
-The rounded floating point number as a string.
-"""
-function JuMP._string_round(f::Float64)
-    iszero(f) && return "0" # strip sign off zero
-    precision = 3 # Number of decimal points
-    # str = string(round(f; digits=precision))
-    fmt = @sprintf("%%.%de", precision)
-    str = @eval @sprintf($fmt, $f)
-    return length(str) >= 2 && str[end-1:end] == ".0" ? str[1:end-2] : str
-end
-
-"""
     print_array(io, z)
 
 Print the value of an abstract array, which can be a variable vector.
@@ -151,13 +130,13 @@ function Base.show(io::IO, cone::ConvexCone; z::String="z")::Nothing
         @printf("Unconstrained %s\n", z)
     else
         cone_description = Dict(
-            :zero => "{z : z=0}",
-            :nonpos => "{z : z≤0}",
-            :l1 => "{(t, x)∈ℝ×ℝⁿ : ‖x‖₁≤t}",
-            :soc => "{(t, x)∈ℝ×ℝⁿ : ‖x‖₂≤t}",
-            :linf => "{(t, x)∈ℝ×ℝⁿ : ‖x‖∞≤t}",
-            :geom => "{(t, x)∈ℝ×ℝⁿ : (x₁x₂⋯xₙ)^{1/n}≥t}",
-            :exp => "{(x,y,w)∈ℝ³ : y⋅e^{x/y}≤w, y>0}")
+            ZERO => "{z : z=0}",
+            NONPOS => "{z : z≤0}",
+            L1 => "{(t, x)∈ℝ×ℝⁿ : ‖x‖₁≤t}",
+            SOC => "{(t, x)∈ℝ×ℝⁿ : ‖x‖₂≤t}",
+            LINF => "{(t, x)∈ℝ×ℝⁿ : ‖x‖∞≤t}",
+            GEOM => "{(t, x)∈ℝ×ℝⁿ : (x₁x₂⋯xₙ)^{1/n}≥t}",
+            EXP => "{(x,y,w)∈ℝ³ : y⋅e^{x/y}≤w, y>0}")
 
         @printf("Cone %s∈K, where:\n", z)
         @printf("K is a %s cone, %s\n", CONE_NAMES[cone.kind],
@@ -310,12 +289,12 @@ function Base.show(io::IO, constraints::Constraints)::Nothing
 
     # Print a more detailed list of constraints
     # Collect cone types
-    cone_count = Dict(cone=>0 for cone in SupportedCone)
+    cone_count = Dict(cone=>0 for cone in instances(SupportedCone))
     for constraint in constraints
         cone_count[kind(constraint)] += 1
     end
     # Print out
-    for cone in SupportedCone #noinfo
+    for cone in instances(SupportedCone) #noinfo
         count = cone_count[cone] #noinfo
         name = CONE_NAMES[cone] #noinfo
         if count>0

@@ -27,7 +27,7 @@ end
 
 import Base: copy
 
-export ConicProgram, numel, value, dual, constraints, name, cost, solve!
+export ConicProgram, numel, constraints, cost, solve!
 export @new_variable, @new_parameter, @add_constraint,
     @set_cost, @set_feasibility
 
@@ -258,6 +258,9 @@ user-supplied function `J`, which has to satisfy the requirements of
 - `x`: the variable argument blocks.
 - `p`: the parameter argument blocks.
 
+# Keywords
+- `feasibility`: (optional) flag that this is a feasibility cost.
+
 # Returns
 - `new_cost`: the newly created cost.
 """
@@ -269,7 +272,7 @@ function cost!(prog::ConicProgram,
     J = ProgramFunction(prog, x, p, J)
     new_cost = QuadraticCost(J, prog)
     prog.cost[] = new_cost
-    prog._feasibility = false
+    prog._feasibility = length(variables(J))==0
     return new_cost
 end # function
 
@@ -446,10 +449,14 @@ macro new_parameter(prog)
 end # macro
 
 """
-    @add_constraint(prog, kind, name, f, x, p)
-    @add_constraint(prog, kind, name, f, x)
-    @add_constraint(prog, kind, f, x, p)
-    @add_constraint(prog, kind, f, x)
+    @add_constraint(prog, kind, name, x, p, f, J)
+    @add_constraint(prog, kind, name, x, p, f)
+    @add_constraint(prog, kind, name, x, f, J)
+    @add_constraint(prog, kind, name, x, f)
+    @add_constraint(prog, kind, x, p, f, J)
+    @add_constraint(prog, kind, x, p, f)
+    @add_constraint(prog, kind, x, f, J)
+    @add_constraint(prog, kind, x, f)
 
 Add a conic constraint to the optimization problem. This is just a wrapper of
 the function `constraint!`, so look there for more info.
@@ -466,23 +473,87 @@ the function `constraint!`, so look there for more info.
 # Returns
 The newly created `ConicConstraint` object.
 """
-macro add_constraint(prog, kind, name, f, x, p)
-    :( constraint!($(esc.([prog, kind, f, x, p])...);
-                   refname=$name) )
-end # macro
-
-macro add_constraint(prog, kind, name_f, f_x, x_p)
-    if typeof(name_f)<:String
-        :( constraint!($(esc.([prog, kind, f_x, x_p, []])...);
-                       refname=$name_f) )
+macro add_constraint(prog, kind, args...)
+    # Get the constraint name
+    hasname = args[1] isa String
+    if hasname
+        name = args[1]
+        args = args[2:end]
     else
-        :( constraint!($(esc.([prog, kind, name_f, f_x, x_p])...)) )
+        name = :(nothing)
+        args = args
+    end
+    # Get the constraint (x, p, f, J) values
+    if length(args)==4
+        # The "full" case: all arguments presents
+        x, p, f, J = args
+    elseif length(args)==2
+        # The "minimum" case: no Jacobians and no parameters
+        x, f = args
+        p = :( () )
+        J = :( Dict() )
+    else # length(args)==3
+        # The "ambiguous" case: either Jacobians or parameters
+        if args[2].head==:tuple
+            # No Jacobians
+            x, p, f = args
+            J = :( Dict() )
+        else
+            # No parameters
+            x, f, J = args
+            p = :( () )
+        end
+    end
+    # Argument sizes
+    nx = length(x.args)
+    np = length(p.args)
+    # Make the anonymous function to be constrained
+    anon_func = quote
+        (args...) -> begin
+            # Load the arguments into standardized containers
+            local x = args[1:$nx]
+            local p = args[(1:$np).+$nx]
+            local pars = args[end-1]
+            local jacobians = args[end]
+            # Evaluate function value
+            local out = $f
+            local out = @value(out)
+            # Evaluate function Jacobians
+            if jacobians
+                local jacmap = $J
+                for (key, val) in jacmap
+                    @jacobian(out, key, val)
+                end
+            end
+            return out
+        end
+    end
+    # Make the constraint
+    quote
+        f = $(esc(anon_func))
+        constraint!($(esc(prog)), $(esc(kind)), f,
+                    $(esc(x)), $(esc(p)); refname=$(esc(name)))
     end
 end # macro
 
-macro add_constraint(prog, kind, f, x)
-    :( constraint!($(esc.([prog, kind, f, x, []])...)) )
-end # macro
+# macro add_constraint(prog, kind, name, f, x, p)
+#     :( constraint!($(esc.([prog, kind, f, x, p])...);
+#                    refname=$name) )
+# end # macro
+
+# macro add_constraint(prog, kind, name_f, f_x, x_p)
+#     if typeof(name_f)<:String
+#         :( constraint!($(esc.([prog, kind, f_x, x_p, []])...);
+#                        refname=$name_f) )
+#     else
+#         :( constraint!($(esc.([prog, kind, name_f, f_x, x_p])...)) )
+#     end
+# end # macro
+
+# macro add_constraint(prog, kind, f, x)
+#     :( constraint!($(esc.([prog, kind, f, x, []])...)) )
+# end # macro
+
 
 """
     @add_dual_constraint(prog, kind, name, f, x, p)

@@ -41,7 +41,7 @@ struct OscillatorParameters
     id_ar::Int          # Reference acceleration (input)
     id_l1aa::Int        # Actual acceleration one-norm (input)
     id_l1adiff::Int     # Acceleration difference one-norm (input)
-    id_l1r::T.IntRange # Position one-norm (parameter)
+    id_l1r::T.IntRange  # Position one-norm (parameter)
     # ..:: Mechanical parameters ::..
     ζ::RealValue           # Damping ratio
     ω0::RealValue          # [rad/s] Natural frequency

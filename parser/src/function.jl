@@ -23,7 +23,7 @@ end
 
 import JuMP: value
 
-export value, jacobian, set_jacobian!
+export jacobian, set_jacobian!
 export @value, @jacobian
 
 # ..:: Globals ::..
@@ -100,6 +100,11 @@ struct DifferentiableFunctionOutput
         # Convert to array
         if !(T<:AbstractArray)
             f = [f]
+        end
+
+        # Make sure the array is at least 1-dimensional
+        if ndims(f)<1
+            f = reshape(f, 1)
         end
 
         J = JacobianDictType()

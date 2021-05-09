@@ -24,6 +24,8 @@ if isdefined(@__MODULE__, :LanguageServer)
     using .Utils.Types: sample
     using .Parser
     using .Parser.TrajectoryProblem
+    import .Parser.ConicLinearProgram: @value, @add_constraint, @new_variable
+    import .Parser.ConicLinearProgram: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
 end
 
 using Utils
@@ -724,6 +726,14 @@ function add_dynamics!(
     u = spbm.u
     p = spbm.p
     vd = spbm.vd
+    ##########################################################
+    # NEW PARSER CODE
+    __prg = spbm.__prg
+    __x = spbm.__x
+    __u = spbm.__u
+    __p = spbm.__p
+    __vd = spbm.__vd
+    ##########################################################
 
     # Add dynamics constraint to optimization model
     add! = (f) -> CLP.add!(spbm.mdl, CLP.ConvexCone(f, CLP.ZERO))
@@ -737,6 +747,18 @@ function add_dynamics!(
         r = spbm.ref.dyn.r[:, k]
         E = spbm.ref.dyn.E[:, :, k]
         add!(xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk))
+        ##########################################################
+        # NEW PARSER CODE
+        __xk, __xkp1 = __x[:, k], __x[:, k+1]
+        __uk, __ukp1, __vdk = __u[:, k], __u[:, k+1], __vd[:, k]
+        @add_constraint(
+            __prg, ZERO, "dynamics",
+            (__xk, __xkp1, __uk, __ukp1, __p, __vdk),
+            begin
+                local xk, xkp1, uk, ukp1, p, vdk = x
+                xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk)
+            end)
+        ##########################################################
     end
 
     return nothing
@@ -836,6 +858,13 @@ function add_nonconvex_constraints!(
     x = spbm.x
     u = spbm.u
     p = spbm.p
+    ##########################################################
+    # NEW PARSER CODE
+    __prg = spbm.__prg
+    __x = spbm.__x
+    __u = spbm.__u
+    __p = spbm.__p
+    ##########################################################
 
     # Problem-specific convex constraints
     Cone = CLP.ConvexCone
@@ -852,9 +881,38 @@ function add_nonconvex_constraints!(
 
             if k==1
                 spbm.vs = @variable(spbm.mdl, [1:ns, 1:N], base_name="vs")
+                ##########################################################
+                # NEW PARSER CODE
+                spbm.__vs = @new_variable(__prg, (ns, N), "vs")
+                ##########################################################
             end
 
             CLP.add!(spbm.mdl, Cone(lhs-spbm.vs[:, k], CLP.NONPOS))
+
+            ##########################################################
+            # NEW PARSER CODE
+            __xk, __uk, __vsk = __x[:,k], __u[:,k], spbm.__vs[:, k]
+            @add_constraint(
+                __prg, NONPOS, "path_ncvx",
+                (__xk, __uk, __p, __vsk),
+                # Value
+                begin
+                    local xk, uk, p, vsk = x
+                    local lhs = C*xk+D*uk+G*p+r
+                    lhs-vsk
+                end,
+                # Jacobians
+                begin
+                    local xk, uk, p, vsk = x
+                    local dim = length(vsk)
+                    local J = Dict()
+                    J[1] = C
+                    J[2] = D
+                    J[3] = G
+                    J[4] = -collect(Int, I(dim))
+                    J
+                end)
+            ##########################################################
         else
             spbm.vs = @variable(spbm.mdl, [1:0, 1:N], base_name="vs")
             break
@@ -931,6 +989,13 @@ function add_bcs!(
     xbf = spbm.ref.xd[:, end]
     p = spbm.p
     pb = spbm.ref.p
+    ##########################################################
+    # NEW PARSER CODE
+    __prg = spbm.__prg
+    __x0 = spbm.__x[:, 1]
+    __xf = spbm.__x[:, end]
+    __p = spbm.__p
+    ##########################################################
 
     # Initial condition
     add! = CLP.add!
@@ -945,8 +1010,29 @@ function add_bcs!(
         if relaxed
             spbm.vic = @variable(spbm.mdl, [1:nic], base_name="vic")
             add!(spbm.mdl, Cone(lhs+spbm.vic, CLP.ZERO))
+            ##########################################################
+            # NEW PARSER CODE
+            spbm.__vic = @new_variable(__prg, nic, "vic")
+            @add_constraint(__prg, ZERO, "initial_condition",
+                            (__x0, __p, spbm.__vic),
+                            begin
+                                local x0, p, vic = x #noerr
+                                local lhs = H0*x0+K0*p+ℓ0
+                                lhs+vic
+                            end)
+            ##########################################################
         else
             add!(spbm.mdl, Cone(lhs, CLP.ZERO))
+            ##########################################################
+            # NEW PARSER CODE
+            @add_constraint(__prg, ZERO, "initial_condition",
+                            (__x0, __p),
+                            begin
+                                local x0, p = x #noerr
+                                local lhs = H0*x0+K0*p+ℓ0
+                                lhs
+                            end)
+            ##########################################################
         end
     elseif relaxed
         spbm.vic = @variable(spbm.mdl, [1:0], base_name="vic")
@@ -963,8 +1049,29 @@ function add_bcs!(
         if relaxed
             spbm.vtc = @variable(spbm.mdl, [1:ntc], base_name="vtc")
             add!(spbm.mdl, Cone(lhs+spbm.vtc, CLP.ZERO))
+            ##########################################################
+            # NEW PARSER CODE
+            spbm.__vtc = @new_variable(__prg, ntc, "vtc")
+            @add_constraint(__prg, ZERO, "terminal_condition",
+                            (__xf, __p, spbm.__vtc),
+                            begin
+                                local xf, p, vtc = x #noerr
+                                local lhs = Hf*xf+Kf*p+ℓf
+                                lhs+vtc
+                            end)
+            ##########################################################
         else
             add!(spbm.mdl, Cone(lhs, CLP.ZERO))
+            ##########################################################
+            # NEW PARSER CODE
+            @add_constraint(__prg, ZERO, "terminal_condition",
+                            (__xf, __p),
+                            begin
+                                local xf, p = x #noerr
+                                local lhs = Hf*xf+Kf*p+ℓf
+                                lhs
+                            end)
+            ##########################################################
         end
     elseif relaxed
         spbm.vtc = @variable(spbm.mdl, [1:0], base_name="vtc")

@@ -24,7 +24,8 @@ end
 
 import JuMP: value
 
-export value
+export ArgumentBlock
+
 export @scale, @perturb_free, @perturb_fix, @perturb_relative,
     @perturb_absolute
 

@@ -45,4 +45,15 @@ end # module
 
 using .ConicLinearProgram
 
+export ConicProgram, numel, constraints, cost, solve!
+export ConvexCone, add!, isfixed, isfree, indicator!
+export jacobian, set_jacobian!
+export SupportedCone, UNCONSTRAINED, ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
+export ArgumentBlock, VariableArgumentBlock, ConstantArgumentBlock
+
+export @new_variable, @new_parameter, @add_constraint,
+    @set_cost, @set_feasibility, @scale, @perturb_free,
+    @perturb_fix, @perturb_relative, @perturb_absolute,
+    @value, @jacobian
+
 end # module

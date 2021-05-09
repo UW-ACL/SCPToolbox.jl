@@ -61,11 +61,13 @@ mutable struct Scaling{N} <: AbstractRealArray{N}
 
         if ndims(blk)>0
 
-            blk_shape = size(blk)
-            S = isnothing(S) ? ones(blk_shape) :
-                repeat(S, outer=blk_shape.÷size(S))
-            c = isnothing(c) ? zeros(blk_shape) :
-                repeat(c, outer=blk_shape.÷size(S))
+            S = isnothing(S) ? S : filldims(S, blk)
+            c = isnothing(c) ? c : filldims(c, blk)
+
+            S = isnothing(S) ? ones(size(blk)) :
+                repeat(S, outer=size(blk).÷size(S))
+            c = isnothing(c) ? zeros(size(blk)) :
+                repeat(c, outer=size(blk).÷size(c))
 
         elseif ((!isnothing(S) && length(S)>1) ||
             (!isnothing(c) && length(c)>1))
@@ -139,4 +141,29 @@ function scale(sc::Scaling, xh::AbstractArray)::AbstractArray
     x = (S.*xh).+c
     x = (x isa AbstractArray) ? x : fill(x)
     return x
+end # function
+
+"""
+    filldims(A, B)
+
+Pad A with extra dimensions so that it matches the dimension of B.
+
+# Arguments
+- `A`: the array of fewer dimensions.
+- `B`: the array of more dimensions.
+
+# Returns
+- `C`: mathematically the same array as A, except stored as a higher
+  dimensional array.
+"""
+function filldims(A::AbstractArray, B::AbstractArray)::AbstractArray
+    extra_dims = ndims(B)-ndims(A)
+    if extra_dims<0
+        msg = "B msut be of higher dimension than A"
+        err = SCPError(0, SCP_BAD_ARGUMENT, msg)
+        throw(err)
+    else
+        C = reshape(A, (size(A)..., ones(Int, extra_dims)...))
+    end
+    return C
 end # function

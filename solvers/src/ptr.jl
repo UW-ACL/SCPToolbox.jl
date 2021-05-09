@@ -18,15 +18,22 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 if isdefined(@__MODULE__, :LanguageServer)
     include("../../utils/src/Utils.jl")
     include("../../parser/src/Parser.jl")
+
     include("scp.jl")
+
     using .Utils
     using .Utils.Types: improvement_percent
-    using .Parser
+    using .Parser.ConicLinearProgram
+
+    import .Parser.ConicLinearProgram: ConicProgram, ConvexCone, SupportedCone
+    import .Parser.ConicLinearProgram: VariableArgumentBlock
+    import .Parser.ConicLinearProgram: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
 end
 
 using LinearAlgebra
 using JuMP
 using Printf
+
 using Utils
 using Parser
 
@@ -43,6 +50,7 @@ import ..discretize!, ..add_dynamics!, ..add_convex_state_constraints!,
 
 const CLP = ConicLinearProgram #noerr
 const Variable = ST.Variable
+const Optional = ST.Optional
 
 export Parameters, create, solve
 
@@ -124,9 +132,26 @@ mutable struct Subproblem <: SCPSubproblem
     ηu::VariableVector  # Input trust region radii
     ηp::Variable        # Parameter trust region radii
     # >> Statistics <<
-    nvar::Int                           # Total number of decision variables
-    ncons::Dict{CLP.SupportedCone, Any} # Number of constraints
+    nvar::Int                       # Total number of decision variables
+    ncons::Dict{SupportedCone, Any} # Number of constraints
     timing::Dict{Symbol, RealTypes} # Runtime profiling
+    ###########################################################
+    # NEW PARSER CODE
+    ###########################################################
+    __prg::ConicProgram         # The optimization problem object
+    # >> Physical variables <<
+    __x::VariableArgumentBlock  # Discrete-time states
+    __u::VariableArgumentBlock  # Discrete-time inputs
+    __p::VariableArgumentBlock  # Parameters
+    # >> Virtual control <<
+    __vd::VariableArgumentBlock # Dynamics virtual control
+    __vs::Optional{VariableArgumentBlock}  # Nonconvex constraints virtual control
+    __vic::Optional{VariableArgumentBlock} # Initial conditions virtual control
+    __vtc::Optional{VariableArgumentBlock} # Terminal conditions virtual control
+    # >> Trust region <<
+    __ηx::VariableArgumentBlock # State trust region radii
+    __ηu::VariableArgumentBlock # Input trust region radii
+    __ηp::VariableArgumentBlock # Parameter trust region radii
 end # struct
 
 #= Construct the PTR problem definition.
@@ -189,10 +214,9 @@ Args:
 
 Returns:
     spbm: the subproblem structure. =#
-function Subproblem(pbm::SCPProblem,
-                       iter::Int,
-                       ref::Union{SubproblemSolution,
-                                  Missing}=missing)::Subproblem
+function Subproblem(pbm::SCPProblem, iter::Int,
+                    ref::Union{SubproblemSolution,
+                               Missing}=missing)::Subproblem
 
     # Statistics
     timing = Dict(:formulate => get_time(), :total => get_time())
@@ -216,6 +240,12 @@ function Subproblem(pbm::SCPProblem,
     for (key,val) in solver_opts
         set_optimizer_attribute(mdl, key, val)
     end
+    ##########################################################
+    # NEW PARSER CODE
+    # Optimization problem handle
+    __prg = ConicProgram(solver=pars.solver.Optimizer,
+                         solver_options=pars.solver_opts)
+    ##########################################################
     cvx_algo = string(pars.solver)
     algo = @sprintf("PTR (backend: %s)", cvx_algo)
 
@@ -241,14 +271,44 @@ function Subproblem(pbm::SCPProblem,
     vic = RealVector(undef, 0)
     vtc = RealVector(undef, 0)
 
+    ##########################################################
+    # NEW PARSER CODE
+    # Decision variabels
+    __x = @new_variable(__prg, (nx, N), "x")
+    __u = @new_variable(__prg, (nu, N), "u")
+    __p = @new_variable(__prg, np, "p")
+    Sx = diag(scale.Sx)
+    Su = diag(scale.Su)
+    Sp = diag(scale.Sp)
+    @scale(__x, Sx, scale.cx)
+    @scale(__u, Su, scale.cu)
+    @scale(__p, Sp, scale.cp)
+
+    # Virtual controls
+    __vd = @new_variable(__prg, (size(_E, 2), N-1), "vd")
+    __vs = nothing
+    __vic = nothing
+    __vtc = nothing
+    ##########################################################
+
     # Trust region radii
     ηx = @variable(mdl, [1:N], base_name="ηx")
     ηu = @variable(mdl, [1:N], base_name="ηu")
     ηp = @variable(mdl, base_name="ηp")
 
+    ##########################################################
+    # NEW PARSER CODE
+    # Trust region radii
+    __ηx = @new_variable(__prg, N, "ηx")
+    __ηu = @new_variable(__prg, N, "ηu")
+    __ηp = @new_variable(__prg, "ηp")
+    ##########################################################
+
     spbm = Subproblem(iter, mdl, algo, pbm, sol, ref, J, J_tr, J_vc,
-                         J_aug, xh, uh, ph, x, u, p, vd, vs, vic, vtc,
-                         ηx, ηu, ηp, nvar, ncons, timing)
+                      J_aug, xh, uh, ph, x, u, p, vd, vs, vic, vtc,
+                      ηx, ηu, ηp, nvar, ncons, timing,
+                      __prg, __x, __u, __p, __vd, __vs, __vic, __vtc,
+                      __ηx, __ηu, __ηp)
 
     return spbm
 end # function
@@ -495,6 +555,16 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
     uh_ref = scale.iSu*(spbm.ref.ud.-scale.cu)
     ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
+    ##########################################################
+    # NEW PARSER CODE
+    __prg = spbm.__prg
+    __x = spbm.__x
+    __u = spbm.__u
+    __p = spbm.__p
+    __ηx = spbm.__ηx
+    __ηu = spbm.__ηu
+    __ηp = spbm.__ηp
+    ##########################################################
 
     # Measure the *scaled* state and input deviations
     dx = xh-xh_ref
@@ -502,42 +572,139 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     dp = ph-ph_ref
 
     # >> Trust region constraint <<
-    q2cone = Dict(1 => CLP.L1, 2 => CLP.SOC, 4 => CLP.SOC, Inf => CLP.LINF)
+    q2cone = Dict(1 => L1, 2 => SOC, 4 => SOC, Inf => LINF)
     cone = q2cone[q]
-    C = CLP.ConvexCone
-    add! = CLP.add!
+    C = ConvexCone
 
     # Parameter trust region
     dp_lq = @variable(spbm.mdl, base_name="dp_lq")
     add!(spbm.mdl, C(vcat(dp_lq, dp), cone))
+    ##########################################################
+    # NEW PARSER CODE
+    __dp_lq = @new_variable(__prg, "dp_lq")
+    @add_constraint(__prg, cone, "parameter_trust_region",
+                    (__p, __dp_lq),
+                    begin
+                        local p, dp_lq = x #noerr
+                        local ph = scale.iSp*(p-scale.cp)
+                        local dp = ph-ph_ref
+                        vcat(dp_lq, dp)
+                    end)
+    ##########################################################
     if q==4
         wp = @variable(spbm.mdl, base_name="wp")
-        add!(spbm.mdl, C(vcat(wp, dp_lq), CLP.SOC))
-        add!(spbm.mdl, C(vcat(wp, ηp, 1), CLP.GEOM))
+        add!(spbm.mdl, C(vcat(wp, dp_lq), SOC))
+        add!(spbm.mdl, C(vcat(wp, ηp, 1), GEOM))
+        ##########################################################
+        # NEW PARSER CODE
+        __wp = @new_variable(__prg, "wp")
+        @add_constraint(__prg, SOC, "parameter_trust_region",
+                        (__wp, __dp_lq),
+                        begin
+                            local wp, dp_lq = x #noerr
+                            vcat(wp, dp_lq)
+                        end)
+        @add_constraint(__prg, GEOM, "parameter_trust_region",
+                        (__wp, __ηp),
+                        begin
+                            local wp, ηp = x #noerr
+                            vcat(wp, ηp, 1)
+                        end)
+        ##########################################################
     else
-        add!(spbm.mdl, C(dp_lq-ηp, CLP.NONPOS))
+        add!(spbm.mdl, C(dp_lq-ηp, NONPOS))
+        ##########################################################
+        # NEW PARSER CODE
+        @add_constraint(__prg, NONPOS, "parameter_trust_region",
+                        (__ηp, __dp_lq),
+                        begin
+                            local ηp, dp_lq = x #noerr
+                            dp_lq-ηp
+                        end)
+        ##########################################################
     end
 
     # State and input trust regions
     dx_lq = @variable(spbm.mdl, [1:N], base_name="dx_lq")
     du_lq = @variable(spbm.mdl, [1:N], base_name="du_lq")
+    ##########################################################
+    # NEW PARSER CODE
+    __dx_lq = @new_variable(__prg, N, "dx_lq")
+    __du_lq = @new_variable(__prg, N, "du_lq")
+    ##########################################################
     for k = 1:N
         add!(spbm.mdl, C(vcat(dx_lq[k], dx[:, k]), cone))
         add!(spbm.mdl, C(vcat(du_lq[k], du[:, k]), cone))
+        ##########################################################
+        # NEW PARSER CODE
+        @add_constraint(__prg, cone, "state_trust_region",
+                        (__dx_lq[k], __x[:, k]),
+                        begin
+                            local dxk_lq, xk = x #noerr
+                            local xhk = scale.iSx*(xk-scale.cx)
+                            local dxk = xhk-xh_ref[:, k]
+                            vcat(dxk_lq, dxk)
+                        end)
+        @add_constraint(__prg, cone, "input_trust_region",
+                        (__du_lq[k], __u[:, k]),
+                        begin
+                            local duk_lq, uk = x #noerr
+                            local uhk = scale.iSu*(uk-scale.cu)
+                            local duk = uhk-uh_ref[:, k]
+                            vcat(duk_lq, duk)
+                        end)
+        ##########################################################
         if q==4
             # State
             wx = @variable(spbm.mdl, base_name="wx")
-            add!(spbm.mdl, C(vcat(wx, dx_lq[k]), CLP.SOC))
-            add!(spbm.mdl, C(vcat(wx, ηx[k], 1), CLP.GEOM))
+            ##########################################################
+            # NEW PARSER CODE
+            __wx = @new_variable(__prg, "wx")
+            ##########################################################
+            add!(spbm.mdl, C(vcat(wx, dx_lq[k]), SOC))
+            add!(spbm.mdl, C(vcat(wx, ηx[k], 1), GEOM))
+            ##########################################################
+            # NEW PARSER CODE
+            @add_constraint(__prg, SOC, "state_trust_region",
+                            (__wx, __dx_lq[k]),
+                            begin
+                                local wx, dxk_lq = x #noerr
+                                vcat(wx, dxk_lq)
+                            end)
+            @add_constraint(__prg, GEOM, "state_trust_region",
+                            (__wx, __ηx[k]),
+                            begin
+                                local wx, ηxk = x #noerr
+                                vcat(wx, ηxk, 1)
+                            end)
+            ##########################################################
             # Input
             wu = @variable(spbm.mdl, base_name="wu")
-            add!(spbm.mdl, C(vcat(wu, du_lq[k]), CLP.SOC))
-            add!(spbm.mdl, C(vcat(wu, ηu[k], 1), CLP.GEOM))
+            add!(spbm.mdl, C(vcat(wu, du_lq[k]), SOC))
+            add!(spbm.mdl, C(vcat(wu, ηu[k], 1), GEOM))
         else
             # State
-            add!(spbm.mdl, C(dx_lq[k]-ηx[k], CLP.NONPOS))
+            add!(spbm.mdl, C(dx_lq[k]-ηx[k], NONPOS))
+            ##########################################################
+            # NEW PARSER CODE
+            @add_constraint(__prg, NONPOS, "state_trust_region",
+                            (__dx_lq[k], __ηx[k]),
+                            begin
+                                local dxk_lq, ηxk = x #noerr
+                                dxk_lq-ηxk
+                            end)
+            ##########################################################
             # Input
-            add!(spbm.mdl, C(du_lq[k]-ηu[k], CLP.NONPOS))
+            add!(spbm.mdl, C(du_lq[k]-ηu[k], NONPOS))
+            ##########################################################
+            # NEW PARSER CODE
+            @add_constraint(__prg, NONPOS, "input_trust_region",
+                            (__du_lq[k], __ηu[k]),
+                            begin
+                                local duk_lq, ηuk = x #noerr
+                                duk_lq-ηuk
+                            end)
+            ##########################################################
         end
     end
 
@@ -603,22 +770,71 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
     vs = spbm.vs
     vic = spbm.vic
     vtc = spbm.vtc
+    ##########################################################
+    # NEW PARSER CODE
+    __prg = spbm.__prg
+    __vd = spbm.__vd
+    __vs = spbm.__vs
+    __vic = spbm.__vic
+    __vtc = spbm.__vtc
+    ##########################################################
 
     # Compute virtual control penalty
-    C = CLP.ConvexCone
-    add! = CLP.add!
+    C = ConvexCone
     P = @variable(spbm.mdl, [1:N], base_name="P")
     Pf = @variable(spbm.mdl, [1:2], base_name="Pf")
+    ##########################################################
+    # NEW PARSER CODE
+    __P = @new_variable(__prg, N, "P")
+    __Pf = @new_variable(__prg, 2, "Pf")
+    ##########################################################
     for k = 1:N
         if k<N
             tmp = vcat(P[k], E[:, :, k]*vd[:, k], vs[:, k])
+            ##########################################################
+            # NEW PARSER CODE
+            @add_constraint(__prg, L1, "vd_vs_penalty",
+                            (__P[k], __vd[:, k], __vs[:, k]),
+                            begin
+                                local Pk, vdk, vsk = x #noerr
+                                vcat(Pk, E[:, :, k]*vdk, vsk)
+                            end)
+            ##########################################################
         else
             tmp = vcat(P[k], vs[:, k])
+            ##########################################################
+            # NEW PARSER CODE
+            @add_constraint(__prg, L1, "vd_vs_penalty",
+                            (__P[k], __vs[:, k]),
+                            begin
+                                local Pk, vsk = x #noerr
+                                vcat(Pk, vsk)
+                            end)
+            ##########################################################
         end
-        add!(spbm.mdl, C(tmp, CLP.L1))
+        add!(spbm.mdl, C(tmp, L1))
     end
-    add!(spbm.mdl, C(vcat(Pf[1], vic), CLP.L1))
-    add!(spbm.mdl, C(vcat(Pf[2], vtc), CLP.L1))
+    add!(spbm.mdl, C(vcat(Pf[1], vic), L1))
+    add!(spbm.mdl, C(vcat(Pf[2], vtc), L1))
+    ##########################################################
+    # NEW PARSER CODE
+    if !isnothing(__vic)
+        @add_constraint(__prg, L1, "vic_penalty",
+                        (__Pf[1], __vic),
+                        begin
+                            local Pf1, vic = x #noerr
+                            vcat(Pf1, vic)
+                        end)
+    end
+    if !isnothing(__vtc)
+        @add_constraint(__prg, L1, "vtc_penalty",
+                        (__Pf[2], __vtc),
+                        begin
+                            local Pf2, vtc = x #noerr
+                            vcat(Pf2, vtc)
+                        end)
+    end
+    ##########################################################
     spbm.J_vc = wvc*(trapz(P, t)+sum(Pf))
 
     return nothing

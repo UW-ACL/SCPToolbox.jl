@@ -20,6 +20,7 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("block.jl")
 end
 
+export VariableArgumentBlock, ConstantArgumentBlock
 export value, name
 
 # ..:: Globals ::..
