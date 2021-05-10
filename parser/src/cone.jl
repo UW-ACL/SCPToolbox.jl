@@ -20,8 +20,12 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("general.jl")
 end
 
-export ConvexCone, add!, isfixed, isfree, indicator!
+import JuMP: dual
+
+export ConvexCone, add!, isfixed, isfree, dual, indicator!
 export SupportedCone, UNCONSTRAINED, ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
+export SupportedDualCone, UNCONSTRAINED_DUAL, ZERO_DUAL, NONPOS_DUAL, L1_DUAL,
+    SOC_DUAL, LINF_DUAL, GEOM_DUAL, EXP_DUAL
 
 const ConeVariable = Union{Types.Variable, Types.VariableVector}
 
@@ -40,15 +44,33 @@ The supported cones are:
 """
 @enum(SupportedCone, UNCONSTRAINED, ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP)
 
-# Maps from the origin cone to the dual cone
-const DUAL_CONE_MAP = Dict(UNCONSTRAINED => ZERO,
-                           ZERO => UNCONSTRAINED,
-                           NONPOS => NONPOS,
-                           L1 => LINF,
-                           SOC => SOC,
-                           LINF => L1,
-                           GEOM => GEOM,
-                           EXP => EXP)
+"""
+Similar to `SupportedCone`, except with a `_DUAL` qualiifier postfix.
+"""
+@enum(SupportedDualCone, UNCONSTRAINED_DUAL, ZERO_DUAL, NONPOS_DUAL, L1_DUAL,
+      SOC_DUAL, LINF_DUAL, GEOM_DUAL, EXP_DUAL)
+
+# Maps from the original cone to the dual cone
+const DUAL_CONE_MAP = Dict(
+    # Maps from "CONE" to "CONE_DUAL"
+    # These are **only used internally**
+    UNCONSTRAINED => UNCONSTRAINED_DUAL,
+    ZERO => ZERO_DUAL,
+    NONPOS => NONPOS_DUAL,
+    L1 => L1_DUAL,
+    SOC => SOC_DUAL,
+    LINF => LINF_DUAL,
+    GEOM => GEOM_DUAL,
+    EXP => EXP_DUAL,
+    # Maps from "CONE_DUAL" to the actual dual cone
+    UNCONSTRAINED_DUAL => ZERO,
+    ZERO_DUAL => UNCONSTRAINED,
+    NONPOS_DUAL => NONPOS,
+    L1_DUAL => LINF,
+    SOC_DUAL => SOC,
+    LINF_DUAL => L1,
+    GEOM_DUAL => GEOM,
+    EXP_DUAL => EXP)
 
 const CONE_NAMES = Dict(UNCONSTRAINED => "unconstrained",
                         ZERO => "zero",
@@ -70,23 +92,20 @@ struct ConvexCone{T<:MOI.AbstractSet}
     kind::SupportedCone # The kind of cone (NONPOS, L1, etc.)
 
     """
-        add_conic_constraint!(z, kind[; dual])
+        add_conic_constraint!(z, kind)
 
     Basic constructor.
 
     # Arguments
     - `z`: the vector to be constraint to lie within the cone.
-    - `kind`: the cone type.
-
-    # Keywords
-    - `dual`: (optional) whether to use the dual of the cone instead.
+    - `kind`: the cone type (or its dual).
 
     # Returns
     - `constraint`: the conic constraint.
     """
     function ConvexCone(z::ConeVariable,
-                        kind::SupportedCone;
-                        dual::Bool=false)::ConvexCone
+                        kind::Union{SupportedCone,
+                                    SupportedDualCone})::ConvexCone
 
         z = (typeof(z) <: Array) ? z : [z]
         dim = length(z)
@@ -98,7 +117,7 @@ struct ConvexCone{T<:MOI.AbstractSet}
         end
 
         # Convert to dual cone
-        if dual
+        if kind isa SupportedDualCone
             kind_dual = DUAL_CONE_MAP[kind]
             if kind==GEOM
                 t, x = z[1], z[2:end]
@@ -209,6 +228,9 @@ end # function
 
 """ Find out whether the cone is all of ``\\reals^n``. """
 isfree(cone::ConvexCone)::Bool = kind(cone)==UNCONSTRAINED
+
+""" Convert from cone to its dual cone. """
+dual(cone::SupportedCone)::SupportedDualCone = DUAL_CONE_MAP[cone]
 
 """
     indicator!(pbm, cone)

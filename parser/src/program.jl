@@ -198,7 +198,7 @@ function parameter!(prog::ConicProgram, shape::Int...;
 end # function
 
 """
-    constraint!(prog, kind, f, x, p)
+    constraint!(prog, kind, f, x, p[; refname])
 
 Create a conic constraint and add it to the problem. The heavy computation is
 done by the user-supplied function `f`, which has to satisfy the requirements
@@ -212,19 +212,17 @@ of `DifferentiableFunction`.
 - `p`: the parameter argument blocks.
 
 # Keywords
-- `name`: (optional) a name for the constraint, which can be used to more
+- `refname`: (optional) a name for the constraint, which can be used to more
   easily search for it in the constraints list.
-- `dual`: (optional) if true, then constrain f to lie inside the dual cone.
 
 # Returns
 - `new_constraint`: the newly added constraint.
 """
 function constraint!(prog::ConicProgram,
-                     kind::SupportedCone,
+                     kind::Union{SupportedCone, SupportedDualCone},
                      f::Function,
                      x, p;
-                     refname::Types.Optional{String}=nothing,
-                     dual::Bool=false)::ConicConstraint
+                     refname::Types.Optional{String}=nothing)::ConicConstraint
     x = VariableArgumentBlocks(collect(x))
     p = ConstantArgumentBlocks(collect(p))
     Axb = ProgramFunction(prog, x, p, f)
@@ -240,7 +238,7 @@ function constraint!(prog::ConicProgram,
         refname = deconflict_name(refname, all_names)
     end
 
-    new_constraint = ConicConstraint(Axb, kind, prog; name=refname, dual=dual)
+    new_constraint = ConicConstraint(Axb, kind, prog; name=refname)
     push!(prog.constraints, new_constraint)
     return new_constraint
 end # function
@@ -458,17 +456,40 @@ end # macro
     @add_constraint(prog, kind, x, f, J)
     @add_constraint(prog, kind, x, f)
 
-Add a conic constraint to the optimization problem. This is just a wrapper of
-the function `constraint!`, so look there for more info.
+This macro generates an anonymous function that is subsequential constrained as
+a `DifferentiableFunction` object inside of a convex cone. The aim is to
+abstract the internal implementation away from the user, leaving them with a
+rigid interface for creating conic constraints. Ultimately, this funciton
+passes the generated anonymous function to the internal `constraint!` function,
+so you may look there for more information as well.
+
+The macro provides some flexibility in terms of the arguments that you can
+provice, see above for the exhaustive list of possibilities.
 
 # Arguments
-- `prog`: the optimization program.
-- `kind`: the cone type.
+- `prog`: the optimization program with which to associate this constraint.
+- `kind`: the convex cone that the function value is to lie inside of.
 - `name`: (optional) the constraint name.
-- `f`: the core method that can compute the function value and its Jacobians.
-- `x`: the variable argument blocks, as a vector/tuple/single element.
-- `p`: (optional) the parameter argument blocks, as a vector/tuple/single
-  element.
+- `x`: a **tuple** of variable arguments to the function. Even if just one
+  argument, this must be a tuple (e.g., `(foo,)`).
+- `p`: (optional) a **tuple** of constant arguments to the function.
+- `f`: the core computation of the function value. You can assume that when the
+  code executes, you have available a variable `arg` which is a tuple of
+  splatted variable and constant arguments. In other words, `arg==(x...,
+  p...)`. You can provide `f` as either a one-line computation, or as a
+  `begin...end` block that returns the function value. For safety, any
+  variables that you declare inside the `begin...end` block should be prepended
+  with `local` in order to not have a scope conflict.
+- `J`: (optional) the core computation of the function Jacobians. Just like for
+  `f`, you have the `arg` variable available to use. The function must return a
+  `JacobianDictType` dictionary mapping from the argument to the function to
+  the Jacobian. For example, suppose that `arg==(x..., p...)=(x1, x2,
+  p1)`. Then your dictionary can entries like `J[1]` which represents the
+  Jacobian of `f` with respect to `x1`, and `J[(3,1)]` which represents the
+  Jacobian of `f` with respect to `x1`, followed by `p1` (i.e., the matrix
+  ``D_{p_1 x_1}f`` if `f` is a scalar function). If you want to use the
+  `variation` function after solving `prog` and `f` has non-zero Jacobians,
+  then you **must** provide `J` for correct results.
 
 # Returns
 The newly created `ConicConstraint` object.
@@ -504,15 +525,11 @@ macro add_constraint(prog, kind, args...)
             p = :( () )
         end
     end
-    # Argument sizes
-    nx = length(x.args)
-    np = length(p.args)
     # Make the anonymous function to be constrained
     anon_func = quote
         (args...) -> begin
             # Load the arguments into standardized containers
-            local x = args[1:$nx]
-            local p = args[(1:$np).+$nx]
+            local arg = args[1:end-2]
             local pars = args[end-1]
             local jacobians = args[end]
             # Evaluate function value
@@ -531,56 +548,9 @@ macro add_constraint(prog, kind, args...)
     # Make the constraint
     quote
         f = $(esc(anon_func))
-        constraint!($(esc(prog)), $(esc(kind)), f,
-                    $(esc(x)), $(esc(p)); refname=$(esc(name)))
+        constraint!($(esc(prog)), $(esc(kind)), f, $(esc(x)), $(esc(p));
+                    refname=$(esc(name)))
     end
-end # macro
-
-# macro add_constraint(prog, kind, name, f, x, p)
-#     :( constraint!($(esc.([prog, kind, f, x, p])...);
-#                    refname=$name) )
-# end # macro
-
-# macro add_constraint(prog, kind, name_f, f_x, x_p)
-#     if typeof(name_f)<:String
-#         :( constraint!($(esc.([prog, kind, f_x, x_p, []])...);
-#                        refname=$name_f) )
-#     else
-#         :( constraint!($(esc.([prog, kind, name_f, f_x, x_p])...)) )
-#     end
-# end # macro
-
-# macro add_constraint(prog, kind, f, x)
-#     :( constraint!($(esc.([prog, kind, f, x, []])...)) )
-# end # macro
-
-
-"""
-    @add_dual_constraint(prog, kind, name, f, x, p)
-    @add_dual_constraint(prog, kind, name, f, x)
-    @add_dual_constraint(prog, kind, f, x, p)
-    @add_dual_constraint(prog, kind, f, x)
-
-These macros work exactly like `@add_constraint`, except the value `f` is
-imposed to lie inside the dual of the cone `kind`.
-"""
-macro add_dual_constraint(prog, kind, name, f, x, p)
-    :( constraint!($(esc.([prog, kind, f, x, p])...);
-                   refname=$name, dual=true) )
-end # macro
-
-macro add_dual_constraint(prog, kind, name_f, f_x, x_p)
-    if typeof(name_f)<:String
-        :( constraint!($(esc.([prog, kind, f_x, x_p, []])...);
-                       refname=$name_f, dual=true) )
-    else
-        :( constraint!($(esc.([prog, kind, name_f, f_x, x_p])...)) )
-    end
-end # macro
-
-macro add_dual_constraint(prog, kind, f, x)
-    :( constraint!($(esc.([prog, kind, f, x, []])...);
-                   dual=true) )
 end # macro
 
 """

@@ -105,7 +105,7 @@ struct ConicConstraint
     name::String                    # A name for the constraint
 
     """
-        ConicConstraint(f, kind, prog[; name, dual])
+        ConicConstraint(f, kind, prog[; name])
 
     Basic constructor. The function `f` value gets evaluated.
 
@@ -118,20 +118,19 @@ struct ConicConstraint
     # Keywords
     - `name`: (optional) a name for the constraint, which can be used to more
       easily search for it in the constraints list.
-    - `dual`: (optional) if true, then constrain f to lie inside the dual cone.
 
     # Returns
     - `finK`: the conic constraint.
     """
     function ConicConstraint(f::ProgramFunction,
-                             kind::SupportedCone,
+                             kind::Union{SupportedCone, SupportedDualCone},
                              prog::AbstractConicProgram;
-                             name::Types.Optional{String}=nothing,
-                             dual::Bool=false)::ConicConstraint
+                             name::Types.Optional{
+                                 String}=nothing)::ConicConstraint
 
         # Create the underlying JuMP constraint
         f_value = f()
-        K = ConvexCone(f_value, kind; dual=dual)
+        K = ConvexCone(f_value, kind)
         constraint = add!(jump_model(prog), K)
 
         if isnothing(name)
@@ -150,7 +149,7 @@ const Constraints = Vector{ConicConstraint}
 # ..:: Methods ::..
 
 """
-    F([args...][; jacobians])
+    F([args...][; jacobians, scalar])
 
 Compute the function value and Jacobians. This basically forwards data to the
 underlying `DifferentiableFunction`, which handles the computation.
@@ -163,6 +162,7 @@ underlying `DifferentiableFunction`, which handles the computation.
 # Keywords
 - `jacobians`: (optional) set to true in order to compute the Jacobians as
   well.
+- `scalar`: (optional) whether to output a scalar value.
 
 # Returns
 - `f`: the function value. The Jacobians can be queried later by using the
@@ -170,7 +170,8 @@ underlying `DifferentiableFunction`, which handles the computation.
 """
 function (F::ProgramFunction)(
     args::BlockValue{AtomicConstant}...;
-    jacobians::Bool=false)::FunctionValueType
+    jacobians::Bool=false,
+    scalar::Bool=false)::FunctionValueOutputType
 
     # Compute the input argument values
     if isempty(args)
@@ -179,7 +180,7 @@ function (F::ProgramFunction)(
         args = vcat(x_input, p_input)
     end
 
-    f_value = F.f(args...; jacobians) # Core call
+    f_value = F.f(args...; jacobians=jacobians, scalar=scalar) # Core call
 
     return f_value
 end # function
@@ -187,7 +188,7 @@ end # function
 """
 Convenience methods that pass the calls down to `DifferentiableFunction`.
 """
-value(F::ProgramFunction) = value(F.f)
+value(F::ProgramFunction; scalar::Bool=false) = value(F.f; scalar=scalar)
 jacobian(F::ProgramFunction,
          key::JacobianKeys)::JacobianValueType = jacobian(F.f, key)
 all_jacobians(F::ProgramFunction)::JacobianDictType = all_jacobians(F.f)

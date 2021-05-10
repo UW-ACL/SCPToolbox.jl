@@ -29,11 +29,14 @@ export @value, @jacobian
 # ..:: Globals ::..
 
 # Convenience typealiases
+const FunctionAtomicValueType = Types.Variable
 const InputArgumentType = Types.VariableAbstractArray
 const FunctionValueType = Types.VariableAbstractArray
 const JacobianValueType = Types.VariableAbstractArray
 const JacobianKeys = Union{Int, Tuple{Int, Int}}
 const JacobianDictType = Dict{JacobianKeys, JacobianValueType}
+const FunctionValueOutputType = Union{FunctionAtomicValueType,
+                                      FunctionValueType}
 
 # ..:: Data structures ::..
 
@@ -241,8 +244,34 @@ function (fw::TypedFunction)(args...)
     return out
 end # function
 
-""" Get the function value. """
-value(out::DFOut)::FunctionValueType = out.value
+"""
+    value(out[; scalar])
+
+Get the function value. If you know that it is a 1-dimensional array and want
+to return a scalar, then pass in `scalar=true`.
+
+# Arguments
+- `out`: the function output object.
+
+# Keywords
+- `scalar`: (optional) whether to output a scalar value.
+
+# Returns
+- `value`: the function value.
+"""
+function value(out::DFOut; scalar::Bool=false)::FunctionValueOutputType
+    value = out.value
+    if scalar
+        if length(value)>1
+            msg = @sprintf("Cannot convert a value of size %s to a scalar",
+                           size(value))
+            err = SCPError(0, SCP_BAD_ARGUMENT, msg)
+            throw(err)
+        end
+        value = value[1]
+    end
+    return value
+end # function
 
 """
     jacobian(out, key[; permute])
@@ -309,7 +338,7 @@ function set_jacobian!(out::DFOut, key::JacobianKeys,
 end # function
 
 """
-    F(args...[; jacobians])
+    F(args...[; jacobians, scalar])
 
 Call the core method. The result is cached inside the `DifferentiableFunction`
 structure. The call is done type-safely in the sense that the input and output
@@ -324,12 +353,14 @@ this is not met.
 # Keywords
 - `jacobians`: (optional) set to true in order to compute the Jacobians as
   well.
+- `scalar`: (optional) whether to output a scalar value.
 
 # Returns
 - `f_value`: the function value from the call.
 """
 function (F::DiffblF)(args::InputArgumentType...;
-                      jacobians::Bool=false)::FunctionValueType
+                      jacobians::Bool=false,
+                      scalar::Bool=false)::FunctionValueOutputType
     nargin = length(args)
     narg_expected = F.xargs+F.pargs
     if nargin!=narg_expected
@@ -342,14 +373,15 @@ function (F::DiffblF)(args::InputArgumentType...;
     # Make the call to the core function
     F.out[] = F.f(args..., F.consts[], jacobians)
     F.evaluated = true
-    f_value = value(F.out[])
+    f_value = value(F.out[], scalar=scalar)
     return f_value
 end # function
 
 """
 Convenience methods that pass the calls down to `DifferentiableFunctionOutput`.
 """
-value(F::DiffblF)::FunctionValueType = value(F.out[])
+value(F::DiffblF; scalar::Bool=false)::FunctionValueOutputType =
+    value(F.out[], scalar=scalar)
 jacobian(F::DiffblF, key::JacobianKeys)::JacobianValueType =
     jacobian(F.out[], key)
 all_jacobians(F::DiffblF)::JacobianDictType = all_jacobians(F.out[])

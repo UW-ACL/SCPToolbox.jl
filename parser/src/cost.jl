@@ -50,7 +50,7 @@ struct QuadraticCost
                            prog::AbstractConicProgram)::QuadraticCost
 
         # Create the underlying JuMP cost
-        J_value = J()[1]
+        J_value = J(scalar=true)
         set_objective_function(jump_model(prog), J_value)
         jump = objective_function(jump_model(prog))
         set_objective_sense(jump_model(prog), MOI.MIN_SENSE)
@@ -63,11 +63,25 @@ end # struct
 
 # ..:: Methods ::..
 
+"""
+    J([args...][; jacobians, scalar])
+
+Evaluate the cost function. This just passes the call to the underlying
+`ProgramFunction`, so see its documentation (the input/output interface is the
+exact same).
+"""
+function (J::QuadraticCost)(args::BlockValue{AtomicConstant}...;
+                            jacobians::Bool=false,
+                            scalar::Bool=false)::FunctionValueOutputType
+    F = core_function(J)
+    return F(args...; jacobians=jacobians, scalar=scalar)
+end # function
+
 """ Get the actual underlying cost function. """
 core_function(J::QuadraticCost)::ProgramFunction = J.J
 
 """ Get the current objective function value. """
-value(J::QuadraticCost) = value(core_function(J))[1]
+value(J::QuadraticCost) = value(core_function(J); scalar=true)
 
 """
     feasibility_cost(pars, jacobians)
