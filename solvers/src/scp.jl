@@ -241,31 +241,11 @@ function SCPSubproblemSolution!(spbm::T)::Nothing where {T<:SCPSubproblem}
     spbm.sol = eval(Expr(:call, constructor, spbm))
 
     # Save common solution properties
-    spbm.sol.status = termination_status(spbm.mdl)
+    spbm.sol.status = termination_status(spbm.__prg)
 
     # Save statistics about the subproblem and its solution
-    spbm.timing[:solve] = solve_time(spbm.mdl)
+    spbm.timing[:solve] = solve_time(spbm.__prg)
     spbm.timing[:discretize] = spbm.sol.dyn.timing
-    spbm.nvar = num_variables(spbm.mdl)
-    moi2sym = Dict("MathOptInterface.Zeros" => CLP.ZERO,
-                   "MathOptInterface.Nonpositives" => CLP.NONPOS,
-                   "MathOptInterface.NormOneCone" => CLP.L1,
-                   "MathOptInterface.SecondOrderCone" => CLP.SOC,
-                   "MathOptInterface.NormInfinityCone" => CLP.LINF,
-                   "MathOptInterface.GeometricMeanCone" => CLP.GEOM,
-                   "MathOptInterface.ExponentialCone" => CLP.EXP)
-    dim = (ref) -> MOI.dimension(moi_set(constraint_object(ref)))
-    cons_types = list_of_constraint_types(spbm.mdl)
-    for cons_type in cons_types
-        function_type, set_type = cons_type
-        key = moi2sym[string(set_type)]
-        refs = all_constraints(spbm.mdl, function_type, set_type)
-        if key in (CLP.ZERO, CLP.NONPOS)
-            spbm.ncons[key] = sum(dim(ref) for ref in refs)
-        else
-            spbm.ncons[key] = ST.IntVector([dim(ref) for ref in refs])
-        end
-    end
 
     return nothing
 end # function
@@ -724,35 +704,22 @@ function add_dynamics!(
 
     # Variables and parameters
     N = spbm.def.pars.N
-    x = spbm.x
-    u = spbm.u
-    p = spbm.p
-    vd = spbm.vd
-    ##########################################################
-    # NEW PARSER CODE
     __prg = spbm.__prg
     __x = spbm.__x
     __u = spbm.__u
     __p = spbm.__p
     __vd = spbm.__vd
-    ##########################################################
 
     # Add dynamics constraint to optimization model
-    add! = (f) -> CLP.add!(spbm.mdl, CLP.ConvexCone(f, CLP.ZERO))
     for k = 1:N-1
-        xk, xkp1 = x[:, k], x[:, k+1]
-        uk, ukp1, vdk = u[:, k], u[:, k+1], vd[:, k]
+        __xk, __xkp1 = __x[:, k], __x[:, k+1]
+        __uk, __ukp1, __vdk = __u[:, k], __u[:, k+1], __vd[:, k]
         A = spbm.ref.dyn.A[:, :, k]
         Bm = spbm.ref.dyn.Bm[:, :, k]
         Bp = spbm.ref.dyn.Bp[:, :, k]
         F = spbm.ref.dyn.F[:, :, k]
         r = spbm.ref.dyn.r[:, k]
         E = spbm.ref.dyn.E[:, :, k]
-        add!(xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk))
-        ##########################################################
-        # NEW PARSER CODE
-        __xk, __xkp1 = __x[:, k], __x[:, k+1]
-        __uk, __ukp1, __vdk = __u[:, k], __u[:, k+1], __vd[:, k]
         @add_constraint(
             __prg, ZERO, "dynamics",
             (__xk, __xkp1, __uk, __ukp1, __p, __vdk),
@@ -760,7 +727,6 @@ function add_dynamics!(
                 local xk, xkp1, uk, ukp1, p, vdk = arg #noerr
                 xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk)
             end)
-        ##########################################################
     end
 
     return nothing
@@ -781,37 +747,15 @@ function add_convex_state_constraints!(
     N = spbm.def.pars.N
     traj_pbm = spbm.def.traj
     t = spbm.def.common.t_grid
-    x = spbm.x
-    p = spbm.p
-    ##########################################################
-    # NEW PARSER CODE
     __prg = spbm.__prg
     __x = spbm.__x
     __p = spbm.__p
-    ##########################################################
 
-    if !isnothing(traj_pbm.X)
-        for k = 1:N
-            xk_in_X = traj_pbm.X(t[k], k, x[:, k], p)
-            correct_type = typeof(xk_in_X)<:(
-                Vector{T} where {T<:CLP.ConvexCone})
-            if !correct_type
-                msg = string("input constraint must be in conic form")
-                err = SCPError(k, SCP_BAD_ARGUMENT, msg)
-                throw(err)
-            end
-            CLP.add!(spbm.mdl, xk_in_X)
-        end
-    end
-
-    ##########################################################
-    # NEW PARSER CODE
     if !isnothing(traj_pbm.__X)
         for k = 1:N
             traj_pbm.__X(__prg, t[k], k, __x[:, k], __p)
         end
     end
-    ##########################################################
 
     return nothing
 end # function
@@ -831,37 +775,15 @@ function add_convex_input_constraints!(
     N = spbm.def.pars.N
     traj_pbm = spbm.def.traj
     t = spbm.def.common.t_grid
-    u = spbm.u
-    p = spbm.p
-    ##########################################################
-    # NEW PARSER CODE
     __prg = spbm.__prg
     __u = spbm.__u
     __p = spbm.__p
-    ##########################################################
 
-    if !isnothing(traj_pbm.U)
-        for k = 1:N
-            uk_in_U = traj_pbm.U(t[k], k, u[:, k], p)
-            correct_type = typeof(uk_in_U)<:(
-                Vector{T} where {T<:CLP.ConvexCone})
-            if !correct_type
-                msg = string("input constraint must be in conic form")
-                err = SCPError(k, SCP_BAD_ARGUMENT, msg)
-                throw(err)
-            end
-            CLP.add!(spbm.mdl, uk_in_U)
-        end
-    end
-
-    ##########################################################
-    # NEW PARSER CODE
     if !isnothing(traj_pbm.__U)
         for k = 1:N
             traj_pbm.__U(__prg, t[k], k, __u[:, k], __p)
         end
     end
-    ##########################################################
 
     return nothing
 end # function
@@ -881,49 +803,33 @@ function add_nonconvex_constraints!(
     N = spbm.def.pars.N
     traj_pbm = spbm.def.traj
     t = spbm.def.common.t_grid
+    __prg = spbm.__prg
+    __x = spbm.__x
+    __u = spbm.__u
+    __p = spbm.__p
     nx = traj_pbm.nx
     nu = traj_pbm.nu
     np = traj_pbm.np
     xb = spbm.ref.xd
     ub = spbm.ref.ud
     pb = spbm.ref.p
-    x = spbm.x
-    u = spbm.u
-    p = spbm.p
-    ##########################################################
-    # NEW PARSER CODE
-    __prg = spbm.__prg
-    __x = spbm.__x
-    __u = spbm.__u
-    __p = spbm.__p
-    ##########################################################
 
     # Problem-specific convex constraints
-    Cone = CLP.ConvexCone
     for k = 1:N
         if !isnothing(traj_pbm.s)
             tkxup = (t[k], k, xb[:, k], ub[:, k], pb)
             s = traj_pbm.s(tkxup...)
             ns = length(s)
+            if k==1
+                spbm.__vs = @new_variable(__prg, (ns, N), "vs")
+            end
             C = !isnothing(traj_pbm.C) ? traj_pbm.C(tkxup...) : zeros(ns, nx)
             D = !isnothing(traj_pbm.D) ? traj_pbm.D(tkxup...) : zeros(ns, nu)
             G = !isnothing(traj_pbm.G) ? traj_pbm.G(tkxup...) : zeros(ns, np)
             r = s-C*xb[:, k]-D*ub[:, k]-G*pb
-            lhs = C*x[:, k]+D*u[:, k]+G*p+r
 
-            if k==1
-                spbm.vs = @variable(spbm.mdl, [1:ns, 1:N], base_name="vs")
-                ##########################################################
-                # NEW PARSER CODE
-                spbm.__vs = @new_variable(__prg, (ns, N), "vs")
-                ##########################################################
-            end
-
-            CLP.add!(spbm.mdl, Cone(lhs-spbm.vs[:, k], CLP.NONPOS))
-
-            ##########################################################
-            # NEW PARSER CODE
             __xk, __uk, __vsk = __x[:,k], __u[:,k], spbm.__vs[:, k]
+
             @add_constraint(
                 __prg, NONPOS, "path_ncvx",
                 (__xk, __uk, __p, __vsk),
@@ -944,9 +850,7 @@ function add_nonconvex_constraints!(
                     J[4] = -collect(Int, I(dim))
                     J
                 end)
-            ##########################################################
         else
-            spbm.vs = @variable(spbm.mdl, [1:0, 1:N], base_name="vs")
             break
         end
     end
@@ -971,37 +875,25 @@ function add_bcs!(
 
     # Variables and parameters
     traj = spbm.def.traj
-    nx = traj.nx
-    np = traj.np
-    x0 = spbm.x[:, 1]
-    xb0 = spbm.ref.xd[:, 1]
-    xf = spbm.x[:, end]
-    xbf = spbm.ref.xd[:, end]
-    p = spbm.p
-    pb = spbm.ref.p
-    ##########################################################
-    # NEW PARSER CODE
     __prg = spbm.__prg
     __x0 = spbm.__x[:, 1]
     __xf = spbm.__x[:, end]
     __p = spbm.__p
-    ##########################################################
+    nx = traj.nx
+    np = traj.np
+    xb0 = spbm.ref.xd[:, 1]
+    xbf = spbm.ref.xd[:, end]
+    pb = spbm.ref.p
 
     # Initial condition
-    add! = CLP.add!
-    Cone = CLP.ConvexCone
     if !isnothing(traj.gic)
         gic = traj.gic(xb0, pb)
         nic = length(gic)
         H0 = !isnothing(traj.H0) ? traj.H0(xb0, pb) : zeros(nic, nx)
         K0 = !isnothing(traj.K0) ? traj.K0(xb0, pb) : zeros(nic, np)
         ℓ0 = gic-H0*xb0-K0*pb
-        lhs = H0*x0+K0*p+ℓ0
+
         if relaxed
-            spbm.vic = @variable(spbm.mdl, [1:nic], base_name="vic")
-            add!(spbm.mdl, Cone(lhs+spbm.vic, CLP.ZERO))
-            ##########################################################
-            # NEW PARSER CODE
             spbm.__vic = @new_variable(__prg, nic, "vic")
             @add_constraint(__prg, ZERO, "initial_condition",
                             (__x0, __p, spbm.__vic),
@@ -1010,11 +902,7 @@ function add_bcs!(
                                 local lhs = H0*x0+K0*p+ℓ0
                                 lhs+vic
                             end)
-            ##########################################################
         else
-            add!(spbm.mdl, Cone(lhs, CLP.ZERO))
-            ##########################################################
-            # NEW PARSER CODE
             @add_constraint(__prg, ZERO, "initial_condition",
                             (__x0, __p),
                             begin
@@ -1022,10 +910,7 @@ function add_bcs!(
                                 local lhs = H0*x0+K0*p+ℓ0
                                 lhs
                             end)
-            ##########################################################
         end
-    elseif relaxed
-        spbm.vic = @variable(spbm.mdl, [1:0], base_name="vic")
     end
 
     # Terminal condition
@@ -1035,12 +920,8 @@ function add_bcs!(
         Hf = !isnothing(traj.Hf) ? traj.Hf(xbf, pb) : zeros(ntc, nx)
         Kf = !isnothing(traj.Kf) ? traj.Kf(xbf, pb) : zeros(ntc, np)
         ℓf = gtc-Hf*xbf-Kf*pb
-        lhs = Hf*xf+Kf*p+ℓf
+
         if relaxed
-            spbm.vtc = @variable(spbm.mdl, [1:ntc], base_name="vtc")
-            add!(spbm.mdl, Cone(lhs+spbm.vtc, CLP.ZERO))
-            ##########################################################
-            # NEW PARSER CODE
             spbm.__vtc = @new_variable(__prg, ntc, "vtc")
             @add_constraint(__prg, ZERO, "terminal_condition",
                             (__xf, __p, spbm.__vtc),
@@ -1049,11 +930,7 @@ function add_bcs!(
                                 local lhs = Hf*xf+Kf*p+ℓf
                                 lhs+vtc
                             end)
-            ##########################################################
         else
-            add!(spbm.mdl, Cone(lhs, CLP.ZERO))
-            ##########################################################
-            # NEW PARSER CODE
             @add_constraint(__prg, ZERO, "terminal_condition",
                             (__xf, __p),
                             begin
@@ -1061,10 +938,7 @@ function add_bcs!(
                                 local lhs = Hf*xf+Kf*p+ℓf
                                 lhs
                             end)
-            ##########################################################
         end
-    elseif relaxed
-        spbm.vtc = @variable(spbm.mdl, [1:0], base_name="vtc")
     end
 
     return nothing
@@ -1116,12 +990,7 @@ Solve the SCP method's convex subproblem via numerical optimization.
 """
 function solve_subproblem!(spbm::T)::Nothing where {T<:SCPSubproblem}
     # Optimize
-    optimize!(spbm.mdl)
-
-    ##########################################################
-    # NEW PARSER CODE
     solve!(spbm.__prg)
-    ##########################################################
 
     # Save the solution
     SCPSubproblemSolution!(spbm)
