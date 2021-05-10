@@ -755,7 +755,7 @@ function add_dynamics!(
             __prg, ZERO, "dynamics",
             (__xk, __xkp1, __uk, __ukp1, __p, __vdk),
             begin
-                local xk, xkp1, uk, ukp1, p, vdk = x
+                local xk, xkp1, uk, ukp1, p, vdk = arg #noerr
                 xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk)
             end)
         ##########################################################
@@ -897,13 +897,13 @@ function add_nonconvex_constraints!(
                 (__xk, __uk, __p, __vsk),
                 # Value
                 begin
-                    local xk, uk, p, vsk = x
+                    local xk, uk, p, vsk = arg #noerr
                     local lhs = C*xk+D*uk+G*p+r
                     lhs-vsk
                 end,
                 # Jacobians
                 begin
-                    local xk, uk, p, vsk = x
+                    local xk, uk, p, vsk = arg #noerr
                     local dim = length(vsk)
                     local J = Dict()
                     J[1] = C
@@ -1016,7 +1016,7 @@ function add_bcs!(
             @add_constraint(__prg, ZERO, "initial_condition",
                             (__x0, __p, spbm.__vic),
                             begin
-                                local x0, p, vic = x #noerr
+                                local x0, p, vic = arg #noerr
                                 local lhs = H0*x0+K0*p+ℓ0
                                 lhs+vic
                             end)
@@ -1028,7 +1028,7 @@ function add_bcs!(
             @add_constraint(__prg, ZERO, "initial_condition",
                             (__x0, __p),
                             begin
-                                local x0, p = x #noerr
+                                local x0, p = arg #noerr
                                 local lhs = H0*x0+K0*p+ℓ0
                                 lhs
                             end)
@@ -1055,7 +1055,7 @@ function add_bcs!(
             @add_constraint(__prg, ZERO, "terminal_condition",
                             (__xf, __p, spbm.__vtc),
                             begin
-                                local xf, p, vtc = x #noerr
+                                local xf, p, vtc = arg #noerr
                                 local lhs = Hf*xf+Kf*p+ℓf
                                 lhs+vtc
                             end)
@@ -1067,7 +1067,7 @@ function add_bcs!(
             @add_constraint(__prg, ZERO, "terminal_condition",
                             (__xf, __p),
                             begin
-                                local xf, p = x #noerr
+                                local xf, p = arg #noerr
                                 local lhs = Hf*xf+Kf*p+ℓf
                                 lhs
                             end)

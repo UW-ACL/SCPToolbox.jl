@@ -585,7 +585,7 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     @add_constraint(__prg, cone, "parameter_trust_region",
                     (__p, __dp_lq),
                     begin
-                        local p, dp_lq = x #noerr
+                        local p, dp_lq = arg #noerr
                         local ph = scale.iSp*(p-scale.cp)
                         local dp = ph-ph_ref
                         vcat(dp_lq, dp)
@@ -601,13 +601,13 @@ function add_trust_region!(spbm::Subproblem)::Nothing
         @add_constraint(__prg, SOC, "parameter_trust_region",
                         (__wp, __dp_lq),
                         begin
-                            local wp, dp_lq = x #noerr
+                            local wp, dp_lq = arg #noerr
                             vcat(wp, dp_lq)
                         end)
         @add_constraint(__prg, GEOM, "parameter_trust_region",
                         (__wp, __ηp),
                         begin
-                            local wp, ηp = x #noerr
+                            local wp, ηp = arg #noerr
                             vcat(wp, ηp, 1)
                         end)
         ##########################################################
@@ -618,7 +618,7 @@ function add_trust_region!(spbm::Subproblem)::Nothing
         @add_constraint(__prg, NONPOS, "parameter_trust_region",
                         (__ηp, __dp_lq),
                         begin
-                            local ηp, dp_lq = x #noerr
+                            local ηp, dp_lq = arg #noerr
                             dp_lq-ηp
                         end)
         ##########################################################
@@ -640,7 +640,7 @@ function add_trust_region!(spbm::Subproblem)::Nothing
         @add_constraint(__prg, cone, "state_trust_region",
                         (__dx_lq[k], __x[:, k]),
                         begin
-                            local dxk_lq, xk = x #noerr
+                            local dxk_lq, xk = arg #noerr
                             local xhk = scale.iSx*(xk-scale.cx)
                             local dxk = xhk-xh_ref[:, k]
                             vcat(dxk_lq, dxk)
@@ -648,7 +648,7 @@ function add_trust_region!(spbm::Subproblem)::Nothing
         @add_constraint(__prg, cone, "input_trust_region",
                         (__du_lq[k], __u[:, k]),
                         begin
-                            local duk_lq, uk = x #noerr
+                            local duk_lq, uk = arg #noerr
                             local uhk = scale.iSu*(uk-scale.cu)
                             local duk = uhk-uh_ref[:, k]
                             vcat(duk_lq, duk)
@@ -668,13 +668,13 @@ function add_trust_region!(spbm::Subproblem)::Nothing
             @add_constraint(__prg, SOC, "state_trust_region",
                             (__wx, __dx_lq[k]),
                             begin
-                                local wx, dxk_lq = x #noerr
+                                local wx, dxk_lq = arg #noerr
                                 vcat(wx, dxk_lq)
                             end)
             @add_constraint(__prg, GEOM, "state_trust_region",
                             (__wx, __ηx[k]),
                             begin
-                                local wx, ηxk = x #noerr
+                                local wx, ηxk = arg #noerr
                                 vcat(wx, ηxk, 1)
                             end)
             ##########################################################
@@ -690,7 +690,7 @@ function add_trust_region!(spbm::Subproblem)::Nothing
             @add_constraint(__prg, NONPOS, "state_trust_region",
                             (__dx_lq[k], __ηx[k]),
                             begin
-                                local dxk_lq, ηxk = x #noerr
+                                local dxk_lq, ηxk = arg #noerr
                                 dxk_lq-ηxk
                             end)
             ##########################################################
@@ -701,7 +701,7 @@ function add_trust_region!(spbm::Subproblem)::Nothing
             @add_constraint(__prg, NONPOS, "input_trust_region",
                             (__du_lq[k], __ηu[k]),
                             begin
-                                local duk_lq, ηuk = x #noerr
+                                local duk_lq, ηuk = arg #noerr
                                 duk_lq-ηuk
                             end)
             ##########################################################
@@ -796,7 +796,7 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
             @add_constraint(__prg, L1, "vd_vs_penalty",
                             (__P[k], __vd[:, k], __vs[:, k]),
                             begin
-                                local Pk, vdk, vsk = x #noerr
+                                local Pk, vdk, vsk = arg #noerr
                                 vcat(Pk, E[:, :, k]*vdk, vsk)
                             end)
             ##########################################################
@@ -807,7 +807,7 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
             @add_constraint(__prg, L1, "vd_vs_penalty",
                             (__P[k], __vs[:, k]),
                             begin
-                                local Pk, vsk = x #noerr
+                                local Pk, vsk = arg #noerr
                                 vcat(Pk, vsk)
                             end)
             ##########################################################
@@ -822,7 +822,7 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
         @add_constraint(__prg, L1, "vic_penalty",
                         (__Pf[1], __vic),
                         begin
-                            local Pf1, vic = x #noerr
+                            local Pf1, vic = arg #noerr
                             vcat(Pf1, vic)
                         end)
     end
@@ -830,7 +830,7 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
         @add_constraint(__prg, L1, "vtc_penalty",
                         (__Pf[2], __vtc),
                         begin
-                            local Pf2, vtc = x #noerr
+                            local Pf2, vtc = arg #noerr
                             vcat(Pf2, vtc)
                         end)
     end
