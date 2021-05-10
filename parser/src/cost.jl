@@ -23,6 +23,8 @@ end
 
 import JuMP: value
 
+export QuadraticCost
+
 # ..:: Data structures ::..
 
 """
@@ -69,11 +71,10 @@ robustness (in JuMP) it has been observed that it is best to reformulate the
 problem (via epigraph form) such that this function is affine. """
 mutable struct QuadraticCost
     terms::FunctionLinearCombination # The core cost terms
-    jump::Types.Variable             # JuMP function object
     prog::Ref{AbstractConicProgram}  # The parent conic program
 
     """
-        QuadraticCost(J)
+        QuadraticCost(J, prog[, a][; noupdate])
 
     Basic constructor. This will also call the appropriate JuMP function to
     associate the cost with the JuMP optimization model object.
@@ -83,19 +84,25 @@ mutable struct QuadraticCost
     - `prog`: the parent conic program which this is to be the cost of.
     - `a`: (optional) multiplicative coefficient in a linear combination.
 
+    # Keywords
+    - `noupdate`: (optional) flag to not update the underlying JuMP model cost.
+
     # Returns
     - `cost`: the newly created cost function object.
     """
     function QuadraticCost(J::ProgramFunction,
                            prog::AbstractConicProgram,
-                           a::Types.RealTypes=1.0)::QuadraticCost
+                           a::Types.RealTypes=1.0;
+                           noupdate::Bool=false)::QuadraticCost
 
         # Initialize the function combination
         terms = FunctionLinearCombination(J, a)
 
-        cost = new(terms, 0.0, prog)
+        cost = new(terms, prog)
 
-        update_jump_cost!(cost)
+        if !noupdate
+            update_jump_cost!(cost)
+        end
 
         return cost
     end # function
@@ -232,13 +239,17 @@ function for the associated `FunctionLinearCombination`.
 - `J`: the quadratic cost.
 - `f`: the new term to be added.
 - `a`: (optional) the coefficient multiplying this new term
+
+# Returns
+- `new_term`: the newly added quadratic cost term.
 """
 function add!(J::QuadraticCost,
               f::ProgramFunction,
-              a::Types.RealTypes=1.0)::Nothing
+              a::Types.RealTypes=1.0)::QuadraticCost
     add!(core_terms(J), f, a)
     update_jump_cost!(J)
-    return nothing
+    new_term = term(J, 0)
+    return new_term
 end # function
 
 """
@@ -254,7 +265,6 @@ function update_jump_cost!(J::QuadraticCost)::Nothing
     mdl = jump_model(J)
     J_value = terms(scalar=true)
     set_objective_function(mdl, J_value)
-    J.jump = objective_function(mdl)
     set_objective_sense(mdl, MOI.MIN_SENSE)
     return nothing
 end # function
@@ -265,9 +275,53 @@ jump_model(J::QuadraticCost)::Model = jump_model(J.prog[])
 """ Get the actual underlying cost function. """
 core_terms(J::QuadraticCost)::FunctionLinearCombination = J.terms
 
-""" Get the current objective function value. """
-value(J::QuadraticCost)::FunctionValueOutputType =
-    value(core_terms(J); scalar=true)
+"""
+    term(J, i)
+
+Get the i-th term of the cost. If zero or negative, count from the last term.
+
+# Arguments
+- `J`: the quadratic cost.
+- `i`: the term number, with `0` meaning the last term, `-1` the second last,
+  etc..
+
+# Returns
+- `Ji`: the individual quadratic cost term.
+"""
+term(J::QuadraticCost, i::Int)::QuadraticCost = begin
+    terms = core_terms(J)
+    if i>0
+        f, a = terms.f[i], terms.a[i]
+    else
+        f, a = terms.f[end-i], terms.a[end-i]
+    end
+    return QuadraticCost(f, J.prog[], a, noupdate=true)
+end
+
+"""
+    value(J[; raw])
+
+Get the current objective function value. If the underlying optimization
+problem has been solved, return the cost value.
+
+# Arguments
+- `J`: the quadratic cost object.
+
+# Keywords
+- `raw`: (optional) return the raw cost expression, not evaluated even if the
+  optimization has been solved.
+
+# Returns
+- `val`: the cost value (a variable expression is not yet solved, or the
+  optimal cost value if already solved).
+"""
+function value(J::QuadraticCost; raw::Bool=false)::FunctionValueOutputType
+    val = value(core_terms(J); scalar=true)
+    if !raw && termination_status(jump_model(J))!=MOI.OPTIMIZE_NOT_CALLED
+        val = value(val)
+    end
+    return val
+end # function
 
 """ Get the current objective function jacobians. """
 jacobian(J::QuadraticCost, i::Int, key::JacobianKeys)::JacobianValueType =

@@ -24,8 +24,10 @@ if isdefined(@__MODULE__, :LanguageServer)
     using .Utils.Types: sample
     using .Parser
     using .Parser.TrajectoryProblem
-    import .Parser.ConicLinearProgram: @value, @add_constraint, @new_variable
+    import .Parser.ConicLinearProgram: @add_constraint, @new_variable
     import .Parser.ConicLinearProgram: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
+    import .Parser.ConicLinearProgram: QuadraticCost
+    import .Parser.ConicLinearProgram: solve!
 end
 
 using Utils
@@ -45,7 +47,7 @@ const IntRange = ST.IntRange
 const RealVector = ST.RealVector
 const RealMatrix = ST.RealMatrix
 const Trajectory = ST.ContinuousTimeTrajectory
-const Objective = ST.Objective
+const Objective = Union{ST.Objective, QuadraticCost}
 const VariableVector = ST.VariableVector
 const VariableMatrix = ST.VariableMatrix
 
@@ -781,6 +783,12 @@ function add_convex_state_constraints!(
     t = spbm.def.common.t_grid
     x = spbm.x
     p = spbm.p
+    ##########################################################
+    # NEW PARSER CODE
+    __prg = spbm.__prg
+    __x = spbm.__x
+    __p = spbm.__p
+    ##########################################################
 
     if !isnothing(traj_pbm.X)
         for k = 1:N
@@ -795,6 +803,15 @@ function add_convex_state_constraints!(
             CLP.add!(spbm.mdl, xk_in_X)
         end
     end
+
+    ##########################################################
+    # NEW PARSER CODE
+    if !isnothing(traj_pbm.__X)
+        for k = 1:N
+            traj_pbm.__X(__prg, t[k], k, __x[:, k], __p)
+        end
+    end
+    ##########################################################
 
     return nothing
 end # function
@@ -816,6 +833,12 @@ function add_convex_input_constraints!(
     t = spbm.def.common.t_grid
     u = spbm.u
     p = spbm.p
+    ##########################################################
+    # NEW PARSER CODE
+    __prg = spbm.__prg
+    __u = spbm.__u
+    __p = spbm.__p
+    ##########################################################
 
     if !isnothing(traj_pbm.U)
         for k = 1:N
@@ -830,6 +853,15 @@ function add_convex_input_constraints!(
             CLP.add!(spbm.mdl, uk_in_U)
         end
     end
+
+    ##########################################################
+    # NEW PARSER CODE
+    if !isnothing(traj_pbm.__U)
+        for k = 1:N
+            traj_pbm.__U(__prg, t[k], k, __u[:, k], __p)
+        end
+    end
+    ##########################################################
 
     return nothing
 end # function
@@ -1085,6 +1117,11 @@ Solve the SCP method's convex subproblem via numerical optimization.
 function solve_subproblem!(spbm::T)::Nothing where {T<:SCPSubproblem}
     # Optimize
     optimize!(spbm.mdl)
+
+    ##########################################################
+    # NEW PARSER CODE
+    solve!(spbm.__prg)
+    ##########################################################
 
     # Save the solution
     SCPSubproblemSolution!(spbm)

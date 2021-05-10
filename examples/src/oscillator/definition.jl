@@ -20,6 +20,8 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("../../../parser/src/Parser.jl")
     include("../../../utils/src/trajectory.jl")
     using .Parser
+    import .Parser.ConicLinearProgram: @add_constraint
+    import .Parser.ConicLinearProgram: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
 end
 
 using LinearAlgebra
@@ -244,6 +246,25 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             return X
         end)
 
+    ##########################################################
+    # NEW PARSER CODE
+    # Convex path constraints on the state
+    __problem_set_X!(
+        pbm, (t, k, x, p, pbm, ocp) -> begin
+            veh = pbm.mdl.vehicle
+            N = pbm.scp.N
+
+            r = x[veh.id_r]
+            l1r_k = (p[veh.id_l1r])[k]
+
+            @add_constraint(
+                ocp, L1, "abs_r", (r, l1r_k), begin
+                    local r, l1r_k = arg #noerr
+                    vcat(l1r_k, r)
+                end)
+        end)
+    ##########################################################
+
     # Convex path constraints on the input
     problem_set_U!(
         pbm, (t, k, u, p, pbm) -> begin
@@ -264,6 +285,62 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
             return U
         end)
+
+    ##########################################################
+    # NEW PARSER CODE
+    # Convex path constraints on the input
+    __problem_set_U!(
+        pbm, (t, k, u, p, pbm, ocp) -> begin
+            veh = pbm.mdl.vehicle
+
+            aa = u[veh.id_aa]
+            ar = u[veh.id_ar]
+            l1aa = u[veh.id_l1aa]
+            l1adiff = u[veh.id_l1adiff]
+
+            @add_constraint(
+                ocp, NONPOS, "accel_bounds",
+                (aa,), begin
+                    local aa, = arg #noerr
+                    aa[1]-veh.a_max
+                end)
+
+            @add_constraint(
+                ocp, NONPOS, "accel_bounds",
+                (aa,), begin
+                    local aa, = arg #noerr
+                    -veh.a_max-aa[1]
+                end)
+
+            @add_constraint(
+                ocp, NONPOS, "accel_bounds",
+                (ar,), begin
+                    local ar, = arg #noerr
+                    ar[1]-veh.a_max
+                end)
+
+            @add_constraint(
+                ocp, NONPOS, "accel_bounds",
+                (ar,), begin
+                    local ar, = arg #noerr
+                    -veh.a_max-ar[1]
+                end)
+
+            @add_constraint(
+                ocp, L1, "accel_bounds",
+                (l1aa, aa), begin
+                    local l1aa, aa = arg #noerr
+                    vcat(l1aa, aa)
+                end)
+
+            @add_constraint(
+                ocp, L1, "accel_bounds",
+                (l1adiff, aa, ar), begin
+                    local l1adiff, aa, ar = arg #noerr
+                    vcat(l1adiff, aa-ar)
+                end)
+        end)
+    ##########################################################
 
     return nothing
 end

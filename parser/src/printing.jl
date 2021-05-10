@@ -127,7 +127,7 @@ function Base.show(io::IO, cone::ConvexCone; z::String="z")::Nothing
     compact = get(io, :compact, false) #noinfo
 
     if kind(cone)==:free
-        @printf("Unconstrained %s\n", z)
+        @printf(io, "Unconstrained %s\n", z)
     else
         cone_description = Dict(
             ZERO => "{z : z=0}",
@@ -138,14 +138,14 @@ function Base.show(io::IO, cone::ConvexCone; z::String="z")::Nothing
             GEOM => "{(t, x)∈ℝ×ℝⁿ : (x₁x₂⋯xₙ)^{1/n}≥t}",
             EXP => "{(x,y,w)∈ℝ³ : y⋅e^{x/y}≤w, y>0}")
 
-        @printf("Cone %s∈K, where:\n", z)
-        @printf("K is a %s cone, %s\n", CONE_NAMES[cone.kind],
+        @printf(io, "Cone %s∈K, where:\n", z)
+        @printf(io, "K is a %s cone, %s\n", CONE_NAMES[cone.kind],
                 cone_description[cone.kind])
     end
 
     if !compact
         # Print the value of z
-        @printf("%s = \n", z)
+        @printf(io, "%s = \n", z)
         io2 = IOContext(io, :indent=>1)
         print_array(io2, cone.z)
     end
@@ -198,7 +198,7 @@ function Base.show(io::IO, F::ProgramFunction)::Nothing
         name_fmt = @sprintf("  %%-%ds", longest_name)
         for arg in all_args
             @printf(io, "%s", indent)
-            @eval @printf($(name_fmt), $(arg).name)
+            @eval @printf($io, $(name_fmt), $(arg).name)
             @printf(io, " (block %d) : ", arg.blid)
             @printf(io, "%s\n", print_indices(arg.elid))
         end
@@ -257,18 +257,18 @@ Pretty print a differentiable function object.
 function Base.show(io::IO, f::DifferentiableFunction)::Nothing
     compact = get(io, :compact, false) #noinfo
 
-    @printf("Differentiable function:\n")
-    @printf("  %d variable arguments\n", f.xargs)
-    @printf("  %d constant arguments\n", f.pargs)
-    @printf("  Parameter container: %s\n", typeof(f.consts[]))
+    @printf(io, "Differentiable function:\n")
+    @printf(io, "  %d variable arguments\n", f.xargs)
+    @printf(io, "  %d constant arguments\n", f.pargs)
+    @printf(io, "  Parameter container: %s\n", typeof(f.consts[]))
 
     if f.evaluated
-        @printf("  %d Jacobians available\n", length(all_jacobians(f.out[])))
-        @printf("  Current value =\n")
+        @printf(io, "  %d Jacobians available\n", length(all_jacobians(f.out[])))
+        @printf(io, "  Current value =\n")
         io2 = IOContext(io, :indent=>3)
         print_array(io2, value(f))
     else
-        @printf("  Not evaluated.")
+        @printf(io, "  Not evaluated.")
     end
 
     return nothing
@@ -542,10 +542,10 @@ function Base.show(io::IO, prog::ConicProgram)::Nothing
 
     @printf(io, "Conic linear program\n\n")
     if is_feasibility(prog)
-        @printf("  Feasibility problem\n")
+        @printf(io, "  Feasibility problem\n")
     else
         kind = function_kind(core_terms(cost(prog)))
-        @printf("  %s cost function\n", kind)
+        @printf(io, "  %s cost function\n", kind)
     end
     @printf(io, "  %d variables (%d blocks)\n", numel(prog.x),
             length(prog.x))
@@ -558,9 +558,9 @@ function Base.show(io::IO, prog::ConicProgram)::Nothing
     # Print a more detailed list of variables and parameters
     if !compact
         io2 = IOContext(io, :indent=>2)
-        @printf("\n\n")
+        @printf(io, "\n\n")
         show(io2, prog.x)
-        @printf("\n\n")
+        @printf(io, "\n\n")
         show(io2, prog.p)
     end
 

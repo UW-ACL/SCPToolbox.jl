@@ -27,7 +27,7 @@ end
 
 import Base: copy
 
-export ConicProgram, numel, constraints, cost, solve!
+export ConicProgram, numel, constraints, cost, solve!, jump_model
 export @new_variable, @new_parameter, @add_constraint,
     @add_cost, @set_feasibility
 
@@ -244,7 +244,7 @@ function constraint!(prog::ConicProgram,
 end # function
 
 """
-    add_cost!(prog, J, x, p[, a])
+    add_cost!(prog, J, x, p[, a][; new])
 
 Add a term to the existing cost of the conic program. The heavy computation is
 done by the user-supplied function `J`, which has to satisfy the requirements
@@ -258,7 +258,7 @@ of `DifferentiableFunction`.
 - `a`: (optional) multiplicative coefficient in a linear combination.
 
 # Returns
-- `new_cost`: the newly created cost.
+- `new_cost`: the new term that was added to the cost.
 """
 function add_cost!(prog::ConicProgram,
                    J::Function, x, p,
@@ -267,12 +267,14 @@ function add_cost!(prog::ConicProgram,
     x = VariableArgumentBlocks(collect(x))
     p = ConstantArgumentBlocks(collect(p))
     J = ProgramFunction(prog, x, p, J)
+    new = new || prog._feasibility
 
     if new
         new_cost = QuadraticCost(J, prog, a)
         prog.cost[] = new_cost
+        new_term = term(new_cost, 0)
     else
-        add!(prog.cost[], J, a)
+        new_term = add!(prog.cost[], J, a)
     end
 
     # Update feasibility flag if new or already determined (from prior calls)
@@ -281,7 +283,7 @@ function add_cost!(prog::ConicProgram,
         prog._feasibility = length(variables(J))==0
     end
 
-    return cost(prog)
+    return new_term
 end # function
 
 """

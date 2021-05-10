@@ -45,8 +45,8 @@ import ..SCPParameters, ..SCPSubproblem, ..SCPSubproblemSolution, ..SCPProblem,
 
 import ..discretize!, ..add_dynamics!, ..add_convex_state_constraints!,
     ..add_convex_input_constraints!, ..add_nonconvex_constraints!, ..add_bcs!,
-    ..original_cost, ..solution_deviation, ..solve_subproblem!,
-    ..unsafe_solution, ..overhead!, ..save!, ..get_time
+    ..solution_deviation, ..solve_subproblem!, ..unsafe_solution, ..overhead!,
+    ..save!, ..get_time
 
 const CLP = ConicLinearProgram #noerr
 const Variable = ST.Variable
@@ -137,8 +137,14 @@ mutable struct Subproblem <: SCPSubproblem
     timing::Dict{Symbol, RealTypes} # Runtime profiling
     ###########################################################
     # NEW PARSER CODE
-    ###########################################################
     __prg::ConicProgram         # The optimization problem object
+    # >> Solution trajectories <<
+    __sol::Union{SubproblemSolution, Missing} # Solution trajectory
+    # >> Cost function <<
+    __J::Objective              # The original convex cost function
+    __J_tr::Objective           # The virtual control penalty
+    __J_vc::Objective           # The virtual control penalty
+    __J_aug::Objective          # Overall cost function
     # >> Physical variables <<
     __x::VariableArgumentBlock  # Discrete-time states
     __u::VariableArgumentBlock  # Discrete-time inputs
@@ -152,6 +158,7 @@ mutable struct Subproblem <: SCPSubproblem
     __ηx::VariableArgumentBlock # State trust region radii
     __ηu::VariableArgumentBlock # Input trust region radii
     __ηp::VariableArgumentBlock # Parameter trust region radii
+    ###########################################################
 end # struct
 
 #= Construct the PTR problem definition.
@@ -251,11 +258,25 @@ function Subproblem(pbm::SCPProblem, iter::Int,
 
     sol = missing # No solution associated yet with the subproblem
 
+    ##########################################################
+    # NEW PARSER CODE
+    __sol = missing # No solution associated yet with the subproblem
+    ##########################################################
+
     # Cost
     J = missing
     J_tr = missing
     J_vc = missing
     J_aug = missing
+
+    ##########################################################
+    # NEW PARSER CODE
+    # Cost
+    __J = missing
+    __J_tr = missing
+    __J_vc = missing
+    __J_aug = missing
+    ##########################################################
 
     # Decision variables (scaled)
     xh = @variable(mdl, [1:nx, 1:N], base_name="xh")
@@ -307,7 +328,8 @@ function Subproblem(pbm::SCPProblem, iter::Int,
     spbm = Subproblem(iter, mdl, algo, pbm, sol, ref, J, J_tr, J_vc,
                       J_aug, xh, uh, ph, x, u, p, vd, vs, vic, vtc,
                       ηx, ηu, ηp, nvar, ncons, timing,
-                      __prg, __x, __u, __p, __vd, __vs, __vic, __vtc,
+                      __prg, __sol, __J, __J_tr, __J_vc, __J_aug, __x,
+                      __u, __p, __vd, __vs, __vic, __vtc,
                       __ηx, __ηu, __ηp)
 
     return spbm
@@ -404,10 +426,46 @@ function SubproblemSolution(spbm::Subproblem)::SubproblemSolution
     sol.J_vc = value(spbm.J_vc)
     sol.J_aug = value(spbm.J_aug)
 
-    # Save the solution status
+    # Save the trust region radii
     sol.ηx = value.(spbm.ηx)
     sol.ηu = value.(spbm.ηu)
     sol.ηp = value(spbm.ηp)
+
+    ##########################################################
+    # NEW PARSER CODE
+    # Extract the discrete-time trajectory
+    __x = value(spbm.__x)
+    __u = value(spbm.__u)
+    __p = value(spbm.__p)
+
+    # Form the partly uninitialized subproblem
+    __sol = SubproblemSolution(__x, __u, __p, spbm.iter, spbm.def)
+
+    # Save the virtual control values and penalty terms
+    __sol.vd = value(spbm.__vd)
+    if !isnothing(spbm.__vs)
+        __sol.vs = value(spbm.__vs)
+    end
+    if !isnothing(spbm.__vic)
+        __sol.vic = value(spbm.__vic)
+    end
+    if !isnothing(spbm.__vtc)
+        __sol.vtc = value(spbm.__vtc)
+    end
+
+    # Save the optimal cost values
+    __sol.J = value(spbm.__J)
+    __sol.J_tr = value(spbm.__J_tr)
+    __sol.J_vc = value(spbm.__J_vc)
+    __sol.J_aug = value(spbm.__J_aug)
+
+    # Save the trust region radii
+    __sol.ηx = value(spbm.__ηx)
+    __sol.ηu = value(spbm.__ηu)
+    __sol.ηp = value(spbm.__ηp)[1]
+
+    spbm.__sol = __sol
+    ##########################################################
 
     return sol
 end # function
@@ -717,9 +775,6 @@ Args:
     spbm: the subproblem definition. =#
 function add_cost!(spbm::Subproblem)::Nothing
 
-    # Variables and parameters
-
-
     # Compute the cost components
     compute_original_cost!(spbm)
     compute_trust_region_penalty!(spbm)
@@ -727,6 +782,11 @@ function add_cost!(spbm::Subproblem)::Nothing
 
     # Overall cost
     spbm.J_aug = spbm.J+spbm.J_tr+spbm.J_vc
+
+    ##########################################################
+    # NEW PARSER CODE
+    spbm.__J_aug = cost(spbm.__prg)
+    ##########################################################
 
     # Associate cost function with the model
     set_objective_function(spbm.mdl, spbm.J_aug)
@@ -780,7 +840,7 @@ function compute_original_cost!(spbm::Subproblem)::Nothing
 
     ##########################################################
     # NEW PARSER CODE
-    @add_cost(
+    spbm.__J = @add_cost(
         __prg, (__x, __u, __p),
         begin
             local x, u, p = args #noerr
@@ -817,8 +877,26 @@ function compute_trust_region_penalty!(spbm::Subproblem)::Nothing
     ηx = spbm.ηx
     ηu = spbm.ηu
     ηp = spbm.ηp
+    ##########################################################
+    # NEW PARSER CODE
+    __prg = spbm.__prg
+    __ηx = spbm.__ηx
+    __ηu = spbm.__ηu
+    __ηp = spbm.__ηp
+    ##########################################################
 
     spbm.J_tr = wtr*(trapz(ηx, t)+trapz(ηu, t)+ηp)
+
+    ##########################################################
+    # NEW PARSER CODE
+    spbm.__J_tr = @add_cost(
+        __prg, (__ηx, __ηu, __ηp),
+        begin
+            local ηx, ηu, ηp = args #noerr
+            ηp = ηp[1]
+            wtr*(trapz(ηx, t)+trapz(ηu, t)+ηp)
+        end)
+    ##########################################################
 
     return nothing
 end # function
@@ -888,10 +966,15 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
     # NEW PARSER CODE
     if !isnothing(__vic)
         @add_constraint(__prg, L1, "vic_penalty",
-                        (__Pf[1], __vic),
-                        begin
+                        (__Pf[1], __vic), begin
                             local Pf1, vic = arg #noerr
                             vcat(Pf1, vic)
+                        end)
+    else
+        @add_constraint(__prg, ZERO, "vic_penalty",
+                        (__Pf[1]), begin
+                            local Pf1, = arg #noerr
+                            Pf1
                         end)
     end
     if !isnothing(__vtc)
@@ -901,9 +984,25 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
                             local Pf2, vtc = arg #noerr
                             vcat(Pf2, vtc)
                         end)
+    else
+        @add_constraint(__prg, ZERO, "vtc_penalty",
+                        (__Pf[2]), begin
+                            local Pf2, = arg #noerr
+                            Pf2
+                        end)
     end
     ##########################################################
     spbm.J_vc = wvc*(trapz(P, t)+sum(Pf))
+
+    ##########################################################
+    # NEW PARSER CODE
+    spbm.__J_vc = @add_cost(
+        __prg, (__P, __Pf),
+        begin
+            local P, Pf = args #noerr
+            wvc*(trapz(P, t)+sum(Pf))
+        end)
+    ##########################################################
 
     return nothing
 end # function
