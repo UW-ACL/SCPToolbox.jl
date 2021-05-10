@@ -233,23 +233,6 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the state
     problem_set_X!(
-        pbm, (t, k, x, p, pbm) -> begin
-            veh = pbm.mdl.vehicle
-            N = pbm.scp.N
-
-            r = x[veh.id_r]
-            l1r = p[veh.id_l1r]
-
-            C = CLP.ConvexCone
-            X = [C(vcat(l1r[k], r), CLP.L1)]
-
-            return X
-        end)
-
-    ##########################################################
-    # NEW PARSER CODE
-    # Convex path constraints on the state
-    __problem_set_X!(
         pbm, (t, k, x, p, pbm, ocp) -> begin
             veh = pbm.mdl.vehicle
             N = pbm.scp.N
@@ -263,33 +246,9 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                     vcat(l1r_k, r)
                 end)
         end)
-    ##########################################################
 
     # Convex path constraints on the input
     problem_set_U!(
-        pbm, (t, k, u, p, pbm) -> begin
-            veh = pbm.mdl.vehicle
-
-            aa = u[veh.id_aa]
-            ar = u[veh.id_ar]
-            l1aa = u[veh.id_l1aa]
-            l1adiff = u[veh.id_l1adiff]
-
-            C = CLP.ConvexCone
-            U = [C(aa-veh.a_max, CLP.NONPOS),
-                 C(-veh.a_max-aa, CLP.NONPOS),
-                 C(ar-veh.a_max, CLP.NONPOS),
-                 C(-veh.a_max-ar, CLP.NONPOS),
-                 C(vcat(l1aa, aa), CLP.L1),
-                 C(vcat(l1adiff, aa-ar), CLP.L1)]
-
-            return U
-        end)
-
-    ##########################################################
-    # NEW PARSER CODE
-    # Convex path constraints on the input
-    __problem_set_U!(
         pbm, (t, k, u, p, pbm, ocp) -> begin
             veh = pbm.mdl.vehicle
 
@@ -340,7 +299,6 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                     vcat(l1adiff, aa-ar)
                 end)
         end)
-    ##########################################################
 
     return nothing
 end

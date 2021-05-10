@@ -241,10 +241,10 @@ function SCPSubproblemSolution!(spbm::T)::Nothing where {T<:SCPSubproblem}
     spbm.sol = eval(Expr(:call, constructor, spbm))
 
     # Save common solution properties
-    spbm.sol.status = termination_status(spbm.__prg)
+    spbm.sol.status = termination_status(spbm.prg)
 
     # Save statistics about the subproblem and its solution
-    spbm.timing[:solve] = solve_time(spbm.__prg)
+    spbm.timing[:solve] = solve_time(spbm.prg)
     spbm.timing[:discretize] = spbm.sol.dyn.timing
 
     return nothing
@@ -704,16 +704,16 @@ function add_dynamics!(
 
     # Variables and parameters
     N = spbm.def.pars.N
-    __prg = spbm.__prg
-    __x = spbm.__x
-    __u = spbm.__u
-    __p = spbm.__p
-    __vd = spbm.__vd
+    prg = spbm.prg
+    x = spbm.x
+    u = spbm.u
+    p = spbm.p
+    vd = spbm.vd
 
     # Add dynamics constraint to optimization model
     for k = 1:N-1
-        __xk, __xkp1 = __x[:, k], __x[:, k+1]
-        __uk, __ukp1, __vdk = __u[:, k], __u[:, k+1], __vd[:, k]
+        xk, xkp1 = x[:, k], x[:, k+1]
+        uk, ukp1, vdk = u[:, k], u[:, k+1], vd[:, k]
         A = spbm.ref.dyn.A[:, :, k]
         Bm = spbm.ref.dyn.Bm[:, :, k]
         Bp = spbm.ref.dyn.Bp[:, :, k]
@@ -721,8 +721,8 @@ function add_dynamics!(
         r = spbm.ref.dyn.r[:, k]
         E = spbm.ref.dyn.E[:, :, k]
         @add_constraint(
-            __prg, ZERO, "dynamics",
-            (__xk, __xkp1, __uk, __ukp1, __p, __vdk),
+            prg, ZERO, "dynamics",
+            (xk, xkp1, uk, ukp1, p, vdk),
             begin
                 local xk, xkp1, uk, ukp1, p, vdk = arg #noerr
                 xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk)
@@ -747,13 +747,13 @@ function add_convex_state_constraints!(
     N = spbm.def.pars.N
     traj_pbm = spbm.def.traj
     t = spbm.def.common.t_grid
-    __prg = spbm.__prg
-    __x = spbm.__x
-    __p = spbm.__p
+    prg = spbm.prg
+    x = spbm.x
+    p = spbm.p
 
-    if !isnothing(traj_pbm.__X)
+    if !isnothing(traj_pbm.X)
         for k = 1:N
-            traj_pbm.__X(__prg, t[k], k, __x[:, k], __p)
+            traj_pbm.X(prg, t[k], k, x[:, k], p)
         end
     end
 
@@ -775,13 +775,13 @@ function add_convex_input_constraints!(
     N = spbm.def.pars.N
     traj_pbm = spbm.def.traj
     t = spbm.def.common.t_grid
-    __prg = spbm.__prg
-    __u = spbm.__u
-    __p = spbm.__p
+    prg = spbm.prg
+    u = spbm.u
+    p = spbm.p
 
-    if !isnothing(traj_pbm.__U)
+    if !isnothing(traj_pbm.U)
         for k = 1:N
-            traj_pbm.__U(__prg, t[k], k, __u[:, k], __p)
+            traj_pbm.U(prg, t[k], k, u[:, k], p)
         end
     end
 
@@ -803,10 +803,10 @@ function add_nonconvex_constraints!(
     N = spbm.def.pars.N
     traj_pbm = spbm.def.traj
     t = spbm.def.common.t_grid
-    __prg = spbm.__prg
-    __x = spbm.__x
-    __u = spbm.__u
-    __p = spbm.__p
+    prg = spbm.prg
+    x = spbm.x
+    u = spbm.u
+    p = spbm.p
     nx = traj_pbm.nx
     nu = traj_pbm.nu
     np = traj_pbm.np
@@ -821,18 +821,18 @@ function add_nonconvex_constraints!(
             s = traj_pbm.s(tkxup...)
             ns = length(s)
             if k==1
-                spbm.__vs = @new_variable(__prg, (ns, N), "vs")
+                spbm.vs = @new_variable(prg, (ns, N), "vs")
             end
             C = !isnothing(traj_pbm.C) ? traj_pbm.C(tkxup...) : zeros(ns, nx)
             D = !isnothing(traj_pbm.D) ? traj_pbm.D(tkxup...) : zeros(ns, nu)
             G = !isnothing(traj_pbm.G) ? traj_pbm.G(tkxup...) : zeros(ns, np)
             r = s-C*xb[:, k]-D*ub[:, k]-G*pb
 
-            __xk, __uk, __vsk = __x[:,k], __u[:,k], spbm.__vs[:, k]
+            xk, uk, vsk = x[:,k], u[:,k], spbm.vs[:, k]
 
             @add_constraint(
-                __prg, NONPOS, "path_ncvx",
-                (__xk, __uk, __p, __vsk),
+                prg, NONPOS, "path_ncvx",
+                (xk, uk, p, vsk),
                 # Value
                 begin
                     local xk, uk, p, vsk = arg #noerr
@@ -875,10 +875,10 @@ function add_bcs!(
 
     # Variables and parameters
     traj = spbm.def.traj
-    __prg = spbm.__prg
-    __x0 = spbm.__x[:, 1]
-    __xf = spbm.__x[:, end]
-    __p = spbm.__p
+    prg = spbm.prg
+    x0 = spbm.x[:, 1]
+    xf = spbm.x[:, end]
+    p = spbm.p
     nx = traj.nx
     np = traj.np
     xb0 = spbm.ref.xd[:, 1]
@@ -894,17 +894,17 @@ function add_bcs!(
         ℓ0 = gic-H0*xb0-K0*pb
 
         if relaxed
-            spbm.__vic = @new_variable(__prg, nic, "vic")
-            @add_constraint(__prg, ZERO, "initial_condition",
-                            (__x0, __p, spbm.__vic),
+            spbm.vic = @new_variable(prg, nic, "vic")
+            @add_constraint(prg, ZERO, "initial_condition",
+                            (x0, p, spbm.vic),
                             begin
                                 local x0, p, vic = arg #noerr
                                 local lhs = H0*x0+K0*p+ℓ0
                                 lhs+vic
                             end)
         else
-            @add_constraint(__prg, ZERO, "initial_condition",
-                            (__x0, __p),
+            @add_constraint(prg, ZERO, "initial_condition",
+                            (x0, p),
                             begin
                                 local x0, p = arg #noerr
                                 local lhs = H0*x0+K0*p+ℓ0
@@ -922,17 +922,17 @@ function add_bcs!(
         ℓf = gtc-Hf*xbf-Kf*pb
 
         if relaxed
-            spbm.__vtc = @new_variable(__prg, ntc, "vtc")
-            @add_constraint(__prg, ZERO, "terminal_condition",
-                            (__xf, __p, spbm.__vtc),
+            spbm.vtc = @new_variable(prg, ntc, "vtc")
+            @add_constraint(prg, ZERO, "terminal_condition",
+                            (xf, p, spbm.vtc),
                             begin
                                 local xf, p, vtc = arg #noerr
                                 local lhs = Hf*xf+Kf*p+ℓf
                                 lhs+vtc
                             end)
         else
-            @add_constraint(__prg, ZERO, "terminal_condition",
-                            (__xf, __p),
+            @add_constraint(prg, ZERO, "terminal_condition",
+                            (xf, p),
                             begin
                                 local xf, p = arg #noerr
                                 local lhs = Hf*xf+Kf*p+ℓf
@@ -990,7 +990,7 @@ Solve the SCP method's convex subproblem via numerical optimization.
 """
 function solve_subproblem!(spbm::T)::Nothing where {T<:SCPSubproblem}
     # Optimize
-    solve!(spbm.__prg)
+    solve!(spbm.prg)
 
     # Save the solution
     SCPSubproblemSolution!(spbm)

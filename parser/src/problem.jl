@@ -42,10 +42,6 @@ export problem_set_dims!, problem_advise_scale!,
     problem_set_terminal_cost!, problem_set_running_cost!,
     problem_set_dynamics!, problem_set_X!, problem_set_U!,
     problem_set_s!, problem_set_bc!
-##########################################################
-# NEW PARSER CODE
-export __problem_set_X!, __problem_set_U!
-##########################################################
 
 """ Trajectory problem definition."""
 mutable struct TrajectoryProblem
@@ -83,11 +79,6 @@ mutable struct TrajectoryProblem
     # >> Constraints <<
     X::Func     # (SCvx/GuSTO) Convex state constraints
     U::Func     # (SCvx/GuSTO) Convex input constraints
-    ##########################################################
-    # NEW PARSER CODE
-    __X::Func   # (SCvx/GuSTO) Convex state constraints
-    __U::Func   # (SCvx/GuSTO) Convex input constraints
-    ##########################################################
     s::Func     # Nonconvex inequality constraint function
     C::Func     # Jacobian ds/dx
     D::Func     # Jacobian ds/du
@@ -144,11 +135,6 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     F = nothing
     X = nothing
     U = nothing
-    ##########################################################
-    # NEW PARSER CODE
-    __X = nothing
-    __U = nothing
-    ##########################################################
     s = nothing
     C = nothing
     D = nothing
@@ -163,8 +149,8 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
 
     pbm = TrajectoryProblem(nx, nu, np, xrg, urg, prg, propag_actions, guess,
                             φ, Γ, S, dSdp, ℓ, dℓdx, dℓdp, g, dgdx, dgdp, S_cvx,
-                            ℓ_cvx, g_cvx, f, A, B, F, X, U, __X, __U, s, C, D,
-                            G, gic, H0, K0, gtc, Hf, Kf, mdl, scp)
+                            ℓ_cvx, g_cvx, f, A, B, F, X, U, s, C, D, G, gic,
+                            H0, K0, gtc, Hf, Kf, mdl, scp)
 
     return pbm
 end # function
@@ -403,8 +389,8 @@ Define the convex state constraint set.
 - `X`: the conic constraints whose intersection defines the convex state set.
 """
 function problem_set_X!(pbm::TrajectoryProblem,
-                        X::Func)::Nothing
-    pbm.X = (t, k, x, p) -> X(t, k, x, p, pbm)
+                          X::Func)::Nothing
+    pbm.X = (ocp, t, k, x, p) -> X(t, k, x, p, pbm, ocp)
     return nothing
 end # function
 
@@ -419,42 +405,9 @@ Define the convex input constraint set.
 """
 function problem_set_U!(pbm::TrajectoryProblem,
                         U::Func)::Nothing
-    pbm.U = (t, k, u, p) -> U(t, k, u, p, pbm)
+    pbm.U = (ocp, t, k, u, p) -> U(t, k, u, p, pbm, ocp)
     return nothing
 end # function
-
-##########################################################
-# NEW PARSER CODE
-"""
-    __problem_set_X!(pbm, X)
-
-Define the convex state constraint set.
-
-# Arguments
-- `pbm`: the trajectory problem structure.
-- `X`: the conic constraints whose intersection defines the convex state set.
-"""
-function __problem_set_X!(pbm::TrajectoryProblem,
-                          X::Func)::Nothing
-    pbm.__X = (ocp, t, k, x, p) -> X(t, k, x, p, pbm, ocp)
-    return nothing
-end # function
-
-"""
-    __problem_set_U!(pbm, U)
-
-Define the convex input constraint set.
-
-# Arguments
-- `pbm`: the trajectory problem structure.
-- `U`: the conic constraints whose intersection defines the convex input set.
-"""
-function __problem_set_U!(pbm::TrajectoryProblem,
-                        U::Func)::Nothing
-    pbm.__U = (ocp, t, k, u, p) -> U(t, k, u, p, pbm, ocp)
-    return nothing
-end # function
-##########################################################
 
 """
     problem_set_s!(pbm, algo, s[, C, DG, G])
