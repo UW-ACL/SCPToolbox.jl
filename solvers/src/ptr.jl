@@ -718,12 +718,10 @@ Args:
 function add_cost!(spbm::Subproblem)::Nothing
 
     # Variables and parameters
-    x = spbm.x
-    u = spbm.u
-    p = spbm.p
+
 
     # Compute the cost components
-    spbm.J = original_cost(x, u, p, spbm.def)
+    compute_original_cost!(spbm)
     compute_trust_region_penalty!(spbm)
     compute_virtual_control_penalty!(spbm)
 
@@ -733,6 +731,76 @@ function add_cost!(spbm::Subproblem)::Nothing
     # Associate cost function with the model
     set_objective_function(spbm.mdl, spbm.J_aug)
     set_objective_sense(spbm.mdl, MOI.MIN_SENSE)
+
+    return nothing
+end # function
+
+"""
+    original_cost(x, u, p, pbm)
+
+Compute the original problem cost function.
+
+# Arguments
+- `spbm`: the subproblem definition.
+
+# Returns
+- `cost`: the original cost.
+"""
+function compute_original_cost!(spbm::Subproblem)::Nothing
+
+    # Variables and parameters
+    pbm = spbm.def
+    N = pbm.pars.N
+    t = pbm.common.t_grid
+    traj_pbm = pbm.traj
+    x = spbm.x
+    u = spbm.u
+    p = spbm.p
+    ##########################################################
+    # NEW PARSER CODE
+    __prg = spbm.__prg
+    __x = spbm.__x
+    __u = spbm.__u
+    __p = spbm.__p
+    ##########################################################
+
+    # Terminal cost
+    xf = x[:, end]
+    J_term = isnothing(traj_pbm.φ) ? 0.0 : traj_pbm.φ(xf, p)
+
+    # Integrated running cost
+    J_run = Vector{Objective}(undef, N)
+    for k = 1:N
+        J_run[k] = isnothing(traj_pbm.Γ) ? 0.0 :
+            traj_pbm.Γ(t[k], k, x[:, k], u[:, k], p)
+    end
+    integ_J_run = trapz(J_run, t)
+
+    spbm.J = J_term+integ_J_run
+
+    ##########################################################
+    # NEW PARSER CODE
+    @add_cost(
+        __prg, (__x, __u, __p),
+        begin
+            local x, u, p = args #noerr
+
+            # Terminal cost
+            local xf = x[:, end]
+            local J_term = isnothing(traj_pbm.φ) ? 0.0 :
+                traj_pbm.φ(xf, p)
+
+            # Integrated running cost
+            local J_run = Vector{Objective}(undef, N)
+            for k = 1:N
+                J_run[k] = isnothing(traj_pbm.Γ) ? 0.0 :
+                    traj_pbm.Γ(t[k], k, x[:, k], u[:, k], p)
+            end
+            local integ_J_run = trapz(J_run, t)
+
+            J_term+integ_J_run
+        end)
+    ##########################################################
 
     return nothing
 end # function

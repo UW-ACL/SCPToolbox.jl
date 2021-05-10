@@ -20,57 +20,73 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("program.jl")
 end
 
-export vary!
+export jacobian, variation
 
 # ..:: Methods ::..
 
 """
-    fill_jacobian!(Df, args, F)
+    jacobian(x, F)
 
-Fill the blocks of the Jacobian of a vector-valued function. Let the function
-be ``f(x)``. The method fills in the blocks of ``D_x f(x)``.
+Compute the Jacobian of `F` with respect to `x`, i.e. ``D_x f(x)``. Assuming
+that `F` is vector-valued, the Jacobian is a matrix.
 
 # Arguments
-- `Df`: a pre-initialized zero matrix to store the Jacobian.
-- `args`: the arguments of the function.
+- `x`: the subset of the function's arguments to compute the Jacobian with
+  respect to.
 - `F`: the function itself.
+
+# Returns
+- `Df`: the Jacobian.
 """
-function fill_jacobian!(Df::Types.RealMatrix,
-                        args::Function,
-                        F::ProgramFunction)::Nothing
+function jacobian(x::Symbol, F::ProgramFunction)::Types.RealMatrix
+    # Create Jacobian matrix
+    nrows = length(value(F))
+    ncols = numel(getfield(program(F), x))
+    Df = zeros(nrows, ncols)
+    # Indices and arguments
     idx_map_all = function_args_id(F)
-    idx_map_arg = function_args_id(F, args)
-    args = args(F)
+    idx_map_arg = function_args_id(F, x)
+    args = getfield(F, x)
+    # Fill in non-zero blocks
     for (id, jacobian_submatrix) in all_jacobians(F)
         if length(id)==1 && (id in idx_map_arg)
             i = slice_indices(args[idx_map_all[id]])
             Df[:, i] = jacobian_submatrix
         end
     end
-    return nothing
+    return Df
 end # function
 
 """
-    fill_jacobian!(Df, xargs, yargs, F)
+    jacobian(x, y, F)
 
-Fill the blocks of the Jacobian of a matrix-valued function. Let the function
-be ``f(x,y)``. This method fills in the blocks of ``D_{xy} f(x,y)``.
+Compute the Jacobian of `F` with respect to `y` followed by `x`, i.e. ``D_{xy}
+f(x, y)``. Assuming that `F` is vector-valued, the Jacobian is a tensor (a 3D
+matrix).
 
 # Arguments
-- `Df`: a pre-initialized zero matrix to store the Jacobian.
-- `xargs`: the ``x``-arguments of the function.
-- `yargs`: the ``y``-arguments of the function.
+- `y`: the part of the function's arguments to compute the Jacobian with
+  respect to second.
+- `y`: the part of the function's arguments to compute the Jacobian with
+  respect to first.
 - `F`: the function itself.
+
+# Returns
+- `Df`: the Jacobian.
 """
-function fill_jacobian!(Df::Types.RealTensor,
-                        xargs::Function,
-                        yargs::Function,
-                        F::ProgramFunction)::Nothing
-    symm = xargs==yargs
+function jacobian(x::Symbol, y::Symbol, F::ProgramFunction)::Types.RealTensor
+    # Create Jacobian tensor
+    nrows = length(value(F))
+    ncols = numel(getfield(program(F), y))
+    ndepth = numel(getfield(program(F), x))
+    Df = zeros(nrows, ncols, ndepth)
+    # Indices and arguments
+    symm = x==y
     idx_map_all = function_args_id(F)
-    idx_map_x = function_args_id(F, xargs)
-    idx_map_y = function_args_id(F, yargs)
-    xargs, yargs = xargs(F), yargs(F)
+    idx_map_x = function_args_id(F, x)
+    idx_map_y = function_args_id(F, y)
+    xargs, yargs = getfield(F, x), getfield(F, y)
+    # Fill in non-zero blocks
     for (id, jacobian_submatrix) in all_jacobians(F)
         if length(id)==2 && ((id[1] in idx_map_x) && (id[2] in idx_map_y))
             i = slice_indices(yargs[idx_map_all[id[2]]])
@@ -81,7 +97,44 @@ function fill_jacobian!(Df::Types.RealTensor,
             end
         end
     end
-    return nothing
+    return Df
+end # function
+
+"""
+    jacobian(x, J)
+
+Compute the Jacobian with respect to `x` of the cost function. This just wraps
+the `jacobian` functions for `ProgramFunction`, and combines their output
+according to the underlying linear combination of cost terms. See the docstring
+ofthe corresponding `jacobian` function for `ProgramFunction` for more info.
+"""
+function jacobian(x::Symbol, J::QuadraticCost)::Types.RealMatrix
+    terms = core_terms(J)
+    Df_terms = Vector{Types.RealMatrix}(undef, length(terms))
+    for i = 1:length(terms)
+        Df_terms[i] = terms.a[i]*jacobian(x, terms.f[i])
+    end
+    Df = sum(Df_terms)
+    return Df
+end # function
+
+"""
+    jacobian(x, y, J)
+
+Compute the Jacobian with respect to `y`, then `x`, of the cost function. This
+just wraps the `jacobian` functions for `ProgramFunction`, and combines their
+output according to the underlying linear combination of cost terms. See the
+docstring ofthe corresponding `jacobian` function for `ProgramFunction` for
+more info.
+"""
+function jacobian(x::Symbol, y::Symbol, J::QuadraticCost)::Types.RealTensor
+    terms = core_terms(J)
+    Df_terms = Vector{Types.RealTensor}(undef, length(terms))
+    for i = 1:length(terms)
+        Df_terms[i] = terms.a[i]*jacobian(x, y, terms.f[i])
+    end
+    Df = sum(Df_terms)
+    return Df
 end # function
 
 """
@@ -194,8 +247,6 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
     end
 
     # Build the constraint function Jacobians
-    nx = numel(prg.x)
-    np = numel(prg.p)
     f = Vector{Types.RealVector}(undef, n_cones)
     Dxf = Vector{Types.RealMatrix}(undef, n_cones)
     Dpf = Vector{Types.RealMatrix}(undef, n_cones)
@@ -203,32 +254,18 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
     for i = 1:n_cones
         C = constraints(prg, i)
         F = lhs(C)
-        K = cone(C)
-        nf = ndims(K)
 
         f[i] = F(jacobians=true)
-
-        Dxf[i] = zeros(nf, nx)
-        Dpf[i] = zeros(nf, np)
-        Dpxf[i] = zeros(nf, nx, np)
-
-        fill_jacobian!(Dxf[i], variables, F)
-        fill_jacobian!(Dpf[i], parameters, F)
-        fill_jacobian!(Dpxf[i], parameters, variables, F)
+        Dxf[i] = jacobian(:x, F)
+        Dpf[i] = jacobian(:p, F)
+        Dpxf[i] = jacobian(:p, :x, F)
     end
 
     # Build the cost function Jacobians
     J = cost(prg)
     J(jacobians=true)
-    DxJ = zeros(1, nx)
-    DxxJ = zeros(1, nx, nx)
-    DpxJ = zeros(1, nx, np)
-    fill_jacobian!(DxJ, variables, core_function(J))
-    fill_jacobian!(DxxJ, variables, variables, core_function(J))
-    fill_jacobian!(DpxJ, parameters, variables, core_function(J))
-    DxJ = DxJ[:]
-    DxxJ = DxxJ[1, :, :]
-    DpxJ = DpxJ[1, :, :]
+    DxxJ = jacobian(:x, :x, J)[1, :, :]
+    DpxJ = jacobian(:p, :x, J)[1, :, :]
 
     # Primal feasibility
     num_x_blk = length(prg.x)
@@ -274,6 +311,7 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
     end
 
     # Stationarity
+    np = numel(prg.p)
     @add_constraint(
         kkt, ZERO, "stat",
         (δx_blks..., δp_blks..., δλ...),

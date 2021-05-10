@@ -158,8 +158,19 @@ Get string description of the kind of function this is.
 """
 function function_kind(F::ProgramFunction)::String
     value_type = typeof(F.f.out[].value)
-    quadratic_type = Types.QExpr
+    quadratic_type = Union{Types.QExpr, AbstractArray{Types.QExpr}}
     kind = (value_type<:quadratic_type) ? "Quadratic" : "Affine"
+    return kind
+end # function
+
+
+"""
+Get string description of the kind of function this is, for a linear
+combination of functions.
+"""
+function function_kind(F::FunctionLinearCombination)::String
+    kinds = [function_kind(f) for f in F.f]
+    kind = any(kinds.=="Quadratic") ? "Quadratic" : "Affine"
     return kind
 end # function
 
@@ -174,31 +185,33 @@ Pretty print an affine function.
 """
 function Base.show(io::IO, F::ProgramFunction)::Nothing
     compact = get(io, :compact, false) #noinfo
+    indent = make_indent(io)
 
-    @printf(io, "%s function\n", function_kind(F))
+    @printf(io, "%s%s function\n", indent, function_kind(F))
 
     all_args = vcat(F.x, F.p)
     if isempty(all_args)
-        @printf("Constant\n")
+        @printf(io, "%sConstant\n", indent)
     else
-        @printf("Arguments:\n")
+        @printf(io, "%sArguments:\n", indent)
         longest_name = maximum([length(arg.name) for arg in all_args])
         name_fmt = @sprintf("  %%-%ds", longest_name)
         for arg in all_args
+            @printf(io, "%s", indent)
             @eval @printf($(name_fmt), $(arg).name)
-            @printf(" (block %d) : ", arg.blid)
-            @printf("%s\n", print_indices(arg.elid))
+            @printf(io, " (block %d) : ", arg.blid)
+            @printf(io, "%s\n", print_indices(arg.elid))
         end
     end
 
     if !compact
         try
             f_value = value(F)
-            @printf("Current value =\n")
-            io2 = IOContext(io, :indent=>1)
+            @printf(io, "%sCurrent value =\n", indent)
+            io2 = IOContext(io, :indent=>get(io, :indent, 0)+1)
             print_array(io2, f_value)
         catch
-            @printf("Not evaluated yet")
+            @printf(io, "%sNot evaluated yet", indent)
         end
     end
 
@@ -216,7 +229,19 @@ Pretty print the cost function.
 """
 function Base.show(io::IO, cost::QuadraticCost)::Nothing
     compact = get(io, :compact, false) #noinfo
-    show(io, cost.J)
+
+    @printf(io, "Cost function composed of %d terms\n", length(cost.terms))
+
+    for i = 1:length(cost.terms)
+        @printf(io, "\nTerm %d:\n", i)
+        @printf(io, "  Coefficient: %.2e\n", cost.terms.a[i])
+        io2 = IOContext(io, :indent=>2)
+        show(io2, cost.terms.f[i])
+        if i<length(cost.terms)
+            @printf(io, "\n")
+        end
+    end
+
     return nothing
 end # function
 
@@ -519,7 +544,7 @@ function Base.show(io::IO, prog::ConicProgram)::Nothing
     if is_feasibility(prog)
         @printf("  Feasibility problem\n")
     else
-        kind = function_kind(cost(prog).J)
+        kind = function_kind(core_terms(cost(prog)))
         @printf("  %s cost function\n", kind)
     end
     @printf(io, "  %d variables (%d blocks)\n", numel(prog.x),

@@ -923,48 +923,6 @@ function add_nonconvex_constraints!(
 end # function
 
 """
-    original_cost(x, u, p, pbm)
-
-Compute the original problem cost function.
-
-# Arguments
-- `x`: the discrete-time state trajectory.
-- `u`: the discrete-time input trajectory.
-- `p`: the parameter vector.
-- `pbm`: the SCP problem definition.
-
-# Returns
-- `cost`: the original cost.
-"""
-function original_cost(
-    x::VariableMatrix,
-    u::VariableMatrix,
-    p::VariableVector,
-    pbm::SCPProblem)::Objective
-
-    # Parameters
-    N = pbm.pars.N
-    t = pbm.common.t_grid
-    traj_pbm = pbm.traj
-
-    # Terminal cost
-    xf = x[:, end]
-    J_term = isnothing(traj_pbm.φ) ? 0.0 : traj_pbm.φ(xf, p)
-
-    # Integrated running cost
-    J_run = Vector{Objective}(undef, N)
-    for k = 1:N
-        J_run[k] = isnothing(traj_pbm.Γ) ? 0.0 :
-            traj_pbm.Γ(t[k], k, x[:, k], u[:, k], p)
-    end
-    integ_J_run = trapz(J_run, t)
-
-    cost = J_term+integ_J_run
-
-    return cost
-end # function
-
-"""
     add_bcs!(spbm[; relaxed])
 
 Add boundary condition constraints to the problem.

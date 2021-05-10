@@ -53,6 +53,7 @@ struct ProgramFunction
     f::DifferentiableFunction # The core computation method
     x::VariableArgumentBlocks # Variable arguments
     p::ConstantArgumentBlocks # Constant arguments
+    prog::Ref{AbstractConicProgram} # The parent conic program
 
     """
         ProgramFunction(prog, x, p)
@@ -81,7 +82,7 @@ struct ProgramFunction
         consts = prog.pars[]
         f = DifferentiableFunction(f, xargs, pargs, consts)
 
-        F = new(f, x, p)
+        F = new(f, x, p, prog)
 
         return F
     end # function
@@ -149,15 +150,10 @@ const Constraints = Vector{ConicConstraint}
 # ..:: Methods ::..
 
 """
-    F([args...][; jacobians, scalar])
+    F([; jacobians, scalar])
 
-Compute the function value and Jacobians. This basically forwards data to the
-underlying `DifferentiableFunction`, which handles the computation.
-
-# Arguments
-- `args`: (optional) evaluate the function for these input argument values. If
-  not provided, the function is evaluated at the values of the internally
-  stored blocks on which it depends.
+Compute the function value and (optionally) Jacobians. This basically forwards
+data to the underlying `DifferentiableFunction`, which handles the computation.
 
 # Keywords
 - `jacobians`: (optional) set to true in order to compute the Jacobians as
@@ -169,16 +165,13 @@ underlying `DifferentiableFunction`, which handles the computation.
   `jacobian` function.
 """
 function (F::ProgramFunction)(
-    args::BlockValue{AtomicConstant}...;
-    jacobians::Bool=false,
+    ;jacobians::Bool=false,
     scalar::Bool=false)::FunctionValueOutputType
 
     # Compute the input argument values
-    if isempty(args)
-        x_input = [value(blk) for blk in F.x]
-        p_input = [value(blk) for blk in F.p]
-        args = vcat(x_input, p_input)
-    end
+    x_input = [value(blk) for blk in F.x]
+    p_input = [value(blk) for blk in F.p]
+    args = vcat(x_input, p_input)
 
     f_value = F.f(args...; jacobians=jacobians, scalar=scalar) # Core call
 
@@ -194,6 +187,7 @@ jacobian(F::ProgramFunction,
 all_jacobians(F::ProgramFunction)::JacobianDictType = all_jacobians(F.f)
 
 """ Convenience getters. """
+program(F::ProgramFunction)::AbstractConicProgram = F.prog[]
 variables(F::ProgramFunction)::VariableArgumentBlocks = F.x
 parameters(F::ProgramFunction)::ConstantArgumentBlocks = F.p
 
@@ -213,25 +207,27 @@ dual(C::ConicConstraint)::Types.RealVector = dual(C.constraint)
 lhs(C::ConicConstraint)::ProgramFunction = C.f
 
 """
-    function_args_id(F, args)
+    function_args_id(F[, args])
 
-Get the input argument indices of `args` for the function `F`.
+Get the input argument indices of `args` for the function `F`. If `args` is
+ommitted then a "map" vector which is [1:nx; 1:np] and can be used to map from
+the absolute argument index to the index in the list of variable or constant
+arguments.
 
 # Arguments
 - `F`: the function.
-- `args`: the arguments of the function, a function which is either `variables`
-  or `parameters`.
+- `args`: (optional) the arguments of the function, as a symbol denoting either
+  the variable arguments (`:x`) or the constant arguments (`:p`).
 
 # Returns
 The index numbers of the arguments.
 """
-function function_args_id(F::ProgramFunction,
-                          args::Function)::LocationIndices
-    nargs = length(args(F))
-    if args==variables
+function function_args_id(F::ProgramFunction, args::Symbol)::LocationIndices
+    nargs = length(getfield(F, args))
+    if args==:x
         return 1:nargs
     else
-        return (1:nargs).+length(variables(F))
+        return (1:nargs).+length(getfield(F, :x))
     end
 end # function
 

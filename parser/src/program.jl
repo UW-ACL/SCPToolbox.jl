@@ -29,7 +29,7 @@ import Base: copy
 
 export ConicProgram, numel, constraints, cost, solve!
 export @new_variable, @new_parameter, @add_constraint,
-    @set_cost, @set_feasibility
+    @add_cost, @set_feasibility
 
 # ..:: Globals ::..
 
@@ -104,7 +104,7 @@ mutable struct ConicProgram <: AbstractConicProgram
         link!(p, prog)
 
         # Add a zero objective (feasibility problem)
-        cost!(prog, feasibility_cost, [], [])
+        add_cost!(prog, feasibility_cost, [], []; new=true)
 
         return prog
     end # function
@@ -244,34 +244,44 @@ function constraint!(prog::ConicProgram,
 end # function
 
 """
-    cost!(prog, J, x, p)
+    add_cost!(prog, J, x, p[, a])
 
-Set the cost of the conic program. The heavy computation is done by the
-user-supplied function `J`, which has to satisfy the requirements of
-`QuadraticDifferentiableFunction`.
+Add a term to the existing cost of the conic program. The heavy computation is
+done by the user-supplied function `J`, which has to satisfy the requirements
+of `DifferentiableFunction`.
 
 # Arguments
 - `prog`: the optimization program.
 - `J`: the core method that can compute the function value and its Jacobians.
 - `x`: the variable argument blocks.
 - `p`: the parameter argument blocks.
-
-# Keywords
-- `feasibility`: (optional) flag that this is a feasibility cost.
+- `a`: (optional) multiplicative coefficient in a linear combination.
 
 # Returns
 - `new_cost`: the newly created cost.
 """
-function cost!(prog::ConicProgram,
-               J::Function,
-               x, p)::QuadraticCost
+function add_cost!(prog::ConicProgram,
+                   J::Function, x, p,
+                   a::Types.RealTypes=1.0;
+                   new::Bool=false)::QuadraticCost
     x = VariableArgumentBlocks(collect(x))
     p = ConstantArgumentBlocks(collect(p))
     J = ProgramFunction(prog, x, p, J)
-    new_cost = QuadraticCost(J, prog)
-    prog.cost[] = new_cost
-    prog._feasibility = length(variables(J))==0
-    return new_cost
+
+    if new
+        new_cost = QuadraticCost(J, prog, a)
+        prog.cost[] = new_cost
+    else
+        add!(prog.cost[], J, a)
+    end
+
+    # Update feasibility flag if new or already determined (from prior calls)
+    # that this is not a feasibility cost
+    if prog._feasibility || new
+        prog._feasibility = length(variables(J))==0
+    end
+
+    return cost(prog)
 end # function
 
 """
@@ -392,6 +402,82 @@ function copy(blk::ArgumentBlock{T},
     return new_blk
 end # function
 
+"""
+    adapt_macro_arguments(args)
+
+Extract corresponding values from the arguments passed to the `@add_constraint`
+and `@add_cost` macros. See the docstrings of those macros for more details.
+
+# Arguments
+- `args`: a tuple of the arguments passed to the macro.
+
+# Returns
+- `x`: expression for the function's variable arguments.
+- `p`: expression for the function's constant arguments.
+- `f`: expression for the function value computation.
+- `J`: expression for the function Jacobian computation.
+"""
+function adapt_macro_arguments(args::NTuple{N, Expr})::NTuple{4, Expr} where N
+    if length(args)==4
+        # The "full" case: all arguments presents
+        x, p, f, J = args
+    elseif length(args)==2
+        # The "minimum" case: no Jacobians and no parameters
+        x, f = args
+        p = :( () )
+        J = :( Dict() )
+    else # length(args)==3
+        # The "ambiguous" case: either Jacobians or parameters
+        if args[2].head==:tuple
+            # No Jacobians
+            x, p, f = args
+            J = :( Dict() )
+        else
+            # No parameters
+            x, f, J = args
+            p = :( () )
+        end
+    end
+    return x, p, f, J
+end # function
+
+"""
+    generate_differentiable_function(f, J)
+
+Generate an anonymous function that can be used to create a
+`DifferentiableFunction` object.
+
+# Arguments
+- `f`: expression for computing the function value.
+- `J`: expression for computing the function Jacobian.
+
+# Returns
+- `anon_func`: an anonymous function expression that is can be used to
+  construct a `DifferentiableFunction` object.
+"""
+function generate_differentiable_function(f::Expr, J::Expr)::Expr
+    anon_func = quote
+        (args...) -> begin
+            # Load the arguments into standardized containers
+            local arg = args[1:end-2]
+            local pars = args[end-1]
+            local jacobians = args[end]
+            # Evaluate function value
+            local out = $f
+            local out = @value(out)
+            # Evaluate function Jacobians
+            if jacobians
+                local jacmap = $J
+                for (key, val) in jacmap
+                    @jacobian(out, key, val)
+                end
+            end
+            return out
+        end
+    end
+    return anon_func
+end # function
+
 # ..:: Macros ::..
 
 """
@@ -505,46 +591,9 @@ macro add_constraint(prog, kind, args...)
         args = args
     end
     # Get the constraint (x, p, f, J) values
-    if length(args)==4
-        # The "full" case: all arguments presents
-        x, p, f, J = args
-    elseif length(args)==2
-        # The "minimum" case: no Jacobians and no parameters
-        x, f = args
-        p = :( () )
-        J = :( Dict() )
-    else # length(args)==3
-        # The "ambiguous" case: either Jacobians or parameters
-        if args[2].head==:tuple
-            # No Jacobians
-            x, p, f = args
-            J = :( Dict() )
-        else
-            # No parameters
-            x, f, J = args
-            p = :( () )
-        end
-    end
+    x, p, f, J = adapt_macro_arguments(args)
     # Make the anonymous function to be constrained
-    anon_func = quote
-        (args...) -> begin
-            # Load the arguments into standardized containers
-            local arg = args[1:end-2]
-            local pars = args[end-1]
-            local jacobians = args[end]
-            # Evaluate function value
-            local out = $f
-            local out = @value(out)
-            # Evaluate function Jacobians
-            if jacobians
-                local jacmap = $J
-                for (key, val) in jacmap
-                    @jacobian(out, key, val)
-                end
-            end
-            return out
-        end
-    end
+    anon_func = generate_differentiable_function(f, J)
     # Make the constraint
     quote
         f = $(esc(anon_func))
@@ -554,37 +603,30 @@ macro add_constraint(prog, kind, args...)
 end # macro
 
 """
-    @set_cost(prog, J, x, p)
-    @set_cost(prog, J, x)
-    @set_feasibility(prog, J)
+    @set_cost(prog, x, p, f, J)
+    @set_cost(prog, x, p, f)
+    @set_cost(prog, x, f, J)
+    @set_cost(prog, x, f)
+    @set_feasibility(prog)
 
-Set the optimization problem cost. This is just a wrapper of the function
-`cost!`, so look there for more info. When both `x` and `p` arguments are
-ommitted, the cost is constant so this must be a feasibility problem. In this
-case, the macro name is `@set_feasibility`
-
-# Arguments
-- `prog`: the optimization program.
-- `J`: the core method that can compute the function value and its Jacobians.
-- `x`: (optional) the variable argument blocks, as a vector/tuple/single
-  element.
-- `p`: (optional) the parameter argument blocks, as a vector/tuple/single
-  element.
-
-# Returns
-- `bar`: description.
+Add a term to the optimization problem cost, or reset it back to a feasibility
+problem. See the docstring of `@add_constraint`, which has more or less the
+same interface as this macro, except that this macro is missing the `kind` and
+`name` fields since there is no conic set involved in defining the cost
+function.
 """
-macro set_cost(prog, J, x, p)
-    :( cost!($(esc.([prog, J, x, p])...)) )
-end # macro
-
-macro set_cost(prog, J, x)
-    :( cost!($(esc.([prog, J, x, []])...)) )
+macro add_cost(prog, args...)
+    # Get the constraint (x, p, f, J) values
+    x, p, f, J = adapt_macro_arguments(args)
+    # Make the anonymous function to be constrained
+    anon_func = generate_differentiable_function(f, J)
+    # Make the constraint
+    quote
+        f = $(esc(anon_func))
+        add_cost!($(esc(prog)), f, $(esc(x)), $(esc(p)))
+    end
 end # macro
 
 macro set_feasibility(prog)
-    quote
-        $(esc(prog))._feasibility = true
-        cost!($(esc(prog)), feasibility_cost, [], [])
-    end
+    :( add_cost!($(esc(prog)), feasibility_cost, [], []; new=true) )
 end # macro
