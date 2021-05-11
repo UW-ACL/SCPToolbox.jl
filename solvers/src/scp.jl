@@ -16,7 +16,9 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
+LangServer = isdefined(@__MODULE__, :LanguageServer)
+
+if LangServer
     include("../../utils/src/Utils.jl")
     include("../../parser/src/Parser.jl")
     using .Utils
@@ -720,13 +722,19 @@ function add_dynamics!(
         F = spbm.ref.dyn.F[:, :, k]
         r = spbm.ref.dyn.r[:, k]
         E = spbm.ref.dyn.E[:, :, k]
-        @add_constraint(
-            prg, ZERO, "dynamics",
-            (xk, xkp1, uk, ukp1, p, vdk),
-            begin
-                local xk, xkp1, uk, ukp1, p, vdk = arg #noerr
-                xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk)
-            end)
+        @add_constraint(prg, ZERO, "dynamics",
+                        (xk, xkp1, uk, ukp1, p, vdk), begin # Value
+                            local xk, xkp1, uk, ukp1, p, vdk = arg #noerr
+                            xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk)
+                        end, begin # Jacobians
+                            if LangServer; local J = Dict(); end
+                            J[1] = -A
+                            J[2] = collect(Int, I(pars.nx)) #noerr
+                            J[3] = -Bm
+                            J[4] = -Bp
+                            J[5] = -F
+                            J[6] = -E
+                        end)
     end
 
     return nothing
@@ -830,26 +838,18 @@ function add_nonconvex_constraints!(
 
             xk, uk, vsk = x[:,k], u[:,k], spbm.vs[:, k]
 
-            @add_constraint(
-                prg, NONPOS, "path_ncvx",
-                (xk, uk, p, vsk),
-                # Value
-                begin
-                    local xk, uk, p, vsk = arg #noerr
-                    local lhs = C*xk+D*uk+G*p+r
-                    lhs-vsk
-                end,
-                # Jacobians
-                begin
-                    local xk, uk, p, vsk = arg #noerr
-                    local dim = length(vsk)
-                    local J = Dict()
-                    J[1] = C
-                    J[2] = D
-                    J[3] = G
-                    J[4] = -collect(Int, I(dim))
-                    J
-                end)
+            @add_constraint(prg, NONPOS, "path_ncvx",
+                            (xk, uk, p, vsk), begin # Value
+                                local xk, uk, p, vsk = arg #noerr
+                                local lhs = C*xk+D*uk+G*p+r
+                                lhs-vsk
+                            end, begin # Jacobians
+                                if LangServer; local J = Dict(); end
+                                J[1] = C
+                                J[2] = D
+                                J[3] = G
+                                J[4] = -collect(Int, I(ns))
+                            end)
         else
             break
         end
@@ -896,19 +896,26 @@ function add_bcs!(
         if relaxed
             spbm.vic = @new_variable(prg, nic, "vic")
             @add_constraint(prg, ZERO, "initial_condition",
-                            (x0, p, spbm.vic),
-                            begin
+                            (x0, p, spbm.vic), begin # Value
                                 local x0, p, vic = arg #noerr
                                 local lhs = H0*x0+K0*p+ℓ0
                                 lhs+vic
+                            end, begin # Jacobian
+                                if LangServer; local J = Dict(); end
+                                J[1] = H0
+                                J[2] = K0
+                                J[3] = collect(Int, I(nic))
                             end)
         else
             @add_constraint(prg, ZERO, "initial_condition",
-                            (x0, p),
-                            begin
+                            (x0, p), begin # Value
                                 local x0, p = arg #noerr
                                 local lhs = H0*x0+K0*p+ℓ0
                                 lhs
+                            end, begin # Jacobian
+                                if LangServer; local J = Dict(); end
+                                J[1] = H0
+                                J[2] = K0
                             end)
         end
     end
@@ -924,19 +931,26 @@ function add_bcs!(
         if relaxed
             spbm.vtc = @new_variable(prg, ntc, "vtc")
             @add_constraint(prg, ZERO, "terminal_condition",
-                            (xf, p, spbm.vtc),
-                            begin
+                            (xf, p, spbm.vtc), begin # Value
                                 local xf, p, vtc = arg #noerr
                                 local lhs = Hf*xf+Kf*p+ℓf
                                 lhs+vtc
+                            end, begin # Jacobian
+                                if LangServer; local J = Dict(); end
+                                J[1] = Hf
+                                J[2] = Kf
+                                J[3] = collect(Int, I(ntc))
                             end)
         else
             @add_constraint(prg, ZERO, "terminal_condition",
-                            (xf, p),
-                            begin
+                            (xf, p), begin # Value
                                 local xf, p = arg #noerr
                                 local lhs = Hf*xf+Kf*p+ℓf
                                 lhs
+                            end, begin # Jacobian
+                                if LangServer; local J = Dict(); end
+                                J[1] = Hf
+                                J[2] = Kf
                             end)
         end
     end

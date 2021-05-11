@@ -15,7 +15,9 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
+LangServer = isdefined(@__MODULE__, :LanguageServer)
+
+if LangServer
     include("../../utils/src/Utils.jl")
     include("../../parser/src/Parser.jl")
 
@@ -212,8 +214,9 @@ function Subproblem(pbm::SCPProblem, iter::Int,
     # Optimization problem handle
     solver = pars.solver
     solver_opts = pars.solver_opts
-    prg = ConicProgram(solver=solver.Optimizer,
-                         solver_options=solver_opts)
+    prg = ConicProgram(pbm.traj;
+                       solver=solver.Optimizer,
+                       solver_options=solver_opts)
     cvx_algo = string(pars.solver)
     algo = @sprintf("PTR (backend: %s)", cvx_algo)
 
@@ -491,6 +494,7 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     N = spbm.def.pars.N
     q = spbm.def.pars.q_tr
     scale = spbm.def.common.scale
+    traj = spbm.def.traj
     prg = spbm.prg
     x = spbm.x
     u = spbm.u
@@ -508,34 +512,46 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     # Parameter trust region
     dp_lq = @new_variable(prg, "dp_lq")
     @add_constraint(prg, cone, "parameter_trust_region",
-                    (p, dp_lq),
-                    begin
+                    (p, dp_lq), begin # Value
                         local p, dp_lq = arg #noerr
                         local ph = scale.iSp*(p-scale.cp)
                         local dp = ph-ph_ref
                         vcat(dp_lq, dp)
+                    end, begin # Jacobian
+                        if LangServer; local J = Dict(); end
+                        J[1] = vcat(zeros(traj.np)', scale.iSp)
+                        J[2] = vcat(1, zeros(traj.np))
                     end)
 
     if q==4
         wp = @new_variable(prg, "wp")
         @add_constraint(prg, SOC, "parameter_trust_region",
-                        (wp, dp_lq),
-                        begin
+                        (wp, dp_lq), begin # Value
                             local wp, dp_lq = arg #noerr
                             vcat(wp, dp_lq)
+                        end, begin # Jacobian
+                            if LangServer; local J = Dict(); end
+                            J[1] = [1; 0]
+                            J[2] = [0; 1]
                         end)
         @add_constraint(prg, GEOM, "parameter_trust_region",
-                        (wp, ηp),
-                        begin
+                        (wp, ηp), begin # Value
                             local wp, ηp = arg #noerr
                             vcat(wp, ηp, 1)
+                        end, begin # Jacobian
+                            if LangServer; local J = Dict(); end
+                            J[1] = [1; 0; 0]
+                            J[2] = [0; 1; 0]
                         end)
     else
         @add_constraint(prg, NONPOS, "parameter_trust_region",
-                        (ηp, dp_lq),
-                        begin
+                        (ηp, dp_lq), begin # Value
                             local ηp, dp_lq = arg #noerr
                             dp_lq-ηp
+                        end, begin # Jacobian
+                            if LangServer; local J = Dict(); end
+                            J[1] = [-1]
+                            J[2] = [1]
                         end)
     end
 
@@ -544,64 +560,88 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     du_lq = @new_variable(prg, N, "du_lq")
     for k = 1:N
         @add_constraint(prg, cone, "state_trust_region",
-                        (dx_lq[k], x[:, k]),
-                        begin
+                        (dx_lq[k], x[:, k]), begin # Value
                             local dxk_lq, xk = arg #noerr
                             local xhk = scale.iSx*(xk-scale.cx)
                             local dxk = xhk-xh_ref[:, k]
                             vcat(dxk_lq, dxk)
+                        end, begin # Jacobian
+                            if LangServer; local J = Dict(); end
+                            J[1] = vcat(1, zeros(traj.nx))
+                            J[2] = vcat(zeros(traj.nx)', scale.iSx)
                         end)
         @add_constraint(prg, cone, "input_trust_region",
-                        (du_lq[k], u[:, k]),
-                        begin
+                        (du_lq[k], u[:, k]), begin # Value
                             local duk_lq, uk = arg #noerr
                             local uhk = scale.iSu*(uk-scale.cu)
                             local duk = uhk-uh_ref[:, k]
                             vcat(duk_lq, duk)
+                        end, begin # Jacobian
+                            if LangServer; local J = Dict(); end
+                            J[1] = vcat(1, zeros(traj.nu))
+                            J[2] = vcat(zeros(traj.nu)', scale.iSu)
                         end)
         if q==4
             # State
             wx = @new_variable(prg, "wx")
             @add_constraint(prg, SOC, "state_trust_region",
-                            (wx, dx_lq[k]),
-                            begin
+                            (wx, dx_lq[k]), begin # Value
                                 local wx, dxk_lq = arg #noerr
                                 vcat(wx, dxk_lq)
+                            end, begin # Jacobian
+                                if LangServer; local J = Dict(); end
+                                J[1] = vcat(1, zeros(traj.nx))
+                                J[2] = vcat(zeros(traj.nx)', I(traj.nx))
                             end)
             @add_constraint(prg, GEOM, "state_trust_region",
-                            (wx, ηx[k]),
-                            begin
+                            (wx, ηx[k]), begin # Value
                                 local wx, ηxk = arg #noerr
                                 vcat(wx, ηxk, 1)
+                            end, begin # Jacobian
+                                if LangServer; local J = Dict(); end
+                                J[1] = [1; 0; 0]
+                                J[2] = [0; 1; 0]
                             end)
             # Input
             wu = @new_variable(prg, "wu")
             @add_constraint(prg, SOC, "input_trust_region",
-                            (wu, du_lq[k]),
-                            begin
+                            (wu, du_lq[k]), begin # Value
                                 local wu, duk_lq = arg #noerr
                                 vcat(wu, duk_lq)
+                            end, begin # Jacobian
+                                if LangServer; local J = Dict(); end
+                                J[1] = vcat(1, zeros(traj.nu))
+                                J[2] = vcat(zeros(traj.nu)', I(traj.nu))
                             end)
             @add_constraint(prg, GEOM, "input_trust_region",
-                            (wu, ηu[k]),
-                            begin
+                            (wu, ηu[k]), begin # Value
                                 local wu, ηuk = arg #noerr
                                 vcat(wu, ηuk, 1)
+                            end, begin # Jacobian
+                                if LangServer; local J = Dict(); end
+                                J[1] = [1; 0; 0]
+                                J[2] = [0; 1; 0]
                             end)
         else
             # State
             @add_constraint(prg, NONPOS, "state_trust_region",
-                            (dx_lq[k], ηx[k]),
-                            begin
+                            (dx_lq[k], ηx[k]), begin # Value
                                 local dxk_lq, ηxk = arg #noerr
                                 dxk_lq-ηxk
+                            end, begin # Jacobian
+                                if LangServer; local J = Dict(); end
+                                J[1] = [1]
+                                J[2] = [-1]
                             end)
             # Input
             @add_constraint(prg, NONPOS, "input_trust_region",
-                            (du_lq[k], ηu[k]),
-                            begin
+                            (du_lq[k], ηu[k]), begin # Value
                                 local duk_lq, ηuk = arg #noerr
                                 duk_lq-ηuk
+                            end, begin # Jacobian
+                                if LangServer; local J = Dict(); end
+                                J[1] = [1]
+                                J[2] = [-1]
                             end)
         end
     end
@@ -687,11 +727,15 @@ function compute_trust_region_penalty!(spbm::Subproblem)::Nothing
     ηp = spbm.ηp
 
     spbm.J_tr = @add_cost(
-        prg, (ηx, ηu, ηp),
-        begin
+        prg, (ηx, ηu, ηp), begin # Value
             local ηx, ηu, ηp = args #noerr
             ηp = ηp[1]
             wtr*(trapz(ηx, t)+trapz(ηu, t)+ηp)
+        end, begin # Jacobian
+            if LangServer; local J = Dict(); end
+            J[1] = wtr*∇trapz(t)
+            J[2] = wtr*∇trapz(t)
+            J[3] = [wtr]
         end)
 
     return nothing
@@ -718,57 +762,87 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
     P = @new_variable(prg, N, "P")
     Pf = @new_variable(prg, 2, "Pf")
     for k = 1:N
+        nvs = length(vs[:, k])
         if k<N
+            sz_E_1 = size(E[:, :, k], 1)
+            nvd = length(vd[:, k])
             @add_constraint(prg, L1, "vd_vs_penalty",
-                            (P[k], vd[:, k], vs[:, k]),
-                            begin
+                            (P[k], vd[:, k], vs[:, k]), begin # Value
                                 local Pk, vdk, vsk = arg #noerr
                                 vcat(Pk, E[:, :, k]*vdk, vsk)
+                            end, begin # Jacobian
+                                if LangServer; local J = Dict(); end
+                                J[1] = vcat(1, zeros(sz_E_1), zeros(nvs))
+                                J[2] = vcat(zeros(nvd)', E[:, :, k],
+                                            zeros(nvs, nvd))
+                                J[3] = vcat(zeros(nvs)', zeros(sz_E_1, nvs),
+                                            I(nvs))
                             end)
         else
             @add_constraint(prg, L1, "vd_vs_penalty",
-                            (P[k], vs[:, k]),
-                            begin
+                            (P[k], vs[:, k]), begin # Value
                                 local Pk, vsk = arg #noerr
                                 vcat(Pk, vsk)
+                            end, begin # Jacobian
+                                if LangServer; local J = Dict(); end
+                                J[1] = vcat(1, zeros(nvs))
+                                J[2] = vcat(zeros(nvs)', I(nvs))
                             end)
         end
     end
 
     if !isnothing(vic)
+        nic = length(vic)
         @add_constraint(prg, L1, "vic_penalty",
-                        (Pf[1], vic), begin
+                        (Pf[1], vic), begin # Value
                             local Pf1, vic = arg #noerr
                             vcat(Pf1, vic)
+                        end, begin # Jacobian
+                            if LangServer; local J = Dict(); end
+                            J[1] = vcat(1, zeros(nic))
+                            J[2] = vcat(zeros(nic)', I(nic))
                         end)
     else
         @add_constraint(prg, ZERO, "vic_penalty",
-                        (Pf[1]), begin
+                        (Pf[1]), begin # Value
                             local Pf1, = arg #noerr
                             Pf1
+                        end, begin # Jacobian
+                            if LangServer; local J = Dict(); end
+                            J[1] = [1]
                         end)
     end
 
     if !isnothing(vtc)
+        ntc = length(vtc)
         @add_constraint(prg, L1, "vtc_penalty",
-                        (Pf[2], vtc),
-                        begin
+                        (Pf[2], vtc), begin # Value
                             local Pf2, vtc = arg #noerr
                             vcat(Pf2, vtc)
+                        end, begin # Jacobian
+                            if LangServer; local J = Dict(); end
+                            J[1] = vcat(1, zeros(ntc))
+                            J[2] = vcat(zeros(ntc)', I(ntc))
                         end)
     else
         @add_constraint(prg, ZERO, "vtc_penalty",
-                        (Pf[2]), begin
+                        (Pf[2]), begin # Value
                             local Pf2, = arg #noerr
                             Pf2
+                        end, begin # Jacobian
+                            if LangServer; local J = Dict(); end
+                            J[1] = [1]
                         end)
     end
 
     spbm.J_vc = @add_cost(
-        prg, (P, Pf),
-        begin
+        prg, (P, Pf), begin # Value
             local P, Pf = args #noerr
             wvc*(trapz(P, t)+sum(Pf))
+        end, begin # Jacobian
+            if LangServer; local J = Dict(); end
+            J[1] = wvc*∇trapz(t)
+            J[2] = wvc*ones(2)
         end)
 
     return nothing

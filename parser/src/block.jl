@@ -24,7 +24,7 @@ end
 
 import JuMP: value
 
-export ArgumentBlock
+export ArgumentBlock, scale
 
 export @scale, @perturb_free, @perturb_fix, @perturb_relative,
     @perturb_absolute
@@ -330,7 +330,7 @@ function Base.hash(blk::ArgumentBlock)::UInt64
 end # function
 
 """
-    value(blk[; raw])
+    value(blk[; raw, unscaled])
 
 Get the value of the block, optionally the raw pre-scaling value.
 
@@ -338,18 +338,22 @@ Get the value of the block, optionally the raw pre-scaling value.
 - `blk`: the block.
 
 # Keywords
-- `raw`: (optional) if true then return the raw underlying scaled value. It is
-  to be understood that scaling does `x=S*xh+c`, and `raw=true` returns `xh`
-  while `raw=false` returns `x`.
+- `raw`: (optional) flag to return the variable expression and not evaluate the
+  numerical value, even if the problem has been solved.
+- `unscaled`: (optional) if true then return the raw underlying scaled
+  value. It is to be understood that scaling does `x=S*xh+c`, and `raw=true`
+  returns `xh` while `raw=false` returns `x`.
 
 # Returns
 - `val`: the block's value.
 """
-function value(blk::ArgumentBlock{T}; raw::Bool=false)::AbstractArray where T
+function value(blk::ArgumentBlock{T};
+               raw::Bool=false,
+               unscaled::Bool=false)::AbstractArray where T
 
     if T<:AtomicVariable
         mdl = jump_model(blk) # The underlying optimization model
-        if termination_status(mdl)==MOI.OPTIMIZE_NOT_CALLED
+        if raw || termination_status(mdl)==MOI.OPTIMIZE_NOT_CALLED
             # Optimization not yet performed, so return the variables
             # themselves
             val = blk.value
@@ -359,7 +363,7 @@ function value(blk::ArgumentBlock{T}; raw::Bool=false)::AbstractArray where T
             val = (val isa AbstractArray) ? val : fill(val)
         end
         # Scale the value
-        val = raw ? val : scale(blk, val)
+        val = unscaled ? val : scale(blk, val)
     else
         val = blk.value
     end

@@ -15,7 +15,9 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
+LangServer = isdefined(@__MODULE__, :LanguageServer)
+
+if LangServer
     include("parameters.jl")
     include("../../../parser/src/Parser.jl")
     include("../../../utils/src/trajectory.jl")
@@ -126,23 +128,23 @@ end # function
 function set_cost!(pbm::TrajectoryProblem,
                             algo::Symbol)::Nothing
 
-    problem_set_running_cost!(
-        pbm, algo,
-        (t, k, x, u, p, pbm) -> begin
-            veh = pbm.mdl.vehicle
-            traj = pbm.mdl.traj
-            l1r = p[veh.id_l1r[k]]
-            l1aa = u[veh.id_l1aa]
-            l1adiff = u[veh.id_l1adiff]
-            aa = u[veh.id_aa]
-            ar = u[veh.id_ar]
-            r_nrml = traj.r0
-            a_nrml = veh.a_max
-            runn = l1r/r_nrml
-            runn += traj.α*l1aa/a_nrml
-            runn += traj.γ*l1adiff/a_nrml
-            return runn
-        end)
+    # problem_set_running_cost!(
+    #     pbm, algo,
+    #     (t, k, x, u, p, pbm) -> begin
+    #         veh = pbm.mdl.vehicle
+    #         traj = pbm.mdl.traj
+    #         l1r = p[veh.id_l1r[k]]
+    #         l1aa = u[veh.id_l1aa]
+    #         l1adiff = u[veh.id_l1adiff]
+    #         aa = u[veh.id_aa]
+    #         ar = u[veh.id_ar]
+    #         r_nrml = traj.r0
+    #         a_nrml = veh.a_max
+    #         runn = l1r/r_nrml
+    #         runn += traj.α*l1aa/a_nrml
+    #         runn += traj.γ*l1adiff/a_nrml
+    #         return runn
+    #     end)
 
     return nothing
 end # function
@@ -241,9 +243,13 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             l1r_k = (p[veh.id_l1r])[k]
 
             @add_constraint(
-                ocp, L1, "abs_r", (r, l1r_k), begin
+                ocp, L1, "abs_r", (r, l1r_k), begin # Value
                     local r, l1r_k = arg #noerr
                     vcat(l1r_k, r)
+                end, begin # Jacobians
+                    if LangServer; local J = Dict(); end
+                    J[1] = vcat(zeros(length(r))', I(length(r)))
+                    J[2] = vcat(1, zeros(length(r)))
                 end)
         end)
 
@@ -259,44 +265,65 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
             @add_constraint(
                 ocp, NONPOS, "accel_bounds",
-                (aa,), begin
+                (aa,), begin # Value
                     local aa, = arg #noerr
                     aa[1]-veh.a_max
+                end, begin # Jacobians
+                    if LangServer; local J = Dict(); end
+                    J[1] = [1]
                 end)
 
             @add_constraint(
                 ocp, NONPOS, "accel_bounds",
-                (aa,), begin
+                (aa,), begin # Value
                     local aa, = arg #noerr
                     -veh.a_max-aa[1]
+                end, begin # Jacobians
+                    if LangServer; local J = Dict(); end
+                    J[1] = [-1]
                 end)
 
             @add_constraint(
                 ocp, NONPOS, "accel_bounds",
-                (ar,), begin
+                (ar,), begin # Value
                     local ar, = arg #noerr
                     ar[1]-veh.a_max
+                end, begin # Jacobians
+                    if LangServer; local J = Dict(); end
+                    J[1] = [1]
                 end)
 
             @add_constraint(
                 ocp, NONPOS, "accel_bounds",
-                (ar,), begin
+                (ar,), begin # Value
                     local ar, = arg #noerr
                     -veh.a_max-ar[1]
+                end, begin # Jacobians
+                    if LangServer; local J = Dict(); end
+                    J[1] = [-1]
                 end)
 
             @add_constraint(
                 ocp, L1, "accel_bounds",
-                (l1aa, aa), begin
+                (l1aa, aa), begin # Value
                     local l1aa, aa = arg #noerr
                     vcat(l1aa, aa)
+                end, begin # Jacobians
+                    if LangServer; local J = Dict(); end
+                    J[1] = [1; 0]
+                    J[2] = [0; 1]
                 end)
 
             @add_constraint(
                 ocp, L1, "accel_bounds",
-                (l1adiff, aa, ar), begin
+                (l1adiff, aa, ar), begin # Value
                     local l1adiff, aa, ar = arg #noerr
                     vcat(l1adiff, aa-ar)
+                end, begin # Jacobians
+                    if LangServer; local J = Dict(); end
+                    J[1] = [1; 0]
+                    J[2] = [0; 1]
+                    J[3] = [0; -1]
                 end)
         end)
 

@@ -28,7 +28,8 @@ end
 import Base: copy
 import JuMP: termination_status, solve_time
 
-export ConicProgram, numel, constraints, cost, solve!, jump_model
+export ConicProgram, numel, constraints, variables, parameters, cost,
+    solve!, jump_model
 export @new_variable, @new_parameter, @add_constraint,
     @add_cost, @set_feasibility
 
@@ -332,11 +333,13 @@ function constraints(prg::ConicProgram,
     if typeof(ref)<:String
         # Search for all constraints the match `ref`
         match_list = Vector{ConicConstraint}(undef, 0)
+        regex = Regex(ref)
         for constraint in prg.constraints
-            if occursin(ref, name(constraint))
+            if occursin(regex, name(constraint))
                 push!(match_list, constraint)
             end
         end
+        match_list = (length(match_list)==1) ? match_list[1] : match_list
         return match_list
     else
         # Get the constraint by numerical reference
@@ -347,6 +350,52 @@ function constraints(prg::ConicProgram,
         end
     end
 end # function
+
+"""
+    blocks(prg, kind[, ref])
+
+Get all or some of the argument blocks of the problem. The interface is similar
+to `constraints`, so see there for more information.
+
+# Arguments
+- `prg`: the optimization problem.
+- `kind`: either `:x` for variable arguments or `:p` for constant arguments.
+- `ref`: (optional) which blocks to get.
+
+# Returns
+- `bar`: description.
+"""
+function blocks(prg::ConicProgram, kind::Symbol,
+                ref=-1)::Union{ArgumentBlock, ArgumentBlocks}
+    z = getfield(prg, kind)
+    if typeof(ref)<:String
+        # Search for all constraints the match `ref`
+        if kind==:x
+            match_list = VariableArgumentBlocks(undef, 0)
+        else
+            match_list = ConstantArgumentBlocks(undef, 0)
+        end
+        regex = Regex(ref)
+        for z_blk in z
+            if occursin(regex, name(z_blk))
+                push!(match_list, z_blk)
+            end
+        end
+        match_list = (length(match_list)==1) ? match_list[1] : match_list
+        return match_list
+    else
+        # Get the constraint by numerical reference
+        if ref>=0
+            return z[ref]
+        else
+            return z[:]
+        end
+    end
+end # function
+
+""" Specialize `blocks` for variable and constant arguments. """
+variables(prg::ConicProgram, ref=-1) = blocks(prg, :x, ref)
+parameters(prg::ConicProgram, ref=-1) = blocks(prg, :p, ref)
 
 """ Get the optimization problem cost. """
 cost(prg::ConicProgram)::QuadraticCost = prg.cost[]
@@ -458,14 +507,14 @@ Generate an anonymous function that can be used to create a
 `DifferentiableFunction` object.
 
 # Arguments
-- `f`: expression for computing the function value.
-- `J`: expression for computing the function Jacobian.
+- `feval`: expression for computing the function value.
+- `Jeval`: expression for computing the function Jacobian.
 
 # Returns
 - `anon_func`: an anonymous function expression that is can be used to
   construct a `DifferentiableFunction` object.
 """
-function generate_differentiable_function(f::Expr, J::Expr)::Expr
+function generate_differentiable_function(feval::Expr, Jeval::Expr)::Expr
     anon_func = quote
         (args...) -> begin
             # Load the arguments into standardized containers
@@ -473,11 +522,15 @@ function generate_differentiable_function(f::Expr, J::Expr)::Expr
             local pars = args[end-1]
             local jacobians = args[end]
             # Evaluate function value
-            local out = $f
+            local out = $feval
             local out = @value(out)
             # Evaluate function Jacobians
             if jacobians
-                local jacmap = $J
+                local jacmap = begin
+                    local J = Dict()
+                    $Jeval
+                    J
+                end
                 for (key, val) in jacmap
                     @jacobian(out, key, val)
                 end
@@ -577,9 +630,11 @@ provice, see above for the exhaustive list of possibilities.
   variables that you declare inside the `begin...end` block should be prepended
   with `local` in order to not have a scope conflict.
 - `J`: (optional) the core computation of the function Jacobians. Just like for
-  `f`, you have the `arg` variable available to use. The function must return a
-  `JacobianDictType` dictionary mapping from the argument to the function to
-  the Jacobian. For example, suppose that `arg==(x..., p...)=(x1, x2,
+  `f`, you have the `arg` variable available to use. In writing this function,
+  you must assume that an (empty) `Dict` variable `J` is available to you. You
+  are to simply set the fields of `J`. The `(key, value)` pairs of the
+  dictionary map from the arguments being differentiated to the resulting
+  Jacobian value. For example, suppose that `arg==(x..., p...)=(x1, x2,
   p1)`. Then your dictionary can entries like `J[1]` which represents the
   Jacobian of `f` with respect to `x1`, and `J[(3,1)]` which represents the
   Jacobian of `f` with respect to `x1`, followed by `p1` (i.e., the matrix

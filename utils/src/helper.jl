@@ -28,7 +28,7 @@ const RealVector = T.RealVector
 const RealMatrix = T.RealMatrix
 
 export skew, get_interval, linterp, zohinterp, straightline_interpolate,
-    rk4, trapz, logsumexp, or
+    rk4, trapz, ∇trapz, logsumexp, or
 
 """ Skew-symmetric matrix from a 3-element vector.
 
@@ -394,6 +394,29 @@ function trapz(f::AbstractVector, grid::RealVector)
         F += 0.5*δ*(f[k+1]+f[k])
     end
     return F
+end # function
+
+"""
+    ∇trapz(grid)
+
+Compute the gradient of the `trapz` function above with respect to its input
+argument vector `f`.
+
+# Arguments
+- `grid`: the discrete grid.
+
+# Returns
+- `∇F`: the gradient of `trapz(F, grid)`.
+"""
+function ∇trapz(grid::RealVector)::RealVector
+    N = length(grid)
+    ∇F = zeros(N)
+    for k = 1:N-1
+        δ = grid[k+1]-grid[k]
+        ∇F[k+1] += 0.5*δ
+        ∇F[k] += 0.5*δ
+    end
+    return ∇F
 end # function
 
 """

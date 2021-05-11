@@ -270,6 +270,7 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
     # Primal feasibility
     num_x_blk = length(prg.x)
     num_p_blk = length(prg.p)
+    num_xp_blk = num_x_blk+num_p_blk
     idcs_x = 1:num_x_blk
     idcs_p = (1:num_p_blk).+idcs_x[end]
     for i = 1:n_cones
@@ -297,16 +298,18 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
             end)
     end
 
-    # Complementary slackness
+    # Complementary slackness (relaxed)
+    ρ = @new_variable(kkt, n_cones, "ρ")
     for i = 1:n_cones
         @add_constraint(
-            kkt, ZERO, "compl_slack",
-            (δx_blks..., δp_blks..., δλ[i]),
+            kkt, L1, "compl_slack",
+            (δx_blks..., δp_blks..., δλ[i], ρ[i]),
             begin
                 local δx = vcat(arg[idcs_x]...) #noerr
                 local δp = vcat(arg[idcs_p]...) #noerr
-                local δλ = arg[idcs_p[end]+1] #noerr
-                dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i])
+                local δλ = arg[num_xp_blk+1] #noerr
+                local ρ = arg[num_xp_blk+2] #noerr
+                vcat(ρ, dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i]))
             end)
     end
 
@@ -318,11 +321,18 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
         begin
             local δx = vcat(arg[idcs_x]...) #noerr
             local δp = vcat(arg[idcs_p]...) #noerr
-            local δλ = arg[(1:n_cones).+idcs_p[end]] #noerr
+            local δλ = arg[(1:n_cones).+num_xp_blk] #noerr
             local ∇L = DxxJ*δx+DpxJ*δp
-            local Dxf_vary_p = (i) -> sum(Dpxf[i][:, :, j]*δp[j] for j=1:np)
-            for i = 1:n_cones
-                ∇L -= Dxf_vary_p(i)'*λ[i]+Dxf[i]'*δλ[i]
+            if np>0
+                local Dxf_vary_p = (i) -> sum(Dpxf[i][:, :, j]*δp[j]
+                                              for j=1:np)
+                for i = 1:n_cones
+                    ∇L -= Dxf_vary_p(i)'*λ[i]+Dxf[i]'*δλ[i]
+                end
+            else
+                for i = 1:n_cones
+                    ∇L -= Dxf[i]'*δλ[i]
+                end
             end
             ∇L
         end)
@@ -337,6 +347,12 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
             end
         end
     end
+
+    # Set a cost to minimize complementary slackness relaxation
+    @add_cost(kkt, (ρ,), begin
+                  local ρ, = arg #noerr
+                  sum(ρ)
+              end)
 
     return varmap, kkt
 end # function
