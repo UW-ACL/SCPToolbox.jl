@@ -264,6 +264,7 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
     # Build the cost function Jacobians
     J = cost(prg)
     J(jacobians=true)
+    # DxJ = jacobian(:x, J)[1, :]
     DxxJ = jacobian(:x, :x, J)[1, :, :]
     DpxJ = jacobian(:p, :x, J)[1, :, :]
 
@@ -299,19 +300,38 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
     end
 
     # Complementary slackness (relaxed)
-    ρ = @new_variable(kkt, n_cones, "ρ")
+    # ρcs = @new_variable(kkt, n_cones, "ρcs")
     for i = 1:n_cones
         @add_constraint(
-            kkt, L1, "compl_slack",
-            (δx_blks..., δp_blks..., δλ[i], ρ[i]),
+            kkt, ZERO, "compl_slack",
+            (δx_blks..., δp_blks..., δλ[i]),
             begin
                 local δx = vcat(arg[idcs_x]...) #noerr
                 local δp = vcat(arg[idcs_p]...) #noerr
                 local δλ = arg[num_xp_blk+1] #noerr
-                local ρ = arg[num_xp_blk+2] #noerr
-                vcat(ρ, dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i]))
+                dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i])
             end)
+        # local lhs = dot(f[i], λ[i])
+        # warn = (abs(lhs)>1e-10) ? "*** " : ""
+        # @printf("%scompl. slack. %d = %.4e\n", warn, i, lhs)
+        # @add_constraint(
+        #     kkt, L1, "compl_slack",
+        #     (δx_blks..., δp_blks..., δλ[i], ρcs[i]),
+        #     begin
+        #         local δx = vcat(arg[idcs_x]...) #noerr
+        #         local δp = vcat(arg[idcs_p]...) #noerr
+        #         local δλ = arg[num_xp_blk+1] #noerr
+        #         local ρcs = arg[num_xp_blk+2] #noerr
+        #         vcat(ρcs, dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i]))
+        #     end)
     end
+
+    # # Show stationarity holds at original point
+    # stat = DxJ-sum(Dxf[i]'*λ[i] for i=1:n_cones)
+    # for i = 1:length(stat)
+    #     warn = (abs(stat[i])>1e-10) ? "*** " : ""
+    #     @printf("%sstationarity %s = %.4e\n", warn, i, stat[i])
+    # end
 
     # Stationarity
     np = numel(prg.p)
@@ -324,8 +344,7 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
             local δλ = arg[(1:n_cones).+num_xp_blk] #noerr
             local ∇L = DxxJ*δx+DpxJ*δp
             if np>0
-                local Dxf_vary_p = (i) -> sum(Dpxf[i][:, :, j]*δp[j]
-                                              for j=1:np)
+                local Dxf_vary_p = (i)->sum(Dpxf[i][:, :, j]*δp[j] for j=1:np)
                 for i = 1:n_cones
                     ∇L -= Dxf_vary_p(i)'*λ[i]+Dxf[i]'*δλ[i]
                 end
@@ -336,6 +355,28 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
             end
             ∇L
         end)
+    # ρst = @new_variable(kkt, "ρst")
+    # @add_constraint(
+    #     kkt, LINF, "stat",
+    #     (δx_blks..., δp_blks..., δλ..., ρst),
+    #     begin
+    #         local δx = vcat(arg[idcs_x]...) #noerr
+    #         local δp = vcat(arg[idcs_p]...) #noerr
+    #         local δλ = arg[(1:n_cones).+num_xp_blk] #noerr
+    #         local ρst = arg[end] #noerr
+    #         local ∇L = DxxJ*δx+DpxJ*δp
+    #         if np>0
+    #             local Dxf_vary_p = (i)->sum(Dpxf[i][:, :, j]*δp[j] for j=1:np)
+    #             for i = 1:n_cones
+    #                 ∇L -= Dxf_vary_p(i)'*λ[i]+Dxf[i]'*δλ[i]
+    #             end
+    #         else
+    #             for i = 1:n_cones
+    #                 ∇L -= Dxf[i]'*δλ[i]
+    #             end
+    #         end
+    #         vcat(ρst, ∇L)
+    #     end)
 
     # Set the perturbation constraints
     for z_blks in [prg.x, prg.p]
@@ -349,10 +390,10 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
     end
 
     # Set a cost to minimize complementary slackness relaxation
-    @add_cost(kkt, (ρ,), begin
-                  local ρ, = arg #noerr
-                  sum(ρ)
-              end)
+    # @add_cost(kkt, (ρcs, ρst), begin
+    #               local ρcs, ρst = arg #noerr
+    #               sum(ρcs)+ρst[1]
+    #           end)
 
     return varmap, kkt
 end # function

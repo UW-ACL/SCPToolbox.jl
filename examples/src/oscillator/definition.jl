@@ -148,18 +148,39 @@ function set_cost!(pbm::TrajectoryProblem,
         (t, k, x, u, p, q, pbm) -> begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
-            l1r = p[veh.id_l1r[k]]
+
             l1aa = u[veh.id_l1aa]
             l1adiff = u[veh.id_l1adiff]
-            aa = u[veh.id_aa]
-            ar = u[veh.id_ar]
+            l1r = p[veh.id_l1r[k]]
             γ = q[veh.id_γ]
+
             r_nrml = traj.r0
             a_nrml = veh.a_max
-            runn = l1r/r_nrml
-            runn += traj.α*l1aa/a_nrml
-            runn += γ*l1adiff/a_nrml
-            return runn
+
+            # Compute value
+            f = l1r/r_nrml
+            f += traj.α*l1aa/a_nrml
+            f += γ*l1adiff/a_nrml
+
+            if x isa Array{T} where {T<:Real}
+                # Jacobians
+                J = Dict()
+
+                J[:u] = zeros(pbm.nu)
+                J[:p] = zeros(pbm.np)
+                J[:q] = zeros(pbm.nq)
+                J[:u][veh.id_l1aa] = traj.α/a_nrml
+                J[:u][veh.id_l1adiff] = γ/a_nrml
+                J[:p][veh.id_l1r[k]] = 1/r_nrml
+                J[:q][veh.id_γ] = l1adiff/a_nrml
+
+                J[(:q, :u)] = zeros(pbm.nu, pbm.nq)
+                J[(:q, :u)][veh.id_l1adiff, veh.id_γ] = 1/a_nrml
+
+                return f, J
+            else
+                return f
+            end
         end)
 
     return nothing
@@ -171,7 +192,7 @@ end # function
 
 Oscillator dynamics.
 
-Args:
+# Arguments
 - `t`: the current time (normalized).
 - `k`: the current discrete-time node.
 - `x`: the current state vector.
@@ -179,7 +200,7 @@ Args:
 - `p`: the parameter vector.
 - `pbm`: the oscillator problem description.
 
-Returns:
+# Returns
 - `f`: the time derivative of the state vector.
 """
 function dynamics(t::RealValue, #nowarn

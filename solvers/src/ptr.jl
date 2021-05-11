@@ -570,26 +570,26 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     du_lq = @new_variable(prg, N, "du_lq")
     for k = 1:N
         @add_constraint(prg, cone, "state_trust_region",
-                        (dx_lq[k], x[:, k]), begin # Value
-                            local dxk_lq, xk = arg #noerr
+                        (x[:, k], dx_lq[k]), begin # Value
+                            local xk, dxk_lq = arg #noerr
                             local xhk = scale.iSx*(xk-scale.cx)
                             local dxk = xhk-xh_ref[:, k]
                             vcat(dxk_lq, dxk)
                         end, begin # Jacobian
                             if LangServer; local J = Dict(); end
-                            J[1] = vcat(1, zeros(traj.nx))
-                            J[2] = vcat(zeros(traj.nx)', scale.iSx)
+                            J[1] = vcat(zeros(traj.nx)', scale.iSx)
+                            J[2] = vcat(1, zeros(traj.nx))
                         end)
         @add_constraint(prg, cone, "input_trust_region",
-                        (du_lq[k], u[:, k]), begin # Value
-                            local duk_lq, uk = arg #noerr
+                        (u[:, k], du_lq[k]), begin # Value
+                            local uk, duk_lq = arg #noerr
                             local uhk = scale.iSu*(uk-scale.cu)
                             local duk = uhk-uh_ref[:, k]
                             vcat(duk_lq, duk)
                         end, begin # Jacobian
                             if LangServer; local J = Dict(); end
-                            J[1] = vcat(1, zeros(traj.nu))
-                            J[2] = vcat(zeros(traj.nu)', scale.iSu)
+                            J[1] = vcat(zeros(traj.nu)', scale.iSu)
+                            J[2] = vcat(1, zeros(traj.nu))
                         end)
         if q==4
             # State
@@ -635,23 +635,23 @@ function add_trust_region!(spbm::Subproblem)::Nothing
         else
             # State
             @add_constraint(prg, NONPOS, "state_trust_region",
-                            (dx_lq[k], ηx[k]), begin # Value
-                                local dxk_lq, ηxk = arg #noerr
+                            (ηx[k], dx_lq[k]), begin # Value
+                                local ηxk, dxk_lq = arg #noerr
                                 dxk_lq-ηxk
                             end, begin # Jacobian
                                 if LangServer; local J = Dict(); end
-                                J[1] = [1]
-                                J[2] = [-1]
+                                J[1] = [-1]
+                                J[2] = [1]
                             end)
             # Input
             @add_constraint(prg, NONPOS, "input_trust_region",
-                            (du_lq[k], ηu[k]), begin # Value
-                                local duk_lq, ηuk = arg #noerr
+                            (ηu[k], du_lq[k]), begin # Value
+                                local ηuk, duk_lq = arg #noerr
                                 duk_lq-ηuk
                             end, begin # Jacobian
                                 if LangServer; local J = Dict(); end
-                                J[1] = [1]
-                                J[2] = [-1]
+                                J[1] = [-1]
+                                J[2] = [1]
                             end)
         end
     end
@@ -689,6 +689,7 @@ Compute the original problem cost function.
 function compute_original_cost!(spbm::Subproblem)::Nothing
 
     # Variables and parameters
+    scp_iter = spbm.iter
     pbm = spbm.def
     N = pbm.pars.N
     t = pbm.common.t_grid
@@ -699,25 +700,69 @@ function compute_original_cost!(spbm::Subproblem)::Nothing
     p = spbm.p
     q = spbm.q
 
+    x_stages = [x[:, k] for k=1:N]
+    u_stages = [u[:, k] for k=1:N]
+
     spbm.J = @add_cost(
-        prg, (x, u, p), (q,),
+        prg, (x_stages..., u_stages..., p), (q,),
         begin
-            local x, u, p, q = args #noerr
+            local x = arg[1:N] #noerr
+            local u = arg[(1:N).+N] #noerr
+            local p, q = arg[end-1:end] #noerr
 
             # Terminal cost
-            local xf = x[:, end]
+            local xf = x[end]
             local J_term = isnothing(traj_pbm.φ) ? 0.0 :
                 traj_pbm.φ(xf, p)
 
             # Integrated running cost
             local J_run = Vector{Objective}(undef, N)
-            for k = 1:N
-                J_run[k] = isnothing(traj_pbm.Γ) ? 0.0 :
-                    traj_pbm.Γ(t[k], k, x[:, k], u[:, k], p, q)
+            local ∇J_run = Vector{Dict}(undef, N)
+            if !isnothing(traj_pbm.Γ)
+                for k = 1:N
+                    out = traj_pbm.Γ(t[k], k, x[k], u[k], p, q)
+                    if out isa Tuple
+                        J_run[k], ∇J_run[k] = out
+                    else
+                        J_run[k] = out
+                    end
+                end
+            else
+                J_run[:] .= 0.0
             end
             local integ_J_run = trapz(J_run, t)
 
             J_term+integ_J_run
+        end, begin # Jacobian
+            local ∇g = ∇trapz(t)
+            local idcs_x = 1:N
+            local idcs_u = (1:N).+idcs_x[end]
+            local idcs_p = idcs_u[end]+1
+            local idcs_q = idcs_p[end]+1
+            # Build Jacobian
+            # Running cost
+            for k = 1:N
+                if isassigned(∇J_run, k)
+                    zmap = Dict(:x=>idcs_x[k], :u=>idcs_u[k],
+                                :p=>idcs_p, :q=>idcs_q)
+                    for (key, val) in ∇J_run[k]
+                        if key isa Symbol
+                            key = zmap[key]
+                        elseif key isa Tuple && length(key)==2
+                            key = (zmap[key[1]], zmap[key[2]])
+                        else
+                            msg = @sprintf("Bad key (%s)", key)
+                            err = SCPError(scp_iter, SCP_BAD_ARGUMENT, msg)
+                            throw(err)
+                        end
+                        if haskey(J, key) #noerr
+                            J[key] += val*∇g[k] #noerr
+                        else
+                            J[key] = val*∇g[k] #noerr
+                        end
+                    end
+                end
+            end
         end)
 
     return nothing
@@ -739,9 +784,14 @@ function compute_trust_region_penalty!(spbm::Subproblem)::Nothing
 
     spbm.J_tr = @add_cost(
         prg, (ηx, ηu, ηp), begin # Value
-            local ηx, ηu, ηp = args #noerr
+            local ηx, ηu, ηp = arg #noerr
             ηp = ηp[1]
             wtr*(trapz(ηx, t)+trapz(ηu, t)+ηp)
+        end, begin # Jacobian
+            if LangServer; local J = Dict(); end
+            J[1] = wtr*∇trapz(t)
+            J[2] = wtr*∇trapz(t)
+            J[3] = [wtr]
         end)
 
     return nothing
@@ -843,8 +893,12 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
 
     spbm.J_vc = @add_cost(
         prg, (P, Pf), begin # Value
-            local P, Pf = args #noerr
+            local P, Pf = arg #noerr
             wvc*(trapz(P, t)+sum(Pf))
+        end, begin # Jacobian
+            if LangServer; local J = Dict(); end
+            J[1] = wvc*∇trapz(t)
+            J[2] = wvc*ones(2)
         end)
 
     return nothing

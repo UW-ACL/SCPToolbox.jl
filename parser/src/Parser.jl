@@ -53,7 +53,7 @@ export SupportedCone, UNCONSTRAINED, ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
 export SupportedDualCone, UNCONSTRAINED_DUAL, ZERO_DUAL, NONPOS_DUAL, L1_DUAL,
     SOC_DUAL, LINF_DUAL, GEOM_DUAL, EXP_DUAL
 export ArgumentBlock, VariableArgumentBlock, ConstantArgumentBlock
-export scale
+export scale, perturbation
 export QuadraticCost
 export variation
 

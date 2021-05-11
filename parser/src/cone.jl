@@ -119,11 +119,11 @@ struct ConvexCone{T<:MOI.AbstractSet}
         # Convert to dual cone
         if kind isa SupportedDualCone
             kind_dual = DUAL_CONE_MAP[kind]
-            if kind==GEOM
+            if kind==GEOM_DUAL
                 t, x = z[1], z[2:end]
                 n = length(x)
                 z = [-t/n; x]
-            elseif kind==EXP
+            elseif kind==EXP_DUAL
                 u, v, w = z
                 z = [-u; -v; exp(1)*w]
             end
