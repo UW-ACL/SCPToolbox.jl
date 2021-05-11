@@ -29,6 +29,7 @@ if LangServer
 
     import .Parser.ConicLinearProgram: ConicProgram, ConvexCone, SupportedCone
     import .Parser.ConicLinearProgram: VariableArgumentBlock
+    import .Parser.ConicLinearProgram: ConstantArgumentBlock
     import .Parser.ConicLinearProgram: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
 end
 
@@ -54,6 +55,7 @@ const CLP = ConicLinearProgram #noerr
 const Variable = ST.Variable
 const Optional = ST.Optional
 const VarArgBlk = VariableArgumentBlock
+const CstArgBlk = ConstantArgumentBlock
 const OptVarArgBlk = Optional{VariableArgumentBlock}
 
 export Parameters, create, solve
@@ -122,6 +124,7 @@ mutable struct Subproblem <: SCPSubproblem
     x::VarArgBlk        # Discrete-time states
     u::VarArgBlk        # Discrete-time inputs
     p::VarArgBlk        # Parameters
+    q::CstArgBlk        # Constant parameters
     # >> Virtual control (never scaled) <<
     vd::VarArgBlk       # Dynamics virtual control
     vs::OptVarArgBlk    # Nonconvex constraints virtual control
@@ -208,6 +211,7 @@ function Subproblem(pbm::SCPProblem, iter::Int,
     nx = pbm.traj.nx
     nu = pbm.traj.nu
     np = pbm.traj.np
+    nq = pbm.traj.nq
     N = pbm.pars.N
     _E = pbm.common.E
 
@@ -227,7 +231,7 @@ function Subproblem(pbm::SCPProblem, iter::Int,
     J_vc = missing
     J_aug = missing
 
-    # Decision variabels
+    # Decision variables
     x = @new_variable(prg, (nx, N), "x")
     u = @new_variable(prg, (nu, N), "u")
     p = @new_variable(prg, np, "p")
@@ -237,6 +241,12 @@ function Subproblem(pbm::SCPProblem, iter::Int,
     @scale(x, Sx, scale.cx)
     @scale(u, Su, scale.cu)
     @scale(p, Sp, scale.cp)
+
+    # Constant parameters
+    q = @new_parameter(prg, nq, "q")
+    q .= pbm.traj.setq()
+    Sq = diag(scale.Sq)
+    @scale(q, Sq, scale.cq)
 
     # Virtual controls
     vd = @new_variable(prg, (size(_E, 2), N-1), "vd")
@@ -249,8 +259,8 @@ function Subproblem(pbm::SCPProblem, iter::Int,
     ηu = @new_variable(prg, N, "ηu")
     ηp = @new_variable(prg, "ηp")
 
-    spbm = Subproblem(iter, prg, algo, pbm, sol, ref, J, J_tr, J_vc,
-                      J_aug, x, u, p,vd, vs, vic, vtc, ηx, ηu, ηp, timing)
+    spbm = Subproblem(iter, prg, algo, pbm, sol, ref, J, J_tr, J_vc, J_aug,
+                      x, u, p, q, vd, vs, vic, vtc, ηx, ηu, ηp, timing)
 
     return spbm
 end # function
@@ -687,11 +697,12 @@ function compute_original_cost!(spbm::Subproblem)::Nothing
     x = spbm.x
     u = spbm.u
     p = spbm.p
+    q = spbm.q
 
     spbm.J = @add_cost(
-        prg, (x, u, p),
+        prg, (x, u, p), (q,),
         begin
-            local x, u, p = args #noerr
+            local x, u, p, q = args #noerr
 
             # Terminal cost
             local xf = x[:, end]
@@ -702,7 +713,7 @@ function compute_original_cost!(spbm::Subproblem)::Nothing
             local J_run = Vector{Objective}(undef, N)
             for k = 1:N
                 J_run[k] = isnothing(traj_pbm.Γ) ? 0.0 :
-                    traj_pbm.Γ(t[k], k, x[:, k], u[:, k], p)
+                    traj_pbm.Γ(t[k], k, x[:, k], u[:, k], p, q)
             end
             local integ_J_run = trapz(J_run, t)
 
@@ -731,11 +742,6 @@ function compute_trust_region_penalty!(spbm::Subproblem)::Nothing
             local ηx, ηu, ηp = args #noerr
             ηp = ηp[1]
             wtr*(trapz(ηx, t)+trapz(ηu, t)+ηp)
-        end, begin # Jacobian
-            if LangServer; local J = Dict(); end
-            J[1] = wtr*∇trapz(t)
-            J[2] = wtr*∇trapz(t)
-            J[3] = [wtr]
         end)
 
     return nothing
@@ -839,10 +845,6 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
         prg, (P, Pf), begin # Value
             local P, Pf = args #noerr
             wvc*(trapz(P, t)+sum(Pf))
-        end, begin # Jacobian
-            if LangServer; local J = Dict(); end
-            J[1] = wvc*∇trapz(t)
-            J[2] = wvc*ones(2)
         end)
 
     return nothing

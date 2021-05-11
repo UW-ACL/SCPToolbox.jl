@@ -52,6 +52,11 @@ total.
 """
 function print_indices(id::LocationIndices, limit::Int=3)::String
 
+    # Check if empty
+    if isempty(id)
+        return ""
+    end
+
     # Check if a single number
     if ndims(id)==0 || length(id)==1
         ids = @sprintf("%d", id[1])

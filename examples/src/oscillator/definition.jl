@@ -36,6 +36,7 @@ function define_problem!(pbm::TrajectoryProblem,
                          algo::Symbol)::Nothing
 
     set_dims!(pbm)
+    set_constants!(pbm)
     set_scale!(pbm)
     set_cost!(pbm, algo)
     set_dynamics!(pbm)
@@ -53,7 +54,21 @@ function set_dims!(pbm::TrajectoryProblem)::Nothing
     # Parameters
     np = pbm.mdl.vehicle.id_l1r[end]
 
-    problem_set_dims!(pbm, 2, 4, np)
+    problem_set_dims!(pbm, 2, 4, np, 1)
+
+    return nothing
+end # function
+
+function set_constants!(pbm::TrajectoryProblem)::Nothing
+
+    problem_set_constants!(
+        pbm, (pbm) -> begin
+            veh = pbm.mdl.vehicle
+            traj = pbm.mdl.traj
+            q = zeros(pbm.nq)
+            q[veh.id_γ] = traj.γ
+            return q
+        end)
 
     return nothing
 end # function
@@ -69,15 +84,15 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     # States
     advise!(pbm, :state, veh.id_r, (-traj.r0, traj.r0))
     advise!(pbm, :state, veh.id_v, (-traj.v0, traj.v0))
+
     # Inputs
     advise!(pbm, :input, veh.id_aa, (-veh.a_max, veh.a_max))
     advise!(pbm, :input, veh.id_ar, (-veh.a_max, veh.a_max))
     advise!(pbm, :input, veh.id_l1aa, (0.0, veh.a_max))
     advise!(pbm, :input, veh.id_l1adiff, (0.0, 2*veh.a_max))
+
     # Parameters
-    for i in veh.id_l1r
-        advise!(pbm, :parameter, i, (0.0, traj.r0))
-    end
+    advise!(pbm, :parameter, veh.id_l1r, (0.0, traj.r0))
 
     return nothing
 end # function
@@ -128,23 +143,24 @@ end # function
 function set_cost!(pbm::TrajectoryProblem,
                             algo::Symbol)::Nothing
 
-    # problem_set_running_cost!(
-    #     pbm, algo,
-    #     (t, k, x, u, p, pbm) -> begin
-    #         veh = pbm.mdl.vehicle
-    #         traj = pbm.mdl.traj
-    #         l1r = p[veh.id_l1r[k]]
-    #         l1aa = u[veh.id_l1aa]
-    #         l1adiff = u[veh.id_l1adiff]
-    #         aa = u[veh.id_aa]
-    #         ar = u[veh.id_ar]
-    #         r_nrml = traj.r0
-    #         a_nrml = veh.a_max
-    #         runn = l1r/r_nrml
-    #         runn += traj.α*l1aa/a_nrml
-    #         runn += traj.γ*l1adiff/a_nrml
-    #         return runn
-    #     end)
+    problem_set_running_cost!(
+        pbm, algo,
+        (t, k, x, u, p, q, pbm) -> begin
+            veh = pbm.mdl.vehicle
+            traj = pbm.mdl.traj
+            l1r = p[veh.id_l1r[k]]
+            l1aa = u[veh.id_l1aa]
+            l1adiff = u[veh.id_l1adiff]
+            aa = u[veh.id_aa]
+            ar = u[veh.id_ar]
+            γ = q[veh.id_γ]
+            r_nrml = traj.r0
+            a_nrml = veh.a_max
+            runn = l1r/r_nrml
+            runn += traj.α*l1aa/a_nrml
+            runn += γ*l1adiff/a_nrml
+            return runn
+        end)
 
     return nothing
 end # function

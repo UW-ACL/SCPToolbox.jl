@@ -69,9 +69,12 @@ struct SCPScaling
     cu::RealVector  # Input scaling offset vector
     Sp::RealMatrix  # Parameter scaling coefficient matrix
     cp::RealVector  # Parameter scaling offset matrix
+    Sq::RealMatrix  # Constant parameter scaling coefficient matrix
+    cq::RealVector  # Constant parameter scaling offset matrix
     iSx::RealMatrix # Inverse of state scaling matrix
     iSu::RealMatrix # Inverse of input scaling matrix
     iSp::RealMatrix # Inverse of parameter scaling coefficient matrix
+    iSq::RealMatrix # Inverse of constant parameter scaling coefficient matrix
 end # struct
 
 """ Indexing arrays for convenient access during dynamics discretization.
@@ -427,6 +430,7 @@ function compute_scaling(
     nx = traj.nx
     nu = traj.nu
     np = traj.np
+    nq = traj.nq
     solver = pars.solver
     solver_opts = pars.solver_opts
     zero_intvl_tol = sqrt(eps())
@@ -436,15 +440,18 @@ function compute_scaling(
     intrvl_x = [0.0; 1.0]
     intrvl_u = [0.0; 1.0]
     intrvl_p = [0.0; 1.0]
+    intrvl_q = [0.0; 1.0]
 
     # >> Compute physical variable bounding boxes <<
 
     x_bbox = fill(1.0, nx, 2)
     u_bbox = fill(1.0, nu, 2)
     p_bbox = fill(1.0, np, 2)
+    q_bbox = fill(1.0, nq, 2)
     x_bbox[:, 1] .= 0.0
     u_bbox[:, 1] .= 0.0
     p_bbox[:, 1] .= 0.0
+    q_bbox[:, 1] .= 0.0
 
     defs = [Dict(:dim => nx,
                  :set => traj.X,
@@ -517,10 +524,19 @@ function compute_scaling(
         end
     end
 
+    for j = 1:2 # 1:min, 2:max
+        for i = 1:nq
+            if !isnothing(traj.qrg[i])
+                q_bbox[i, j] = traj.qrg[i][j]
+            end
+        end
+    end
+
     # >> Compute scaling matrices and offset vectors <<
     wdth_x = intrvl_x[2]-intrvl_x[1]
     wdth_u = intrvl_u[2]-intrvl_u[1]
     wdth_p = intrvl_p[2]-intrvl_p[1]
+    wdth_q = intrvl_q[2]-intrvl_q[1]
 
     # State scaling terms
     x_min, x_max = x_bbox[:, 1], x_bbox[:, 2]
@@ -546,7 +562,17 @@ function compute_scaling(
     iSp = inv(Sp)
     cp = p_min-diag_Sp*intrvl_p[1]
 
-    scale = SCPScaling(Sx, cx, Su, cu, Sp, cp, iSx, iSu, iSp)
+    # Constant parameter scaling terms
+    q_min, q_max = q_bbox[:, 1], q_bbox[:, 2]
+    diag_Sq = (q_max-q_min)/wdth_q
+    diag_Sq[diag_Sq .< zero_intvl_tol] .= 1.0
+    Sq = collect(Diagonal(diag_Sq))
+    iSq = inv(Sq)
+    cq = q_min-diag_Sq*intrvl_q[1]
+
+    # Constant parameter scaling terms
+
+    scale = SCPScaling(Sx, cx, Su, cu, Sp, cp, Sq, cq, iSx, iSu, iSp, iSq)
 
     return scale
 end # function

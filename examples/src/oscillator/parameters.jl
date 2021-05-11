@@ -42,6 +42,7 @@ struct OscillatorParameters
     id_l1aa::Int        # Actual acceleration one-norm (input)
     id_l1adiff::Int     # Acceleration difference one-norm (input)
     id_l1r::T.IntRange  # Position one-norm (parameter)
+    id_γ::Int           # Deadband relaxation equality weight (constant)
     # ..:: Mechanical parameters ::..
     ζ::RealValue           # Damping ratio
     ω0::RealValue          # [rad/s] Natural frequency
@@ -89,6 +90,7 @@ function OscillatorProblem(N::Int)::OscillatorProblem
     id_l1aa = 3
     id_l1adiff = 4
     id_l1r = 1:N
+    id_γ = 1
     # >> Mechanical parameters <<
     ζ = 0.5
     ω0 = 1.0
@@ -97,8 +99,8 @@ function OscillatorProblem(N::Int)::OscillatorProblem
     a_max = 0.3
 
     oscillator = OscillatorParameters(
-        id_r, id_v, id_aa, id_ar, id_l1aa, id_l1adiff, id_l1r, ζ,
-        ω0, a_db, a_max)
+        id_r, id_v, id_aa, id_ar, id_l1aa, id_l1adiff, id_l1r, id_γ,
+        ζ, ω0, a_db, a_max)
 
     # ..:: Trajectory ::..
     r0 = 1.0
