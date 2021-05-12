@@ -28,9 +28,13 @@ end
 
 using Utils
 
+# ..:: Globals ::..
+
 const T = Types
 const RealValue = T.RealTypes
 const RealVector = T.RealVector
+
+# ..:: Data structures ::..
 
 """ Oscillator parameters. """
 struct OscillatorParameters

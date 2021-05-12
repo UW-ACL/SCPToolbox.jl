@@ -29,8 +29,12 @@ end
 using LinearAlgebra
 using Parser
 
+# ..:: Globals ::..
+
 const Trajectory = T.ContinuousTimeTrajectory
 const CLP = ConicLinearProgram
+
+# ..:: Methods ::..
 
 function define_problem!(pbm::TrajectoryProblem,
                          algo::Symbol)::Nothing

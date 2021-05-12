@@ -25,4 +25,10 @@ include("oscillator/plots.jl")
 include("oscillator/tests.jl")
 end # module
 
+module RendezvousPlanar
+include("rendezvous_planar/parameters.jl")
+include("rendezvous_planar/definition.jl")
+include("rendezvous_planar/plots.jl")
+end # module
+
 end # module

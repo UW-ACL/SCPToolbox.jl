@@ -1,7 +1,8 @@
-#= Planar spacecraft rendezvous data structures and custom methods..
+#= Planar spacecraft rendezvous plots.
 
 Sequential convex programming algorithms for trajectory optimization.
-Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington)
+Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
+                   and Autonomous Systems Laboratory (Stanford University)
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -15,137 +16,16 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-include("../core/scp.jl")
-include("../utils/plots.jl")
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-""" Planar rendezvous parameters. """
-struct PlanarRendezvousParameters
-    # ..:: Indices ::..
-    id_r::T_IntVector   # Position (state)
-    id_v::T_IntVector   # Velocity (state)
-    id_θ::T_Int         # Rotation angle (state)
-    id_ω::T_Int         # Rotation rate (state)
-    id_f::T_IntVector   # Thrust forces for RCS pods (input)
-    id_fr::T_IntVector  # Reference thrust forces for RCS pods (input)
-    id_l1f::T_IntVector # Thrust force absolute values for RCS pods (input)
-    id_l1feq::T_IntVector # Thrust force difference one-norm (input)
-    id_t::T_Int         # Time dilation (parameter)
-    # ..:: Mechanical parameters ::..
-    m::T_Real           # [kg] Mass
-    J::T_Real           # [kg*m²] Moment of inertia about CoM
-    lu::T_Real          # [m] CoM longitudinal distance aft of thrusters
-    lv::T_Real          # [m] CoM transverse distance from thrusters
-    uh::T_Function      # Longitudinal "forward" axis in the inertial frame
-    vh::T_Function      # Transverse "up" axis in the inertial frame
-    # ..:: Control parameters ::..
-    f_max::T_Real       # [N] Maximum thrust force
-    f_db::T_Real        # [N] Deadband thrust force
+if isdefined(@__MODULE__, :LanguageServer)
+    include("parameters.jl")
+    include("../../../solvers/src/Solvers.jl")
+    include("../../../solvers/src/scp.jl")
+    using .Solvers
 end
 
-""" Planar rendezvous flight environment. """
-struct PlanarRendezvousEnvironmentParameters
-    xh::T_RealVector # Inertial horizontal axis
-    yh::T_RealVector # Inertial vertical axis
-    n::T_Real        # [rad/s] Orbital mean motion
-end
-
-""" Trajectory parameters. """
-mutable struct PlanarRendezvousTrajectoryParameters
-    r0::T_RealVector # [m] Initial position
-    v0::T_RealVector # [m/s] Initial velocity
-    θ0::T_Real       # [rad] Initial rotation angle
-    ω0::T_Real       # [rad/s] Initial rotation rate
-    vf::T_Real       # [m/s] Final approach speed
-    tf_min::T_Real   # [s] Minimum flight time
-    tf_max::T_Real   # [s] Maximum flight time
-    κ1::T_Real       # Sigmoid homotopy parameter
-    κ2::T_Real       # Normalization homotopy parameter
-    γ::T_Real        # Control weight for deadband relaxation
-end
-
-""" Planar rendezvous trajectory optimization problem parameters all in
-one. """
-struct PlanarRendezvousProblem
-    vehicle::PlanarRendezvousParameters        # The ego-vehicle
-    env::PlanarRendezvousEnvironmentParameters # The environment
-    traj::PlanarRendezvousTrajectoryParameters # The trajectory
-end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-"""
-    PlanarRendezvousProblem()
-
-Constructor for the planar rendezvous problem.
-
-# Returns
-- `mdl`: the problem definition object.
-"""
-function PlanarRendezvousProblem()::PlanarRendezvousProblem
-
-    # ..:: Environment ::..
-    xh = [1.0; 0.0]
-    yh = [0.0; 1.0]
-    μ = 3.986e14 # [m³/s²] Standard gravitational parameter
-    Re = 6378e3 # [m] Earth radius
-    R = Re+400e3 # [m] Orbit radius
-    n = sqrt(μ/R^3)
-    env = PlanarRendezvousEnvironmentParameters(xh, yh, n)
-
-    # ..:: Spacecraft vehicle ::..
-    # >> Indices <<
-    id_r = 1:2
-    id_v = 3:4
-    id_θ = 5
-    id_ω = 6
-    id_f = 1:3
-    id_fr = 4:6
-    id_l1f = 7:9
-    id_l1feq = 10:12
-    id_t = 1
-    # >> Mechanical parameters <<
-    m = 30e3
-    J = 1e5
-    lu = 0.6
-    lv = 2.1
-    uh = (θ) -> -cos(θ)*xh+sin(θ)*yh
-    vh = (θ) -> -sin(θ)*xh-cos(θ)*yh
-    # >> Control parameters <<
-    f_max = 445.0
-    f_db = 50.0
-
-    sc = PlanarRendezvousParameters(
-        id_r, id_v, id_θ, id_ω, id_f, id_fr, id_l1f, id_l1feq, id_t,
-        m, J, lu, lv, uh, vh, f_max, f_db)
-
-    # ..:: Trajectory ::..
-    r0 = 100.0*xh+10.0*yh
-    v0 = 0.0*xh
-    θ0 = deg2rad(180.0)
-    ω0 = 0.0
-    vf = 0.1
-    tf_min = 100.0
-    tf_max = 500.0
-    κ1 = NaN
-    κ2 = 1.0
-    γ = 1e-3
-    traj = PlanarRendezvousTrajectoryParameters(
-        r0, v0, θ0, ω0, vf, tf_min, tf_max, κ1, κ2, γ)
-
-    mdl = PlanarRendezvousProblem(sc, env, traj)
-
-    return mdl
-end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+using Solvers
+using Colors
+using Printf
 
 """
     plot_final_trajectory(mdl, sol)
@@ -164,7 +44,7 @@ function plot_final_trajectory(mdl::PlanarRendezvousProblem,
     traj = mdl.traj
     dt_clr = rgb(generate_colormap(), 1.0)
     N = size(sol.xd, 2)
-    speed = [norm(@k(sol.xd[mdl.vehicle.id_v, :])) for k=1:N]
+    speed = [norm(sol.xd[mdl.vehicle.id_v, k]) for k=1:N]
     v_cmap = generate_colormap("inferno"; minval=minimum(speed),
                                maxval=maximum(speed))
     u_scale = 0.2
@@ -181,18 +61,18 @@ function plot_final_trajectory(mdl::PlanarRendezvousProblem,
 
     # Collect the continuous-time trajectory data
     ct_res = 1000
-    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
-    ct_pos = T_RealMatrix(undef, 2, ct_res)
-    ct_speed = T_RealVector(undef, ct_res)
+    ct_τ = RealVector(LinRange(0.0, 1.0, ct_res))
+    ct_pos = RealMatrix(undef, 2, ct_res)
+    ct_speed = RealVector(undef, ct_res)
     for k = 1:ct_res
-        xk = sample(sol.xc, @k(ct_τ))
-        @k(ct_pos) = xk[mdl.vehicle.id_r]
-        @k(ct_speed) = norm(xk[mdl.vehicle.id_v])
+        xk = sample(sol.xc, ct_τ[k])
+        ct_pos[:, k] = xk[mdl.vehicle.id_r]
+        ct_speed[k] = norm(xk[mdl.vehicle.id_v])
     end
 
     # Plot the trajectory
     for k = 1:ct_res-1
-        r, v = @k(ct_pos), @k(ct_speed)
+        r, v = ct_pos[:, k], ct_speed[k]
         x, y = r
         ax.plot(x, y,
                 linestyle="none",
@@ -244,8 +124,8 @@ function plot_attitude(mdl::PlanarRendezvousProblem,
     tf = sol.p[veh.id_t]
     traj = mdl.traj
     ct_res = 500
-    td = T_RealVector(LinRange(0.0, 1.0, N))*tf
-    τc = T_RealVector(LinRange(0.0, 1.0, ct_res))
+    td = RealVector(LinRange(0.0, 1.0, N))*tf
+    τc = RealVector(LinRange(0.0, 1.0, ct_res))
     tc = τc*tf
     clr = rgb(generate_colormap(), 1.0)
 
@@ -321,8 +201,8 @@ function plot_thrusts(mdl::PlanarRendezvousProblem,
     tf = sol.p[veh.id_t]
     ct_res = 500
     polar_resol = 1000
-    td = T_RealVector(LinRange(0.0, 1.0, N))*tf
-    τc = T_RealVector(LinRange(0.0, 1.0, ct_res))
+    td = RealVector(LinRange(0.0, 1.0, N))*tf
+    τc = RealVector(LinRange(0.0, 1.0, ct_res))
     tc = τc*tf
     clr = rgb(generate_colormap(), 1.0)
     n_rcs = length(veh.id_f)
@@ -396,7 +276,7 @@ function plot_thrusts(mdl::PlanarRendezvousProblem,
                 solid_capstyle="round",
                 zorder=10)
 
-        # With deadband
+        # With deadbaned
         ax.plot(fr_rng, f_polar,
                 color=Green,
                 linewidth=2,

@@ -15,35 +15,50 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-include("../../models/rendezvous_planar.jl")
+LangServer = isdefined(@__MODULE__, :LanguageServer)
 
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Trajectory optimization problem ::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+if LangServer
+    include("parameters.jl")
+    include("../../../parser/src/Parser.jl")
+    include("../../../utils/src/trajectory.jl")
+    using .Parser
+    import .Parser.ConicLinearProgram: @add_constraint
+    import .Parser.ConicLinearProgram: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
+end
+
+using LinearAlgebra
+using Parser
+
+# ..:: Globals ::..
+
+const Trajectory = T.ContinuousTimeTrajectory
+const CLP = ConicLinearProgram
+
+# ..:: Methods ::..
 
 function define_problem!(pbm::TrajectoryProblem,
-                         algo::T_Symbol)::Nothing
-    _common__set_dims!(pbm)
-    _common__set_scale!(pbm)
-    _common__set_cost!(pbm, algo)
-    _common__set_dynamics!(pbm)
-    _common__set_convex_constraints!(pbm)
-    _common__set_nonconvex_constraints!(pbm, algo)
-    _common__set_bcs!(pbm)
+                         algo::Symbol)::Nothing
+    set_dims!(pbm)
+    set_scale!(pbm)
+    set_cost!(pbm, algo)
+    set_dynamics!(pbm)
+    set_convex_constraints!(pbm)
+    set_nonconvex_constraints!(pbm, algo)
+    set_bcs!(pbm)
 
-    _common__set_guess!(pbm)
+    set_guess!(pbm)
 
     return nothing
 end
 
-function _common__set_dims!(pbm::TrajectoryProblem)::Nothing
+function set_dims!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_dims!(pbm, 6, 12, 1)
 
     return nothing
 end
 
-function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
+function set_scale!(pbm::TrajectoryProblem)::Nothing
 
     # Parameters
     mdl = pbm.mdl
@@ -94,7 +109,7 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
+function set_guess!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_guess!(
         pbm, (N, pbm) -> begin
@@ -127,12 +142,12 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-function _common__set_cost!(pbm::TrajectoryProblem,
-                            algo::T_Symbol)::Nothing
+function set_cost!(pbm::TrajectoryProblem,
+                            algo::Symbol)::Nothing
 
     problem_set_running_cost!(
         pbm, algo,
-        (t, k, x, u, p, pbm) -> begin
+        (t, k, x, u, p, q, pbm) -> begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
             l1f = u[veh.id_l1f]
@@ -148,7 +163,7 @@ function _common__set_cost!(pbm::TrajectoryProblem,
 
 end
 
-function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
+function set_dynamics!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_dynamics!(
         pbm,
@@ -239,41 +254,83 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
+function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the input
     problem_set_U!(
-        pbm, (t, k, u, p, pbm) -> begin
+        pbm, (t, k, u, p, pbm, ocp) -> begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
             n_rcs = length(veh.id_f)
 
-            fm, fp, f0 = u[veh.id_f]
-            fmr, fpr, f0r = u[veh.id_fr]
-            l1fm, l1fp, l1f0 = u[veh.id_l1f]
-            l1fmeq, l1fpeq, l1f0eq = u[veh.id_l1feq]
             tdil = p[veh.id_t]
 
-            C = T_ConvexConeConstraint
-            U = [[C(u[veh.id_l1f[i]]-veh.f_max, :nonpos) for i=1:n_rcs]...,
-                 [C(u[veh.id_fr[i]]-veh.f_max, :nonpos) for i=1:n_rcs]...,
-                 [C(-veh.f_max-u[veh.id_fr[i]], :nonpos) for i=1:n_rcs]...,
-                 [C(vcat(u[veh.id_l1f[i]], u[veh.id_f[i]]), :l1)
-                  for i=1:n_rcs]...,
-                 [C(vcat(u[veh.id_l1feq[i]],
-                         u[veh.id_f[i]]-u[veh.id_fr[i]]), :l1)
-                  for i=1:n_rcs]...,
-                 C(tdil-traj.tf_max, :nonpos),
-                 C(traj.tf_min-tdil, :nonpos)]
+            for i = 1:n_rcs
 
-            return U
+                f_i = u[veh.id_f[i]]
+                fr_i = u[veh.id_fr[i]]
+                l1f_i = u[veh.id_l1f[i]]
+                l1feq_i = u[veh.id_l1feq[i]]
+
+                @add_constraint(
+                    ocp, NONPOS, "thrust_absval_max",
+                    (l1f_i,), begin
+                        local l1f, = arg #noerr
+                        l1f[1]-veh.f_max
+                    end)
+
+                @add_constraint(
+                    ocp, NONPOS, "thrust_refval_max",
+                    (fr_i,), begin
+                        local fr, = arg #noerr
+                        fr[1]-veh.f_max
+                    end)
+
+                @add_constraint(
+                    ocp, NONPOS, "thrust_refval_min",
+                    (fr_i,), begin
+                        local fr, = arg #noerr
+                        -fr[1]-veh.f_max
+                    end)
+
+                @add_constraint(
+                    ocp, L1, "thrust_absval",
+                    (l1f_i, f_i), begin
+                        local l1f, f = arg #noerr
+                        vcat(l1f, f)
+                    end)
+
+                @add_constraint(
+                    ocp, L1, "thrust_absval",
+                    (l1feq_i, f_i, fr_i), begin
+                        local l1feq, f, fr = arg #noerr
+                        vcat(l1feq, f-fr)
+                    end)
+
+            end
+
+            @add_constraint(
+                ocp, NONPOS, "thrust_absval",
+                (tdil, ), begin
+                    local tdil, = arg #noerr
+                    tdil[1]-traj.tf_max
+                end)
+
+            @add_constraint(
+                ocp, NONPOS, "thrust_absval",
+                (tdil, ), begin
+                    local tdil, = arg #noerr
+                    traj.tf_min-tdil[1]
+                end)
+
+            return nothing
         end)
 
     return nothing
 end
 
-function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
-                                             algo::T_Symbol)::Nothing
+function set_nonconvex_constraints!(pbm::TrajectoryProblem,
+                                             algo::Symbol)::Nothing
 
     veh = pbm.mdl.vehicle
     n_rcs = length(veh.id_f)
@@ -345,7 +402,7 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
     return nothing
 end
 
-function _common__set_bcs!(pbm::TrajectoryProblem)::Nothing
+function set_bcs!(pbm::TrajectoryProblem)::Nothing
 
     # Initial conditions
     problem_set_bc!(

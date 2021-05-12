@@ -244,9 +244,11 @@ function Subproblem(pbm::SCPProblem, iter::Int,
 
     # Constant parameters
     q = @new_parameter(prg, nq, "q")
-    q .= pbm.traj.setq()
-    Sq = diag(scale.Sq)
-    @scale(q, Sq, scale.cq)
+    if nq>0
+        q .= pbm.traj.setq()
+        Sq = diag(scale.Sq)
+        @scale(q, Sq, scale.cq)
+    end
 
     # Virtual controls
     vd = @new_variable(prg, (size(_E, 2), N-1), "vd")
