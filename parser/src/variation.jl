@@ -234,15 +234,26 @@ around the optimal solution.
 - `prg`: the optimization problem structure.
 
 # Keywords
-- `perturbation`: (optional) a fixed perturbation to set for the parameter
-  vector.
+- `ignore_variables`: (optional) a list of regexp matchers for primal variables
+  to ignore.
+- `ignore_constraints`: (optional) a list of regexp matches for primal
+  constraints to ignore.
+- `use_kkt`: (optional) use a KKT stacked matrix to impose the complementary
+  slackness and stationarity conditions, instead of individually
+  constraint-by-constraint. This has theoretical analysis advantages, like
+  being able to expore the KKT matrix nullspace.
+- `relax`: (optional) whether to relax the complementary slackness
+  condition. So far I've observed that for problems involving cones like L1,
+  this is necessary.
 
 # Returns
 - `bar`: description.
 """
 function variation(prg::ConicProgram;
                    ignore_variables::Vector{String}=String[],
-                   ignore_constraints::Vector{String}=String[])::Tuple{
+                   ignore_constraints::Vector{String}=String[],
+                   use_kkt::Bool=false,
+                   relax::Bool=false)::Tuple{
                        ArgumentBlockMap, ConicProgram}
 
     # Initialize the variational problem
@@ -252,7 +263,7 @@ function variation(prg::ConicProgram;
     # Make the ignore lists and checker function
     varignorelist = [Regex(r) for r in ignore_variables]
     cstignorelist = [Regex(r) for r in ignore_constraints]
-    isignored = (obj, ignorelist)->any(occursin.(ignorelist, name(obj)))
+    checkoccurs = (obj, ignorelist)->any(occursin.(ignorelist, name(obj)))
 
     # Create the concatenated primal variable perturbation
     varmap = Dict{ArgumentBlock, Any}()
@@ -262,7 +273,7 @@ function variation(prg::ConicProgram;
         z = getfield(prg, type)
         allowed_vars[type] = Vector{ArgumentBlock}(undef, 0)
         for z_blk in z
-            if isignored(z_blk, varignorelist)
+            if checkoccurs(z_blk, varignorelist)
                 continue
             end
 
@@ -288,7 +299,7 @@ function variation(prg::ConicProgram;
     δλ = VariableArgumentBlocks(undef, 0)
     for i in id_cones_all
         C = constraints(prg, i)
-        if isignored(C, cstignorelist)
+        if checkoccurs(C, cstignorelist)
             continue
         end
 
@@ -369,41 +380,93 @@ function variation(prg::ConicProgram;
             end)
     end
 
+    # Initialize "KKT matrix" of stacked complementary slackness and
+    # stationarity conditions
+    n_δx = sum([length(blk) for blk in δx_blks])
+    n_δp = sum([length(blk) for blk in δp_blks])
+    n_δλ = sum([length(blk) for blk in δλ])
+    kkt_cols = n_δx+n_δp+n_δλ
+    kkt_rows = n_cones_red+size(DxxJ, 1)
+    KKT = zeros(kkt_rows, kkt_cols)
+    kkt_id_δx = vcat([slice_indices(blk) for blk in δx_blks]...)
+    kkt_id_δp = vcat([slice_indices(blk) for blk in δp_blks]...)
+
     # Complementary slackness
+    μ = @new_variable(kkt, n_cones_red, "μ")
     for i = 1:n_cones_red
-        @add_constraint(
-            kkt, ZERO, "compl_slack",
-            (δx_blks..., δp_blks..., δλ[i]),
-            begin
-                local δx = vcat(arg[idcs_x]...) #noerr
-                local δp = vcat(arg[idcs_p]...) #noerr
-                local δλ = arg[num_xp_blk+1] #noerr
-                dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i])
-            end)
+        if !use_kkt
+            @add_constraint(
+                kkt, ZERO, "compl_slack",
+                (δx_blks..., δp_blks..., δλ[i], μ[i]),
+                begin
+                    local δx = vcat(arg[idcs_x]...) #noerr
+                    local δp = vcat(arg[idcs_p]...) #noerr
+                    local δλ = arg[end-1] #noerr
+                    local μ = arg[end] #noerr
+                    dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i])-μ[1]
+                end)
+        end
+
+        # Fill KKT matrix for complementary slackness
+        KKT[i, kkt_id_δx] = Dxf[i]'*λ[i]
+        KKT[i, kkt_id_δp] = Dpf[i]'*λ[i]
+        KKT[i, slice_indices(δλ[i])] = f[i]
     end
 
     # Stationarity
     np = numel(prg.p)
-    @add_constraint(
-        kkt, ZERO, "stat",
-        (δx_blks..., δp_blks..., δλ...),
-        begin
-            local δx = vcat(arg[idcs_x]...) #noerr
-            local δp = vcat(arg[idcs_p]...) #noerr
-            local δλ = arg[(1:n_cones_red).+num_xp_blk] #noerr
-            local ∇L = DxxJ*δx+DpxJ*δp
-            if np>0
-                local Dxf_vary_p = (i)->sum(Dpxf[i][:, :, j]*δp[j] for j=1:np)
-                for i = 1:n_cones_red
-                    ∇L -= Dxf_vary_p(i)'*λ[i]+Dxf[i]'*δλ[i]
+    stat_rows = (n_cones_red+1):kkt_rows
+    if !use_kkt
+        @add_constraint(
+            kkt, ZERO, "stat",
+            (δx_blks..., δp_blks..., δλ...),
+            begin
+                local δx = vcat(arg[idcs_x]...) #noerr
+                local δp = vcat(arg[idcs_p]...) #noerr
+                local δλ = arg[(1:n_cones_red).+num_xp_blk] #noerr
+                local ∇L = DxxJ*δx+DpxJ*δp
+                if np>0
+                    local Dxf_vary_p = (i)->sum(Dpxf[i][:, :, j]*δp[j]
+                                                for j=1:np)
+                    for i = 1:n_cones_red
+                        ∇L -= Dxf_vary_p(i)'*λ[i]+Dxf[i]'*δλ[i]
+                    end
+                else
+                    for i = 1:n_cones_red
+                        ∇L -= Dxf[i]'*δλ[i]
+                    end
                 end
-            else
-                for i = 1:n_cones_red
-                    ∇L -= Dxf[i]'*δλ[i]
-                end
+                ∇L
+            end)
+    end
+
+    # Fill KKT matrix for stationarity
+    KKT[stat_rows, kkt_id_δx] = DxxJ
+    KKT[stat_rows, kkt_id_δp] = DpxJ
+    for i = 1:n_cones_red
+        if np>0
+            for j=1:length(kkt_id_δp)
+                jj = kkt_id_δp[j]
+                KKT[stat_rows, jj] -= Dpxf[i][:, :, j]'*λ[i]
             end
-            ∇L
-        end)
+        end
+        KKT[stat_rows, slice_indices(δλ[i])] -= Dxf[i]'
+    end
+
+    if use_kkt
+        @add_constraint(
+            kkt, ZERO, "kkt",
+            (δx_blks..., δp_blks..., δλ..., μ),
+            begin
+                local δx = vcat(arg[idcs_x]...) #noerr
+                local δp = vcat(arg[idcs_p]...) #noerr
+                local δλ = vcat(arg[(num_xp_blk+1):(end-1)]...) #noerr
+                local μ = arg[end] #noerr
+                local δZ = vcat(δx, δp, δλ)
+                local rhs = vcat(μ, zeros(length(kkt_rows)))
+                KKT*δZ-rhs
+            end)
+    end
 
     # Set the perturbation constraints
     for kind in [:x, :p] #noinfo
@@ -415,6 +478,26 @@ function variation(prg::ConicProgram;
                 set_perturbation_constraint!(kkt, z, δz)
             end
         end
+    end
+
+    if relax
+        # Minimize complementary slackness relaxation
+        l1μ = @new_variable(kkt, "l1μ")
+        @add_constraint(kkt, L1, "l1μ", (l1μ, μ,), begin
+                            local l1μ, μ = arg #noerr
+                            vcat(l1μ, μ)
+                        end)
+
+        @add_cost(kkt, (l1μ,), begin
+                      local l1μ, = arg #noerr
+                      l1μ
+                  end)
+    else
+        # Force zero relaxation
+        @add_constraint(kkt, ZERO, "μ_zero", (μ,), begin
+                            local μ, = arg #noerr
+                            μ
+                        end)
     end
 
     return varmap, kkt

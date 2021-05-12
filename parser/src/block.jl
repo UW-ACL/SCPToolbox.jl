@@ -22,9 +22,9 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("scaling.jl")
 end
 
-import JuMP: value
+import JuMP: value, name
 
-export ArgumentBlock, scale, perturbation
+export ArgumentBlock, scale, perturbation, name
 
 export @scale, @perturb_free, @perturb_fix, @perturb_relative,
     @perturb_absolute

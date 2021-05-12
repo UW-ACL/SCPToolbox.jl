@@ -47,6 +47,8 @@ using .ConicLinearProgram
 
 export ConicProgram, numel, constraints, variables, parameters, cost,
     solve!, jump_model
+export value, name, dual, cone, lhs, jacobian, all_jacobians, kind,
+    variables, parameters
 export ConvexCone, add!, isfixed, isfree, dual, indicator!
 export jacobian, set_jacobian!
 export SupportedCone, UNCONSTRAINED, ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP

@@ -25,7 +25,8 @@ end
 
 import JuMP: dual
 
-export value, name, dual, cone
+export value, name, dual, cone, lhs, jacobian, all_jacobians, kind,
+    variables, parameters
 
 # ..:: Globals ::..
 
