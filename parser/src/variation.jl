@@ -330,8 +330,6 @@ function variation(prg::ConicProgram;
         if abs(compl_slack)>max_viol
             max_viol = abs(compl_slack)
         end
-        # warn = (abs(compl_slack)>1e-10) ? "*** " : ""
-        # @printf("%scompl. slack. %d = %.4e\n", warn, i, compl_slack)
     end
     @printf("Complementary slackness violation = %.4e\n", max_viol)
 
@@ -339,10 +337,6 @@ function variation(prg::ConicProgram;
     stat = DxJ-sum(Dxf[i]'*λ[i] for i=1:n_cones_red)
     max_viol = norm(stat, Inf)
     @printf("Stationarity violation = %.4e\n", max_viol)
-    # for i = 1:length(stat)
-    #     warn = (abs(stat[i])>1e-10) ? "*** " : ""
-    #     @printf("%sstationarity %s = %.4e\n", warn, i, stat[i])
-    # end
 
     # Primal feasibility
     num_x_blk = length(δx_blks)
@@ -376,26 +370,15 @@ function variation(prg::ConicProgram;
     end
 
     # Complementary slackness
-    ρcs = @new_variable(kkt, n_cones_red, "ρcs")
     for i = 1:n_cones_red
-        # @add_constraint(
-        #     kkt, ZERO, "compl_slack",
-        #     (δx_blks..., δp_blks..., δλ[i]),
-        #     begin
-        #         local δx = vcat(arg[idcs_x]...) #noerr
-        #         local δp = vcat(arg[idcs_p]...) #noerr
-        #         local δλ = arg[num_xp_blk+1] #noerr
-        #         dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i])
-        #     end)
         @add_constraint(
-            kkt, L1, "compl_slack",
-            (δx_blks..., δp_blks..., δλ[i], ρcs[i]),
+            kkt, ZERO, "compl_slack",
+            (δx_blks..., δp_blks..., δλ[i]),
             begin
                 local δx = vcat(arg[idcs_x]...) #noerr
                 local δp = vcat(arg[idcs_p]...) #noerr
                 local δλ = arg[num_xp_blk+1] #noerr
-                local ρcs = arg[num_xp_blk+2] #noerr
-                vcat(ρcs, dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i]))
+                dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i])
             end)
     end
 
@@ -422,29 +405,6 @@ function variation(prg::ConicProgram;
             ∇L
         end)
 
-    # ρst = @new_variable(kkt, "ρst")
-    # @add_constraint(
-    #     kkt, LINF, "stat",
-    #     (δx_blks..., δp_blks..., δλ..., ρst),
-    #     begin
-    #         local δx = vcat(arg[idcs_x]...) #noerr
-    #         local δp = vcat(arg[idcs_p]...) #noerr
-    #         local δλ = arg[(1:n_cones_red).+num_xp_blk] #noerr
-    #         local ρst = arg[end] #noerr
-    #         local ∇L = DxxJ*δx+DpxJ*δp
-    #         if np>0
-    #             local Dxf_vary_p = (i)->sum(Dpxf[i][:, :, j]*δp[j] for j=1:np)
-    #             for i = 1:n_cones_red
-    #                 ∇L -= Dxf_vary_p(i)'*λ[i]+Dxf[i]'*δλ[i]
-    #             end
-    #         else
-    #             for i = 1:n_cones_red
-    #                 ∇L -= Dxf[i]'*δλ[i]
-    #             end
-    #         end
-    #         vcat(ρst, ∇L)
-    #     end)
-
     # Set the perturbation constraints
     for kind in [:x, :p] #noinfo
         z_blks = allowed_vars[kind]
@@ -456,20 +416,6 @@ function variation(prg::ConicProgram;
             end
         end
     end
-
-    # Set a cost to minimize complementary slackness relaxation
-    # @add_cost(kkt, (ρst,), begin
-    #               local ρst, = arg #noerr
-    #               ρst[1]
-    #           end)
-    # @add_cost(kkt, (ρcs, ρst), begin
-    #               local ρcs, ρst = arg #noerr
-    #               sum(ρcs)+ρst[1]
-    #           end)
-    @add_cost(kkt, (ρcs,), begin
-                  local ρcs, = arg #noerr
-                  sum(ρcs)
-              end)
 
     return varmap, kkt
 end # function
