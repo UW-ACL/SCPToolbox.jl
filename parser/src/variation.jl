@@ -22,10 +22,14 @@ end
 
 export jacobian, variation
 
+# ..:: Globals ::..
+
+const ReduceIndexMap = Types.Optional{Dict{Symbol, Vector{Int}}}
+
 # ..:: Methods ::..
 
 """
-    jacobian(x, F)
+    jacobian(x, F[; reduce])
 
 Compute the Jacobian of `F` with respect to `x`, i.e. ``D_x f(x)``. Assuming
 that `F` is vector-valued, the Jacobian is a matrix.
@@ -35,10 +39,18 @@ that `F` is vector-valued, the Jacobian is a matrix.
   respect to.
 - `F`: the function itself.
 
+# Keywords
+- `reduce`: (optional) an index map to reduce ignore parts of the
+  acobian. Suppose that the `i`th element has the value `j`. This means that
+  the `i`th atomic argument of the KKT problem corresponds to the `j`th atomic
+  argument of the original problem for which the non-reduced (aka "full")
+  Jacobian is computed.
+
 # Returns
 - `Df`: the Jacobian.
 """
-function jacobian(x::Symbol, F::ProgramFunction)::Types.RealMatrix
+function jacobian(x::Symbol, F::ProgramFunction;
+                  reduce::ReduceIndexMap=nothing)::Types.RealMatrix
     # Create Jacobian matrix
     nrows = length(value(F))
     ncols = numel(getfield(program(F), x))
@@ -54,27 +66,35 @@ function jacobian(x::Symbol, F::ProgramFunction)::Types.RealMatrix
             Df[:, i] = jacobian_submatrix
         end
     end
+    # Reduce if an index map is provided
+    if !isnothing(reduce)
+        Df = Df[:, reduce[x]]
+    end
     return Df
 end # function
 
 """
-    jacobian(x, y, F)
+    jacobian(x, y, F[; reduce])
 
 Compute the Jacobian of `F` with respect to `y` followed by `x`, i.e. ``D_{xy}
 f(x, y)``. Assuming that `F` is vector-valued, the Jacobian is a tensor (a 3D
 matrix).
 
 # Arguments
-- `y`: the part of the function's arguments to compute the Jacobian with
+- `x`: the part of the function's arguments to compute the Jacobian with
   respect to second.
 - `y`: the part of the function's arguments to compute the Jacobian with
   respect to first.
 - `F`: the function itself.
 
+# Keywords
+- `reduce`: (optional) an index map, see the docstring of `jacobian` above.
+
 # Returns
 - `Df`: the Jacobian.
 """
-function jacobian(x::Symbol, y::Symbol, F::ProgramFunction)::Types.RealTensor
+function jacobian(x::Symbol, y::Symbol, F::ProgramFunction;
+                  reduce::ReduceIndexMap=nothing)::Types.RealTensor
     # Create Jacobian tensor
     nrows = length(value(F))
     ncols = numel(getfield(program(F), y))
@@ -97,22 +117,27 @@ function jacobian(x::Symbol, y::Symbol, F::ProgramFunction)::Types.RealTensor
             end
         end
     end
+    # Reduce if an index map is provided
+    if !isnothing(reduce)
+        Df = Df[:, reduce[y], reduce[x]]
+    end
     return Df
 end # function
 
 """
-    jacobian(x, J)
+    jacobian(x, J[; reduce])
 
 Compute the Jacobian with respect to `x` of the cost function. This just wraps
 the `jacobian` functions for `ProgramFunction`, and combines their output
 according to the underlying linear combination of cost terms. See the docstring
 ofthe corresponding `jacobian` function for `ProgramFunction` for more info.
 """
-function jacobian(x::Symbol, J::QuadraticCost)::Types.RealMatrix
+function jacobian(x::Symbol, J::QuadraticCost;
+                  reduce::ReduceIndexMap=nothing)::Types.RealMatrix
     terms = core_terms(J)
     Df_terms = Vector{Types.RealMatrix}(undef, length(terms))
     for i = 1:length(terms)
-        Df_terms[i] = terms.a[i]*jacobian(x, terms.f[i])
+        Df_terms[i] = terms.a[i]*jacobian(x, terms.f[i]; reduce=reduce)
     end
     Df = sum(Df_terms)
     return Df
@@ -127,11 +152,12 @@ output according to the underlying linear combination of cost terms. See the
 docstring ofthe corresponding `jacobian` function for `ProgramFunction` for
 more info.
 """
-function jacobian(x::Symbol, y::Symbol, J::QuadraticCost)::Types.RealTensor
+function jacobian(x::Symbol, y::Symbol, J::QuadraticCost;
+                  reduce::ReduceIndexMap=nothing)::Types.RealTensor
     terms = core_terms(J)
     Df_terms = Vector{Types.RealTensor}(undef, length(terms))
     for i = 1:length(terms)
-        Df_terms[i] = terms.a[i]*jacobian(x, y, terms.f[i])
+        Df_terms[i] = terms.a[i]*jacobian(x, y, terms.f[i]; reduce=reduce)
     end
     Df = sum(Df_terms)
     return Df
@@ -214,67 +240,117 @@ around the optimal solution.
 # Returns
 - `bar`: description.
 """
-function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
+function variation(prg::ConicProgram;
+                   ignore_variables::Vector{String}=String[],
+                   ignore_constraints::Vector{String}=String[])::Tuple{
+                       ArgumentBlockMap, ConicProgram}
 
     # Initialize the variational problem
     kkt = ConicProgram(solver=prg._solver,
                        solver_options=prg._solver_options)
 
+    # Make the ignore lists and checker function
+    varignorelist = [Regex(r) for r in ignore_variables]
+    cstignorelist = [Regex(r) for r in ignore_constraints]
+    isignored = (obj, ignorelist)->any(occursin.(ignorelist, name(obj)))
+
     # Create the concatenated primal variable perturbation
     varmap = Dict{ArgumentBlock, Any}()
-    for z in [prg.x, prg.p]
+    idmap = Dict(:x=>Vector{Int}(undef, 0), :p=>Vector{Int}(undef, 0))
+    allowed_vars = Dict{Symbol, Vector{ArgumentBlock}}()
+    for type in [:x, :p]
+        z = getfield(prg, type)
+        allowed_vars[type] = Vector{ArgumentBlock}(undef, 0)
         for z_blk in z
+            if isignored(z_blk, varignorelist)
+                continue
+            end
+
             δz_blk = copy(z_blk, kkt; new_name="δ%s", copyas=VARIABLE)
 
             # Remove any scaling offset (since perturbations are around zero)
             @scale(δz_blk, dilation(scale(z_blk)))
 
             # Record in the variable correspondence map
+            push!(allowed_vars[type], z_blk)
+            append!(idmap[type], slice_indices(z_blk))
             varmap[z_blk] = δz_blk # original -> kkt
             varmap[δz_blk] = z_blk # kkt -> original
         end
     end
-    δx_blks = [varmap[z_blk][:] for z_blk in prg.x]
-    δp_blks = [varmap[z_blk][:] for z_blk in prg.p]
+    δx_blks = [varmap[z_blk][:] for z_blk in allowed_vars[:x]]
+    δp_blks = [varmap[z_blk][:] for z_blk in allowed_vars[:p]]
 
     # Create the dual variable perturbations
-    n_cones = length(constraints(prg))
+    id_cones_all = 1:length(constraints(prg))
+    id_cones_red = Int[]
     λ = dual.(constraints(prg))
-    δλ = VariableArgumentBlocks(undef, n_cones)
-    for i = 1:n_cones
-        blk_name = @sprintf("δλ%d", i)
-        δλ[i] = @new_variable(kkt, length(λ[i]), blk_name)
+    δλ = VariableArgumentBlocks(undef, 0)
+    for i in id_cones_all
+        C = constraints(prg, i)
+        if isignored(C, cstignorelist)
+            continue
+        end
+
+        push!(id_cones_red, i)
+        blk_name = @sprintf("δλ%d", length(id_cones_red))
+        push!(δλ, @new_variable(kkt, length(λ[i]), blk_name))
     end
+    n_cones_red = length(id_cones_red)
 
     # Build the constraint function Jacobians
-    f = Vector{Types.RealVector}(undef, n_cones)
-    Dxf = Vector{Types.RealMatrix}(undef, n_cones)
-    Dpf = Vector{Types.RealMatrix}(undef, n_cones)
-    Dpxf = Vector{Types.RealTensor}(undef, n_cones)
-    for i = 1:n_cones
+    f = Vector{Types.RealVector}(undef, n_cones_red)
+    Dxf = Vector{Types.RealMatrix}(undef, n_cones_red)
+    Dpf = Vector{Types.RealMatrix}(undef, n_cones_red)
+    Dpxf = Vector{Types.RealTensor}(undef, n_cones_red)
+    for i in id_cones_red
         C = constraints(prg, i)
         F = lhs(C)
 
+        # Compute function value and (internally) the Jacobian submatrices
         f[i] = F(jacobians=true)
-        Dxf[i] = jacobian(:x, F)
-        Dpf[i] = jacobian(:p, F)
-        Dpxf[i] = jacobian(:p, :x, F)
+
+        # Build the "full" Jacobian with respect to all variables
+        Dxf[i] = jacobian(:x, F; reduce=idmap)
+        Dpf[i] = jacobian(:p, F; reduce=idmap)
+        Dpxf[i] = jacobian(:p, :x, F; reduce=idmap)
     end
 
     # Build the cost function Jacobians
     J = cost(prg)
     J(jacobians=true)
-    # DxJ = jacobian(:x, J)[1, :]
-    DxxJ = jacobian(:x, :x, J)[1, :, :]
-    DpxJ = jacobian(:p, :x, J)[1, :, :]
+    DxJ = jacobian(:x, J; reduce=idmap)[1, :]
+    DxxJ = jacobian(:x, :x, J; reduce=idmap)[1, :, :]
+    DpxJ = jacobian(:p, :x, J; reduce=idmap)[1, :, :]
+
+    # Check that complementary slackness holds at the reference solution
+    max_viol = -Inf
+    for i = 1:n_cones_red
+        compl_slack = dot(f[i], λ[i])
+        if abs(compl_slack)>max_viol
+            max_viol = abs(compl_slack)
+        end
+        # warn = (abs(compl_slack)>1e-10) ? "*** " : ""
+        # @printf("%scompl. slack. %d = %.4e\n", warn, i, compl_slack)
+    end
+    @printf("Complementary slackness violation = %.4e\n", max_viol)
+
+    # Check that stationarity holds at the reference solution
+    stat = DxJ-sum(Dxf[i]'*λ[i] for i=1:n_cones_red)
+    max_viol = norm(stat, Inf)
+    @printf("Stationarity violation = %.4e\n", max_viol)
+    # for i = 1:length(stat)
+    #     warn = (abs(stat[i])>1e-10) ? "*** " : ""
+    #     @printf("%sstationarity %s = %.4e\n", warn, i, stat[i])
+    # end
 
     # Primal feasibility
-    num_x_blk = length(prg.x)
-    num_p_blk = length(prg.p)
+    num_x_blk = length(δx_blks)
+    num_p_blk = length(δp_blks)
     num_xp_blk = num_x_blk+num_p_blk
     idcs_x = 1:num_x_blk
     idcs_p = (1:num_p_blk).+idcs_x[end]
-    for i = 1:n_cones
+    for i = 1:n_cones_red
         C = constraints(prg, i)
         K = kind(C)
         @add_constraint(
@@ -288,7 +364,7 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
     end
 
     # Dual feasibility
-    for i = 1:n_cones
+    for i = 1:n_cones_red
         K = kind(constraints(prg, i))
         @add_constraint(
             kkt, dual(K), "dual_feas",
@@ -299,39 +375,29 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
             end)
     end
 
-    # Complementary slackness (relaxed)
-    # ρcs = @new_variable(kkt, n_cones, "ρcs")
-    for i = 1:n_cones
-        @add_constraint(
-            kkt, ZERO, "compl_slack",
-            (δx_blks..., δp_blks..., δλ[i]),
-            begin
-                local δx = vcat(arg[idcs_x]...) #noerr
-                local δp = vcat(arg[idcs_p]...) #noerr
-                local δλ = arg[num_xp_blk+1] #noerr
-                dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i])
-            end)
-        # local lhs = dot(f[i], λ[i])
-        # warn = (abs(lhs)>1e-10) ? "*** " : ""
-        # @printf("%scompl. slack. %d = %.4e\n", warn, i, lhs)
+    # Complementary slackness
+    ρcs = @new_variable(kkt, n_cones_red, "ρcs")
+    for i = 1:n_cones_red
         # @add_constraint(
-        #     kkt, L1, "compl_slack",
-        #     (δx_blks..., δp_blks..., δλ[i], ρcs[i]),
+        #     kkt, ZERO, "compl_slack",
+        #     (δx_blks..., δp_blks..., δλ[i]),
         #     begin
         #         local δx = vcat(arg[idcs_x]...) #noerr
         #         local δp = vcat(arg[idcs_p]...) #noerr
         #         local δλ = arg[num_xp_blk+1] #noerr
-        #         local ρcs = arg[num_xp_blk+2] #noerr
-        #         vcat(ρcs, dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i]))
+        #         dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i])
         #     end)
+        @add_constraint(
+            kkt, L1, "compl_slack",
+            (δx_blks..., δp_blks..., δλ[i], ρcs[i]),
+            begin
+                local δx = vcat(arg[idcs_x]...) #noerr
+                local δp = vcat(arg[idcs_p]...) #noerr
+                local δλ = arg[num_xp_blk+1] #noerr
+                local ρcs = arg[num_xp_blk+2] #noerr
+                vcat(ρcs, dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i]))
+            end)
     end
-
-    # # Show stationarity holds at original point
-    # stat = DxJ-sum(Dxf[i]'*λ[i] for i=1:n_cones)
-    # for i = 1:length(stat)
-    #     warn = (abs(stat[i])>1e-10) ? "*** " : ""
-    #     @printf("%sstationarity %s = %.4e\n", warn, i, stat[i])
-    # end
 
     # Stationarity
     np = numel(prg.p)
@@ -341,20 +407,21 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
         begin
             local δx = vcat(arg[idcs_x]...) #noerr
             local δp = vcat(arg[idcs_p]...) #noerr
-            local δλ = arg[(1:n_cones).+num_xp_blk] #noerr
+            local δλ = arg[(1:n_cones_red).+num_xp_blk] #noerr
             local ∇L = DxxJ*δx+DpxJ*δp
             if np>0
                 local Dxf_vary_p = (i)->sum(Dpxf[i][:, :, j]*δp[j] for j=1:np)
-                for i = 1:n_cones
+                for i = 1:n_cones_red
                     ∇L -= Dxf_vary_p(i)'*λ[i]+Dxf[i]'*δλ[i]
                 end
             else
-                for i = 1:n_cones
+                for i = 1:n_cones_red
                     ∇L -= Dxf[i]'*δλ[i]
                 end
             end
             ∇L
         end)
+
     # ρst = @new_variable(kkt, "ρst")
     # @add_constraint(
     #     kkt, LINF, "stat",
@@ -362,16 +429,16 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
     #     begin
     #         local δx = vcat(arg[idcs_x]...) #noerr
     #         local δp = vcat(arg[idcs_p]...) #noerr
-    #         local δλ = arg[(1:n_cones).+num_xp_blk] #noerr
+    #         local δλ = arg[(1:n_cones_red).+num_xp_blk] #noerr
     #         local ρst = arg[end] #noerr
     #         local ∇L = DxxJ*δx+DpxJ*δp
     #         if np>0
     #             local Dxf_vary_p = (i)->sum(Dpxf[i][:, :, j]*δp[j] for j=1:np)
-    #             for i = 1:n_cones
+    #             for i = 1:n_cones_red
     #                 ∇L -= Dxf_vary_p(i)'*λ[i]+Dxf[i]'*δλ[i]
     #             end
     #         else
-    #             for i = 1:n_cones
+    #             for i = 1:n_cones_red
     #                 ∇L -= Dxf[i]'*δλ[i]
     #             end
     #         end
@@ -379,7 +446,8 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
     #     end)
 
     # Set the perturbation constraints
-    for z_blks in [prg.x, prg.p]
+    for kind in [:x, :p] #noinfo
+        z_blks = allowed_vars[kind]
         for z_blk in z_blks
             δz_blk = varmap[z_blk]
             for i=1:length(δz_blk)
@@ -390,10 +458,18 @@ function variation(prg::ConicProgram)::Tuple{ArgumentBlockMap, ConicProgram}
     end
 
     # Set a cost to minimize complementary slackness relaxation
+    # @add_cost(kkt, (ρst,), begin
+    #               local ρst, = arg #noerr
+    #               ρst[1]
+    #           end)
     # @add_cost(kkt, (ρcs, ρst), begin
     #               local ρcs, ρst = arg #noerr
     #               sum(ρcs)+ρst[1]
     #           end)
+    @add_cost(kkt, (ρcs,), begin
+                  local ρcs, = arg #noerr
+                  sum(ρcs)
+              end)
 
     return varmap, kkt
 end # function

@@ -131,7 +131,7 @@ Pretty print the cone.
 function Base.show(io::IO, cone::ConvexCone; z::String="z")::Nothing
     compact = get(io, :compact, false) #noinfo
 
-    if kind(cone)==:free
+    if kind(cone)==UNCONSTRAINED
         @printf(io, "Unconstrained %s\n", z)
     else
         cone_description = Dict(
