@@ -21,7 +21,7 @@ if isdefined(@__MODULE__, :LanguageServer)
     include("helper.jl")
 end
 
-import ..linterp, ..zohinterp
+import ..linterp, ..zohinterp, ..diracinterp
 
 export ContinuousTimeTrajectory, sample
 

@@ -145,7 +145,13 @@ function diracinterp(t::RealValue,
         k = length(t_grid)
     else
         t = max(t_grid[1], min(t_grid[end], t)) # Saturate to time grid
-        k = findall(t_grid.==t)[1]
+        k = findall(t_grid.==t)
+        if isempty(k)
+            f_t = zeros(size(f_cps)[1:end-1])
+            return f_t
+        else
+            k = k[1]
+        end
     end
     dimfill = fill(:, ndims(f_cps)-1)
     f_t = f_cps[dimfill..., k]

@@ -374,7 +374,7 @@ function set_update_matrices(
         xk = ref.xd[:, k]
         uk = ref.ud[:, k]
         p = ref.p
-        Btk = pbm.traj.B(tk, k, xk, uk, p)
+        Btk = pbm.traj.B(tk, -k, xk, uk, p)
         B_k = [A_k*Btk]
     end
     F_k = A_k*reshape(FV, (nx, np))

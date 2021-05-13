@@ -214,6 +214,8 @@ function dynamics(t::RealValue, #nowarn
                   p::RealVector, #nowarn
                   pbm::TrajectoryProblem)::RealVector
 
+    impulse = k<0
+
     # Parameters
     veh = pbm.mdl.vehicle
     traj = pbm.mdl.traj
@@ -225,11 +227,14 @@ function dynamics(t::RealValue, #nowarn
 
     # The dynamics
     f = zeros(pbm.nx)
-    f[veh.id_r] = v
-    f[veh.id_v] = aa-veh.ω0^2*r-2*veh.ζ*veh.ω0*v
+    f[veh.id_v] = aa
+    if !impulse
+        f[veh.id_r] = v
+        f[veh.id_v] += -veh.ω0^2*r-2*veh.ζ*veh.ω0*v
 
-    # Scale for absolute time
-    f *= traj.tf
+        # Scale for absolute time
+        f *= traj.tf
+    end
 
     return f
 end # function
@@ -258,9 +263,12 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
         (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
+            impulse = k<0
             B = zeros(pbm.nx, pbm.nu)
             B[veh.id_v, veh.id_aa] = 1.0
-            B *= traj.tf
+            if !impulse
+                B *= traj.tf
+            end
             return B
         end,
         # Jacobian df/dp
