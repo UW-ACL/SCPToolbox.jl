@@ -502,7 +502,7 @@ function propagate(sol::SCPSubproblemSolution,
         tc_intvl = Vector{RealVector}(undef, N)
         xc_intvl = Vector{RealMatrix}(undef, N)
         tc_intvl[1] = [0.0]
-        xc_intvl[1] = reshape(xd[:, 1], (2, 1))
+        xc_intvl[1] = reshape(xd[:, 1], pbm.traj.nx, 1)
         for k = 1:N-1
             tc_intvl[k+1] = LinRange(td[k:k+1]..., subres)
             x0 = xd[:, k]

@@ -129,8 +129,8 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     uh = (θ) -> -cos(θ)*xh+sin(θ)*yh
     vh = (θ) -> -sin(θ)*xh-cos(θ)*yh
     # >> Control parameters <<
-    f_max = 445.0
-    f_db = 50.0
+    f_max = 750.0 # 445.0
+    f_db = 200.0
 
     sc = PlanarRendezvousParameters(
         id_r, id_v, id_θ, id_ω, id_f, id_fr, id_l1f, id_l1feq, id_t,
@@ -146,7 +146,7 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     tf_max = 500.0
     κ1 = NaN
     κ2 = 1.0
-    γ = 5e-2
+    γ = 3e-1
     traj = PlanarRendezvousTrajectoryParameters(
         r0, v0, θ0, ω0, vf, tf_min, tf_max, κ1, κ2, γ)
 

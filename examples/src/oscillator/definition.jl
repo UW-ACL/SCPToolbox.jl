@@ -231,7 +231,6 @@ function dynamics(t::RealValue, #nowarn
     if !impulse
         f[veh.id_r] = v
         f[veh.id_v] += -veh.ω0^2*r-2*veh.ζ*veh.ω0*v
-
         # Scale for absolute time
         f *= traj.tf
     end
@@ -256,6 +255,7 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             A[veh.id_r, veh.id_v] = 1.0
             A[veh.id_v, veh.id_r] = -veh.ω0^2
             A[veh.id_v, veh.id_v] = -2*veh.ζ*veh.ω0
+            # Scale for absolute time
             A *= traj.tf
             return A
         end,
@@ -267,6 +267,7 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             B = zeros(pbm.nx, pbm.nu)
             B[veh.id_v, veh.id_aa] = 1.0
             if !impulse
+                # Scale for absolute time
                 B *= traj.tf
             end
             return B
