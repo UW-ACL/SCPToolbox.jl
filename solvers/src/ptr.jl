@@ -821,33 +821,61 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
     # Compute virtual control penalty
     P = @new_variable(prg, N, "P")
     Pf = @new_variable(prg, 2, "Pf")
-    for k = 1:N
-        nvs = length(vs[:, k])
-        if k<N
-            sz_E_1 = size(E[:, :, k], 1)
-            nvd = length(vd[:, k])
-            @add_constraint(prg, L1, "vd_vs_penalty",
-                            (P[k], vd[:, k], vs[:, k]), begin # Value
-                                local Pk, vdk, vsk = arg #noerr
-                                vcat(Pk, E[:, :, k]*vdk, vsk)
-                            end, begin # Jacobian
-                                if LangServer; local J = Dict(); end
-                                J[1] = vcat(1, zeros(sz_E_1), zeros(nvs))
-                                J[2] = vcat(zeros(nvd)', E[:, :, k],
-                                            zeros(nvs, nvd))
-                                J[3] = vcat(zeros(nvs)', zeros(sz_E_1, nvs),
-                                            I(nvs))
-                            end)
-        else
-            @add_constraint(prg, L1, "vd_vs_penalty",
-                            (P[k], vs[:, k]), begin # Value
-                                local Pk, vsk = arg #noerr
-                                vcat(Pk, vsk)
-                            end, begin # Jacobian
-                                if LangServer; local J = Dict(); end
-                                J[1] = vcat(1, zeros(nvs))
-                                J[2] = vcat(zeros(nvs)', I(nvs))
-                            end)
+    if !isnothing(vs)
+        for k = 1:N
+            nvs = length(vs[:, k])
+            if k<N
+                sz_E_1 = size(E[:, :, k], 1)
+                nvd = length(vd[:, k])
+                @add_constraint(prg, L1, "vd_vs_penalty",
+                                (P[k], vd[:, k], vs[:, k]), begin # Value
+                                    local Pk, vdk, vsk = arg #noerr
+                                    vcat(Pk, E[:, :, k]*vdk, vsk)
+                                end, begin # Jacobian
+                                    if LangServer; local J = Dict(); end
+                                    J[1] = vcat(1, zeros(sz_E_1), zeros(nvs))
+                                    J[2] = vcat(zeros(nvd)', E[:, :, k],
+                                                zeros(nvs, nvd))
+                                    J[3] = vcat(zeros(nvs)', zeros(sz_E_1, nvs),
+                                                I(nvs))
+                                end)
+            else
+                @add_constraint(prg, L1, "vd_vs_penalty",
+                                (P[k], vs[:, k]), begin # Value
+                                    local Pk, vsk = arg #noerr
+                                    vcat(Pk, vsk)
+                                end, begin # Jacobian
+                                    if LangServer; local J = Dict(); end
+                                    J[1] = vcat(1, zeros(nvs))
+                                    J[2] = vcat(zeros(nvs)', I(nvs))
+                                end)
+            end
+        end
+    else
+        for k = 1:N
+            if k<N
+                sz_E_1 = size(E[:, :, k], 1)
+                nvd = length(vd[:, k])
+                @add_constraint(prg, L1, "vd_vs_penalty",
+                                (P[k], vd[:, k]), begin # Value
+                                    local Pk, vdk = arg #noerr
+                                    vcat(Pk, E[:, :, k]*vdk)
+                                end, begin # Jacobian
+                                    if LangServer; local J = Dict(); end
+                                    J[1] = vcat(1, zeros(sz_E_1))
+                                    J[2] = vcat(zeros(nvd)', E[:, :, k])
+                                end)
+            else
+                @add_constraint(
+                    prg, ZERO, "vd_vs_penalty",
+                    (P[k],), begin # Value
+                        local Pk, = arg #noerr
+                        Pk
+                    end, begin # Jacobian
+                        if LangServer; local J = Dict(); end
+                        J[1] = [1]
+                    end)
+            end
         end
     end
 
