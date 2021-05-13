@@ -146,7 +146,7 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     tf_max = 500.0
     κ1 = NaN
     κ2 = 1.0
-    γ = 1e-2
+    γ = 5e-2
     traj = PlanarRendezvousTrajectoryParameters(
         r0, v0, θ0, ω0, vf, tf_min, tf_max, κ1, κ2, γ)
 

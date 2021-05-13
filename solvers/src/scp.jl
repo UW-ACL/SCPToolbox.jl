@@ -394,84 +394,84 @@ function compute_scaling(
     p_bbox[:, 1] .= 0.0
     q_bbox[:, 1] .= 0.0
 
-    # defs = [Dict(:dim => nx,
-    #              :set => traj.X,
-    #              :setcall => (t, k, x, u, p) -> traj.X(t, k, x, p),
-    #              :bbox => x_bbox,
-    #              :advice => :xrg,
-    #              :cost => (x, u, p, i) -> x[i]),
-    #         Dict(:dim => nu,
-    #              :set => traj.U,
-    #              :setcall => (t, k, x, u, p) -> traj.U(t, k, u, p),
-    #              :bbox => u_bbox,
-    #              :advice => :urg,
-    #              :cost => (x, u, p, i) -> u[i]),
-    #         Dict(:dim => np,
-    #              :set => traj.X,
-    #              :setcall => (t, k, x, u, p) -> traj.X(t, k, x, p),
-    #              :bbox => p_bbox,
-    #              :advice => :prg,
-    #              :cost => (x, u, p, i) -> p[i]),
-    #         Dict(:dim => np,
-    #              :set => traj.U,
-    #              :setcall => (t, k, x, u, p) -> traj.U(t, k, u, p),
-    #              :bbox => p_bbox,
-    #              :advice => :prg,
-    #              :cost => (x, u, p, i) -> p[i])]
+    defs = [Dict(:dim => nx,
+                 :set => traj.X,
+                 :setcall => (t, k, x, u, p) -> traj.X(t, k, x, p),
+                 :bbox => x_bbox,
+                 :advice => :xrg,
+                 :cost => (x, u, p, i) -> x[i]),
+            Dict(:dim => nu,
+                 :set => traj.U,
+                 :setcall => (t, k, x, u, p) -> traj.U(t, k, u, p),
+                 :bbox => u_bbox,
+                 :advice => :urg,
+                 :cost => (x, u, p, i) -> u[i]),
+            Dict(:dim => np,
+                 :set => traj.X,
+                 :setcall => (t, k, x, u, p) -> traj.X(t, k, x, p),
+                 :bbox => p_bbox,
+                 :advice => :prg,
+                 :cost => (x, u, p, i) -> p[i]),
+            Dict(:dim => np,
+                 :set => traj.U,
+                 :setcall => (t, k, x, u, p) -> traj.U(t, k, u, p),
+                 :bbox => p_bbox,
+                 :advice => :prg,
+                 :cost => (x, u, p, i) -> p[i])]
 
-    # for def in defs
-    #     for j = 1:2 # 1:min, 2:max
-    #         for i = 1:def[:dim]
-    #             if !isnothing(getfield(traj, def[:advice])[i])
-    #                 # Take user scaling advice
-    #                 def[:bbox][i, j] = getfield(traj, def[:advice])[i][j]
-    #             else
-    #                 # Initialize JuMP model
-    #                 mdl = Model()
-    #                 set_optimizer(mdl, solver.Optimizer)
-    #                 for (key,val) in solver_opts
-    #                     set_optimizer_attribute(mdl, key, val)
-    #                 end
-    #                 # Variables
-    #                 x = @variable(mdl, [1:nx])
-    #                 u = @variable(mdl, [1:nu])
-    #                 p = @variable(mdl, [1:np])
-    #                 # Constraints
-    #                 if !isnothing(def[:set])
-    #                     for k = 1:length(t)
-    #                         add!(mdl, def[:setcall](t[k], k, x, u, p))
-    #                     end
-    #                 end
-    #                 # Cost
-    #                 set_objective_function(mdl, def[:cost](x, u, p, i))
-    #                 set_objective_sense(mdl, (j==1) ? MOI.MIN_SENSE :
-    #                                     MOI.MAX_SENSE)
-    #                 # Solve
-    #                 optimize!(mdl)
-    #                 # Record the solution
-    #                 status = termination_status(mdl)
-    #                 if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
-    #                     # Nominal case
-    #                     def[:bbox][i, j] = objective_value(mdl)
-    #                 elseif !(status == MOI.DUAL_INFEASIBLE ||
-    #                          status == MOI.NUMERICAL_ERROR)
-    #                     msg = "Solver failed during variable scaling (%s)"
-    #                     err = SCPError(0, SCP_SCALING_FAILED,
-    #                                    @eval @sprintf($msg, $status))
-    #                     throw(err)
-    #                 end
-    #             end
-    #         end
-    #     end
-    # end
+    for def in defs
+        for j = 1:2 # 1:min, 2:max
+            for i = 1:def[:dim]
+                if !isnothing(getfield(traj, def[:advice])[i])
+                    # Take user scaling advice
+                    def[:bbox][i, j] = getfield(traj, def[:advice])[i][j]
+                else
+                    # Initialize JuMP model
+                    mdl = Model()
+                    set_optimizer(mdl, solver.Optimizer)
+                    for (key,val) in solver_opts
+                        set_optimizer_attribute(mdl, key, val)
+                    end
+                    # Variables
+                    x = @variable(mdl, [1:nx])
+                    u = @variable(mdl, [1:nu])
+                    p = @variable(mdl, [1:np])
+                    # Constraints
+                    if !isnothing(def[:set])
+                        for k = 1:length(t)
+                            add!(mdl, def[:setcall](t[k], k, x, u, p))
+                        end
+                    end
+                    # Cost
+                    set_objective_function(mdl, def[:cost](x, u, p, i))
+                    set_objective_sense(mdl, (j==1) ? MOI.MIN_SENSE :
+                                        MOI.MAX_SENSE)
+                    # Solve
+                    optimize!(mdl)
+                    # Record the solution
+                    status = termination_status(mdl)
+                    if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
+                        # Nominal case
+                        def[:bbox][i, j] = objective_value(mdl)
+                    elseif !(status == MOI.DUAL_INFEASIBLE ||
+                             status == MOI.NUMERICAL_ERROR)
+                        msg = "Solver failed during variable scaling (%s)"
+                        err = SCPError(0, SCP_SCALING_FAILED,
+                                       @eval @sprintf($msg, $status))
+                        throw(err)
+                    end
+                end
+            end
+        end
+    end
 
-    # for j = 1:2 # 1:min, 2:max
-    #     for i = 1:nq
-    #         if !isnothing(traj.qrg[i])
-    #             q_bbox[i, j] = traj.qrg[i][j]
-    #         end
-    #     end
-    # end
+    for j = 1:2 # 1:min, 2:max
+        for i = 1:nq
+            if !isnothing(traj.qrg[i])
+                q_bbox[i, j] = traj.qrg[i][j]
+            end
+        end
+    end
 
     # >> Compute scaling matrices and offset vectors <<
     wdth_x = intrvl_x[2]-intrvl_x[1]
