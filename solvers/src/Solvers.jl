@@ -24,6 +24,8 @@ if isdefined(@__MODULE__, :LanguageServer)
 end
 
 # General (common) definitions
+include("general.jl")
+include("discretization.jl")
 include("scp.jl")
 
 # ..:: SCvx algorithm ::..

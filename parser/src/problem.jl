@@ -31,17 +31,24 @@ end
 
 using Utils
 
-const RealTuple = Tuple{Types.RealTypes, Types.RealTypes}
-const VectorOfTuples = Vector{Union{Nothing, RealTuple}}
-const SIA = Types.SpecialIntegrationActions
-const Func = Types.Func
-
 export TrajectoryProblem
 export problem_set_dims!, problem_advise_scale!,
     problem_set_integration_action!, problem_set_guess!,
     problem_set_constants!, problem_set_terminal_cost!,
     problem_set_running_cost!, problem_set_dynamics!, problem_set_X!,
     problem_set_U!, problem_set_s!, problem_set_bc!
+export DiscretizationType, FOH, IMPULSE
+
+# ..:: Globals ::..
+
+@enum(DiscretizationType, FOH, IMPULSE)
+
+const RealTuple = Tuple{Types.RealTypes, Types.RealTypes}
+const VectorOfTuples = Vector{Union{Nothing, RealTuple}}
+const SIA = Types.SpecialIntegrationActions
+const Func = Types.Func
+
+# ..:: Data structures ::..
 
 """ Trajectory problem definition."""
 mutable struct TrajectoryProblem
@@ -161,6 +168,8 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
 
     return pbm
 end # function
+
+# ..:: Methods ::..
 
 """
     problem_set_dims!(pbm, nx, nu, np[, nq])

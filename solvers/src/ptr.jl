@@ -21,6 +21,7 @@ if LangServer
     include("../../utils/src/Utils.jl")
     include("../../parser/src/Parser.jl")
 
+    include("discretization.jl")
     include("scp.jl")
 
     using .Utils
@@ -41,22 +42,21 @@ using Utils
 using Parser
 
 import ..ST, ..RealTypes, ..IntRange, ..RealVector, ..RealMatrix, ..Trajectory,
-    ..Objective, ..VariableVector, ..VariableMatrix
+    ..Objective, ..VarArgBlk, ..CstArgBlk, ..DLTV
 
 import ..SCPParameters, ..SCPSubproblem, ..SCPSubproblemSolution, ..SCPProblem,
     ..SCPSolution, ..SCPHistory
 
-import ..discretize!, ..add_dynamics!, ..add_convex_state_constraints!,
-    ..add_convex_input_constraints!, ..add_nonconvex_constraints!, ..add_bcs!,
-    ..solution_deviation, ..solve_subproblem!, ..unsafe_solution, ..overhead!,
-    ..save!, ..get_time
+import ..discretize!
+import ..add_dynamics!, ..add_convex_state_constraints!,
+    ..add_convex_input_constraints!, ..add_nonconvex_constraints!, ..add_bcs!
+import ..solve_subproblem!, ..solution_deviation, ..unsafe_solution,
+    ..overhead!, ..save!, ..get_time
 
 const CLP = ConicLinearProgram #noerr
 const Variable = ST.Variable
 const Optional = ST.Optional
-const VarArgBlk = VariableArgumentBlock
-const CstArgBlk = ConstantArgumentBlock
-const OptVarArgBlk = Optional{VariableArgumentBlock}
+const OptVarArgBlk = Optional{VarArgBlk}
 
 export Parameters, create, solve
 
@@ -65,6 +65,7 @@ struct Parameters <: SCPParameters
     N::Int               # Number of temporal grid nodes
     Nsub::Int            # Number of subinterval integration time nodes
     iter_max::Int        # Maximum number of iterations
+    disc_method::DiscretizationType # The discretization method
     wvc::RealTypes       # Virtual control weight
     wtr::RealTypes       # Trust region weight
     ε_abs::RealTypes     # Absolute convergence tolerance
@@ -102,7 +103,7 @@ mutable struct SubproblemSolution <: SCPSubproblemSolution
     defect::RealMatrix    # "Defect" linearization accuracy metric
     deviation::RealTypes  # Deviation from reference trajectory
     unsafe::Bool          # Indicator that the solution is unsafe to use
-    dyn::ST.DLTV          # The dynamics
+    dyn::DLTV             # The dynamics
 end # struct
 
 #= Subproblem definition in JuMP format for the convex numerical optimizer. =#
@@ -294,6 +295,7 @@ function SubproblemSolution(
     nu = pbm.traj.nu
     np = pbm.traj.np
     nv = size(pbm.common.E, 2)
+    disc = pbm.pars.disc_method
 
     # Uninitialized parts
     ηx = fill(NaN, N)
@@ -304,7 +306,7 @@ function SubproblemSolution(
     defect = fill(NaN, nx, N-1)
     deviation = NaN
     unsafe = false
-    dyn = ST.DLTV(nx, nu, np, nv, N)
+    dyn = DLTV(nx, nu, np, nv, N, disc)
 
     vd = RealMatrix(undef, 0, N)
     vs = RealMatrix(undef, 0, N)
@@ -318,8 +320,8 @@ function SubproblemSolution(
     J_aug = NaN
 
     subsol = SubproblemSolution(iter, x, u, p, vd, vs, vic, vtc, J,
-                                   J_tr, J_vc, J_aug, ηx, ηu, ηp, status,
-                                   feas, defect, deviation, unsafe, dyn)
+                                J_tr, J_vc, J_aug, ηx, ηu, ηp, status,
+                                feas, defect, deviation, unsafe, dyn)
 
     # Compute the DLTV dynamics around this solution
     discretize!(subsol, pbm)

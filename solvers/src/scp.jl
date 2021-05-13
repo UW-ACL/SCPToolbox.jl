@@ -19,12 +19,10 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 LangServer = isdefined(@__MODULE__, :LanguageServer)
 
 if LangServer
-    include("../../utils/src/Utils.jl")
-    include("../../parser/src/Parser.jl")
-    using .Utils
+    include("discretization.jl")
+
     using .Utils: linterp
     using .Utils.Types: sample
-    using .Parser
     using .Parser.TrajectoryProblem
     import .Parser.ConicLinearProgram: @add_constraint, @new_variable
     import .Parser.ConicLinearProgram: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
@@ -32,30 +30,22 @@ if LangServer
     import .Parser.ConicLinearProgram: solve!
 end
 
-using Utils
-using Parser
-
 using LinearAlgebra
 using JuMP
 using Printf
 
 export SCPSolution, SCPHistory
 
-const ST = Types
+# ..:: Globals  ::..
+
 const CLP = ConicLinearProgram
 
-const RealTypes = ST.RealTypes
-const IntRange = ST.IntRange
-const RealVector = ST.RealVector
-const RealMatrix = ST.RealMatrix
 const Trajectory = ST.ContinuousTimeTrajectory
-const Objective = Union{ST.Objective, QuadraticCost}
-const VariableVector = ST.VariableVector
-const VariableMatrix = ST.VariableMatrix
 
 abstract type SCPParameters end
 abstract type SCPSubproblem end
-abstract type SCPSubproblemSolution end
+
+# ..:: Data structures ::..
 
 """ Variable scaling parameters.
 
@@ -77,22 +67,6 @@ struct SCPScaling
     iSq::RealMatrix # Inverse of constant parameter scaling coefficient matrix
 end # struct
 
-""" Indexing arrays for convenient access during dynamics discretization.
-
-Container of indices useful for extracting variables from the propagation
-vector during the linearized dynamics discretization process.
-"""
-struct SCPDiscretizationIndices
-    x::IntRange  # Indices for state
-    A::IntRange  # Indices for A matrix
-    Bm::IntRange # Indices for B_{-} matrix
-    Bp::IntRange # Indices for B_{+} matrix
-    F::IntRange  # Indices for S matrix
-    r::IntRange  # Indices for r vector
-    E::IntRange  # Indices for E matrix
-    length::Int  # Propagation vector total length
-end # struct
-
 """" Common constant terms used throughout the algorithm."""
 struct SCPCommon
     # >> Discrete-time grid <<
@@ -100,12 +74,12 @@ struct SCPCommon
     t_grid::RealVector   # Grid of scaled timed on the [0,1] interval
     E::RealMatrix        # Continuous-time matrix for dynamics virtual control
     scale::SCPScaling    # Variable scaling
-    id::SCPDiscretizationIndices # Convenience indices during propagation
+    id::DiscretizationIndices # Convenience indices during propagation
     table::ST.Table      # Iteration info table (printout to REPL)
 end # struct
 
 """ Structure which contains all the necessary information to run SCP."""
-struct SCPProblem{T<:SCPParameters}
+struct SCPProblem{T<:SCPParameters} <: AbstractSCPProblem
     pars::T                 # Algorithm parameters
     traj::TrajectoryProblem # The underlying trajectory problem
     common::SCPCommon       # Common precomputed terms
@@ -165,39 +139,6 @@ struct SCPHistory{T<:SCPSubproblem}
 end # struct
 
 """
-    SCPDiscretizationIndices(traj, E)
-
-Indexing arrays from problem definition.
-
-# Arguments
-- `traj`: the trajectory problem definition.
-- `E`: the dynamics virtual control coefficient matrix.
-
-# Returns
-- `idcs`: the indexing array structure.
-"""
-function SCPDiscretizationIndices(
-    traj::TrajectoryProblem,
-    E::RealMatrix)::SCPDiscretizationIndices
-
-    nx = traj.nx
-    nu = traj.nu
-    np = traj.np
-    id_x  = (1:nx)
-    id_A  = id_x[end].+(1:nx*nx)
-    id_Bm = id_A[end].+(1:nx*nu)
-    id_Bp = id_Bm[end].+(1:nx*nu)
-    id_S  = id_Bp[end].+(1:nx*np)
-    id_r  = id_S[end].+(1:nx)
-    id_E  = id_r[end].+(1:length(E))
-    id_sz = length([id_x; id_A; id_Bm; id_Bp; id_S; id_r; id_E])
-    idcs = SCPDiscretizationIndices(id_x, id_A, id_Bm, id_Bp, id_S,
-                                    id_r, id_E, id_sz)
-
-    return idcs
-end # function
-
-"""
     SCPProblem(pars, traj, table)
 
 Construct the SCP problem definition. This internally also computes the scaling
@@ -221,7 +162,7 @@ function SCPProblem(
     Δt = t_grid[2]-t_grid[1]
     E = RealMatrix(collect(Int, I(traj.nx)))
     scale = compute_scaling(pars, traj, t_grid)
-    idcs = SCPDiscretizationIndices(traj, E)
+    idcs = DiscretizationIndices(traj, E, pars.disc_method)
     consts = SCPCommon(Δt, t_grid, E, scale, idcs, table)
 
     pbm = SCPProblem(pars, traj, consts)
@@ -578,148 +519,6 @@ function compute_scaling(
 end # function
 
 """
-    derivs(t, V, k, pbm, ref)
-
-Compute concatenanted time derivative vector for dynamics discretization.
-
-# Arguments
-- `t`: the time.
-- `V`: the current concatenated vector.
-- `k`: the discrete time grid interval.
-- `pbm`: the SCP problem definition.
-- `ref`: the reference trajectory.
-
-# Returns
-- `dVdt`: the time derivative of V.
-"""
-function derivs(t::RealTypes,
-                V::RealVector,
-                k::Int,
-                pbm::SCPProblem,
-                ref::SCPSubproblemSolution)::RealVector
-    # Parameters
-    nx = pbm.traj.nx
-    t_span = pbm.common.t_grid[k:k+1]
-
-    # Get current values
-    idcs = pbm.common.id
-    x = V[idcs.x]
-    u = linterp(t, ref.ud[:, k:k+1], t_span)
-    p = ref.p
-    Phi = reshape(V[idcs.A], (nx, nx))
-    σ_m = (t_span[2]-t)/(t_span[2]-t_span[1])
-    σ_p = (t-t_span[1])/(t_span[2]-t_span[1])
-
-    # Compute the state time derivative and local linearization
-    f = pbm.traj.f(t, k, x, u, p)
-    A = pbm.traj.A(t, k, x, u, p)
-    B = pbm.traj.B(t, k, x, u, p)
-    F = pbm.traj.F(t, k, x, u, p)
-    B_m = σ_m*B
-    B_p = σ_p*B
-    r = f-A*x-B*u-F*p
-    E = pbm.common.E
-
-    # Compute the running derivatives for the discrete-time state update
-    # matrices
-    iPhi = Phi\I(nx)
-    dPhidt = A*Phi
-    dBmdt = iPhi*B_m
-    dBpdt = iPhi*B_p
-    dFdt = iPhi*F
-    drdt = iPhi*r
-    dEdt = iPhi*E
-
-    dVdt = [f; vec(dPhidt); vec(dBmdt); vec(dBpdt);
-            vec(dFdt); drdt; vec(dEdt)]
-
-    return dVdt
-end # function
-
-"""
-    discretize!(ref, pbm)
-
-Discrete linear time varying dynamics computation. Compute the discrete-time
-update matrices for the linearized dynamics about a reference trajectory. As a
-byproduct, this calculates the defects needed for the trust region update.
-
-# Arguments
-- `ref`: reference solution about which to discretize.
-- `pbm`: the SCP problem definition.
-"""
-function discretize!(
-    ref::T, pbm::SCPProblem)::Nothing where {T<:SCPSubproblemSolution}
-
-    ref.dyn.timing = get_time()
-
-    # Parameters
-    traj = pbm.traj
-    nx = traj.nx
-    nu = traj.nu
-    np = traj.np
-    N = pbm.pars.N
-    Nsub = pbm.pars.Nsub
-    t = pbm.common.t_grid
-    sz_E = size(pbm.common.E)
-    iSx = pbm.common.scale.iSx
-
-    # Initialization
-    idcs = pbm.common.id
-    V0 = zeros(idcs.length)
-    V0[idcs.A] = vec(I(nx))
-    ref.feas = true
-
-    # Propagate individually over each discrete-time interval
-    for k = 1:N-1
-        # Reset the state initial condition
-        V0[idcs.x] = ref.xd[:, k]
-
-        # Integrate
-        f = (t, V) -> derivs(t, V, k, pbm, ref)
-        t_subgrid = RealVector(LinRange(t[k], t[k+1], Nsub))
-        V = rk4(f, V0, t_subgrid; actions=traj.integ_actions)
-
-        # Get the raw RK4 results
-        xV = V[idcs.x]
-        AV = V[idcs.A]
-        BmV = V[idcs.Bm]
-        BpV = V[idcs.Bp]
-        FV = V[idcs.F]
-        rV = V[idcs.r]
-        EV = V[idcs.E]
-
-        # Extract the discrete-time update matrices for this time interval
-        A_k = reshape(AV, (nx, nx))
-        Bm_k = A_k*reshape(BmV, (nx, nu))
-        Bp_k = A_k*reshape(BpV, (nx, nu))
-        F_k = A_k*reshape(FV, (nx, np))
-        r_k = A_k*rV
-        E_k = A_k*reshape(EV, sz_E)
-
-        # Save the discrete-time update matrices
-        ref.dyn.A[:, :, k] = A_k
-        ref.dyn.Bm[:, :, k] = Bm_k
-        ref.dyn.Bp[:, :, k] = Bp_k
-        ref.dyn.F[:, :, k] = F_k
-        ref.dyn.r[:, k] = r_k
-        ref.dyn.E[:, :, k] = E_k
-
-        # Take this opportunity to comput the defect, which will be needed
-        # later for the trust region update
-        x_next = ref.xd[:, k+1]
-        ref.defect[:, k] = x_next-xV
-        if norm(iSx*ref.defect[:, k], Inf) > pbm.pars.feas_tol
-            ref.feas = false
-        end
-
-    end
-
-    ref.dyn.timing = (get_time()-ref.dyn.timing)/1e9
-
-    return nothing
-end # function
-
-"""
     add_dynamics!(spbm)
 
 Add dynamics constraints to the problem.
@@ -727,12 +526,12 @@ Add dynamics constraints to the problem.
 # Arguments
 - `spbm`: the subproblem definition.
 """
-function add_dynamics!(
-    spbm::T)::Nothing where {T<:SCPSubproblem}
+function add_dynamics!(spbm::SCPSubproblem)::Nothing
 
     # Variables and parameters
     N = spbm.def.pars.N
     prg = spbm.prg
+    dyn = spbm.ref.dyn
     x = spbm.x
     u = spbm.u
     p = spbm.p
@@ -740,27 +539,7 @@ function add_dynamics!(
 
     # Add dynamics constraint to optimization model
     for k = 1:N-1
-        xk, xkp1 = x[:, k], x[:, k+1]
-        uk, ukp1, vdk = u[:, k], u[:, k+1], vd[:, k]
-        A = spbm.ref.dyn.A[:, :, k]
-        Bm = spbm.ref.dyn.Bm[:, :, k]
-        Bp = spbm.ref.dyn.Bp[:, :, k]
-        F = spbm.ref.dyn.F[:, :, k]
-        r = spbm.ref.dyn.r[:, k]
-        E = spbm.ref.dyn.E[:, :, k]
-        @add_constraint(prg, ZERO, "dynamics",
-                        (xk, xkp1, uk, ukp1, p, vdk), begin # Value
-                            local xk, xkp1, uk, ukp1, p, vdk = arg #noerr
-                            xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk)
-                        end, begin # Jacobians
-                            if LangServer; local J = Dict(); end
-                            J[1] = -A
-                            J[2] = collect(Int, I(pars.nx)) #noerr
-                            J[3] = -Bm
-                            J[4] = -Bp
-                            J[5] = -F
-                            J[6] = -E
-                        end)
+        state_update!(k, x, u, p, vd, dyn, prg)
     end
 
     return nothing
@@ -1097,13 +876,4 @@ function save!(hist::SCPHistory,
     spbm.timing[:formulate] = (get_time()-spbm.timing[:formulate])/1e9
     push!(hist.subproblems, spbm)
     return nothing
-end # function
-
-"""
-    get_time()
-
-The the current time in nanoseconds.
-"""
-function get_time()::Int
-    return Int(time_ns())
 end # function
