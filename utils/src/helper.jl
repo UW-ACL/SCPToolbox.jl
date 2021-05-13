@@ -123,6 +123,36 @@ function zohinterp(t::RealValue,
 end # function
 
 """
+    diracinterp(t, f_cps, t_grid)
+
+Impulse signal interpolation on a grid. If the time `t` does not land exactly
+on a temporal grid node, return zero. Otherwise, return the signal value (which
+would multiply the unit area of a Dirac spike, if it is an impulse signal).
+
+# Arguments
+- `t`: the time at which to get the function value.
+- `f_cps`: the control points of the function, stored as columns of a matrix.
+- `t_grid`: the discrete time nodes.
+
+# Returns
+- `f_t`: the function value at time t.
+"""
+function diracinterp(t::RealValue,
+                     f_cps::RealArray,
+                     t_grid::RealVector)::Union{
+                         RealValue, RealArray}
+    if t>=t_grid[end]
+        k = length(t_grid)
+    else
+        t = max(t_grid[1], min(t_grid[end], t)) # Saturate to time grid
+        k = findall(t_grid.==t)[1]
+    end
+    dimfill = fill(:, ndims(f_cps)-1)
+    f_t = f_cps[dimfill..., k]
+    return f_t
+end # function
+
+"""
     straightline_interpolate(v0, vf, N)
 
 Straight-line interpolation between two points. Compute a straight-line

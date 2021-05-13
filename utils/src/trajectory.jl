@@ -30,6 +30,7 @@ export ContinuousTimeTrajectory, sample
 Possible interpolation methods are:
 - `:linear` (linear interpolation);
 - `:zoh` (zeroth-order hold interpolation).
+- `:impulse` (impulse signal interpolation).
 """
 struct ContinuousTimeTrajectory
     t::RealVector  # The trajectory time nodes
@@ -51,7 +52,7 @@ struct ContinuousTimeTrajectory
         x::RealArray,
         interp::Symbol)::ContinuousTimeTrajectory
 
-        if !(interp in [:linear, :zoh])
+        if !(interp in [:linear, :zoh, :impulse])
             err = ArgumentError("unknown trajectory interpolation type.")
             throw(err)
         end
@@ -78,6 +79,8 @@ function sample(traj::ContinuousTimeTrajectory,
         x = linterp(t, traj.x, traj.t)
     elseif traj.interp==:zoh
         x = zohinterp(t, traj.x, traj.t)
+    elseif traj.interp==:impulse
+        x = diracinterp(t, traj.x, traj.t)
     end
 
     return x

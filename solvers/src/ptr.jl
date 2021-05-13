@@ -523,8 +523,9 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     q2cone = Dict(1 => L1, 2 => SOC, 4 => SOC, Inf => LINF)
     cone = q2cone[q]
 
-    # Parameter trust region
+    # >> Parameter trust region <<
     dp_lq = @new_variable(prg, "dp_lq")
+
     @add_constraint(prg, cone, "parameter_trust_region",
                     (p, dp_lq), begin # Value
                         local p, dp_lq = arg #noerr
@@ -569,9 +570,9 @@ function add_trust_region!(spbm::Subproblem)::Nothing
                         end)
     end
 
-    # State and input trust regions
+    # State trust regions
     dx_lq = @new_variable(prg, N, "dx_lq")
-    du_lq = @new_variable(prg, N, "du_lq")
+
     for k = 1:N
         @add_constraint(prg, cone, "state_trust_region",
                         (x[:, k], dx_lq[k]), begin # Value
@@ -583,17 +584,6 @@ function add_trust_region!(spbm::Subproblem)::Nothing
                             if LangServer; local J = Dict(); end
                             J[1] = vcat(zeros(traj.nx)', scale.iSx)
                             J[2] = vcat(1, zeros(traj.nx))
-                        end)
-        @add_constraint(prg, cone, "input_trust_region",
-                        (u[:, k], du_lq[k]), begin # Value
-                            local uk, duk_lq = arg #noerr
-                            local uhk = scale.iSu*(uk-scale.cu)
-                            local duk = uhk-uh_ref[:, k]
-                            vcat(duk_lq, duk)
-                        end, begin # Jacobian
-                            if LangServer; local J = Dict(); end
-                            J[1] = vcat(zeros(traj.nu)', scale.iSu)
-                            J[2] = vcat(1, zeros(traj.nu))
                         end)
         if q==4
             # State
@@ -616,7 +606,36 @@ function add_trust_region!(spbm::Subproblem)::Nothing
                                 J[1] = [1; 0; 0]
                                 J[2] = [0; 1; 0]
                             end)
-            # Input
+        else
+            # State
+            @add_constraint(prg, NONPOS, "state_trust_region",
+                            (ηx[k], dx_lq[k]), begin # Value
+                                local ηxk, dxk_lq = arg #noerr
+                                dxk_lq-ηxk
+                            end, begin # Jacobian
+                                if LangServer; local J = Dict(); end
+                                J[1] = [-1]
+                                J[2] = [1]
+                            end)
+        end
+    end
+
+    # Input trust regions
+    du_lq = @new_variable(prg, N, "du_lq")
+
+    for k = 1:N
+        @add_constraint(prg, cone, "input_trust_region",
+                        (u[:, k], du_lq[k]), begin # Value
+                            local uk, duk_lq = arg #noerr
+                            local uhk = scale.iSu*(uk-scale.cu)
+                            local duk = uhk-uh_ref[:, k]
+                            vcat(duk_lq, duk)
+                        end, begin # Jacobian
+                            if LangServer; local J = Dict(); end
+                            J[1] = vcat(zeros(traj.nu)', scale.iSu)
+                            J[2] = vcat(1, zeros(traj.nu))
+                        end)
+        if q==4
             wu = @new_variable(prg, "wu")
             @add_constraint(prg, SOC, "input_trust_region",
                             (wu, du_lq[k]), begin # Value
@@ -637,17 +656,6 @@ function add_trust_region!(spbm::Subproblem)::Nothing
                                 J[2] = [0; 1; 0]
                             end)
         else
-            # State
-            @add_constraint(prg, NONPOS, "state_trust_region",
-                            (ηx[k], dx_lq[k]), begin # Value
-                                local ηxk, dxk_lq = arg #noerr
-                                dxk_lq-ηxk
-                            end, begin # Jacobian
-                                if LangServer; local J = Dict(); end
-                                J[1] = [-1]
-                                J[2] = [1]
-                            end)
-            # Input
             @add_constraint(prg, NONPOS, "input_trust_region",
                             (ηu[k], du_lq[k]), begin # Value
                                 local ηuk, duk_lq = arg #noerr
@@ -724,7 +732,7 @@ function compute_original_cost!(spbm::Subproblem)::Nothing
             local ∇J_run = Vector{Dict}(undef, N)
             if !isnothing(traj_pbm.Γ)
                 for k = 1:N
-                    out = traj_pbm.Γ(t[k], k, x[k], u[k], p, q)
+                    local out = traj_pbm.Γ(t[k], k, x[k], u[k], p, q)
                     if out isa Tuple
                         J_run[k], ∇J_run[k] = out
                     else

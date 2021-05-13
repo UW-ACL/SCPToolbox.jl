@@ -25,6 +25,8 @@ if LangServer
     using .Utils
     using .Parser
 
+    import .Utils.Types: sample
+
     import .Parser: DiscretizationType, FOH, IMPULSE
     import .Parser.ConicLinearProgram: ConicProgram
     import .Parser.ConicLinearProgram: QuadraticCost
@@ -53,6 +55,8 @@ const VarArgBlk = VariableArgumentBlock
 const CstArgBlk = ConstantArgumentBlock
 
 const Objective = Union{ST.Objective, QuadraticCost}
+
+const Trajectory = ST.ContinuousTimeTrajectory
 
 abstract type AbstractSCPProblem end
 abstract type SCPSubproblemSolution end

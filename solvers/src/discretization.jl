@@ -162,8 +162,7 @@ function discretize!(
 
     ref.dyn.timing = get_time()
     derivs_assoc = Dict(FOH=>derivs_foh,
-                        # IMPULSE=>derivs_impulse
-                        )
+                        IMPULSE=>derivs_impulse)
 
     # Parameters
     traj = pbm.traj
@@ -191,7 +190,7 @@ function discretize!(
             tk = t[k]
             xk = ref.xd[:, k]
             uk = ref.ud[:, k]
-            xk_plus = pbm.traj.f(tk, -k, xk, uk, ref.p)
+            xk_plus = xk+pbm.traj.f(tk, -k, xk, uk, ref.p)
             V0[idcs.x] = xk_plus
         end
 
@@ -380,9 +379,6 @@ function set_update_matrices(
     end
     F_k = A_k*reshape(FV, (nx, np))
     r_k = A_k*rV
-    if method==IMPULSE
-        r_k -= B_k*uk
-    end
     E_k = A_k*reshape(EV, sz_E)
 
     # Save the discrete-time update matrices
@@ -459,4 +455,68 @@ function state_update!(k::Int, x::VarArgBlk, u::VarArgBlk, p::VarArgBlk,
     end
 
     return nothing
+end # function
+
+"""
+    propagate(sol, pbm[; res])
+
+Propagate a discrete-time solution through the nonlinear dynamics and output a
+continuous-time state trajectory that can be queried as `x(t)`.
+
+# Arguments
+- `sol`: the solution to be propagated.
+- `pbm`: the SCP problem definition.
+
+# Keywords
+- `res`: (optional) the temporal resolution for the continuous-time trajectory.
+
+# Returns
+- `xc`: the continuous-time state trajectory.
+"""
+function propagate(sol::SCPSubproblemSolution,
+                   pbm::AbstractSCPProblem;
+                   res::Int=1000)::Trajectory
+
+    # Parameters
+    pars = pbm.pars
+    N = pars.N
+    method = pars.disc_method
+    td = pbm.common.t_grid
+    xd = sol.xd
+    ud = sol.ud
+    p = sol.p
+
+    k = (t) -> max(floor(Int, t/(N-1))+1, N)
+    dynamics = (t, u, x) -> pbm.traj.f(t, k(t), x, u, p)
+
+    if method==FOH
+        tc = RealVector(LinRange(0.0, 1.0, res))
+        uc = Trajectory(td, ud, :linear)
+        F = (t, x) -> dynamics(t, sample(uc, t), x)
+        xc_vals = rk4(F, xd[:, 1], tc; full=true,
+                      actions=pbm.traj.integ_actions)
+        xc = Trajectory(tc, xc_vals, :linear)
+    elseif method==IMPULSE
+        δt = sqrt(eps()) # Tiny offset of the "impulse duration"
+        subres = ceil(Int, res/(N-1)) # Number of nodes per interval
+        tc_intvl = Vector{RealVector}(undef, N)
+        xc_intvl = Vector{RealMatrix}(undef, N)
+        tc_intvl[1] = [0.0]
+        xc_intvl[1] = reshape(xd[:, 1], (2, 1))
+        for k = 1:N-1
+            tc_intvl[k+1] = LinRange(td[k:k+1]..., subres)
+            x0 = xd[:, k]
+            x0 += pbm.traj.f(td[k], -k, xd[:, k], ud[:, k], p)
+            u_idle = zeros(pbm.traj.nu)
+            F = (t, x) -> dynamics(t, u_idle, x)
+            xc_intvl[k+1] = rk4(F, x0, tc_intvl[k+1]; full=true,
+                                actions=pbm.traj.integ_actions)
+            tc_intvl[k+1][1] += δt
+        end
+        tc = vcat(tc_intvl...)
+        xc_vals = hcat(xc_intvl...)
+        xc = Trajectory(tc, xc_vals, :linear)
+    end
+
+    return xc
 end # function

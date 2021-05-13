@@ -40,8 +40,6 @@ export SCPSolution, SCPHistory
 
 const CLP = ConicLinearProgram
 
-const Trajectory = ST.ContinuousTimeTrajectory
-
 abstract type SCPParameters end
 abstract type SCPSubproblem end
 
@@ -218,6 +216,7 @@ function SCPSolution(history::SCPHistory)::SCPSolution
     # Extract relevant parameters
     num_iters = last_spbm.iter
     pbm = last_spbm.def
+    method = pbm.pars.disc_method
     N = pbm.pars.N
     Nsub = pbm.pars.Nsub
     td = pbm.common.t_grid
@@ -244,13 +243,12 @@ function SCPSolution(history::SCPHistory)::SCPSolution
         # Since within-interval integration using Nsub points worked, using
         # twice as many this time around seems like a good heuristic
         Nc = 2*Nsub*(N-1)
-        tc = RealVector(LinRange(0.0, 1.0, Nc))
-        uc = Trajectory(td, ud, :linear)
-        k = (t) -> max(floor(Int, t/(N-1))+1, N)
-        F = (t, x) -> pbm.traj.f(t, k(t), x, sample(uc, t), p)
-        xc_vals = rk4(F, last_sol.xd[:, 1], tc; full=true,
-                      actions=pbm.traj.integ_actions)
-        xc = Trajectory(tc, xc_vals, :linear)
+        xc = propagate(last_sol, pbm; res=Nc)
+        if method==FOH
+            uc = Trajectory(td, ud, :linear)
+        elseif method==IMPULSE
+            uc = Trajectory(td, ud, :impulse)
+        end
 
         cost = last_sol.J_aug
     end
