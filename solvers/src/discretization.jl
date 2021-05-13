@@ -172,7 +172,8 @@ function discretize!(
     Nsub = pbm.pars.Nsub
     t = pbm.common.t_grid
     iSx = pbm.common.scale.iSx
-    derivs = derivs_assoc[pbm.pars.disc_method]
+    method = pbm.pars.disc_method
+    derivs = derivs_assoc[method]
 
     # Initialization
     idcs = pbm.common.id
@@ -183,7 +184,16 @@ function discretize!(
     # Propagate individually over each discrete-time interval
     for k = 1:N-1
         # Reset the state initial condition
-        V0[idcs.x] = ref.xd[:, k]
+        if method==FOH
+            V0[idcs.x] = ref.xd[:, k]
+        elseif method==IMPULSE
+            # Impulse-update the state
+            tk = t[k]
+            xk = ref.xd[:, k]
+            uk = ref.ud[:, k]
+            xk_plus = pbm.traj.f(tk, -k, xk, uk, ref.p)
+            V0[idcs.x] = xk_plus
+        end
 
         # Integrate
         f = (t, V) -> derivs(t, V, k, pbm, ref)

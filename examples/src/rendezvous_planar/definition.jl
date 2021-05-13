@@ -172,6 +172,7 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             # Parameters
             veh = pbm.mdl.vehicle
             env = pbm.mdl.env
+            impulse = k<0
             # Current (x, u, p) values
             r = x[veh.id_r]
             v = x[veh.id_v]
@@ -185,12 +186,14 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             xh, yh, n = env.xh, env.yh, env.n
             # The dynamics
             f = zeros(pbm.nx)
-            f[veh.id_r] = v
-            f[veh.id_v] = (2*n*dot(yh, v))*xh
-            f[veh.id_v] += (3*n^2*dot(yh, r)-2*n*dot(xh, v))*yh
-            f[veh.id_v] += ((fm+fp)*uh+f0*vh)/veh.m
-            f[veh.id_θ] = ω
+            f[veh.id_v] = ((fm+fp)*uh+f0*vh)/veh.m
             f[veh.id_ω] = ((fp-fm)*veh.lv-f0*veh.lu)/veh.J
+            if !impulse
+                f[veh.id_r] = v
+                f[veh.id_v] += (2*n*dot(yh, v))*xh
+                f[veh.id_v] += (3*n^2*dot(yh, r)-2*n*dot(xh, v))*yh
+                f[veh.id_θ] = ω
+            end
             # Scale for absolute time
             f *= tdil
             return f
