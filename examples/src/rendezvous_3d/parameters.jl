@@ -122,8 +122,13 @@ function RendezvousProblem()::RendezvousProblem
     id_M = 4:6
     id_t = 1
     # >> Mechanical parameters <<
-    m = 30e3
-    J = diagm([5e4; 1e5; 1e5])
+    m = convert_units(66850.6, :lb2kg)
+    J_xx, J_yy, J_zz = 36324, 80036, 81701
+    J_xy, J_xz, J_yz = -2111, 273, 2268
+    J = [J_xx -J_xy -J_xz;
+         -J_xy J_yy -J_yz;
+         -J_xz -J_yz J_zz]
+    J = convert_units.(J, :ft2slug2m2kg)
     # >> Control parameters <<
     T_max = 500.0
     M_max = 1500.0
@@ -142,7 +147,7 @@ function RendezvousProblem()::RendezvousProblem
     # Docking port (inertial) frame
     # Baseline docked configuration
     q_dock = Quaternion(deg2rad(180), yi)*Quaternion(deg2rad(180), xi)
-    q_init = q_dock*Quaternion(deg2rad(180), yi)
+    q_init = q_dock*Quaternion(deg2rad(180), zi)*Quaternion(deg2rad(10), yi)
     q0 = q_init
     qf = q_dock
     # >> Time of flight <<

@@ -28,7 +28,8 @@ const RealVector = T.RealVector
 const RealMatrix = T.RealMatrix
 
 export skew, get_interval, linterp, zohinterp, diracinterp,
-    straightline_interpolate, rk4, trapz, ∇trapz, logsumexp, or, squeeze
+    straightline_interpolate, rk4, trapz, ∇trapz, logsumexp, or, squeeze,
+    convert_units
 
 """ Skew-symmetric matrix from a 3-element vector.
 
@@ -647,3 +648,14 @@ function squeeze(A::AbstractArray)::AbstractArray
     Ar = dropdims(A, dims=singleton_dims)
     return Ar
 end # function
+
+function convert_units(x::RealValue, converter::Symbol)::RealValue
+    convert_func = Symbol("_"*string(converter))
+    y = eval(Expr(:call, convert_func, x))
+    return y
+end # function
+
+_in2m(x) = x*0.0254 # inches to meters
+_ft2slug2m2kg(x) = x*1.35581795 # slug*ft^2 to kg*m^2
+_lb2kg(x) = x*0.453592 # lb to kg
+_lbf2N(x) = x*4.448222 # lbf to N

@@ -29,7 +29,13 @@ using Colors
 
 export plot_timeseries_bound!, plot_ellipsoids!, plot_prisms!,
     plot_convergence, setup_axis!, generate_colormap, rgb, rgb2pyplot,
-    set_axis_equal, create_figure, save_figure
+    set_axis_equal, create_figure, save_figure, darken_color
+
+# ..:: Globals ::..
+
+const OptPyObject = Union{PyPlot.PyObject, Nothing}
+
+# ..:: Methods ::..
 
 """
     plot_timeseries_bound!(ax, x_min, x_max, y_bnd, height)
@@ -363,7 +369,7 @@ be entered:
 # Returns
 - `ax`: the axis object.
 """
-function setup_axis!(ax::Union{PyPlot.PyObject, Nothing},
+function setup_axis!(ax::OptPyObject,
                      rows::Union{Int, Nothing},
                      cols::Union{Int, Nothing},
                      k::Union{Int, Nothing},
@@ -373,7 +379,7 @@ function setup_axis!(ax::Union{PyPlot.PyObject, Nothing},
                      clabel::Union{String, Nothing}=nothing,
                      tight::String="",
                      axis::Union{String, Nothing}=nothing,
-                     cbar::Union{PyPlot.PyObject, Nothing}=nothing,
+                     cbar::OptPyObject=nothing,
                      cbar_aspect::Union{Int, Nothing}=nothing)::
                          PyPlot.PyObject
 
@@ -406,9 +412,11 @@ function setup_axis!(ax::Union{PyPlot.PyObject, Nothing},
     ax.set_ylabel(ylabel)
 
     if !isnothing(cbar)
-        plt.colorbar(cbar,
-                     aspect=cbar_aspect,
-                     label=clabel)
+        plt.gcf().colorbar(
+            cbar,
+            aspect=cbar_aspect,
+            label=clabel,
+            ax=ax)
     end
 
     return ax
@@ -532,13 +540,32 @@ Convert RGB color object to a tuple that PyPlot accepts.
 # Returns
 - `t`: a 4-tuple (R, G, B, A) for PyPlot.
 """
-function rgb2pyplot(c::T; a::Real=1)::Tuple{
-    Real, Real, Real, Real} where {T<:RGB}
+function rgb2pyplot(c::T; a::Real=1)::NTuple{4, Real} where {T<:RGB}
 
     r, g, b = Float64(c.r), Float64(c.g), Float64(c.b)
     t = (r, g, b, a)
 
     return t
+end # function
+
+"""
+    darken_color(clr, amount)
+
+Inteprolate the color closer to black, for higher settings of `amount`.
+
+# Arguments
+- `clr`: the original color.
+- `amount`: a value between 0 and 1, with 0 returning the original color and 1
+  returning the darkest color (black).
+
+# Returns
+- `rgba`: the new color as a `(r,g,b,a)` tuple of floats.
+"""
+function darken_color(clr::String, amount::Float64)::NTuple{4, Real}
+    dark_clr = colorant"black"
+    new_clr = weighted_color_mean(1-amount, parse(RGB, clr), dark_clr)
+    rgba = rgb2pyplot(new_clr)
+    return rgba
 end # function
 
 """
