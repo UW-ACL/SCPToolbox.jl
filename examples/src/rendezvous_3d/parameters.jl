@@ -133,7 +133,7 @@ function RendezvousProblem()::RendezvousProblem
 
     # ..:: Trajectory ::..
     # >> Boundary conditions <<
-    r0 = 10.0*xi
+    r0 = 50.0*xi+10.0*zi+5.0*yi
     rf = 0.0*xi
     v0 = 0.0*xi
     vf = -0.1*xi

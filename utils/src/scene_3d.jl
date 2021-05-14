@@ -1,4 +1,4 @@
-#= Trajectory generation examples.
+#= 3D plot creation utilities.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
@@ -16,25 +16,18 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-module Examples
+LangServer = isdefined(@__MODULE__, :LanguageServer)
 
-module Oscillator
-include("oscillator/parameters.jl")
-include("oscillator/definition.jl")
-include("oscillator/plots.jl")
-include("oscillator/tests.jl")
-end # module
+if LangServer
+    include("helper.jl")
+    include("plots.jl")
+end
 
-module RendezvousPlanar
-include("rendezvous_planar/parameters.jl")
-include("rendezvous_planar/definition.jl")
-include("rendezvous_planar/plots.jl")
-end # module
+# ..:: Data structures ::..
 
-module Rendezvous3D
-include("rendezvous_3d/parameters.jl")
-include("rendezvous_3d/definition.jl")
-include("rendezvous_3d/plots.jl")
-end #module
-
-end # module
+"""
+`Scene3D` is the main data structure holding 3D scene information and objects.
+"""
+mutable struct Scene3D
+    objects::Vector{}
+end # struct

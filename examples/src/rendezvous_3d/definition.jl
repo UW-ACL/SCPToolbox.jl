@@ -1,4 +1,4 @@
-#= Planar spacecraft rendezvous example, common code.
+#= Spacecraft rendezvous problem definition.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington)
@@ -64,6 +64,15 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     traj = mdl.traj
 
     advise! = problem_advise_scale!
+
+    # >> States <<
+    r0_nrm = norm(traj.r0)
+    v_max = r0_nrm/traj.tf_min
+    rot_ang, _ = Log(traj.q0'*traj.qf)
+    ω_max = abs(rot_ang)/traj.tf_min
+    advise!(pbm, :state, veh.id_r, (-r0_nrm, r0_nrm))
+    advise!(pbm, :state, veh.id_v, (-v_max, v_max))
+    advise!(pbm, :state, veh.id_ω, (-ω_max, ω_max))
 
     # >> Inputs <<
     advise!(pbm, :input, veh.id_T, (-veh.T_max, veh.T_max))
@@ -155,9 +164,11 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
         # Function value f
         (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
+            env = pbm.mdl.env
             impulse = k<0
 
             tdil = p[veh.id_t] # Time dilation
+            r = x[veh.id_r]
             v = x[veh.id_v]
             q = Quaternion(x[veh.id_q])
             ω = x[veh.id_ω]
@@ -165,14 +176,21 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             M = u[veh.id_M]
 
             iJ = inv(veh.J)
+            xi, yi, zi = env.xi, env.yi, env.zi
+            norb = env.n
 
             f = zeros(pbm.nx)
             f[veh.id_v] = T/veh.m
             f[veh.id_ω] = iJ*M
             if !impulse
+                # Rigid body terms
                 f[veh.id_r] = v
                 f[veh.id_q] = 0.5*vec(q*ω)
                 f[veh.id_ω] += -iJ*cross(ω, veh.J*ω)
+                # Clohessy-Wiltshire dynamics terms
+                f[veh.id_v] += (-2*norb*dot(zi, v))*xi
+                f[veh.id_v] += (-norb^2*dot(yi, r))*yi
+                f[veh.id_v] += (3*norb^2*dot(zi, r)+2*norb*dot(xi, v))*zi
                 # Scale for absolute time
                 f *= tdil
             end

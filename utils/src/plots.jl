@@ -27,10 +27,9 @@ using Printf
 using PyPlot
 using Colors
 
-export plot_timeseries_bound!, # plot_ellipsoids!, plot_prisms!,
-    plot_convergence,
-    setup_axis!, generate_colormap, rgb, rgb2pyplot, set_axis_equal,
-    create_figure, save_figure
+export plot_timeseries_bound!, plot_ellipsoids!, plot_prisms!,
+    plot_convergence, setup_axis!, generate_colormap, rgb, rgb2pyplot,
+    set_axis_equal, create_figure, save_figure
 
 """
     plot_timeseries_bound!(ax, x_min, x_max, y_bnd, height)
@@ -84,25 +83,25 @@ Draw ellipsoids on the currently active plot.
 # Keywords
 - `label`: (optional) legend label.
 """
-# function plot_ellipsoids!(ax::PyPlot.PyObject,
-#                           E::Vector{Ellipsoid},
-#                           axes::Types.IntVector=[1, 2];
-#                           label::Union{String,Nothing}=nothing)::Nothing
-#     θ = LinRange(0.0, 2*pi, 100)
-#     circle = hcat(cos.(θ), sin.(θ))'
-#     for i = 1:length(E)
-#         Ep = project(E[i], axes)
-#         vertices = Ep.H\circle.+Ep.c
-#         x, y = vertices[1, :], vertices[2, :]
-#         fc = parse(RGB, "#db6245")
-#         ax.fill(x, y,
-#                 facecolor=rgb2pyplot(fc, a=0.5),
-#                 edgecolor="#26415d",
-#                 linewidth=1,
-#                 label=(i==1) ? label : nothing)
-#     end
-#     return nothing
-# end # function
+function plot_ellipsoids!(ax::PyPlot.PyObject,
+                          E::Vector{Ellipsoid},
+                          axes::Types.IntVector=[1, 2];
+                          label::Union{String,Nothing}=nothing)::Nothing
+    θ = LinRange(0.0, 2*pi, 100)
+    circle = hcat(cos.(θ), sin.(θ))'
+    for i = 1:length(E)
+        Ep = project(E[i], axes)
+        vertices = Ep.H\circle.+Ep.c
+        x, y = vertices[1, :], vertices[2, :]
+        fc = parse(RGB, "#db6245")
+        ax.fill(x, y,
+                facecolor=rgb2pyplot(fc, a=0.5),
+                edgecolor="#26415d",
+                linewidth=1,
+                label=(i==1) ? label : nothing)
+    end
+    return nothing
+end # function
 
 """
     plot_prisms!(ax, H[, axes][; label])
@@ -117,25 +116,25 @@ Draw rectangular prisms on the current active plot.
 # Keywords
 - `label`: (optional) legend label.
 """
-# function plot_prisms!(ax::PyPlot.PyObject,
-#                       H::Vector{Hyperrectangle},
-#                       axes::Types.IntVector=[1, 2];
-#                       label::Union{String,Nothing}=nothing)::Nothing
-#     for i = 1:length(H)
-#         Hi = H[i]
-#         x, y = axes
-#         vertices = RealMatrix([Hi.l[x] Hi.u[x] Hi.u[x] Hi.l[x] Hi.l[x];
-#                                Hi.l[y] Hi.l[y] Hi.u[y] Hi.u[y] Hi.l[y]])
-#         x, y = vertices[1, :], vertices[2, :]
-#         fc = parse(RGB, "#5da9a1")
-#         ax.fill(x, y,
-#                 linewidth=1,
-#                 facecolor=rgb2pyplot(fc, a=0.5),
-#                 edgecolor="#427d77",
-#                 label=(i==1) ? label : nothing)
-#     end
-#     return nothing
-# end # function
+function plot_prisms!(ax::PyPlot.PyObject,
+                      H::Vector{Hyperrectangle},
+                      axes::Types.IntVector=[1, 2];
+                      label::Union{String,Nothing}=nothing)::Nothing
+    for i = 1:length(H)
+        Hi = H[i]
+        x, y = axes
+        vertices = RealMatrix([Hi.l[x] Hi.u[x] Hi.u[x] Hi.l[x] Hi.l[x];
+                               Hi.l[y] Hi.l[y] Hi.u[y] Hi.u[y] Hi.l[y]])
+        x, y = vertices[1, :], vertices[2, :]
+        fc = parse(RGB, "#5da9a1")
+        ax.fill(x, y,
+                linewidth=1,
+                facecolor=rgb2pyplot(fc, a=0.5),
+                edgecolor="#427d77",
+                label=(i==1) ? label : nothing)
+    end
+    return nothing
+end # function
 
 """
     plot_convergence(history, name)
@@ -549,7 +548,7 @@ Set axis limits with an equal aspect ratio (i.e. circles appear as circles).
 
 # Arguments
 - `ax`: the axis object.
-- `lims`: a four-tuple of scalars (xmin,xmax,ymin,ymax). At least one of these
+- `lims`: a four-tuple of scalars (xmin,xmax,ymin,ymax). Exactly one of these
   has to be `missing`, which means the bound of that limit is decided by the
   scaling amount.
 """

@@ -27,8 +27,8 @@ const RealArray = T.RealArray
 const RealVector = T.RealVector
 const RealMatrix = T.RealMatrix
 
-export skew, get_interval, linterp, zohinterp, straightline_interpolate,
-    rk4, trapz, ∇trapz, logsumexp, or
+export skew, get_interval, linterp, zohinterp, diracinterp,
+    straightline_interpolate, rk4, trapz, ∇trapz, logsumexp, or, squeeze
 
 """ Skew-symmetric matrix from a 3-element vector.
 
@@ -629,4 +629,21 @@ function or(predicates...;
         return OR
     end
 
+end # function
+
+"""
+    squeeze(A)
+
+Remove all length-1 dimensions from the array `A`.
+
+# Arguments
+- `A`: the original array.
+
+# Returns
+- `Ar`: the array with all dimensions of length 1 removed..
+"""
+function squeeze(A::AbstractArray)::AbstractArray
+    singleton_dims = tuple((d for d in 1:ndims(A) if size(A, d) == 1)...)
+    Ar = dropdims(A, dims=singleton_dims)
+    return Ar
 end # function
