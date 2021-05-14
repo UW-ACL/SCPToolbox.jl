@@ -145,7 +145,7 @@ function set_guess!(pbm::TrajectoryProblem)::Nothing
 end # function
 
 function set_cost!(pbm::TrajectoryProblem,
-                            algo::Symbol)::Nothing
+                   algo::Symbol)::Nothing
 
     problem_set_running_cost!(
         pbm, algo,
@@ -279,7 +279,7 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
         end,)
 
     return nothing
-end
+end # function
 
 function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
@@ -378,10 +378,10 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end
+end # function
 
 function set_nonconvex_constraints!(pbm::TrajectoryProblem,
-                                             algo::Symbol)::Nothing
+                                    algo::Symbol)::Nothing
 
     _common_s_sz = 2
 
@@ -445,7 +445,7 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
         end)
 
     return nothing
-end
+end # function
 
 function set_bcs!(pbm::TrajectoryProblem)::Nothing
 
@@ -473,4 +473,4 @@ function set_bcs!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end
+end # function

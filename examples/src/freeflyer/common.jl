@@ -70,7 +70,7 @@ function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
     end
 
     return nothing
-end
+end # function
 
 function _common__set_integration!(pbm::TrajectoryProblem)::Nothing
 
@@ -83,7 +83,7 @@ function _common__set_integration!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end
+end # function
 
 function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
 
@@ -171,7 +171,7 @@ function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end
+end # function
 
 function _common__set_cost!(pbm::TrajectoryProblem,
                             algo::T_Symbol)::Nothing
@@ -221,7 +221,7 @@ function _common__set_cost!(pbm::TrajectoryProblem,
     end
 
     return nothing
-end
+end # function
 
 function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
@@ -346,7 +346,7 @@ function _common__set_nonconvex_constraints!(
         problem_set_s!(pbm, algo, _ff___s, _ff___C, _ff___G)
     end
 
-end
+end # function
 
 function _common__set_bcs!(pbm::TrajectoryProblem)::Nothing
 
@@ -405,4 +405,4 @@ function _common__set_bcs!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end
+end # function

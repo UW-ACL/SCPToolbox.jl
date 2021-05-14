@@ -31,4 +31,9 @@ include("rendezvous_planar/definition.jl")
 include("rendezvous_planar/plots.jl")
 end # module
 
+module Rendezvous3D
+include("rendezvous_3d/parameters.jl")
+include("rendezvous_3d/definition.jl")
+end #module
+
 end # module

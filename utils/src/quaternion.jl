@@ -24,15 +24,33 @@ end
 import Base: *, adjoint, vec, getindex
 import ..skew
 
-export Quaternion, dcm, rpy, slerp_interpolate
+export Quaternion, dcm, rpy, slerp_interpolate, rotate, Log, skew
 
-""" Quaternion using Hamiltonian convention.
+"""
+`Quaternion` encodes a quaternion object. Stored in vectorized form/indexing,
+use the scalar last convention. The behaviour follows the documentation in [1].
 
-In vectorized form/indexing, use the scalar last convention.
+References
+
+[1] Joan Sola, "Quaternion kinematics for the error-state Kalman filter." CoRR
+2017, http://arxiv.org/abs/1711.02508.
 """
 struct Quaternion
     v::RealVector # Vector part
     w::RealTypes  # Scalar part
+
+    """
+        Quaternion()
+
+    Identity quaternion constructor.
+
+    # Returns
+    - `q`: the quaternion.
+    """
+    function Quaternion()::Quaternion
+        q = new(zeros(3), 1.0)
+        return q
+    end # function
 
     """
         Quaternion(v, w)
@@ -234,7 +252,7 @@ assume that a unit quaternion is passed in (no checks are run to verify this).
 - `q`: the unit quaternion.
 
 # Returns
-- `α`: the rotation angle (in radiancs).
+- `α`: the rotation angle (in radians).
 - `a`: the rotation axis.
 """
 function Log(q::Quaternion)::Tuple{Real, RealVector}
@@ -242,6 +260,87 @@ function Log(q::Quaternion)::Tuple{Real, RealVector}
     α = 2*atan(nrm_qv, q.w)
     a = q.v/nrm_qv
     return α, a
+end # function
+
+"""
+    rotate(v, q...)
+
+Consider if the function is called as `rotate(v, q)`, i.e. with just two
+arguments. This call rotates a vector `v` by the quaternion `q`. The rotation
+can be thought of, equivalently, in two ways:
+
+- Active rotation: `q` represents the rotation of vector `v` in the `A` frame,
+  taking it from its original value to a new value `w`, which is a vector in
+  the `A` frame that is rotated "away from `v`" by the amount encoded in `q`.
+
+- Passive rotation: `q` represents a frame transformation from the `B` frame to
+  the `A` frame. The vector `v` is a vector in the `B` frame, and "rotating by
+  `q`" means expressing the same vector in the `A` frame.
+
+In both cases, if you call `rotate(q', v)`, you are doing the inverse
+operation. In particular, this means:
+
+- Active rotation: rotate `v` in the "opposite" sense to `q`. If you think
+  about a 2D rotation by an angle ``\\theta``, then this means rotating instead
+  by an angle ``-\\theta``.
+
+- Passive rotation: the vector `v` is a vector in the `A` frame, and "rotating
+  by `q'`" means expressing the same vector in the `B` frame.
+
+If the function is called as `rotate(v, q1, q2, ..., qN)` then it means to
+perform the rotations in sequence. In effect, it expands to the following code:
+
+```julia
+w = rotate(v, qN)
+...
+w = rotate(w, q2)
+w = rotate(w, q1)
+```
+
+The interpretation for the rotation sequence is as follows:
+
+- Active rotation: begin with the vector `v` in the `A` frame, and rotate it by
+  `q1` (according to the active rotation interpretation above), obtaining
+  vector `w1`. At the same time, rotate the axes of the `A` frame by `q1`. Now
+  rotate the vector `w1` (which is still an `A` frame vector!) by `q2`, except
+  that `q2` specifies rotation about the axes of the new frame `A1` (this is
+  called an *intrinsic rotation* [1]). This yields the new vector `w2` (again
+  in the `A` frame), and a new frame `A2` which is rotated from `A1` by
+  `q2`. Repeat the process until you obtain `wN`, which is the resultant final
+  rotated vector. Specifically, `wN` is a vector in the `A` frame which is
+  rotated from the original vector `v` by the sequence of intrinsic rotations
+  `q1`, ..., `qN`.
+
+- Passive rotation: taking the above description for the active rotation
+  interpretation, the vector `v` can be interpreted as a vector in the final
+  `AN` frame. The resultant vector `w` output by the `rotate` function is then
+  the same vector `v` but expressed in the `A` frame. The `A` frame is related
+  to `AN` by a sequence of passive rotations `q1`, ..., `qN`. In particular,
+  `q1` is a passive rotation (i.e., coordinate frame change) from `A1` to `A`,
+  `q2` is a passive rotation from `A2` to `A1`, ..., `qN` is a passive rotation
+  from `A{N-1}` to `AN`.
+
+Note that the above description reduces to the case of a single rotation
+`rotate(v, q)` described at the start by identifying the final frame `AN` as
+`B`.
+
+References:
+
+[1] https://en.wikipedia.org/wiki/Euler_angles#Conventions_by_intrinsic_rotations
+
+# Arguments
+- `v`: the original vector.
+- `q...`: the sequence of quaternions to rotate by.
+
+# Returns
+- `w`: the final rotated vector.
+"""
+function rotate(v::RealVector, q::Quaternion...)::RealVector
+    w = (q[end]*v*q[end]').v
+    if length(q)>1
+        w = rotate(w, q[1:end-1]...)
+    end
+    return w
 end # function
 
 """
@@ -275,7 +374,8 @@ This returns an **active** rotation matrix R. Specifically, given a vector x in
 the world coordinate system, R*x=x' which is the vector rotated by R, still
 expressed in the world coordinate system. In particular, R*(e_i) gives the
 principal axes of the rotated coordinate system, expressed in the world
-coordinate system. If you want a passive rotation, use transpose(R).
+coordinate system. If you want a passive rotation (in other words, a change of
+coordinate frame for the same vector), use transpose(R).
 
 References:
 
@@ -340,9 +440,9 @@ function slerp_interpolate(q0::Quaternion,
                            q1::Quaternion,
                            τ::RealTypes)::Quaternion
     τ = max(0.0, min(1.0, τ))
-    Δq = q1*q0' # Error quaternion correcting q0 to q1
+    Δq = q0'*q1 # Error quaternion correcting q0 to q1
     Δα, Δa = Log(Δq)
     Δq_t = Quaternion(τ*Δα, Δa)
-    qt = Δq_t*q0
+    qt = q0*Δq_t
     return qt
 end # function

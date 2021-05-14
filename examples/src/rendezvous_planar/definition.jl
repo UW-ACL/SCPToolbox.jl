@@ -49,14 +49,14 @@ function define_problem!(pbm::TrajectoryProblem,
     set_guess!(pbm)
 
     return nothing
-end
+end # function
 
 function set_dims!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_dims!(pbm, 6, 12, 1)
 
     return nothing
-end
+end # function
 
 function set_scale!(pbm::TrajectoryProblem)::Nothing
 

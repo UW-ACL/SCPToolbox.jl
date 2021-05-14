@@ -38,7 +38,7 @@ include("table.jl")
 end # module
 
 using .Types
-export Quaternion, dcm, rpy, slerp_interpolate
+export Quaternion, dcm, rpy, slerp_interpolate, rotate, Log, skew
 export Ellipsoid, project, ∇
 export Hyperrectangle
 export DLTV
