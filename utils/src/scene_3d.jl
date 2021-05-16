@@ -31,6 +31,7 @@ export Mesh3D, Camera3D, Axis3D, Scene3D
 export name, rename, add!, move!, render
 export scene_pitch, scene_yaw, scene_pan, scene_roll
 export world_axis
+export Local, Body, Intrinsic, Extrinsic
 
 # ..:: Globals ::..
 
@@ -39,6 +40,30 @@ abstract type AbstractObject3D end
 const IntMatrix = Matrix{Int}
 const RealTensor = Types.RealTensor #noerr
 const OwnerNode{T} = Optional{TreeNode{T}}
+
+"""
+List of available frames to reference to:
+- `Local` refers to the "local" frame of an object. You can think of it like
+  the true frame of the object, regardless of the frame in which the
+  geometry/internals of the object are actually defined.
+- `Body` refers to the geometry frame of an object, or the projection frame of
+  a camera.
+"""
+@enum(SceneFrame, Local, Body)
+
+"""
+Available pose transformation modes:
+- `Intrinsic` transforms in succession around the axes of the frame that is in
+  the process of being transformed. From Wikipedia [1]: "intrinsic rotations
+  are elemental rotations that occur about the axes of a coordinate system XYZ
+  attached to a moving body. Therefore, they change their orientation after
+  each elemental rotation".
+- `Extrinsic` transforms around the static axes of some other frame. From
+  Wikipedia [1]: "extrinsic rotations are elemental rotations that occur about
+  the axes of the fixed coordinate system xyz. The XYZ system rotates, while
+  xyz is fixed".
+"""
+@enum(PoseUpdateMode, Intrinsic, Extrinsic)
 
 # ..:: Traits ::..
 
@@ -108,12 +133,12 @@ has_local_pose(::Union{NoPose, HasGlobalPose}, x) = false
     get_pose(x[, frame])
 
 Get the pose of an object. `frame` specifies whether you want the pose of the
-`:local` frame or of the `:body` frame.
+`Local` frame or of the `Body` frame.
 
 # Arguments
 - `x`: a data object that `HasGlobalPose` or `HasLocalPose`.
-- `frame`: (optional) get the `:local`, or `:body` frame pose (default is
-  `local`).
+- `frame`: (optional) get the `Local`, or `Body` frame pose (default is
+  `Local`).
 
 # Throws
 - `ArgumentError` if `x` has `NoPose`.
@@ -121,31 +146,20 @@ Get the pose of an object. `frame` specifies whether you want the pose of the
 # Returns
 - `pose`: a homogeneous transformation matrix that defines the relative pose.
 """
-get_pose(x, frame::Symbol=:local) = begin
-    @assert frame in (:local, :body)
+get_pose(x, frame::SceneFrame=Local) = begin
     return get_pose(PoseTrait(x), x, frame)
 end
 
-get_pose(::NoPose, x::T, frame::Symbol) where {T} = begin
+get_pose(::NoPose, x::T, frame::SceneFrame) where {T} = begin
     msg = @sprintf("The object %s does not have a pose", T)
     throw(ArgumentError(msg))
 end
 
-get_pose(::HasGlobalPose, x, frame::Symbol) = begin
-    if frame==:body
-        return homtransf()
-    else
-        return x.scene_properties.pose
-    end
-end
+get_pose(::HasGlobalPose, x, frame::SceneFrame) = (frame==Body) ? homtransf() :
+    x.scene_properties.pose
 
-get_pose(::HasLocalPose, x, frame::Symbol) = begin
-    if frame==:body
-        return x.local_pose
-    else
-        return x.scene_properties.pose
-    end
-end
+get_pose(::HasLocalPose, x, frame::SceneFrame) = (frame==Body) ? x.local_pose :
+    x.scene_properties.pose
 
 """
     update_pose!(x, value[; frame, mode, reset])
@@ -160,15 +174,15 @@ Update the pose of an object's frame.
 - `ArgumentError` if the `x` object has `NoPose`.
 
 # Keywords
-- `frame`: (optional) which frame to update (`:local` or `:body`).
-- `mode`: (optional) update mode (`:intrinsic` or `:extrinsic`).
+- `frame`: (optional) which frame to update.
+- `mode`: (optional) pose update mode.
 - `reset`: (optional) whether to hard-reset the pose to `value`, or to update
   it according to `mode`.
 """
-function update_pose!(x, value::RealMatrix; frame::Symbol=:local,
-                      mode::Symbol=:intrinsic, reset::Bool=false)::Nothing
-    @assert frame in (:local, :body)
-    @assert mode in (:extrinsic, :intrinsic)
+function update_pose!(x, value::RealMatrix;
+                      frame::SceneFrame=Local,
+                      mode::PoseUpdateMode=Intrinsic,
+                      reset::Bool=false)::Nothing
     @assert size(value)==(4, 4)
     update_pose!(PoseTrait(x), x, value, frame, mode, reset)
 end # function
@@ -184,10 +198,10 @@ function update_pose!(pose_trait::Union{HasGlobalPose, HasLocalPose},
         H = value
     else
         H = get_pose(x, frame)
-        H = (mode==:intrinsic) ? H*value : value*H
+        H = (mode==Intrinsic) ? H*value : value*H
     end
 
-    if frame==:local || pose_trait isa HasGlobalPose
+    if frame==Local || pose_trait isa HasGlobalPose
         x.scene_properties.pose = H
     else
         x.local_pose = H
@@ -232,6 +246,9 @@ end # struct
 mutable struct Mesh3D <: AbstractObject3D
     V::RealMatrix           # Vertices
     F::IntMatrix            # Faces association indices
+    face_color::String      # Mesh face color ("none" if no color)
+    edge_color::String      # Mesh edge color ("none" if no color)
+    edge_width::RealValue   # Mesh edge width
     local_pose::RealMatrix  # Pose of body wrt local frame
     scene_properties::SceneProperties{Mesh3D} # 3D scene properties
 
@@ -245,20 +262,31 @@ mutable struct Mesh3D <: AbstractObject3D
     - `F`: a 3xM matrix of faces. If a column has values `[i;j;k]` then it
       means that the face is created from the vertices in columns `i`, `j`, and
       `k` of the `V` matrix.
+
+    # Keywords
     - `name`: (optional) a name for the mesh, which makes it easier to
       reference and to identify what it corresponds to.
+    - `face_color`: (optional) color to use for all the faces of the
+      mesh. Defaults to none.
+    - `edge_color`: (optional) color to use for all the edges of the
+      mesh. Defaults to "black".
+    - `edge_width`: (optional) width of all edges in the mesh. Defaults to 0.1.
 
     # Returns
     - `obj`: the newly created mesh object.
     """
     function Mesh3D(V::RealMatrix,
                     F::IntMatrix;
-                    name::String="obj")::Mesh3D
+                    name::String="mesh",
+                    face_color::String="none",
+                    edge_color::String="black",
+                    edge_width::RealValue=0.1)::Mesh3D
 
         default_properties = SceneProperties{Mesh3D}(name)
         default_local_pose = homtransf()
 
-        obj = new(V, F, default_local_pose, default_properties)
+        obj = new(V, F, face_color, edge_color, edge_width,
+                  default_local_pose, default_properties)
 
         return obj
     end # function
@@ -270,17 +298,23 @@ mutable struct Mesh3D <: AbstractObject3D
 
     # Arguments
     - `file`: relative or absolute path to the `.obj` file.
-    - `name`: (optional) a name for the mesh.
+
+    # Keywords
+    See the basic constructor docstring.
 
     # Returns
     - `obj`: the newly created mesh object.
     """
     function Mesh3D(filepath::String;
-                    name::String="mesh")::Mesh3D
+                    name::String="mesh",
+                    face_color::String="none",
+                    edge_color::String="black",
+                    edge_width::RealValue=0.1)::Mesh3D
 
         V, F = load_wavefront(filepath)
 
-        obj = Mesh3D(V, F, name=name)
+        obj = Mesh3D(V, F, name=name, face_color=face_color,
+                     edge_color=edge_color, edge_width=edge_width)
 
         return obj
     end # function
@@ -419,7 +453,10 @@ devoid of all the object tree hierarchy, etc., information that was used to
 store and manipulate the scene.
 """
 mutable struct BakedScene3D
-    tris::RealTensor # Face triangle list
+    tris::RealTensor       # Face triangle list
+    fc::Vector{String}     # Face colors
+    ec::Vector{String}     # Edge colors
+    ew::RealVector         # Edge widths
 end # struct
 
 # ..:: Methods ::..
@@ -498,21 +535,21 @@ end # function
 
 Provide a sequence of commands that update the object's translation and
 rotation. This operation works to transform the pose of the specified `frame`,
-which is either `:local` or `:body`. The `mode` parameter specifies whether to
+which is either `Local` or `Body`. The `mode` parameter specifies whether to
 perform an intrinsic transformation (transform around `frame`) or an extrinsic
-transformation (transform around the parent frame for `frame==:local` or the
-local frame for `frame==:body`).
+transformation (transform around the parent frame for `frame==Local` or the
+local frame for `frame==Body`).
 
 # Arguments
 - `obj`: the object to transform the pose of.
 
 # Keywords
 - `frame`: (optional) the frame whose pose is to be changed. Can be either the
-  `:local` or `:body` frames which belong to `obj`.
-- `mode`: (optional) the transformation mode. Setting `:extrinsic` uses the
+  `Local` or `Body` frames which belong to `obj`.
+- `mode`: (optional) the transformation mode. Setting `Extrinsic` uses the
   axes of the parent frame to do the transformation (i.e., parent node's
-  `:local` frame if `frame==:local`, and the object's `:local` frame if
-  `frame==:body`). Setting `:extrinsic` uses the axes of `frame` *as it is
+  `Local` frame if `frame==Local`, and the object's `Local` frame if
+  `frame==Body`). Setting `Extrinsic` uses the axes of `frame` *as it is
   being transformed* in order to perform the sequence of transformations.
 - `kwargs`: the post transformation sequence. The possible commands are:
     - `x`: translate along `x` axis.
@@ -524,12 +561,9 @@ local frame for `frame==:body`).
     - `degree`: a boolean flag whether to treat angles as degrees.
 """
 function move!(obj::AbstractObject3D;
-               frame::Symbol=:local,
-               mode::Symbol=:intrinsic,
+               frame::SceneFrame=Local,
+               mode::PoseUpdateMode=Intrinsic,
                kwargs...)::Nothing
-
-    @assert frame in (:local, :body)
-    @assert mode in (:extrinsic, :intrinsic)
 
     sequence = collect(kwargs)
     degrees = ((:degree in sequence && sequence[:degree]) ||
@@ -553,7 +587,7 @@ function move!(obj::AbstractObject3D;
             H_atom = scene_yaw(val, deg=degrees)
         end
         # Apply to the overall transformation
-        if mode==:intrisinc
+        if mode==Intrinsic
             H_update = H_update*H_atom
         else
             H_update = H_atom*H_update
@@ -572,25 +606,21 @@ end # function
 Get the relation pose between `src` frame of object `objA` and `dest` frame of
 object `objB`. The returned homogeneous transformation matrix `H` transforms
 homogeneous vectors from `objA`'s frame to `objB`'s frame. You can specify
-`:local` and `:body` for `src` and `dest`. The default for both is `:body`.
+`Local` and `Body` for `src` and `dest`. The default for both is `Body`.
 
 # Arguments
 - `objA`: the source object.
 - `objB`: the destination object.
-- `src`: (optional) the source object's frame, either `:local` or `:body`.
-- `dest`: (optional) the destination object's frame, either `:local` or
-  `:body`.
+- `src`: (optional) the source object's frame.
+- `dest`: (optional) the destination object's frame.
 
 # Returns
 - `bar`: description.
 """
 function relative_pose(objA::AbstractObject3D,
                        objB::AbstractObject3D,
-                       src::Symbol=:local,
-                       dest::Symbol=:local)::RealMatrix
-
-    @assert src in (:local, :body)
-    @assert dest in (:local, :body)
+                       src::SceneFrame=Local,
+                       dest::SceneFrame=Local)::RealMatrix
 
     # Find a common ancestor node
     nodeA = owner(objA)
@@ -603,11 +633,11 @@ function relative_pose(objA::AbstractObject3D,
     H_BA = hominv(H_CB)*H_CA
 
     # Update for body frame choice
-    if src==:body
-        H_BA = H_BA*get_pose(objA, :body)
+    if src==Body
+        H_BA = H_BA*get_pose(objA, Body)
     end
-    if dest==:body
-        H_BA = hominv(get_pose(objB, :body))*H_BA
+    if dest==Body
+        H_BA = hominv(get_pose(objB, Body))*H_BA
     end
 
     return H_BA
@@ -647,7 +677,7 @@ function relative_local_pose_linear(
             throw(ArgumentError(msg))
         end
         obj = node.data
-        Hi = get_pose(obj, :local)
+        Hi = get_pose(obj, Local)
         H = Hi*H
         node = node.parent
     end
@@ -811,15 +841,17 @@ function render(scene::Scene3D,
     ax.set_yticks([])
 
     # Generate the mesh triangles
-    scene_data = bake_scene(scene, camera)
+    scene_data = bake(scene, camera)
 
     PolyCollection = PyPlot.matplotlib.collections.PolyCollection
     scene_baked = PolyCollection(
         scene_data.tris,
         closed=true,
-        linewidth=0.1,
-        edgecolor="black",
-        facecolor=Red)
+        linewidths=scene_data.ew,
+        edgecolors=scene_data.ec,
+        facecolors=scene_data.fc,
+        capstyle="round",
+        joinstyle="round")
 
     ax.add_collection(scene_baked)
 
@@ -830,7 +862,7 @@ function render(scene::Scene3D,
 end # function
 
 """
-    bake_scene(scene, camera)
+    bake(scene, camera)
 
 Project `Scene3D` onto a `Camera3D`, generating data which is readily plotted
 using Matplotlib. This function performs z-depth sorting so that objects
@@ -843,11 +875,14 @@ overlap appropriately according to their 3D position.
 # Returns
 - `baked`: the projected scene data that can be used for plotting.
 """
-function bake_scene(scene::Scene3D, camera::Camera3D)::BakedScene3D
+function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
 
     # >> Collect data on all objects into lists <<
 
     tris_3d = RealTensor[]
+    fc = Vector{String}[]
+    ec = Vector{String}[]
+    ew = RealVector[]
 
     persp = perspective(camera) # Perspect projection to camera
 
@@ -867,7 +902,7 @@ function bake_scene(scene::Scene3D, camera::Camera3D)::BakedScene3D
         end
 
         # Relative pose
-        rel_pose = relative_pose(obj, camera, :body, :body)
+        rel_pose = relative_pose(obj, camera, Body, Body)
 
         # Perspective projection
         proj = persp*rel_pose
@@ -884,24 +919,34 @@ function bake_scene(scene::Scene3D, camera::Camera3D)::BakedScene3D
 
         # Save to concatenated list
         push!(tris_3d, tris)
+        push!(fc, repeat([obj.face_color], num_faces))
+        push!(ec, repeat([obj.edge_color], num_faces))
+        push!(ew, repeat([obj.edge_width], num_faces))
     end
 
     tris_3d = cat(tris_3d..., dims=1)
-
-    # >> Do z-depth sorting <<
-
     tris = mapslices(tris_3d, dims=[2, 3]) do verts
         verts[:, 1:2]
     end
+    fc = cat(fc..., dims=1)
+    ec = cat(ec..., dims=1)
+    ew = cat(ew..., dims=1)
+
+    # >> Do z-depth sorting <<
+
     faces_z = mapslices(tris_3d, dims=[2, 3]) do verts
         verts_z = verts[:, 3]
         mean(verts_z)
     end
     faces_z = -squeeze(faces_z)
     zid = sortperm(faces_z)
-    tris = tris[zid, :, :]
 
-    out = BakedScene3D(tris)
+    tris = tris[zid, :, :]
+    fc = fc[zid]
+    ec = ec[zid]
+    ew = ew[zid]
+
+    out = BakedScene3D(tris, fc, ec, ew)
 
     return out
 end # function
