@@ -28,7 +28,7 @@ using Statistics
 using PyPlot
 
 export Mesh3D, Camera3D, Axis3D, Scene3D
-export name, rename, add!, move!, render
+export name, rename, add!, move!, scale!, normalize!, render
 export scene_pitch, scene_yaw, scene_pan, scene_roll
 export world_axis
 export Local, Body, Intrinsic, Extrinsic
@@ -760,6 +760,37 @@ function move!(obj::AbstractObject3D;
 
     return nothing
 end # function
+
+"""
+    scale!(obj, amount[; relative])
+
+Scale the mesh relative to the centroid of its vertices by `amount`. By default
+the scaling is absolute, which means that the scaled mesh's maximum size along
+each axis is equal to `value`. You can also do relative scaling, which means
+that the mesh grows or shrink by the specified amount with respect to its
+original size.
+
+# Arguments
+- `obj`: the `Mesh3D` object.
+- `amount`: the scaling amount.
+
+# Keywords
+- `relative`: (optional) do relative scaling.
+"""
+function scale!(obj::Mesh3D, amount::RealValue;
+                relative::Bool=false)::Nothing
+    centroid = (maximum(obj.V, dims=2)+minimum(obj.V, dims=2))/2
+    if !relative
+        span = maximum(maximum(obj.V, dims=2)-minimum(obj.V, dims=2))
+        obj.V = (((obj.V).-centroid)/span)*amount
+    else
+        obj.V = (((obj.V).-centroid)*amount).+centroid
+    end
+    return nothing
+end # function
+
+""" Normalize the mesh to maximum length 1 along each dimension. """
+normalize!(obj::Mesh3D) = scale!(obj, 1; relative=false)
 
 """
     relative_pose(objA, objB[, src, dest])
