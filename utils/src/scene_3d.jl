@@ -664,13 +664,18 @@ function add!(parent::Union{Scene3D, AbstractObject3D},
         obj = obj[1]
 
         # Check that `obj` is not already associated with a tree
+        owner_exists = false
         try
             owner(obj)
+            owner_exists = true
+        catch
+        end
+
+        if owner_exists
             fmt = "Object %s is already associated with a node, "*
                 "cannot add it again"
-            msg = @eval @printf($fmt, name($obj))
+            msg = @eval @sprintf($fmt, name($obj))
             throw(ArgumentError(msg))
-        catch
         end
 
         # Get the parent node
@@ -707,12 +712,13 @@ local frame for `frame==Body`).
 # Keywords
 - `frame`: (optional) the frame whose pose is to be changed. Can be either the
   `Local` or `Body` frames which belong to `obj`.
-- `mode`: (optional) the transformation mode. Setting `Extrinsic` uses the
-  axes of the parent frame to do the transformation (i.e., parent node's
-  `Local` frame if `frame==Local`, and the object's `Local` frame if
-  `frame==Body`). Setting `Extrinsic` uses the axes of `frame` *as it is
-  being transformed* in order to perform the sequence of transformations.
-- `kwargs`: the post transformation sequence. The possible commands are:
+- `mode`: (optional) the transformation mode. Setting `Extrinsic` uses the axes
+  of the parent frame to do the transformation (i.e., parent node's `Local`
+  frame if `frame==Local`, and the object's `Local` frame if
+  `frame==Body`). Setting `Extrinsic` uses the axes of `frame` *as it is being
+  transformed* in order to perform the sequence of transformations.
+- `kwargs`: the pose transformation sequence. The possible commands are:
+    - `H`: a homogeneous transformation matrix.
     - `x`: translate along `x` axis.
     - `y`: translate along `y` axis.
     - `z`: translate along `z` axis.
@@ -720,11 +726,16 @@ local frame for `frame==Body`).
     - `pitch`: rotate around `y` axis.
     - `yaw`: rotate around `z` axis.
     - `degree`: a boolean flag whether to treat angles as degrees.
+
+# Throws
+- `ErrorException` if the object is not associated with the object tree.
 """
 function move!(obj::AbstractObject3D;
                frame::SceneFrame=Local,
                mode::PoseUpdateMode=Intrinsic,
                kwargs...)::Nothing
+
+    owner(obj) # Check that object is associated with object tree
 
     sequence = collect(kwargs)
     degrees = ((:degree in sequence && sequence[:degree]) ||
@@ -734,7 +745,9 @@ function move!(obj::AbstractObject3D;
     H_update = homtransf()
     for (op, val) in sequence
         # Compute the atomic transformation
-        if op==:x
+        if op==:H
+            H_atom = val
+        elseif op==:x
             H_atom = scene_pan(x=val)
         elseif op==:y
             H_atom = scene_pan(y=val)
@@ -1222,6 +1235,23 @@ function Base.show(io::IO, scene::Scene3D)::Nothing
     @preprintf(io, indent, "%d cameras\n", length(all_cameras))
     @preprintf(io, indent, "%d axes\n", length(all_axes))
     @preprintf(io, indent, "%d meshes\n", length(all_meshes))
+
+    vertex_count = 0
+    face_count = 0
+    traverse(scene.objects) do obj, _
+        if obj isa Axis3D && obj.visible
+            ax_mesh = MeshAxis3D(obj)
+            vertex_count += size(ax_mesh.V, 2)
+            face_count += size(ax_mesh.F, 2)
+        elseif obj isa Mesh3D
+            vertex_count += size(obj.V, 2)
+            face_count += size(obj.F, 2)
+        end
+    end
+
+    @preprintf(io, indent, "\n")
+    @preprintf(io, indent, "%d vertices\n", vertex_count)
+    @preprintf(io, indent, "%d faces\n", face_count)
 
     # >> Print the object tree hierarchy <<
     @preprintf(io, indent, "\nObject tree:\n")
