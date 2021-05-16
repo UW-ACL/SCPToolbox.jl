@@ -461,7 +461,7 @@ Plot the control inputs versus time.
 - `sol`: the problem solution.
 """
 function plot_inputs(mdl::RendezvousProblem,
-                     sol::SCPSolution)::Nothing
+                     sol::SCPSolution)::Nothing #noerr
 
     # Parameters
     algo = sol.algo
@@ -541,7 +541,7 @@ function plot_inputs(mdl::RendezvousProblem,
                         clip_on=false,
                         zorder=30)
 
-                # "Fake" step tip just for the legend
+                # "Fake" stem tip just for the legend
                 ax.plot([], [],
                         linestyle="none",
                         marker="o",

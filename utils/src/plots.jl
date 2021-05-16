@@ -642,23 +642,27 @@ function create_figure(size::Tuple{T, V})::Figure where {T<:Real, V<:Real}
 end # function
 
 """
-    save_figure(filename, algo[; tmp, path])
+    save_figure(filename[, algo][; tmp, path])
 
 Save the current figure to a PDF file. The filename is prepended with the name
 of the SCP algorithm used for the solution.
 
 # Arguments
 - `filename`: the filename of the figure.
-- `algo`: the SCP algorithm string (format "<SCP_ALGO> (backend: <CVX_ALGO>)").
+- `algo`: (optioanl) the SCP algorithm string (format "<SCP_ALGO> (backend:
+  <CVX_ALGO>)"). If not provided, then do not specify an algorithm name for the
+  file.
 
 # Keywords
 - `tmp`: (optional) whether this is a temporary file.
 - `path`: (optional) where to save the figure.
+- `tightlayout`: (optional) apply tight layout to the subplot arrangement.
 """
 tight_layout_applied = false
-function save_figure(filename::String, algo::String;
+function save_figure(filename::String, algo::String="";
                      tmp::Bool=false,
-                     path::Union{String, Nothing}=nothing)::Nothing
+                     path::Union{String, Nothing}=nothing,
+                     tight_layout::Bool=true)::Nothing
 
     global tight_layout_applied
 
@@ -666,19 +670,27 @@ function save_figure(filename::String, algo::String;
     path = isnothing(path) ? "../figures/" : path
 
     # Apply tight layout, only do this **once** per figure
-    if !tight_layout_applied
+    if tight_layout && !tight_layout_applied
         plt.tight_layout()
         tight_layout_applied = true
     end
 
+    filename = isempty(algo) ? @sprintf("%s", filename) :
+        @sprintf("%s_%s", algo, filename)
+
+    if filename[end-3:end]!=".pdf"
+        filename *= ".pdf"
+    end
+
     # Save figure
     if !tmp
-        plt.savefig(@sprintf("%s%s_%s.pdf", path, algo, filename),
+        plt.savefig(@sprintf("%s%s", path, filename),
                     bbox_inches="tight", pad_inches=0.01, facecolor=zeros(4))
         plt.close()
         tight_layout_applied = false # reset
     else
-        plt.savefig(@sprintf("/tmp/%s_%s.pdf", algo, filename),
+        filename = split(filename, "/")[end] # Get just the name
+        plt.savefig(@sprintf("/tmp/%s", filename),
                     bbox_inches="tight", pad_inches=0.01, facecolor=zeros(4))
     end
 

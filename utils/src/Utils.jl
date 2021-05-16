@@ -25,6 +25,7 @@ include("globals.jl")
 function skew end # function
 function linterp end # function
 function zohinterp end # function
+function diracinterp end # function
 
 module Types
 include("basic_types.jl")
@@ -35,6 +36,7 @@ include("dltv.jl")
 include("trajectory.jl")
 include("homotopy.jl")
 include("table.jl")
+include("tree.jl")
 end # module
 
 using .Types
@@ -48,5 +50,6 @@ export Table, improvement_percent
 
 include("helper.jl")
 include("plots.jl")
+include("scene_3d.jl")
 
 end # module

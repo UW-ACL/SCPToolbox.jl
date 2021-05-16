@@ -19,17 +19,27 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 if isdefined(@__MODULE__, :LanguageServer)
     include("Utils.jl")
     import .Utils.Types
+    import .Utils.Types: Quaternion
 end
+
+using Printf
+
+export skew, get_interval, linterp, zohinterp, diracinterp,
+    straightline_interpolate, rk4, trapz, ∇trapz, logsumexp, or, squeeze,
+    convert_units, homtransf, hominv, homdisp, homrot, make_indent
+
+export @preprintf
+
+# ..:: Globals ::..
 
 const T = Types
 const RealValue = T.RealTypes
 const RealArray = T.RealArray
 const RealVector = T.RealVector
 const RealMatrix = T.RealMatrix
+const Optional = Types.Optional
 
-export skew, get_interval, linterp, zohinterp, diracinterp,
-    straightline_interpolate, rk4, trapz, ∇trapz, logsumexp, or, squeeze,
-    convert_units
+# ..:: Methods ::..
 
 """ Skew-symmetric matrix from a 3-element vector.
 
@@ -649,13 +659,150 @@ function squeeze(A::AbstractArray)::AbstractArray
     return Ar
 end # function
 
-function convert_units(x::RealValue, converter::Symbol)::RealValue
-    convert_func = Symbol("_"*string(converter))
-    y = eval(Expr(:call, convert_func, x))
+"""
+    convert_units(x, orig, new)
+
+Convert the units of `x`.
+
+# Arguments
+- `x`: the value in the original units.
+- `orig`: the original units.
+- `new`: the new units.
+
+# Returns
+- `y`: the value in the new units.
+"""
+function convert_units(x::RealValue, orig::Symbol, new::Symbol)::RealValue
+
+    convert_func = Symbol("_"*string(orig)*"2"*string(new))
+    y = eval( :( $convert_func($x) ) )
+
     return y
 end # function
 
+# Available converters
 _in2m(x) = x*0.0254 # inches to meters
 _ft2slug2m2kg(x) = x*1.35581795 # slug*ft^2 to kg*m^2
 _lb2kg(x) = x*0.453592 # lb to kg
 _lbf2N(x) = x*4.448222 # lbf to N
+
+"""
+    homtransf(q, r)
+
+Build a homogeneous transformation 4x4 matrix between two matrix. The
+quaternion `q` specifies the passive rotation (i.e. coordinate change) from
+frame `B` to frame `A`. The vector `r` specifies the position of the `B` frame
+origin with respect to the `A` frame origin, expressed in the `A` frame. The
+function outputs a matrix `T` such that, given a homogeneous vector `x` in the
+`B` frame, `y=T*x` yields a homogeneous vector `y` in the `A` frame.
+
+# Arguments
+- `q`: the quaternion specifying the rotation component.
+- `r`: the vector specifying the displacement component.
+
+# Returns
+- `T`: the homogeneous transformation matrix.
+"""
+function homtransf(q::Quaternion, r::RealVector)::RealMatrix
+    R = dcm(q) #noerr
+    T = [R r; zeros(1, 3) 1]
+    return T
+end # function
+
+""" Aliases for calling `homtrans` with pure rotation or displacement. """
+homtransf(q::Quaternion) = homtransf(q, zeros(3))
+
+"""
+    homtransf([r][;, roll, pitch, yaw, deg])
+
+Alias for calling `homtransf` with roll/pitch/yaw angles. See the documentation
+of `homtransf` for further information, as this function simply converts its
+inputs to the format ingested by the core `homtransf` function above. The angle
+sequence is YAW-PITCH-ROLL according to the intrinsic Tait-Bryan
+convention. See the `rpy` function in `quaternion.jl` for more information.
+
+# Arguments
+- `r`: (optional) the displacement.
+- `roll`: (optional) the roll angle (about `+x''`).
+- `pitch`: (optional) the pitch angle (about `+y'`).
+- `yaw`: (optional) the yaw angle (about `+z`).
+- `deg`: (optional) specify the angles in degrees if true.
+
+# Returns
+- `T`: the homogeneous transformation matrix.
+"""
+function homtransf(r::RealVector=zeros(3);
+                   roll::RealValue=0,
+                   pitch::RealValue=0,
+                   yaw::RealValue=0,
+                   deg::Bool=true)::RealMatrix
+    if deg
+        roll = deg2rad(roll)
+        pitch = deg2rad(pitch)
+        yaw = deg2rad(yaw)
+    end
+    q_roll = Quaternion(roll, [1; 0; 0])
+    q_pitch = Quaternion(pitch, [0; 1; 0])
+    q_yaw = Quaternion(yaw, [0; 0; 1])
+    q = q_yaw*q_pitch*q_roll
+    return homtransf(q, r)
+end # function
+
+""" Convenience methods to extract rotation and displacement part of
+homogeneous transformation matrix. """
+homdisp(T::RealMatrix)::RealVector = T[1:3, 4]
+homrot(T::RealMatrix)::RealMatrix = T[1:3, 1:3]
+
+"""
+    hominv(T)
+
+Compute the inverse homogeneous transformation matrix. If `y=T*x`, this
+function returns `inv(T)` such that `x=inv(T)*y`.
+
+# Arguments
+- `T`: the "forward" homogeneous transformation.
+
+# Returns
+- `iT`: the "reverse" homogeneous transformation.
+"""
+function hominv(T::RealMatrix)::RealMatrix
+    R = homrot(T)
+    v = homdisp(T)
+    iR = R' # Inverse rotation
+    iT = [iR -iR*v; zeros(3)' 1]
+    return iT
+end # function
+
+"""
+    make_indent(io)
+
+Make an indent string prefix.
+
+# Arguments
+- `io`: stream object.
+
+# Returns
+- `indeint`: the indent string.
+"""
+function make_indent(io::IO)::String
+    indent = " "^get(io, :indent, 0)
+    return indent
+end # function
+
+"""
+    printf_prefixed(io, prefix, fmt, data...)
+
+Same as `@printf` macro, except insert a prefix at the start of the string.
+
+# Arguments
+- `io`: stream object.
+- `prefix`: a string to be prefixed to the beginning.
+- `fmt`: the format specified for the rest of the string.
+- `data...`: the data to be printed according to the format specifier.
+"""
+macro preprintf(io, prefix, fmt, data...)
+    new_fmt = "%s"*fmt
+    quote
+        @printf($(esc(io)), $new_fmt, $(esc(prefix)), $(esc.(data)...))
+    end
+end # macro

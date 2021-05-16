@@ -21,22 +21,6 @@ if isdefined(@__MODULE__, :LanguageServer)
 end
 
 """
-    make_indent(io)
-
-Make an indent string prefix.
-
-# Arguments
-- `io`: stream object.
-
-# Returns
-- `indeint`: the indent string.
-"""
-function make_indent(io::IO)::String
-    indent = " "^get(io, :indent, 0)
-    return indent
-end
-
-"""
     print_indices(id[, limit])
 
 Print an vector of array linear indices, with a limit on how many to print in

@@ -122,13 +122,13 @@ function RendezvousProblem()::RendezvousProblem
     id_M = 4:6
     id_t = 1
     # >> Mechanical parameters <<
-    m = convert_units(66850.6, :lb2kg)
+    m = convert_units(66850.6, :lb, :kg)
     J_xx, J_yy, J_zz = 36324, 80036, 81701
     J_xy, J_xz, J_yz = -2111, 273, 2268
     J = [J_xx -J_xy -J_xz;
          -J_xy J_yy -J_yz;
          -J_xz -J_yz J_zz]
-    J = convert_units.(J, :ft2slug2m2kg)
+    J = convert_units.(J, :ft2slug, :m2kg)
     # >> Control parameters <<
     T_max = 500.0
     M_max = 1500.0
