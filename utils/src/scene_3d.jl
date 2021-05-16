@@ -40,6 +40,8 @@ abstract type AbstractObject3D end
 const IntMatrix = Matrix{Int}
 const RealTensor = Types.RealTensor #noerr
 const OwnerNode{T} = Optional{TreeNode{T}}
+const MeshColorSpec = Union{String, Vector{String}}
+const MeshWidthSpec = Union{RealValue, RealVector}
 
 """
 List of available frames to reference to:
@@ -244,16 +246,16 @@ end # struct
 3D object in that it actually appears in the scene.
 """
 mutable struct Mesh3D <: AbstractObject3D
-    V::RealMatrix           # Vertices
-    F::IntMatrix            # Faces association indices
-    face_color::String      # Mesh face color ("none" if no color)
-    edge_color::String      # Mesh edge color ("none" if no color)
-    edge_width::RealValue   # Mesh edge width
+    V::RealMatrix              # Vertices
+    F::IntMatrix               # Faces association indices
+    face_color::MeshColorSpec  # Mesh face color ("none" if no color)
+    edge_color::MeshColorSpec  # Mesh edge color ("none" if no color)
+    edge_width::MeshWidthSpec  # Mesh edge width
     local_pose::RealMatrix  # Pose of body wrt local frame
     scene_properties::SceneProperties{Mesh3D} # 3D scene properties
 
     """
-        Mesh3D(V, F[; name])
+        Mesh3D(V, F[; name, face_color, edge_color, edge_width])
 
     Basic constructor.
 
@@ -266,11 +268,9 @@ mutable struct Mesh3D <: AbstractObject3D
     # Keywords
     - `name`: (optional) a name for the mesh, which makes it easier to
       reference and to identify what it corresponds to.
-    - `face_color`: (optional) color to use for all the faces of the
-      mesh. Defaults to none.
-    - `edge_color`: (optional) color to use for all the edges of the
-      mesh. Defaults to "black".
-    - `edge_width`: (optional) width of all edges in the mesh. Defaults to 0.1.
+    - `face_color`: (optional) color to use for mesh faces. Defaults to none.
+    - `edge_color`: (optional) color to use for face edges. Default "black".
+    - `edge_width`: (optional) width of mesh edges. Defaults to 0.1.
 
     # Returns
     - `obj`: the newly created mesh object.
@@ -278,9 +278,13 @@ mutable struct Mesh3D <: AbstractObject3D
     function Mesh3D(V::RealMatrix,
                     F::IntMatrix;
                     name::String="mesh",
-                    face_color::String="none",
-                    edge_color::String="black",
-                    edge_width::RealValue=0.1)::Mesh3D
+                    face_color::MeshColorSpec="none",
+                    edge_color::MeshColorSpec="black",
+                    edge_width::MeshWidthSpec=0.1)::Mesh3D
+
+        @assert !(face_color isa Vector) || length(face_color)==size(F, 2)
+        @assert !(edge_color isa Vector) || length(edge_color)==size(F, 2)
+        @assert !(edge_width isa Vector) || length(edge_width)==size(F, 2)
 
         default_properties = SceneProperties{Mesh3D}(name)
         default_local_pose = homtransf()
@@ -292,7 +296,7 @@ mutable struct Mesh3D <: AbstractObject3D
     end # function
 
     """
-        Mesh3D(filepath[; name])
+        Mesh3D(filepath[; name, face_color, edge_color, edge_width])
 
     Constructor from a Wavefront `obj` file.
 
@@ -307,9 +311,9 @@ mutable struct Mesh3D <: AbstractObject3D
     """
     function Mesh3D(filepath::String;
                     name::String="mesh",
-                    face_color::String="none",
-                    edge_color::String="black",
-                    edge_width::RealValue=0.1)::Mesh3D
+                    face_color::MeshColorSpec="none",
+                    edge_color::MeshColorSpec="black",
+                    edge_width::MeshWidthSpec=0.1)::Mesh3D
 
         V, F = load_wavefront(filepath)
 
@@ -381,11 +385,13 @@ child meshes, creating a rigid body motion effect. Another use case is for the
 `Axis3D` to represent the world frame.
 """
 mutable struct Axis3D <: AbstractObject3D
-    visible::Bool                             # Flag to render the axis
+    visible::Bool           # Flag to render the axis
+    axis_length::RealValue  # Length of axes when visualized
+    axis_width::RealValue   # Thickness of axes when visualized
     scene_properties::SceneProperties{Axis3D} # 3D scene properties
 
     """
-        Axis3D([; name, visible])
+        Axis3D([; name, visible, axis_length, axis_width])
 
     Basic constructor.
 
@@ -397,11 +403,13 @@ mutable struct Axis3D <: AbstractObject3D
     - `axis`: the new axis object.
     """
     function Axis3D(; name::String="axis",
-                    visible::Bool=false)::Axis3D
+                    visible::Bool=false,
+                    axis_length::RealValue=1.0,
+                    axis_width::RealValue=0.05)::Axis3D
 
         default_properties = SceneProperties{Axis3D}(name)
 
-        axis = new(visible, default_properties)
+        axis = new(visible, axis_length, axis_width, default_properties)
 
         return axis
     end # function
@@ -460,6 +468,139 @@ mutable struct BakedScene3D
 end # struct
 
 # ..:: Methods ::..
+
+"""
+    MeshAxis3D(axis)
+
+Generate a mesh to visualize an `Axis3D` object.
+
+# Arguments
+- `axis`: the `Axis3D` object to be visualized.
+
+# Returns
+- `axis_mesh`: an axis mesh with the same pose as `axis`.
+"""
+function MeshAxis3D(axis::Axis3D)::Mesh3D
+
+    # Generate mesh along +x
+    Vx, Fx = make_x_axis_mesh(axis.axis_width, axis.axis_length)
+    fcx = repeat([Red], size(Fx, 2))
+
+    # Generate mesh along +y
+    Vy, Fy = make_x_axis_mesh(axis.axis_width, axis.axis_length)
+    Vy = homrot(scene_yaw(90))*Vy
+    Fy .+= size(Vx, 2)
+    fcy = repeat([Green], size(Fy, 2))
+
+    # Generate mesh along +z
+    Vz, Fz = make_x_axis_mesh(axis.axis_width, axis.axis_length)
+    Vz = homrot(scene_pitch(-90))*Vz
+    Fz .+= size(Vx, 2)+size(Vy, 2)
+    fcz = repeat([Blue], size(Fz, 2))
+
+    # Concatenate meshes
+    V = cat(Vx, Vy, Vz, dims=2)
+    F = cat(Fx, Fy, Fz, dims=2)
+    fc = cat(fcx, fcy, fcz, dims=1)
+
+    # Create mesh object
+    axis_mesh = Mesh3D(V, F, face_color=fc, edge_color="none", edge_width=0)
+
+    return axis_mesh
+end # function
+
+"""
+    make_x_axis_mesh([; thickness, length, resol])
+
+Make the vertex and face arrays for an axis aligned with the x axis.
+
+# Arguments
+- `thickness`: axis thickness (length in the y and z directions).
+- `length`: axis length along the +x direction.
+
+# Keywords
+- `resol`: (optional) triangulation resolut (i.e., number of segments) along
+  the +x direction.
+
+# Returns
+- `V`: the vertex matrix.
+- `F`: the face association matrix.
+"""
+function make_x_axis_mesh(thickness::RealValue,
+                          length::RealValue;
+                          resol::Int=50)::Tuple{RealMatrix, IntMatrix}
+
+    ymin, ymax = -thickness/2, thickness/2
+    zmin, zmax = -thickness/2, thickness/2
+    xgrid = LinRange(0, length, resol)
+
+    # Generate the vertices
+    V = RealMatrix(undef, 3, 4*resol)
+    V2I = Dict{RealVector, Int}()
+    k = 0
+    for i=1:resol
+        x = xgrid[i]
+        v = [[x; ymin; zmin],
+             [x; ymin; zmax],
+             [x; ymax; zmax],
+             [x; ymax; zmin]]
+        for j=1:4
+            V[:, k+j] = v[j]
+            V2I[v[j]] = k+j
+        end
+        k += 4
+    end
+
+    # Generate the faces
+    F = Vector{Types.IntVector}(undef, 0)
+    for i=1:resol
+        x = xgrid[i]
+        if i==1 || i==resol
+            # Endcaps
+            i1 = V2I[[x, ymin, zmin]]
+            i2 = V2I[[x, ymax, zmin]]
+            i3 = V2I[[x, ymax, zmax]]
+            push!(F, [i1; i2; i3])
+            i2 = V2I[[x, ymin, zmax]]
+            push!(F, [i1; i2; i3])
+        end
+        if i<resol
+            xn = xgrid[i+1]
+            # Switch the sides
+            # +y
+            i1 = V2I[[x, ymax, zmin]]
+            i2 = V2I[[xn, ymax, zmin]]
+            i3 = V2I[[x, ymax, zmax]]
+            push!(F, [i1; i2; i3])
+            i1 = V2I[[xn, ymax, zmax]]
+            push!(F, [i1; i2; i3])
+            # -y
+            i1 = V2I[[x, ymin, zmin]]
+            i2 = V2I[[xn, ymin, zmin]]
+            i3 = V2I[[x, ymin, zmax]]
+            push!(F, [i1; i2; i3])
+            i1 = V2I[[xn, ymin, zmax]]
+            push!(F, [i1; i2; i3])
+            # +z
+            i1 = V2I[[x, ymax, zmax]]
+            i2 = V2I[[xn, ymax, zmax]]
+            i3 = V2I[[xn, ymin, zmax]]
+            push!(F, [i1; i2; i3])
+            i2 = V2I[[x, ymin, zmax]]
+            push!(F, [i1; i2; i3])
+            # -z
+            i1 = V2I[[x, ymax, zmin]]
+            i2 = V2I[[xn, ymax, zmin]]
+            i3 = V2I[[xn, ymin, zmin]]
+            push!(F, [i1; i2; i3])
+            i2 = V2I[[x, ymin, zmin]]
+            push!(F, [i1; i2; i3])
+        end
+    end
+    F = hcat(F...)
+
+    return V, F
+end # function
 
 """ Aliases to create homogeneous transformation matrices. """
 scene_roll(roll::RealValue; deg::Bool=true) = homtransf(roll=roll, deg=deg)
@@ -895,11 +1036,12 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
 
         # Get the raw mesh in its body frame
         if obj isa Axis3D
-            # TODO
-            return # remove
-        else
-            verts, faces = obj.V, obj.F
+            # Generate a mesh representing the axis
+            ax_obj = obj
+            obj = MeshAxis3D(ax_obj)
+            add!(ax_obj, obj)
         end
+        verts, faces = obj.V, obj.F
 
         # Relative pose
         rel_pose = relative_pose(obj, camera, Body, Body)
@@ -919,9 +1061,12 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
 
         # Save to concatenated list
         push!(tris_3d, tris)
-        push!(fc, repeat([obj.face_color], num_faces))
-        push!(ec, repeat([obj.edge_color], num_faces))
-        push!(ew, repeat([obj.edge_width], num_faces))
+        push!(fc, (obj.face_color isa Vector) ? obj.face_color :
+            repeat([obj.face_color], num_faces))
+        push!(ec, (obj.edge_color isa Vector) ? obj.edge_color :
+            repeat([obj.edge_color], num_faces))
+        push!(ew, (obj.edge_width isa Vector) ? obj.edge_width :
+            repeat([obj.edge_width], num_faces))
     end
 
     tris_3d = cat(tris_3d..., dims=1)
