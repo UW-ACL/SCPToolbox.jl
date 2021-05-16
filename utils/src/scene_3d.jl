@@ -39,7 +39,6 @@ abstract type AbstractObject3D end
 const IntMatrix = Matrix{Int}
 const RealTensor = Types.RealTensor #noerr
 const OwnerNode{T} = Optional{TreeNode{T}}
-const PolyCollection = PyPlot.matplotlib.collections.PolyCollection
 
 # ..:: Traits ::..
 
@@ -149,39 +148,52 @@ get_pose(::HasLocalPose, x, frame::Symbol) = begin
 end
 
 """
-    Signature
+    update_pose!(x, value[; frame, mode, reset])
 
-Description.
+Update the pose of an object's frame.
 
 # Arguments
-- `foo`: description.
+- `x`: the object whose frame is to be updated.
+- `value`: the value to use for the pose update.
 
-# Returns
-- `bar`: description.
+# Throws
+- `ArgumentError` if the `x` object has `NoPose`.
+
+# Keywords
+- `frame`: (optional) which frame to update (`:local` or `:body`).
+- `mode`: (optional) update mode (`:intrinsic` or `:extrinsic`).
+- `reset`: (optional) whether to hard-reset the pose to `value`, or to update
+  it according to `mode`.
 """
-update_pose(x, value::RealMatrix, frame::Symbol=:local,
-            mode::Symbol=:intrinsic) = begin
-                @assert frame in (:local, :body)
-                @assert mode in (:extrinsic, :intrinsic)
-                @assert size(value)==(4, 4)
-                update_pose(PoseTrait(x), x, value, frame, mode)
-            end
+function update_pose!(x, value::RealMatrix; frame::Symbol=:local,
+                      mode::Symbol=:intrinsic, reset::Bool=false)::Nothing
+    @assert frame in (:local, :body)
+    @assert mode in (:extrinsic, :intrinsic)
+    @assert size(value)==(4, 4)
+    update_pose!(PoseTrait(x), x, value, frame, mode, reset)
+end # function
 
-update_pose(::NoPose, x::T, value, frame, mode) where {T} = begin
+update_pose!(::NoPose, x::T, value, frame, mode, reset) where {T} = begin
     msg = @sprintf("The object %s does not have a pose", T)
     throw(ArgumentError(msg))
 end
 
-update_pose(T::Union{HasGlobalPose, HasLocalPose}, x, value, frame, mode) =
-    begin
+function update_pose!(pose_trait::Union{HasGlobalPose, HasLocalPose},
+                      x::AbstractObject3D, value, frame, mode, reset)::Nothing
+    if reset
+        H = value
+    else
         H = get_pose(x, frame)
         H = (mode==:intrinsic) ? H*value : value*H
-        if frame==:local || T isa HasGlobalPose
-            x.scene_properties.pose = H
-        else
-            x.local_pose = H
-        end
     end
+
+    if frame==:local || pose_trait isa HasGlobalPose
+        x.scene_properties.pose = H
+    else
+        x.local_pose = H
+    end
+    return nothing
+end # function
 
 # ..:: Data structures ::..
 
@@ -399,14 +411,14 @@ mutable struct Scene3D
 end # struct
 
 """
-`Scene3DOutput` stores the Matplotlib-ready data for plotting. It stores the
+`BakedScene3D` stores the Matplotlib-ready data for plotting. It stores the
 final result of all the heavy computations of projecting the scene onto a
-camera. With the `Scene3DOutput` object in hand, you can readily make a plot
+camera. With the `BakedScene3D` object in hand, you can readily make a plot
 using Matplotlib. However, this is "raw output" data in the sense that it is
 devoid of all the object tree hierarchy, etc., information that was used to
 store and manipulate the scene.
 """
-mutable struct Scene3DOutput
+mutable struct BakedScene3D
     tris::RealTensor # Face triangle list
 end # struct
 
@@ -549,7 +561,7 @@ function move!(obj::AbstractObject3D;
     end
 
     # Apply the transformation to the object's frame
-    update_pose(obj, H_update, frame, mode)
+    update_pose!(obj, H_update; frame=frame, mode=mode)
 
     return nothing
 end # function
@@ -755,10 +767,10 @@ Render the scene.
 function render(scene::Scene3D,
                 camera::Optional{Union{Camera3D, String}}=nothing,
                 path::String="./figures/scene3d_render.pdf";
-                size::Tuple{Real, Real}=(5, 5),
-                xlim::Tuple{Real, Real}=(-1, 1),
-                ylim::Tuple{Real, Real}=(-1, 1),
-                aspect::Real=1)::Nothing
+                canvas_size::Tuple{Real, Real}=(5, 5),
+                canvas_xlim::Tuple{Real, Real}=(-1, 1),
+                canvas_ylim::Tuple{Real, Real}=(-1, 1),
+                canvas_aspect::Real=1)::Nothing
 
     # Get the camera
     if camera isa String || isnothing(camera)
@@ -785,13 +797,13 @@ function render(scene::Scene3D,
     end
 
     # Initialize the figure
-    fig = create_figure(size)
+    fig = create_figure(canvas_size)
 
     # Add an axis
     ax = fig.add_axes([0, 0, 1, 1],
-                      xlim=xlim,
-                      ylim=ylim,
-                      aspect=aspect,
+                      xlim=canvas_xlim,
+                      ylim=canvas_ylim,
+                      aspect=canvas_aspect,
                       frameon=false)
 
     # Sanitize axes
@@ -799,14 +811,15 @@ function render(scene::Scene3D,
     ax.set_yticks([])
 
     # Generate the mesh triangles
-    scene_data = project_scene_to_camera(scene, camera)
+    scene_data = bake_scene(scene, camera)
 
+    PolyCollection = PyPlot.matplotlib.collections.PolyCollection
     scene_baked = PolyCollection(
         scene_data.tris,
         closed=true,
         linewidth=0.1,
-        facecolor=Red,
-        edgecolor="black")
+        edgecolor="black",
+        facecolor=Red)
 
     ax.add_collection(scene_baked)
 
@@ -817,7 +830,7 @@ function render(scene::Scene3D,
 end # function
 
 """
-    project_scene_to_camera(scene, camera)
+    bake_scene(scene, camera)
 
 Project `Scene3D` onto a `Camera3D`, generating data which is readily plotted
 using Matplotlib. This function performs z-depth sorting so that objects
@@ -830,8 +843,7 @@ overlap appropriately according to their 3D position.
 # Returns
 - `baked`: the projected scene data that can be used for plotting.
 """
-function project_scene_to_camera(scene::Scene3D,
-                                 camera::Camera3D)::Scene3DOutput
+function bake_scene(scene::Scene3D, camera::Camera3D)::BakedScene3D
 
     # >> Collect data on all objects into lists <<
 
@@ -889,7 +901,7 @@ function project_scene_to_camera(scene::Scene3D,
     zid = sortperm(faces_z)
     tris = tris[zid, :, :]
 
-    out = Scene3DOutput(tris)
+    out = BakedScene3D(tris)
 
     return out
 end # function
