@@ -461,10 +461,30 @@ devoid of all the object tree hierarchy, etc., information that was used to
 store and manipulate the scene.
 """
 mutable struct BakedScene3D
-    tris::RealTensor       # Face triangle list
-    fc::Vector{String}     # Face colors
-    ec::Vector{String}     # Edge colors
-    ew::RealVector         # Edge widths
+    tris::RealTensor   # Face triangle list
+    fc::Vector{String} # Face colors
+    ec::Vector{String} # Edge colors
+    ew::RealVector     # Edge widths
+
+    """ Default constructor. """
+    BakedScene3D(tris, fc, ec, ew) = new(tris, fc, ec, ew)
+
+    """
+        BakedScene3D()
+
+    Empty constructor (no geometry to display).
+
+    # Returns
+    - `baked`: an "empty" baked scene.
+    """
+    function BakedScene3D()::BakedScene3D
+        tris = RealTensor(undef, 0, 3, 2)
+        fc = Vector{String}(undef, 0)
+        ec = Vector{String}(undef, 0)
+        ew = RealVector(undef, 0)
+        baked = new(tris, fc, ec, ew)
+        return baked
+    end # function
 end # struct
 
 # ..:: Methods ::..
@@ -1035,8 +1055,9 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
         end
 
         # Get the raw mesh in its body frame
-        if obj isa Axis3D
-            # Generate a mesh representing the axis
+        draw_axis = obj isa Axis3D
+        if draw_axis
+            # Generate a (temporary) mesh representing the axis
             ax_obj = obj
             obj = MeshAxis3D(ax_obj)
             add!(ax_obj, obj)
@@ -1053,20 +1074,44 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
 
         # Extract the face triangles
         num_faces = size(faces, 2)
-        tris = RealTensor(undef, num_faces, 3, 3)
+        tris = RealTensor[]
+        id_face_keep = Int[]
         for i=1:num_faces
             face_verts = verts[1:3, faces[:, i]]
-            tris[i, :, :] = face_verts'
+            # Filter out faces outside the clipping volume
+            if any(face_verts.>1) || any(face_verts.<-1)
+                continue
+            end
+            push!(tris, reshape(face_verts', 1, 3, 3))
+            push!(id_face_keep, i)
+        end
+        tris = cat(tris..., dims=1)
+        num_faces = size(tris, 1)
+
+        # Everything is clipped, no geometry to display
+        if num_faces==0
+            return
         end
 
         # Save to concatenated list
         push!(tris_3d, tris)
-        push!(fc, (obj.face_color isa Vector) ? obj.face_color :
+        push!(fc, (obj.face_color isa Vector) ? obj.face_color[id_face_keep] :
             repeat([obj.face_color], num_faces))
-        push!(ec, (obj.edge_color isa Vector) ? obj.edge_color :
+        push!(ec, (obj.edge_color isa Vector) ? obj.edge_color[id_face_keep] :
             repeat([obj.edge_color], num_faces))
-        push!(ew, (obj.edge_width isa Vector) ? obj.edge_width :
+        push!(ew, (obj.edge_width isa Vector) ? obj.edge_width[id_face_keep] :
             repeat([obj.edge_width], num_faces))
+
+        # Remove temporary axis mesh
+        if draw_axis
+            remove_child!(owner(ax_obj), owner(obj))
+        end
+    end
+
+    # No geometry to display
+    if isempty(tris_3d)
+        out = BakedScene3D()
+        return out
     end
 
     tris_3d = cat(tris_3d..., dims=1)

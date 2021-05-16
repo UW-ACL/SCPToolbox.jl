@@ -28,7 +28,8 @@ export TreeCompatibilityTrait, IsTreeCompatible
 export owner
 
 export TreeNode
-export is_root, is_leaf, set_parent!, traverse, find_common
+export is_root, is_leaf, set_parent!, traverse, find_common,
+    add_child!, remove_child!
 
 # ..:: Globals ::..
 
@@ -138,6 +139,20 @@ Add child(children) node(s) to the parent node.
 """
 function add_child!(parent::TreeNode, node::TreeNode...)::Nothing
     push!(parent.children, node...)
+    return nothing
+end # function
+
+"""
+    remove_child!(parent, child)
+
+Unlink child node from parent.
+
+# Arguments
+- `parent`: the parent node.
+- `child`: the child node.
+"""
+function remove_child!(parent::TreeNode, child::TreeNode)::Nothing
+    filter!(c->c!=child, parent.children)
     return nothing
 end # function
 
