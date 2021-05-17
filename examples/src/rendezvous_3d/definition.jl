@@ -335,7 +335,69 @@ end # function
 function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                                     algo::Symbol)::Nothing
 
-    # TODO
+    # Parameters
+    veh = pbm.mdl.vehicle
+    n_rcs = length(veh.id_rcs)
+    _common_s_sz = 2*n_rcs
+
+    problem_set_s!(
+        pbm, algo,
+        # Constraint s
+        (t, k, x, u, p, pbm) -> begin
+            veh = pbm.mdl.vehicle
+            traj = pbm.mdl.traj
+
+            s = zeros(_common_s_sz)
+
+            for i=1:n_rcs
+                id_f, id_fr = veh.id_rcs[i], veh.id_rcs_ref[i]
+                f, fr = u[id_f], u[id_fr]
+                above_mib = fr-veh.csm.imp_min
+                OR = or(above_mib;
+                        κ1=traj.κ1, κ2=traj.κ2,
+                        minval=-veh.csm.imp_min,
+                        maxval=veh.csm.imp_max-veh.csm.imp_min)
+                s[2*(i-1)+1] = f-OR*fr
+                s[2*(i-1)+2] = OR*fr-f
+            end
+
+            return s
+        end,
+        # Jacobian ds/dx
+        (t, k, x, u, p, pbm) -> begin
+            C = zeros(_common_s_sz, pbm.nx)
+            return C
+        end,
+        # Jacobian ds/du
+        (t, k, x, u, p, pbm) -> begin
+            veh = pbm.mdl.vehicle
+            traj = pbm.mdl.traj
+
+            D = zeros(_common_s_sz, pbm.nu)
+
+            for i = 1:n_rcs
+                id_f, id_fr = veh.id_rcs[i], veh.id_rcs_ref[i]
+                fr = u[id_fr]
+                above_mib = fr-veh.csm.imp_min
+                ∇above_mib = [1.0]
+                OR, ∇OR = or((above_mib, ∇above_mib);
+                             κ1=traj.κ1, κ2=traj.κ2,
+                             minval=-veh.csm.imp_min,
+                             maxval=veh.csm.imp_max-veh.csm.imp_min)
+                ∇ORfr = ∇OR[1]*fr+OR
+                D[2*(i-1)+1, id_f] = 1.0
+                D[2*(i-1)+1, id_fr] = -∇ORfr
+                D[2*(i-1)+2, id_f] = -1.0
+                D[2*(i-1)+2, id_fr] = ∇ORfr
+            end
+
+            return D
+        end,
+        # Jacobian ds/dp
+        (t, k, x, u, p, pbm) -> begin
+            G = zeros(_common_s_sz, pbm.np)
+            return G
+        end)
 
     return nothing
 end # function
