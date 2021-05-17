@@ -226,12 +226,14 @@ end # struct
 """ Chaser vehicle parameters. """
 struct ChaserParameters
     # Indices
-    id_r::IntRange   # Inertial position (state)
-    id_v::IntRange   # Inertial velocity (state)
-    id_q::IntRange   # Quaternion (state)
-    id_ω::IntRange   # Body frame angular velocity (state)
-    id_rcs::IntRange # Individual RCS thruster impulses (input)
-    id_t::Int        # Time dilation (parameter)
+    id_r::IntRange       # Inertial position (state)
+    id_v::IntRange       # Inertial velocity (state)
+    id_q::IntRange       # Quaternion (state)
+    id_ω::IntRange       # Body frame angular velocity (state)
+    id_rcs::IntRange     # RCS impulses (input)
+    id_rcs_ref::IntRange # RCS impulse references (input)
+    id_rcs_eq::IntRange  # RCS impulse actual minus reference (input)
+    id_t::Int            # Time dilation (parameter)
     # Vehicle
     csm::ApolloCSM   # Apollo command and service module vehicle
 end # struct
@@ -259,7 +261,9 @@ struct RendezvousTrajectoryParameters
     tf_min::RealValue   # Minimum flight time
     tf_max::RealValue   # Maximum flight time
     # Homotopy
-    # TODO
+    κ1::RealValue       # Sigmoid homotopy parameter
+    κ2::RealValue       # Normalization homotopy parameter
+    γ::RealValue        # Control weight for deadband relaxation
 end # struct
 
 """ Rendezvous trajectory optimization problem parameters all in one. """
@@ -298,11 +302,14 @@ function RendezvousProblem()::RendezvousProblem
     id_q = 7:10
     id_ω = 11:13
     id_rcs = 1:16
+    id_rcs_ref = (1:16).+id_rcs[end]
+    id_rcs_eq = (1:16).+id_rcs_ref[end]
     id_t = 1
     # Vehicle
     csm = ApolloCSM()
 
-    sc = ChaserParameters(id_r, id_v, id_q, id_ω, id_rcs, id_t, csm)
+    sc = ChaserParameters(id_r, id_v, id_q, id_ω, id_rcs,
+                          id_rcs_ref, id_rcs_eq, id_t, csm)
 
     # ..:: Trajectory ::..
     # >> Boundary conditions <<
@@ -321,10 +328,14 @@ function RendezvousProblem()::RendezvousProblem
     # >> Time of flight <<
     tf_min = 100.0
     tf_max = 500.0
+    # >> Homotopy <<
+    κ1 = NaN
+    κ2 = 1.0
+    γ = 3e-1
 
     traj = RendezvousTrajectoryParameters(
         r0, rf, v0, vf, q0, qf, ω0, ωf,
-        tf_min, tf_max)
+        tf_min, tf_max, κ1, κ2, γ)
 
     mdl = RendezvousProblem(sc, env, traj)
 

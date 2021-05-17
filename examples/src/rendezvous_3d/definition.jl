@@ -51,7 +51,7 @@ end # function
 
 function set_dims!(pbm::TrajectoryProblem)::Nothing
 
-    problem_set_dims!(pbm, 13, 16, 1)
+    problem_set_dims!(pbm, 13, 48, 1)
 
     return nothing
 end # function
@@ -75,7 +75,9 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     advise!(pbm, :state, veh.id_ω, (-ω_max, ω_max))
 
     # >> Inputs <<
-    advise!(pbm, :input, veh.id_rcs, (-veh.csm.imp_max, veh.csm.imp_max))
+    advise!(pbm, :input, veh.id_rcs, (0, veh.csm.imp_max))
+    advise!(pbm, :input, veh.id_rcs_ref, (0, veh.csm.imp_max))
+    advise!(pbm, :input, veh.id_rcs_eq, (0, veh.csm.imp_min))
 
     # >> Parameters <<
     advise!(pbm, :parameter, veh.id_t, (traj.tf_min, traj.tf_max))
@@ -145,10 +147,15 @@ function set_cost!(pbm::TrajectoryProblem,
             veh = pbm.mdl.vehicle
 
             f = u[veh.id_rcs]
+            feq = u[veh.id_rcs_eq]
 
-            f_max_sq = veh.csm.imp_max^2
+            f_min = veh.csm.imp_min
+            f_max = veh.csm.imp_max
 
-            return (f'*f)/f_max_sq
+            # f_max_sq = veh.csm.imp_max^2
+            # return (f'*f)/f_max_sq
+
+            return sum(f)/f_max+traj.γ*sum(feq)/f_min
         end)
 
     return nothing
@@ -266,21 +273,60 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
     problem_set_U!(
         pbm, (t, k, u, p, pbm, ocp) -> begin
             veh = pbm.mdl.vehicle
+            traj = pbm.mdl.traj
 
             f = u[veh.id_rcs]
+            fr = u[veh.id_rcs_ref]
+            feq = u[veh.id_rcs_eq]
+            tdil = p[veh.id_t]
 
             @add_constraint(
-                ocp, NONPOS, "rcs_impulse_bound",
+                ocp, NONPOS, "rcs_impulse_nonneg",
                 (f,), begin
                     local f, = arg #noerr
                     -f
                 end)
 
             @add_constraint(
-                ocp, LINF, "rcs_impulse_bound",
+                ocp, NONPOS, "rcs_impulse_ref_nonneg",
+                (fr,), begin
+                    local fr, = arg #noerr
+                    -fr
+                end)
+
+            @add_constraint(
+                ocp, LINF, "rcs_impulse_max",
                 (f,), begin
                     local f, = arg #noerr
                     vcat(veh.csm.imp_max, f)
+                end)
+
+            @add_constraint(
+                ocp, LINF, "rcs_impulse_ref_max",
+                (fr,), begin
+                    local fr, = arg #noerr
+                    vcat(veh.csm.imp_max, fr)
+                end)
+
+            @add_constraint(
+                ocp, L1, "rcs_impulse_ref_equality",
+                (f, fr, feq,), begin
+                    local f, fr, feq = arg #noerr
+                    vcat(feq, f-fr)
+                end)
+
+            @add_constraint(
+                ocp, NONPOS, "min_time",
+                (tdil, ), begin
+                    local tdil, = arg #noerr
+                    tdil[1]-traj.tf_max
+                end)
+
+            @add_constraint(
+                ocp, NONPOS, "max_time",
+                (tdil, ), begin
+                    local tdil, = arg #noerr
+                    traj.tf_min-tdil[1]
                 end)
 
         end)

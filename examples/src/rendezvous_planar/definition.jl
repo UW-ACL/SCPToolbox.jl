@@ -316,14 +316,14 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             end
 
             @add_constraint(
-                ocp, NONPOS, "thrust_absval",
+                ocp, NONPOS, "min_time_bound",
                 (tdil, ), begin
                     local tdil, = arg #noerr
                     tdil[1]-traj.tf_max
                 end)
 
             @add_constraint(
-                ocp, NONPOS, "thrust_absval",
+                ocp, NONPOS, "max_time_bound",
                 (tdil, ), begin
                     local tdil, = arg #noerr
                     traj.tf_min-tdil[1]
