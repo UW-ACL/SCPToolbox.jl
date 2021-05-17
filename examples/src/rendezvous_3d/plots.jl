@@ -51,16 +51,14 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
 
     # Plotting data
     ct_res = 1000
-    dt_τ = sol.td
     dt_res = length(sol.td)
     ct_τ = RealVector(LinRange(0, 1, ct_res))
-    tf = sol.p[veh.id_t]
-    ct_t = ct_τ*tf
     dt_pos = sol.xd[veh.id_r, :]
     ct_pos = hcat([sample(sol.xc, τ)[veh.id_r] for τ in ct_τ]...) #noerr
     ct_vel = hcat([sample(sol.xc, τ)[veh.id_v] for τ in ct_τ]...) #noerr
     ct_speed = squeeze(mapslices(norm, ct_vel, dims=(1)))
-    dt_thrust = sol.ud[veh.id_T, :]
+    dt_thrust = sum(sol.ud[veh.id_rcs[i], :]*
+        veh.csm.f_rcs[veh.csm.rcs_select[i]]' for i=1:length(veh.id_rcs))'
 
     # Colormap
     v_cmap = generate_colormap("inferno";
@@ -473,8 +471,6 @@ function plot_inputs(mdl::RendezvousProblem,
     Δt = tf/(dt_res-1)
     t_spread = Δt*spread/2
 
-    T = sol.ud[veh.id_T, :]
-    M = sol.ud[veh.id_M, :]
     f = sol.ud[veh.id_rcs, :]
 
     f_quad = Dict()
@@ -486,28 +482,21 @@ function plot_inputs(mdl::RendezvousProblem,
         f_quad[quad] = hcat(_f_quad...)'
     end
 
-    dirs = ["\$+x\$", "\$+y\$", "\$+z\$"]
-    thrusters = ["\$+x\$", "\$-x\$", "\$+z\$", "\$-z\$"]
-    data = [Dict(:u=>T,
-                 :ylabel=>"Force impulse [N\$\\cdot\$s]",
-                 :legend=>(i)->@sprintf("Along %s", dirs[i])),
-            Dict(:u=>M,
-                 :ylabel=>"Torque impulse [N\$\\cdot\$m\$\\cdot\$s]",
-                 :legend=>(i)->@sprintf("Along %s", dirs[i])),
-            Dict(:u=>f_quad[:A],
+    dirs = ["\$+x\$", "\$-x\$", "\$+z\$", "\$-z\$"]
+    data = [Dict(:u=>f_quad[:A],
                  :ylabel=>"Quad A impulse [N\$\\cdot\$m\$\\cdot\$s]",
-                 :legend=>(i)->@sprintf("Along %s", thrusters[i])),
+                 :legend=>(i)->@sprintf("Along %s", dirs[i])),
             Dict(:u=>f_quad[:B],
                  :ylabel=>"Quad B impulse [N\$\\cdot\$m\$\\cdot\$s]",
-                 :legend=>(i)->@sprintf("Along %s", thrusters[i])),
+                 :legend=>(i)->@sprintf("Along %s", dirs[i])),
             Dict(:u=>f_quad[:C],
                  :ylabel=>"Quad C impulse [N\$\\cdot\$m\$\\cdot\$s]",
-                 :legend=>(i)->@sprintf("Along %s", thrusters[i])),
+                 :legend=>(i)->@sprintf("Along %s", dirs[i])),
             Dict(:u=>f_quad[:D],
                  :ylabel=>"Quad D impulse [N\$\\cdot\$m\$\\cdot\$s]",
-                 :legend=>(i)->@sprintf("Along %s", thrusters[i]))]
+                 :legend=>(i)->@sprintf("Along %s", dirs[i]))]
 
-    fig = create_figure((10, 18))
+    fig = create_figure((10, 16))
     gspec = fig.add_gridspec(ncols=1, nrows=6)
 
     axes = []

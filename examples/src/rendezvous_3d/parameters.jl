@@ -179,7 +179,7 @@ struct ApolloCSM
 
         # Thruster positions in dynamics frame
         r_rcs = Dict(k=>homdisp(H_DT[k]) for k in keys(H_DT))
-        f_rcs_T = [1; 0; 0] # Thruster thrust vector in thruster frame
+        f_rcs_T = [-1; 0; 0] # Thrust vector in thruster frame
         f_rcs = Dict(k=>homrot(H_DT[k])*f_rcs_T for k in keys(H_DT))
 
         # Docking port position in structural frame
@@ -199,7 +199,7 @@ struct ApolloCSM
 
         # Propulsion properties
         imp_min = 50.0
-        imp_max = 500.0
+        imp_max = 445.0
 
         # Thruster selection map converting back and forth between thruster
         # number and humand-readable thruster identifier using the quad and
@@ -225,23 +225,15 @@ end # struct
 
 """ Chaser vehicle parameters. """
 struct ChaserParameters
-    # >> Indices <<
+    # Indices
     id_r::IntRange   # Inertial position (state)
     id_v::IntRange   # Inertial velocity (state)
     id_q::IntRange   # Quaternion (state)
     id_ω::IntRange   # Body frame angular velocity (state)
-    id_T::IntRange   # Total thrust (input)
-    id_M::IntRange   # Total torque (input)
     id_rcs::IntRange # Individual RCS thruster impulses (input)
     id_t::Int        # Time dilation (parameter)
     # Vehicle
     csm::ApolloCSM   # Apollo command and service module vehicle
-    # >> Mechanical parameters <<
-    m::RealValue     # [kg] Mass
-    J::RealMatrix    # [kg*m^2] Principle moments of inertia matrix
-    # >> Control parameters <<
-    T_max::RealValue # [N] Maximum thrust
-    M_max::RealValue # [N*m] Maximum torque
 end # struct
 
 """ Planar rendezvous flight environment. """
@@ -254,7 +246,7 @@ end
 
 """ Parameters of the chaser trajectory. """
 struct RendezvousTrajectoryParameters
-    # >> Boundary conditions <<
+    # Boundary conditions
     r0::RealVector      # Initial position
     rf::RealVector      # Terminal position
     v0::RealVector      # Initial velocity
@@ -263,10 +255,10 @@ struct RendezvousTrajectoryParameters
     qf::Quaternion      # Terminal attitude
     ω0::RealVector      # Initial angular velocity
     ωf::RealVector      # Terminal angular velocity
-    # >> Time of flight <<
+    # Time of flight
     tf_min::RealValue   # Minimum flight time
     tf_max::RealValue   # Maximum flight time
-    # >> Homotopy <<
+    # Homotopy
     # TODO
 end # struct
 
@@ -300,31 +292,17 @@ function RendezvousProblem()::RendezvousProblem
     env = RendezvousEnvironmentParameters(xi, yi, zi, n)
 
     # ..:: Chaser spacecraft ::..
-    # >> Indices <<
+    # Indices
     id_r = 1:3
     id_v = 4:6
     id_q = 7:10
     id_ω = 11:13
-    id_T = 1:3
-    id_M = 4:6
-    id_rcs = (1:16).+id_M[end]
+    id_rcs = 1:16
     id_t = 1
     # Vehicle
     csm = ApolloCSM()
-    # >> Mechanical parameters <<
-    m = convert_units(66850.6, :lb, :kg)
-    J_xx, J_yy, J_zz = 36324, 80036, 81701
-    J_xy, J_xz, J_yz = -2111, 273, 2268
-    J = [J_xx -J_xy -J_xz;
-         -J_xy J_yy -J_yz;
-         -J_xz -J_yz J_zz]
-    J = convert_units.(J, :ft2slug, :m2kg)
-    # >> Control parameters <<
-    T_max = 500.0
-    M_max = 1500.0
 
-    sc = ChaserParameters(id_r, id_v, id_q, id_ω, id_T, id_M, id_rcs, id_t,
-                          csm, m, J, T_max, M_max)
+    sc = ChaserParameters(id_r, id_v, id_q, id_ω, id_rcs, id_t, csm)
 
     # ..:: Trajectory ::..
     # >> Boundary conditions <<

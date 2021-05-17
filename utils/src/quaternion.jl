@@ -206,21 +206,21 @@ Quaternion multiplication by a pure quaternion (a vector).
 # Returns
 - `r`: the resultant quaternion, `r=q*p`.
 """
-function *(q::Union{Quaternion, RealVector},
-           p::Union{Quaternion, RealVector})::Quaternion
-    if typeof(q)<:Quaternion && typeof(p)<:RealVector
-        if length(p)!=3
-            err = ArgumentError("p must be a vector in R^3.")
-            throw(err)
-        end
-        r = q*Quaternion(p)
-    else
-        if length(q)!=3
-            err = ArgumentError("q must be a vector in R^3.")
-            throw(err)
-        end
-        r = Quaternion(q)*p
+function *(q::Quaternion, p::RealVector)::Quaternion
+    if length(p)!=3
+        err = ArgumentError("p must be a vector in R^3.")
+        throw(err)
     end
+    r = q*Quaternion(p)
+    return r
+end # function
+
+function *(q::RealVector, p::Quaternion)::Quaternion
+    if length(q)!=3
+        err = ArgumentError("q must be a vector in R^3.")
+        throw(err)
+    end
+    r = Quaternion(q)*p
     return r
 end # function
 
