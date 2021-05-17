@@ -75,7 +75,6 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     advise!(pbm, :state, veh.id_ω, (-ω_max, ω_max))
 
     # >> Inputs <<
-    advise!(pbm, :input, veh.id_T, (-veh.T_max, veh.T_max))
     advise!(pbm, :input, veh.id_M, (-veh.M_max, veh.M_max))
     advise!(pbm, :input, veh.id_rcs, (-veh.csm.imp_max, veh.csm.imp_max))
 
@@ -146,7 +145,6 @@ function set_cost!(pbm::TrajectoryProblem,
             traj = pbm.mdl.traj
             veh = pbm.mdl.vehicle
 
-            T = u[veh.id_T]
             M = u[veh.id_M]
             f = u[veh.id_rcs]
 
@@ -154,7 +152,7 @@ function set_cost!(pbm::TrajectoryProblem,
             M_max_sq = veh.M_max^2
             f_max_sq = veh.csm.imp_max^2
 
-            return (T'*T)/T_max_sq+(M'*M)/M_max_sq+(f'*f)/f_max_sq
+            return (M'*M)/M_max_sq+(f'*f)/f_max_sq
         end)
 
     return nothing
@@ -175,20 +173,21 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             v = x[veh.id_v]
             q = Quaternion(x[veh.id_q])
             ω = x[veh.id_ω]
-            T = u[veh.id_T]
             M = u[veh.id_M]
             rcs = u[veh.id_rcs]
 
             n_rcs = length(veh.id_rcs)
             dir_rcs = [veh.csm.f_rcs[veh.csm.rcs_select[i]] for i=1:n_rcs]
+            pos_rcs = [veh.csm.r_rcs[veh.csm.rcs_select[i]] for i=1:n_rcs]
             iJ = inv(veh.J)
             xi, yi, zi = env.xi, env.yi, env.zi
             norb = env.n
 
             f = zeros(pbm.nx)
-            f[veh.id_v] = T/veh.m
-            f[veh.id_v] += sum(rcs[i]*dir_rcs[i] for i=1:n_rcs)/veh.m
+            f[veh.id_v] = sum(rcs[i]*dir_rcs[i] for i=1:n_rcs)/veh.m
             f[veh.id_ω] = iJ*M
+            f[veh.id_ω] += iJ*sum(rcs[i]*cross(pos_rcs[i], dir_rcs[i])
+                                  for i=1:n_rcs)
             if !impulse
                 # Rigid body terms
                 f[veh.id_r] = v
@@ -235,13 +234,17 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
 
             n_rcs = length(veh.id_rcs)
             dir_rcs = [veh.csm.f_rcs[veh.csm.rcs_select[i]] for i=1:n_rcs]
+            pos_rcs = [veh.csm.r_rcs[veh.csm.rcs_select[i]] for i=1:n_rcs]
+            iJ = inv(veh.J)
 
             B = zeros(pbm.nx, pbm.nu)
-            B[veh.id_v, veh.id_T] = (1.0/veh.m)*I(3)
             for i=1:n_rcs
                 B[veh.id_v, veh.id_rcs[i]] = dir_rcs[i]/veh.m
             end
-            B[veh.id_ω, veh.id_M] = veh.J\I(3)
+            B[veh.id_ω, veh.id_M] = iJ
+            for i=1:n_rcs
+                B[veh.id_ω, veh.id_rcs[i]] = iJ*cross(pos_rcs[i], dir_rcs[i])
+            end
             if !impulse
                 # Scale for absolute time
                 B *= tdil
@@ -271,16 +274,8 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
         pbm, (t, k, u, p, pbm, ocp) -> begin
             veh = pbm.mdl.vehicle
 
-            T = u[veh.id_T]
             M = u[veh.id_M]
             f = u[veh.id_rcs]
-
-            @add_constraint(
-                ocp, SOC, "thrust_bound",
-                (T,), begin
-                    local T, = arg #noerr
-                    vcat(veh.T_max, T)
-                end)
 
             @add_constraint(
                 ocp, SOC, "torque_bound",

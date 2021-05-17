@@ -394,25 +394,25 @@ function compute_scaling(
 
     defs = [Dict(:dim => nx,
                  :set => traj.X,
-                 :setcall => (t, k, x, u, p) -> traj.X(t, k, x, p),
+                 :setcall => (prg, t, k, x, u, p) -> traj.X(prg, t, k, x, p),
                  :bbox => x_bbox,
                  :advice => :xrg,
                  :cost => (x, u, p, i) -> x[i]),
             Dict(:dim => nu,
                  :set => traj.U,
-                 :setcall => (t, k, x, u, p) -> traj.U(t, k, u, p),
+                 :setcall => (prg, t, k, x, u, p) -> traj.U(prg, t, k, u, p),
                  :bbox => u_bbox,
                  :advice => :urg,
                  :cost => (x, u, p, i) -> u[i]),
             Dict(:dim => np,
                  :set => traj.X,
-                 :setcall => (t, k, x, u, p) -> traj.X(t, k, x, p),
+                 :setcall => (prg, t, k, x, u, p) -> traj.X(prg, t, k, x, p),
                  :bbox => p_bbox,
                  :advice => :prg,
                  :cost => (x, u, p, i) -> p[i]),
             Dict(:dim => np,
                  :set => traj.U,
-                 :setcall => (t, k, x, u, p) -> traj.U(t, k, u, p),
+                 :setcall => (prg, t, k, x, u, p) -> traj.U(prg, t, k, u, p),
                  :bbox => p_bbox,
                  :advice => :prg,
                  :cost => (x, u, p, i) -> p[i])]
@@ -425,32 +425,30 @@ function compute_scaling(
                     def[:bbox][i, j] = getfield(traj, def[:advice])[i][j]
                 else
                     # Initialize JuMP model
-                    mdl = Model()
-                    set_optimizer(mdl, solver.Optimizer)
-                    for (key,val) in solver_opts
-                        set_optimizer_attribute(mdl, key, val)
-                    end
+                    prg = ConicProgram(traj; solver=solver.Optimizer,
+                                       solver_options=solver_opts)
                     # Variables
-                    x = @variable(mdl, [1:nx])
-                    u = @variable(mdl, [1:nu])
-                    p = @variable(mdl, [1:np])
+                    x = @new_variable(prg, nx, "x")
+                    u = @new_variable(prg, nu, "u")
+                    p = @new_variable(prg, np, "p")
                     # Constraints
                     if !isnothing(def[:set])
                         for k = 1:length(t)
-                            add!(mdl, def[:setcall](t[k], k, x, u, p))
+                            def[:setcall](prg, t[k], k, x, u, p)
                         end
                     end
                     # Cost
-                    set_objective_function(mdl, def[:cost](x, u, p, i))
-                    set_objective_sense(mdl, (j==1) ? MOI.MIN_SENSE :
-                                        MOI.MAX_SENSE)
+                    minimize_cost = (j==1) ? 1 : -1
+                    @add_cost(prg, (x, u, p), begin
+                                  local x, u, p = arg #noerr
+                                  minimize_cost*def[:cost](x, u, p, i)
+                              end)
                     # Solve
-                    optimize!(mdl)
+                    status = solve!(prg)
                     # Record the solution
-                    status = termination_status(mdl)
                     if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
                         # Nominal case
-                        def[:bbox][i, j] = objective_value(mdl)
+                        def[:bbox][i, j] = minimize_cost*objective_value(prg)
                     elseif !(status == MOI.DUAL_INFEASIBLE ||
                              status == MOI.NUMERICAL_ERROR)
                         msg = "Solver failed during variable scaling (%s)"

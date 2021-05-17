@@ -26,7 +26,7 @@ if isdefined(@__MODULE__, :LanguageServer)
 end
 
 import Base: copy
-import JuMP: termination_status, solve_time
+import JuMP: termination_status, solve_time, objective_value
 
 export ConicProgram, numel, constraints, variables, parameters, cost,
     solve!, jump_model
@@ -424,6 +424,10 @@ termination_status(prog::ConicProgram)::MOI.TerminationStatusCode =
 
 """ Get the core optimizer solve time. """
 solve_time(prog::ConicProgram)::Float64 = solve_time(jump_model(prog))
+
+""" Get the optimal cost value. """
+objective_value(prog::ConicProgram)::Float64 =
+    objective_value(jump_model(prog))
 
 """
     copy(blk, prg)
