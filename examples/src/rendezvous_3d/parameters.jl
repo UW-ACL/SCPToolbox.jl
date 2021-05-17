@@ -247,7 +247,7 @@ struct RendezvousEnvironmentParameters
 end
 
 """ Parameters of the chaser trajectory. """
-struct RendezvousTrajectoryParameters
+mutable struct RendezvousTrajectoryParameters
     # Boundary conditions
     r0::RealVector      # Initial position
     rf::RealVector      # Terminal position
