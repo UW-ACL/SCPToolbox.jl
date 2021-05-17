@@ -51,7 +51,7 @@ end # function
 
 function set_dims!(pbm::TrajectoryProblem)::Nothing
 
-    problem_set_dims!(pbm, 13, 48, 1)
+    problem_set_dims!(pbm, 13, 33, 1)
 
     return nothing
 end # function
@@ -62,6 +62,7 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     mdl = pbm.mdl
     veh = mdl.vehicle
     traj = mdl.traj
+    n_rcs = length(veh.id_rcs)
 
     advise! = problem_advise_scale!
 
@@ -77,7 +78,7 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     # >> Inputs <<
     advise!(pbm, :input, veh.id_rcs, (0, veh.csm.imp_max))
     advise!(pbm, :input, veh.id_rcs_ref, (0, veh.csm.imp_max))
-    advise!(pbm, :input, veh.id_rcs_eq, (0, veh.csm.imp_min))
+    advise!(pbm, :input, veh.id_rcs_eq, (0, n_rcs*veh.csm.imp_min))
 
     # >> Parameters <<
     advise!(pbm, :parameter, veh.id_t, (traj.tf_min, traj.tf_max))
@@ -152,10 +153,7 @@ function set_cost!(pbm::TrajectoryProblem,
             f_min = veh.csm.imp_min
             f_max = veh.csm.imp_max
 
-            # f_max_sq = veh.csm.imp_max^2
-            # return (f'*f)/f_max_sq
-
-            return sum(f)/f_max+traj.γ*sum(feq)/f_min
+            return sum(f)/f_max+traj.γ*feq/f_min
         end)
 
     return nothing

@@ -232,7 +232,7 @@ struct ChaserParameters
     id_ω::IntRange       # Body frame angular velocity (state)
     id_rcs::IntRange     # RCS impulses (input)
     id_rcs_ref::IntRange # RCS impulse references (input)
-    id_rcs_eq::IntRange  # RCS impulse actual minus reference (input)
+    id_rcs_eq::Int       # RCS impulse actual minus reference (input)
     id_t::Int            # Time dilation (parameter)
     # Vehicle
     csm::ApolloCSM   # Apollo command and service module vehicle
@@ -303,7 +303,7 @@ function RendezvousProblem()::RendezvousProblem
     id_ω = 11:13
     id_rcs = 1:16
     id_rcs_ref = (1:16).+id_rcs[end]
-    id_rcs_eq = (1:16).+id_rcs_ref[end]
+    id_rcs_eq = id_rcs_ref[end]+1
     id_t = 1
     # Vehicle
     csm = ApolloCSM()
