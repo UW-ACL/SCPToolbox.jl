@@ -19,20 +19,12 @@ LangServer = isdefined(@__MODULE__, :LanguageServer)
 
 if LangServer
     include("parameters.jl")
-
-    # include("../../../solvers/src/Solvers.jl")
-
-    # using .Solvers
 end
 
 using PyPlot
 using Printf
 
-using Solvers
-
-# ..:: Globals ::..
-
-const LineCollection = PyPlot.matplotlib.collections.LineCollection
+using Solvers #noerr
 
 # ..:: Methods ::..
 
@@ -142,9 +134,10 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
             push!(line_segs, ct_pos_2d[:, k:k+overlap]')
             push!(line_clrs, v_cmap.to_rgba(ct_speed[k]))
         end
-        traj = LineCollection(line_segs, zorder=10,
-                              colors = line_clrs,
-                              linewidths=3)
+        traj = PyPlot.matplotlib.collections.LineCollection(
+            line_segs, zorder=10,
+            colors = line_clrs,
+            linewidths=3)
         ax.add_collection(traj)
 
         # Plot the discrete-time trajectory
@@ -210,9 +203,10 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
             push!(thrust_segs, hcat(thrust_whisker_base,
                                     thrust_whisker_tip)')
         end
-        thrusts = LineCollection(thrust_segs, zorder=15,
-                                 colors=Red, #noerr
-                                 linewidths=1.5)
+        thrusts = PyPlot.matplotlib.collections.LineCollection(
+            thrust_segs, zorder=15,
+            colors=Red, #noerr
+            linewidths=1.5)
         thrusts.set_capstyle("round")
         ax.add_collection(thrusts)
 
