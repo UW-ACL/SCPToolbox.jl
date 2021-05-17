@@ -177,13 +177,17 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             ω = x[veh.id_ω]
             T = u[veh.id_T]
             M = u[veh.id_M]
+            rcs = u[veh.id_rcs]
 
+            n_rcs = length(veh.id_rcs)
+            dir_rcs = [veh.csm.f_rcs[veh.csm.rcs_select[i]] for i=1:n_rcs]
             iJ = inv(veh.J)
             xi, yi, zi = env.xi, env.yi, env.zi
             norb = env.n
 
             f = zeros(pbm.nx)
             f[veh.id_v] = T/veh.m
+            f[veh.id_v] += sum(rcs[i]*dir_rcs[i] for i=1:n_rcs)/veh.m
             f[veh.id_ω] = iJ*M
             if !impulse
                 # Rigid body terms
@@ -229,8 +233,14 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
 
             tdil = p[veh.id_t]
 
+            n_rcs = length(veh.id_rcs)
+            dir_rcs = [veh.csm.f_rcs[veh.csm.rcs_select[i]] for i=1:n_rcs]
+
             B = zeros(pbm.nx, pbm.nu)
             B[veh.id_v, veh.id_T] = (1.0/veh.m)*I(3)
+            for i=1:n_rcs
+                B[veh.id_v, veh.id_rcs[i]] = dir_rcs[i]/veh.m
+            end
             B[veh.id_ω, veh.id_M] = veh.J\I(3)
             if !impulse
                 # Scale for absolute time
