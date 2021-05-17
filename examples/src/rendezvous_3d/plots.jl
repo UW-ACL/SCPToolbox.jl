@@ -475,17 +475,40 @@ function plot_inputs(mdl::RendezvousProblem,
 
     T = sol.ud[veh.id_T, :]
     M = sol.ud[veh.id_M, :]
+    f = sol.ud[veh.id_rcs, :]
+
+    f_quad = Dict()
+    for quad in (:A, :B, :C, :D)
+        _f_quad = RealVector[]
+        for thruster in (:pf, :pa, :rf, :ra)
+            push!(_f_quad, f[veh.csm.rcs_select[quad, thruster], :])
+        end
+        f_quad[quad] = hcat(_f_quad...)'
+    end
 
     dirs = ["\$+x\$", "\$+y\$", "\$+z\$"]
+    thrusters = ["\$+x\$", "\$-x\$", "\$+z\$", "\$-z\$"]
     data = [Dict(:u=>T,
                  :ylabel=>"Force impulse [N\$\\cdot\$s]",
                  :legend=>(i)->@sprintf("Along %s", dirs[i])),
             Dict(:u=>M,
                  :ylabel=>"Torque impulse [N\$\\cdot\$m\$\\cdot\$s]",
-                 :legend=>(i)->@sprintf("Along %s", dirs[i]))]
+                 :legend=>(i)->@sprintf("Along %s", dirs[i])),
+            Dict(:u=>f_quad[:A],
+                 :ylabel=>"Quad A impulse [N\$\\cdot\$m\$\\cdot\$s]",
+                 :legend=>(i)->@sprintf("Along %s", thrusters[i])),
+            Dict(:u=>f_quad[:B],
+                 :ylabel=>"Quad B impulse [N\$\\cdot\$m\$\\cdot\$s]",
+                 :legend=>(i)->@sprintf("Along %s", thrusters[i])),
+            Dict(:u=>f_quad[:C],
+                 :ylabel=>"Quad C impulse [N\$\\cdot\$m\$\\cdot\$s]",
+                 :legend=>(i)->@sprintf("Along %s", thrusters[i])),
+            Dict(:u=>f_quad[:D],
+                 :ylabel=>"Quad D impulse [N\$\\cdot\$m\$\\cdot\$s]",
+                 :legend=>(i)->@sprintf("Along %s", thrusters[i]))]
 
-    fig = create_figure((8, 6))
-    gspec = fig.add_gridspec(ncols=1, nrows=2)
+    fig = create_figure((10, 18))
+    gspec = fig.add_gridspec(ncols=1, nrows=6)
 
     axes = []
 

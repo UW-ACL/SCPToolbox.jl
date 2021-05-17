@@ -51,7 +51,7 @@ end # function
 
 function set_dims!(pbm::TrajectoryProblem)::Nothing
 
-    problem_set_dims!(pbm, 13, 6, 1)
+    problem_set_dims!(pbm, 13, 22, 1)
 
     return nothing
 end # function
@@ -77,6 +77,7 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     # >> Inputs <<
     advise!(pbm, :input, veh.id_T, (-veh.T_max, veh.T_max))
     advise!(pbm, :input, veh.id_M, (-veh.M_max, veh.M_max))
+    advise!(pbm, :input, veh.id_rcs, (-veh.csm.imp_max, veh.csm.imp_max))
 
     # >> Parameters <<
     advise!(pbm, :parameter, veh.id_t, (traj.tf_min, traj.tf_max))
@@ -147,11 +148,13 @@ function set_cost!(pbm::TrajectoryProblem,
 
             T = u[veh.id_T]
             M = u[veh.id_M]
+            f = u[veh.id_rcs]
 
             T_max_sq = veh.T_max^2
             M_max_sq = veh.M_max^2
+            f_max_sq = veh.csm.imp_max^2
 
-            return (T'*T)/T_max_sq+(M'*M)/M_max_sq
+            return (T'*T)/T_max_sq+(M'*M)/M_max_sq+(f'*f)/f_max_sq
         end)
 
     return nothing
@@ -260,6 +263,7 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
             T = u[veh.id_T]
             M = u[veh.id_M]
+            f = u[veh.id_rcs]
 
             @add_constraint(
                 ocp, SOC, "thrust_bound",
@@ -274,6 +278,14 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                     local M, = arg #noerr
                     vcat(veh.M_max, M)
                 end)
+
+            @add_constraint(
+                ocp, LINF, "rcs_impulse_bound",
+                (f,), begin
+                    local f, = arg #noerr
+                    vcat(veh.csm.imp_max, f)
+                end)
+
         end)
 
     return nothing
