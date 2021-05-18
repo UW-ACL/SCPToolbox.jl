@@ -206,12 +206,10 @@ function set_cost!(pbm::TrajectoryProblem,
             veh = pbm.mdl.vehicle
 
             f = u[veh.id_rcs]
-            feq = u[veh.id_rcs_eq]
 
-            f_min = veh.csm.imp_min
             f_max = veh.csm.imp_max
 
-            return sum(f)/f_max#+traj.γ*feq/f_min
+            return sum(f)/f_max
         end)
 
     return nothing
