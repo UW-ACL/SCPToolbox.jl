@@ -274,7 +274,7 @@ mutable struct RendezvousTrajectoryParameters
     hom::RealValue       # Sigmoid homotopy parameter
     hom_grid::RealVector # Sweep of all homotopy parameters
     β::RealValue         # Relative cost improvement triggering homotopy update
-    γ::RealValue         # Control weight for deadband relaxation
+    γ::RealValue         # Deadband relaxation keepout zone
 end # struct
 
 """ Rendezvous trajectory optimization problem parameters all in one. """
@@ -349,7 +349,7 @@ function RendezvousProblem()::RendezvousProblem
     tf_max = 500.0
     # >> Homotopy <<
     β = 1e1/100
-    γ = 3e-1
+    γ = 1.0
     hom_steps = 10 # Number of homotopy values to sweep through
     hom_obj = Homotopy(1e-4; δ_max=5.0) #noerr
     hom_grid = map(hom_obj, LinRange(0.0, 1.0, hom_steps))

@@ -494,11 +494,10 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
         return OR, ∇OR, ∇²OR
     end
 
-    δ_mib = 1 # Numerical check distance
     mib_inflection = () -> begin
         fr_db = [fmin]
-        fr_db_plus = [fmin+δ_mib]
-        fr_db_minus = [fmin-δ_mib]
+        fr_db_plus = [fmin+traj.γ]
+        fr_db_minus = [fmin-traj.γ]
 
         OR_db, ∇OR_db, _ = mib_logic(fr_db)
         OR_db_plus, ∇OR_db_plus, _ = mib_logic(fr_db_plus)
@@ -510,7 +509,6 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
 
         return grad>grad_minus && grad>grad_plus
     end
-    # γ = 0.9 # TODO put into parameters
 
     rcs_quads = (:A, :B, :C, :D)
     plume_logic = (r) -> begin
@@ -542,12 +540,9 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
 
             # Forbid exploiting of deadband relaxation
             if mib_inflection()
-                fr_db = [fmin+δ_mib]
+                fr_db = [fmin+traj.γ]
                 OR_db, ∇OR_db, _ = mib_logic(fr_db)
                 mib_max_grad = ∇OR_db*fr_db[1]+OR_db
-                # fr_db = [fmin]
-                # OR_db, ∇OR_db, _ = mib_logic(fr_db)
-                # mib_max_grad = (∇OR_db*fr_db[1]+OR_db)*γ
                 for i=1:n_rcs
                     dfdfr = ∇OR[i]*fr[i]+OR[i]
                     s[3*(i-1)+3] = dfdfr-mib_max_grad
