@@ -596,11 +596,11 @@ function indicator(f::RealVector,
 end # function
 
 """
-    or(p1[, p2, ..., pN][; κ1, κ2, minval, maxval])
+    or(p1[, p2, ..., pN][; κ1, κ2, normalize])
 
-A smooth logical OR. By passing the `minval` and `maxval`, the function can be
-made scale invariant, i.e. the shape of the OR function will not change due to
-uniform scaling of the predicates.
+A smooth logical OR. By passing the `normalize`, the function can be made scale
+invariant, i.e. the shape of the OR function will not change due to uniform
+scaling of the predicates.
 
 # Arguments
 - `predicates`: (optional) the predicates to be composed as logical
@@ -610,8 +610,8 @@ uniform scaling of the predicates.
 # Keywords
 - `κ1`: (optional) sigmoid sharpness parameter.
 - `κ2`: (optional) normalization sharpness parameter.
-- `minval`: (optional) minimum value of predicate.
-- `maxval`: (optional) maximum value of predicate.
+- `normalize`: (optional) normalization value to divide the predicated by
+  (e.g., their expected maximum value).
 
 # Returns
 - `OR`: the smooth OR value (1≡true).
@@ -620,19 +620,16 @@ uniform scaling of the predicates.
 function or(predicates...;
             κ1::RealValue=1.0,
             κ2::RealValue=1.0,
-            # minval::RealValue=-1.0,
-            maxval::RealValue=1.0)::Union{
+            normalize::RealValue=1.0)::Union{
                 Tuple{RealValue, RealVector},
                 RealValue}
 
-    # @assert minval<0
-    @assert maxval>0
-    # scale = (p) -> p/((p>=0) ? maxval : -minval)
-    scale = (p) -> p/maxval
+    @assert normalize>0
+
+    scale = (p) -> p/normalize
 
     if typeof(predicates[1])<:Tuple
-        # ∇scale = (∇p) -> ∇p/(maxval-minval)
-        ∇scale = (∇p) -> ∇p/maxval
+        ∇scale = (∇p) -> ∇p/normalize
         f = RealVector([scale(p[1]) for p in predicates])
         ∇f = [∇scale(p[2]) for p in predicates]
         OR, ∇OR = indicator(f, ∇f; κ1=κ1, κ2=κ2)

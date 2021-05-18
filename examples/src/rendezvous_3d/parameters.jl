@@ -259,13 +259,10 @@ mutable struct RendezvousTrajectoryParameters
     ω0::RealVector      # Initial angular velocity
     ωf::RealVector      # Terminal angular velocity
     # Docking tolerances
-    v_axial_min::RealValue  # Minimum axial (closing) velocity
-    v_axial_max::RealValue  # Maximum axial (closing) velocity
-    v_radial_tol::RealValue # Radial (transverse) velocity
-    r_radial_tol::RealValue # Radial alignment of x-axes
-    ω_tol::RealValue        # Angular velocity (about any axis)
-    x_ang_tol::RealValue    # Angular alignment of x-axes
-    roll_tol::RealValue     # Roll attitude (about x axis)
+    rf_tol::RealValue   # Radial x-axis alignment
+    vf_tol::RealValue   # Velocity mismatch (in all axes)
+    ang_tol::RealValue  # Angular mismatch (net angle)
+    ωf_tol::RealValue   # Angular velocity mismatch (in all axes)
     # Time of flight
     tf_min::RealValue   # Minimum flight time
     tf_max::RealValue   # Maximum flight time
@@ -332,13 +329,10 @@ function RendezvousProblem()::RendezvousProblem
     ω0 = zeros(3)
     ωf = zeros(3)
     # >> Docking tolerances <<
-    v_axial_min = convert_units(0.1, :ftps, :mps)
-    v_axial_max = convert_units(1.0, :ftps, :mps)
-    v_radial_tol = convert_units(0.5, :ftps, :mps)
-    r_radial_tol = convert_units(1.0, :ft, :m)
-    ω_tol = convert_units(0.1, :deg, :rad)
-    x_ang_tol = convert_units(10.0, :deg, :rad)
-    roll_tol = convert_units(10.0, :deg, :rad)
+    rf_tol = 0.1
+    vf_tol = 0.01
+    ang_tol = deg2rad(1)
+    ωf_tol = deg2rad(0.01)
     # Docking port (inertial) frame
     # Baseline docked configuration
     q_dock = Quaternion(deg2rad(180), yi)*Quaternion(deg2rad(180), xi)
@@ -350,7 +344,7 @@ function RendezvousProblem()::RendezvousProblem
     tf_max = 500.0
     # >> Homotopy <<
     κ2 = 1.0
-    β = 10e0/100
+    β = 1e1/100
     γ = 3e-1
     Nhom = 10 # Number of homotopy values to sweep through
     hom_grid = LinRange(0.0, 1.0, Nhom)
@@ -359,9 +353,8 @@ function RendezvousProblem()::RendezvousProblem
     κ1 = κ1_grid[1]
 
     traj = RendezvousTrajectoryParameters(
-        r0, rf, v0, vf, q0, qf, ω0, ωf,
-        v_axial_min, v_axial_max, v_radial_tol, r_radial_tol, ω_tol,
-        x_ang_tol, roll_tol, tf_min, tf_max, κ1, κ1_grid, κ2, β, γ)
+        r0, rf, v0, vf, q0, qf, ω0, ωf, rf_tol, vf_tol, ang_tol, ωf_tol,
+        tf_min, tf_max, κ1, κ1_grid, κ2, β, γ)
 
     mdl = RendezvousProblem(sc, env, traj)
 

@@ -528,8 +528,7 @@ function plot_inputs(mdl::RendezvousProblem,
         f_polar = map(fr_rng) do fr
             or(above_mib(fr);
                κ1=traj.κ1, κ2=traj.κ2,
-               # minval=-veh.csm.imp_min,
-               maxval=veh.csm.imp_max-veh.csm.imp_min)*fr
+               normalize=veh.csm.imp_max-veh.csm.imp_min)*fr
         end
 
         # >> Draw the timeseries plot <<

@@ -66,7 +66,6 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     mdl = pbm.mdl
     veh = mdl.vehicle
     traj = mdl.traj
-    env = mdl.env
     n_rcs = length(veh.id_rcs)
 
     advise! = problem_advise_scale!
@@ -86,16 +85,13 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     advise!(pbm, :input, veh.id_rcs_eq, (0, n_rcs*veh.csm.imp_min))
 
     # >> Parameters <<
-    vf = dot(traj.vf, env.xi)
     advise!(pbm, :parameter, veh.id_t, (traj.tf_min, traj.tf_max))
     advise!(pbm, :parameter, veh.id_dock_tol[veh.id_r],
-            (-traj.r_radial_tol, traj.r_radial_tol))
-    advise!(pbm, :parameter, veh.id_dock_tol[veh.id_v[1]],
-            (-traj.v_axial_max-vf, -traj.v_axial_min-vf))
-    advise!(pbm, :parameter, veh.id_dock_tol[veh.id_v[2:3]],
-            (-traj.v_radial_tol, traj.v_radial_tol))
+            (-traj.rf_tol, traj.rf_tol))
+    advise!(pbm, :parameter, veh.id_dock_tol[veh.id_v],
+            (-traj.vf_tol, -traj.vf_tol))
     advise!(pbm, :parameter, veh.id_dock_tol[veh.id_ω],
-            (-traj.ω_tol, traj.ω_tol))
+            (-traj.ωf_tol, traj.ωf_tol))
 
     return nothing
 end # function
@@ -362,7 +358,7 @@ function set_convex_constraints!(pbm::TrajectoryProblem,
                     ocp, LINF, "dock_pos_tol",
                     (Δrf,), begin
                         local Δrf, = arg #noerr
-                        vcat(0.1, Δrf)
+                        vcat(traj.rf_tol, Δrf)
                     end)
 
                 @add_constraint(
@@ -376,23 +372,23 @@ function set_convex_constraints!(pbm::TrajectoryProblem,
                     ocp, LINF, "dock_vel_tol",
                     (Δvf,), begin
                         local Δvf, = arg #noerr
-                        vcat(0.01, Δvf)
+                        vcat(traj.vf_tol, Δvf)
                     end)
 
-                ang_max = deg2rad(1)
                 @add_constraint(
                     ocp, NONPOS, "dock_att_tol",
                     (qf,), begin
-                        local qf = arg[1] #noerr
-                        qerr_w = qf[1:3]'*traj.qf.v+qf[4]*traj.qf.w
-                        cos(ang_max/2)-qerr_w
+                        local qf, = arg #noerr
+                        qf_des = vec(traj.qf)
+                        qerr_w = qf'*qf_des # Error quaternion scalar aprt
+                        cos(traj.ang_tol/2)-qerr_w
                     end)
 
                 @add_constraint(
                     ocp, LINF, "dock_ang_vel_tol",
                     (Δωf,), begin
                         local Δωf, = arg #noerr
-                        vcat(deg2rad(0.01), Δωf)
+                        vcat(traj.ωf_tol, Δωf)
                     end)
 
             end
@@ -471,6 +467,7 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
     veh = pbm.mdl.vehicle
     n_rcs = length(veh.id_rcs)
     _common_s_sz = 2*n_rcs
+    or_normalize = veh.csm.imp_max-veh.csm.imp_min
 
     problem_set_s!(
         pbm, algo,
@@ -487,8 +484,7 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 above_mib = fr-veh.csm.imp_min
                 OR = or(above_mib;
                         κ1=traj.κ1, κ2=traj.κ2,
-                        # minval=-veh.csm.imp_min,
-                        maxval=veh.csm.imp_max-veh.csm.imp_min)
+                        normalize=or_normalize)
                 s[2*(i-1)+1] = f-OR*fr
                 s[2*(i-1)+2] = OR*fr-f
             end
@@ -514,8 +510,7 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 ∇above_mib = [1.0]
                 OR, ∇OR = or((above_mib, ∇above_mib);
                              κ1=traj.κ1, κ2=traj.κ2,
-                             # minval=-veh.csm.imp_min,
-                             maxval=veh.csm.imp_max-veh.csm.imp_min)
+                             normalize=or_normalize)
                 ∇ORfr = ∇OR[1]*fr+OR
                 D[2*(i-1)+1, id_f] = 1.0
                 D[2*(i-1)+1, id_fr] = -∇ORfr
