@@ -469,11 +469,11 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
     n_rcs = length(veh.id_rcs)
     _common_s_sz = 2*n_rcs+4
 
+    # Normalization parameters (max values of OR predicates)
     fmax = veh.csm.imp_max
     fmin = veh.csm.imp_min
-
-    or_mib_normalize = fmax-fmin
-    or_plume_normalize = norm(traj.r0)-traj.r_appch
+    or_mib_max = fmax-fmin
+    or_plume_max = norm(traj.r0)-traj.r_appch
 
     problem_set_s!(
         pbm, algo,
@@ -489,8 +489,9 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 f, fr = u[id_f], u[id_fr]
                 above_mib = fr-fmin
                 OR = or(above_mib;
-                        κ1=traj.κ1, κ2=traj.κ2,
-                        normalize=or_mib_normalize)
+                        κ=traj.κ1,
+                        match=or_mib_max,
+                        normalize=or_mib_max)
                 s[2*(i-1)+1] = f-OR*fr
                 s[2*(i-1)+2] = OR*fr-f
             end
@@ -504,8 +505,9 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 f = u[id_f]
                 can_fire = r'*r-traj.r_appch^2
                 OR = or(can_fire;
-                        κ1=traj.κ1, κ2=traj.κ2,
-                        normalize=or_plume_normalize)
+                        κ=traj.κ1,
+                        match=or_plume_max,
+                        normalize=or_plume_max)
                 s[2*n_rcs+i] = f-OR*fmax
             end
 
@@ -524,8 +526,9 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 can_fire = r'*r-traj.r_appch^2
                 ∇can_fire = 2*r
                 OR, ∇OR = or((can_fire, ∇can_fire);
-                             κ1=traj.κ1, κ2=traj.κ2,
-                             normalize=or_plume_normalize)
+                             κ=traj.κ1,
+                             match=or_plume_max,
+                             normalize=or_plume_max)
                 C[2*n_rcs+i, veh.id_r] = -∇OR*fmax
             end
 
@@ -544,8 +547,9 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 above_mib = fr-fmin
                 ∇above_mib = [1.0]
                 OR, ∇OR = or((above_mib, ∇above_mib);
-                             κ1=traj.κ1, κ2=traj.κ2,
-                             normalize=or_mib_normalize)
+                             κ=traj.κ1,
+                             match=or_mib_max,
+                             normalize=or_mib_max)
                 ∇ORfr = ∇OR[1]*fr+OR
                 D[2*(i-1)+1, id_f] = 1.0
                 D[2*(i-1)+1, id_fr] = -∇ORfr

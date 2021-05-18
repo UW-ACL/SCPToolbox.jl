@@ -559,7 +559,7 @@ end # function
 
 Like a sigmoid, except that for very small κ1 values the function is
 approximately equal to one everywhere, and not 0.5 as is the case for a
-sigmoid. This, low κ1 values are associated with "always in the set", where the
+sigmoid. Thus, low κ1 values are associated with "always in the set", where the
 set is defined as any time either element of f is nonnegative.
 
 # Arguments
@@ -567,8 +567,9 @@ set is defined as any time either element of f is nonnegative.
 - `∇f`: (optional) the gradient of the function.
 
 # Keywords
-- `κ1`: (optional) sigmoid sharpness parameter.
-- `κ2`: (optional) normalization sharpness parameter.
+- `κ`: (optional) sigmoid sharpness parameter.
+- `match`: (optional) critical value of `f` at which to match the smoothed
+  indicator value to the exact value.
 
 # Returns
 - `δ`: the sigmoid function value.
@@ -576,23 +577,28 @@ set is defined as any time either element of f is nonnegative.
 """
 function indicator(f::RealVector,
                    ∇f::Union{Nothing, Vector{Vector{Float64}}}=nothing;
-                   κ1::RealValue=1.0,
-                   κ2::RealValue=1.0)::Union{
+                   κ::RealValue=1.0,
+                   match::Optional{RealVector}=nothing)::Union{
                        Tuple{RealValue, RealVector},
                        RealValue}
 
-    σ = sigmoid(f, ∇f; κ=κ1)
-    if !isnothing(∇f)
-        σ, ∇σ = σ
-    end
-    γ = exp(-κ2*κ1)
-    δ = γ+(1-γ)*σ
-    if !isnothing(∇f)
-        ∇δ = (1-γ)*∇σ
-        return δ, ∇δ
+    # Output value matching
+    if isnothing(match)
+        Δσ = 0
+    else
+        offset = Utils.sigmoid(match; κ=κ)
+        Δσ = 1-offset
     end
 
-    return δ
+    # Compute sigmoid
+    σ = Utils.sigmoid(f, ∇f; κ=κ)
+    σ = isnothing(∇f) ? σ+Δσ : (σ[1]+Δσ, σ[2])
+
+    if !isnothing(∇f)
+        σ, ∇σ = σ
+        return σ, ∇σ
+    end
+    return σ
 end # function
 
 """
@@ -609,7 +615,8 @@ scaling of the predicates.
 
 # Keywords
 - `κ1`: (optional) sigmoid sharpness parameter.
-- `κ2`: (optional) normalization sharpness parameter.
+- `match`: (optional) value of the predicates at which to match the smooth or
+  function to its exact value, via y-shifting.
 - `normalize`: (optional) normalization value to divide the predicated by
   (e.g., their expected maximum value).
 
@@ -618,28 +625,32 @@ scaling of the predicates.
 - `∇OR`: the smooth OR gradient. Only returned in `∇f` provided.
 """
 function or(predicates...;
-            κ1::RealValue=1.0,
-            κ2::RealValue=1.0,
+            κ::RealValue=1.0,
+            match::Optional{Union{RealValue, RealVector}}=nothing,
             normalize::RealValue=1.0)::Union{
                 Tuple{RealValue, RealVector},
                 RealValue}
 
     @assert normalize>0
+    @assert isnothing(match) || any(match.>0)
 
-    scale = (p) -> p/normalize
-
-    if typeof(predicates[1])<:Tuple
-        ∇scale = (∇p) -> ∇p/normalize
-        f = RealVector([scale(p[1]) for p in predicates])
-        ∇f = [∇scale(p[2]) for p in predicates]
-        OR, ∇OR = indicator(f, ∇f; κ1=κ1, κ2=κ2)
-        return OR, ∇OR
-    else
-        f = RealVector([scale(p) for p in predicates])
-        OR = indicator(f; κ1=κ1, κ2=κ2)
-        return OR
+    scale = p -> p/normalize
+    match = isnothing(match) ? match : match./normalize
+    if !isnothing(match) && !(match isa AbstractArray)
+        match = [match]
     end
 
+    if typeof(predicates[1])<:Tuple
+        ∇scale = ∇p -> ∇p/normalize
+        f = collect(map(p->scale(p[1]), predicates))
+        ∇f = collect(map(p->∇scale(p[2]), predicates))
+        OR, ∇OR = indicator(f, ∇f; κ=κ, match=match)
+        return OR, ∇OR
+    else
+        f = collect(map(scale, predicates))
+        OR = indicator(f; κ=κ, match=match)
+        return OR
+    end
 end # function
 
 """

@@ -497,24 +497,6 @@ function plot_inputs(mdl::RendezvousProblem,
         end
     end
 
-    # f = sol.ud[veh.id_rcs, :]
-    # f_ref = sol.ud[veh.id_rcs_ref, :]
-    # f_quad = Dict()
-    # f_quad_ref = Dict()
-    # for quad in (:A, :B, :C, :D)
-    #     _f_quad = RealVector[]
-    #     _f_quad_ref = RealVector[]
-    #     for thruster in (:pf, :pa, :rf, :ra)
-    #         push!(_f_quad, f[veh.csm.rcs_select[quad, thruster], :])
-    #         push!(_f_quad_ref, f_ref[veh.csm.rcs_select[quad, thruster], :])
-    #     end
-    #     f_quad[quad] = hcat(_f_quad...)'
-    #     f_quad_ref[quad] = hcat(_f_quad_ref...)'
-    # end
-
-    # f_quad = f_quad[end]
-    # f_quad_ref = f_quad_ref[end]
-
     dirs = ["\$+x\$", "\$-x\$", "\$+z\$", "\$-z\$"]
     thruster_label = (i) -> @sprintf("Thruster %s", dirs[i])
     data = [Dict(:u=>(i)->f_quad[i][:A],
@@ -547,11 +529,12 @@ function plot_inputs(mdl::RendezvousProblem,
         ur = data[i_plt][:u_ref](num_iter)
         num_inputs = size(u, 1)
         fr_rng = LinRange(0, veh.csm.imp_max, polar_resol)
+        or_mib_normalize = veh.csm.imp_max-veh.csm.imp_min
         above_mib = (fr)->fr-veh.csm.imp_min
         f_polar = (κ1) -> map(fr_rng) do fr
             or(above_mib(fr);
-               κ1=κ1, κ2=traj.κ2,
-               normalize=veh.csm.imp_max-veh.csm.imp_min)*fr
+               κ=κ1, match=or_mib_normalize,
+               normalize=or_mib_normalize)*fr
         end
 
         # >> Draw the timeseries plot <<
