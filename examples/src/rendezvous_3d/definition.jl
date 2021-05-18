@@ -120,7 +120,7 @@ function set_callback!(pbm::TrajectoryProblem)::Nothing
             traj = mdl.traj
 
             # Save current homotopy
-            bay[:κ1] = traj.κ1 # Current homotopy
+            bay[:hom] = traj.hom # Current homotopy
 
             # >> Update logic for homotopy value <<
 
@@ -128,10 +128,10 @@ function set_callback!(pbm::TrajectoryProblem)::Nothing
 
             i_last = haskey(ref.bay, :last_update) ? ref.bay[:last_update] : 1
             if increase_homotopy
-                i = findfirst(mdl.traj.κ1_grid.==mdl.traj.κ1)
-                if i<length(mdl.traj.κ1_grid)
+                i = findfirst(mdl.traj.hom_grid.==mdl.traj.hom)
+                if i<length(mdl.traj.hom_grid)
 
-                    traj.κ1 = mdl.traj.κ1_grid[i+1]
+                    traj.hom = mdl.traj.hom_grid[i+1]
 
                     # Update maximum iterations to maintain iter_max for
                     # solving with the new homotopy value
@@ -145,15 +145,15 @@ function set_callback!(pbm::TrajectoryProblem)::Nothing
             else
                 bay[:last_update] = i_last
             end
-            bay[:κ1_updated] = increase_homotopy
+            bay[:hom_updated] = increase_homotopy
 
             return increase_homotopy
         end)
 
     # Add table column to show homotopy parameter
     problem_add_table_column!(
-        pbm, :homotopy_κ1, "κ1", "%s", 10,
-        bay->@sprintf("%.2e%s", bay[:κ1], bay[:κ1_updated] ? "*" : ""))
+        pbm, :homotopy, "hom", "%s", 10,
+        bay->@sprintf("%.2e%s", bay[:hom], bay[:hom_updated] ? "*" : ""))
 
 end # function
 
@@ -489,7 +489,7 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 f, fr = u[id_f], u[id_fr]
                 above_mib = fr-fmin
                 OR = or(above_mib;
-                        κ=traj.κ1,
+                        κ=traj.hom,
                         match=or_mib_max,
                         normalize=or_mib_max)
                 s[2*(i-1)+1] = f-OR*fr
@@ -505,7 +505,7 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 f = u[id_f]
                 can_fire = r'*r-traj.r_appch^2
                 OR = or(can_fire;
-                        κ=traj.κ1,
+                        κ=traj.hom,
                         match=or_plume_max,
                         normalize=or_plume_max)
                 s[2*n_rcs+i] = f-OR*fmax
@@ -526,7 +526,7 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 can_fire = r'*r-traj.r_appch^2
                 ∇can_fire = 2*r
                 OR, ∇OR = or((can_fire, ∇can_fire);
-                             κ=traj.κ1,
+                             κ=traj.hom,
                              match=or_plume_max,
                              normalize=or_plume_max)
                 C[2*n_rcs+i, veh.id_r] = -∇OR*fmax
@@ -547,7 +547,7 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 above_mib = fr-fmin
                 ∇above_mib = [1.0]
                 OR, ∇OR = or((above_mib, ∇above_mib);
-                             κ=traj.κ1,
+                             κ=traj.hom,
                              match=or_mib_max,
                              normalize=or_mib_max)
                 ∇ORfr = ∇OR[1]*fr+OR

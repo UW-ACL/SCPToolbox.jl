@@ -455,7 +455,6 @@ function plot_inputs(mdl::RendezvousProblem,
     num_iter = length(interm_sol)
     algo = sol.algo
     veh = mdl.vehicle
-    traj = mdl.traj
     spread = 0.4
     stem_colors = [Red, Green, Blue, DarkBlue] #noerr
     marker_darken_factor = 0.3
@@ -473,7 +472,7 @@ function plot_inputs(mdl::RendezvousProblem,
     # Get RCS controls solution history
     f_quad = Dict[]
     f_quad_ref = Dict[]
-    κ1_val = Real[]
+    hom_val = Real[]
     for i = 1:num_iter
 
         f = interm_sol[i].ud[veh.id_rcs, :]
@@ -481,7 +480,7 @@ function plot_inputs(mdl::RendezvousProblem,
 
         push!(f_quad, Dict())
         push!(f_quad_ref, Dict())
-        push!(κ1_val, interm_sol[i].bay[:κ1])
+        push!(hom_val, interm_sol[i].bay[:hom])
 
         for quad in (:A, :B, :C, :D)
             _f_quad = RealVector[]
@@ -531,9 +530,9 @@ function plot_inputs(mdl::RendezvousProblem,
         fr_rng = LinRange(0, veh.csm.imp_max, polar_resol)
         or_mib_normalize = veh.csm.imp_max-veh.csm.imp_min
         above_mib = (fr)->fr-veh.csm.imp_min
-        f_polar = (κ1) -> map(fr_rng) do fr
+        f_polar = (hom) -> map(fr_rng) do fr
             or(above_mib(fr);
-               κ=κ1, match=or_mib_normalize,
+               κ=hom, match=or_mib_normalize,
                normalize=or_mib_normalize)*fr
         end
 
@@ -644,7 +643,7 @@ function plot_inputs(mdl::RendezvousProblem,
                 zorder=100)
 
         # Continuous polar with deadband
-        ax.plot(fr_rng, f_polar(κ1_val[end]),
+        ax.plot(fr_rng, f_polar(hom_val[end]),
                 color=Red,
                 linewidth=2,
                 solid_capstyle="round",
@@ -667,22 +666,22 @@ function plot_inputs(mdl::RendezvousProblem,
         end
 
         # Plot the intermediate solution history in the background
-        prev_κ1 = NaN
-        κ1_min, κ1_max = κ1_val[1], κ1_val[end]
+        prev_hom = NaN
+        hom_min, hom_max = hom_val[1], hom_val[end]
         cmap = generate_colormap(
             "Greys",
-            midval=0.5*(log10(κ1_max)+log10(κ1_min)),
-            minval=log10(κ1_min),
-            maxval=log10(κ1_max))
+            midval=0.5*(log10(hom_max)+log10(hom_min)),
+            minval=log10(hom_min),
+            maxval=log10(hom_max))
         for k = 1:num_iter
             # Get homotopy value at this iteration
-            κ1 = κ1_val[k]
+            hom = hom_val[k]
 
             # Draw the continuous polar with deadband
-            lc = rgb(cmap, κ1)
-            if prev_κ1!=κ1
-                prev_κ1 = κ1
-                ax.plot(fr_rng, f_polar(κ1),
+            lc = rgb(cmap, hom)
+            if prev_hom!=hom
+                prev_hom = hom
+                ax.plot(fr_rng, f_polar(hom),
                         color=lc,
                         linewidth=0.75,
                         solid_capstyle="round",

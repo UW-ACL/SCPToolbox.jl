@@ -271,11 +271,10 @@ mutable struct RendezvousTrajectoryParameters
     tf_min::RealValue   # Minimum flight time
     tf_max::RealValue   # Maximum flight time
     # Homotopy
-    κ1::RealValue       # Sigmoid homotopy parameter
-    κ1_grid::RealVector # Sweep of all homotopy parameters
-    κ2::RealValue       # Normalization homotopy parameter
-    β::RealValue        # Relative cost improvement triggering homotopy update
-    γ::RealValue        # Control weight for deadband relaxation
+    hom::RealValue       # Sigmoid homotopy parameter
+    hom_grid::RealVector # Sweep of all homotopy parameters
+    β::RealValue         # Relative cost improvement triggering homotopy update
+    γ::RealValue         # Control weight for deadband relaxation
 end # struct
 
 """ Rendezvous trajectory optimization problem parameters all in one. """
@@ -349,18 +348,16 @@ function RendezvousProblem()::RendezvousProblem
     tf_min = 100.0
     tf_max = 500.0
     # >> Homotopy <<
-    κ2 = 1.0
     β = 1e1/100
     γ = 3e-1
-    Nhom = 10 # Number of homotopy values to sweep through
-    hom_grid = LinRange(0.0, 1.0, Nhom)
-    hom_κ1 = Homotopy(1e-4; δ_max=5.0) #noerr
-    κ1_grid = [hom_κ1(v) for v in hom_grid]
-    κ1 = κ1_grid[1]
+    hom_steps = 10 # Number of homotopy values to sweep through
+    hom_obj = Homotopy(1e-4; δ_max=5.0) #noerr
+    hom_grid = map(hom_obj, LinRange(0.0, 1.0, hom_steps))
+    hom = hom_grid[1]
 
     traj = RendezvousTrajectoryParameters(
         r0, rf, v0, vf, q0, qf, ω0, ωf, rf_tol, vf_tol, ang_tol, ωf_tol,
-        r_appch, tf_min, tf_max, κ1, κ1_grid, κ2, β, γ)
+        r_appch, tf_min, tf_max, hom, hom_grid, β, γ)
 
     mdl = RendezvousProblem(sc, env, traj)
 
