@@ -109,7 +109,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
                     :y=>Dict(:min=>minimum(ct_pos_2d[2, :]),
                              :max=>maximum(ct_pos_2d[2, :])))
         padding = Dict(:x=>pad_x*(bbox[:x][:max]-bbox[:x][:min]),
-                       :y=>pad_x*(bbox[:y][:max]-bbox[:y][:min]))
+                       :y=>pad_y*(bbox[:y][:max]-bbox[:y][:min]))
 
         # Plot axes "guidelines"
         origin = mdl.traj.rf[prj]
@@ -150,10 +150,11 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
                    zorder=20)
 
         # Axis limits
-        xmin = bbox[:x][:min]-padding[:x]
-        xmax = bbox[:x][:max]+padding[:x]
-        ymin = bbox[:y][:min]-padding[:y]
-        ymax = bbox[:y][:max]+padding[:y]
+        pad_value = max(padding[:x], padding[:y])
+        xmin = bbox[:x][:min]-pad_value
+        xmax = bbox[:x][:max]+pad_value
+        ymin = bbox[:y][:min]-pad_value
+        ymax = bbox[:y][:max]+pad_value
 
         # Detect zero-range axes
         if (xmax-xmin)<=1e-5
@@ -172,19 +173,9 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
             # box
             set_axis_equal(ax, (xmin, xmax, ymin, missing))
             y_rng = collect(ax.get_ylim())
-            y_mid = sum(y_rng)/2
-            y_rng .-= y_mid
-            ymin = y_rng[1]
-            set_axis_equal(ax, (xmin, xmax, ymin, missing))
-            y_rng = collect(ax.get_ylim())
             if (any(dt_pos_2d[2, :].>y_rng[2]) ||
                 any(dt_pos_2d[2, :].<y_rng[1]))
                 # The data does not fit, leave xmax unconstrained instead
-                set_axis_equal(ax, (xmin, missing, ymin, ymax))
-                x_rng = collect(ax.get_xlim())
-                x_mid = sum(x_rng)/2
-                x_rng .-= x_mid
-                xmin = x_rng[1]
                 set_axis_equal(ax, (xmin, missing, ymin, ymax))
             end
         end
