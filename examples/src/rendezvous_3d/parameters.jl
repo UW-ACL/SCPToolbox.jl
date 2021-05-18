@@ -265,6 +265,8 @@ mutable struct RendezvousTrajectoryParameters
     vf_tol::RealValue   # Velocity mismatch (in all axes)
     ang_tol::RealValue  # Angular mismatch (net angle)
     ωf_tol::RealValue   # Angular velocity mismatch (in all axes)
+    # Plume impingement
+    r_appch::RealValue  # Approach radius below which plume impingement danger
     # Time of flight
     tf_min::RealValue   # Minimum flight time
     tf_max::RealValue   # Maximum flight time
@@ -325,41 +327,24 @@ function RendezvousProblem()::RendezvousProblem
     # ..:: Trajectory ::..
     # >> Boundary conditions <<
     r0 = 50.0*xi+10.0*zi+5.0*yi
-    # rf = 0.0*xi
     v0 = 0.0*xi
     vf = -0.1*xi
+    q0 = Quaternion(deg2rad(10), yi)
     ω0 = zeros(3)
     ωf = zeros(3)
-
+    # Terminal pose based on docking orientation
     H_LP = homtransf(yaw=180)
     H_LD = H_LP*hominv(csm.H_DP)
-
     rf = homdisp(H_LD)
     Rf = homrot(H_LD)
-
-    # println("Rf =")
-    # show(stdout, "text/plain", Rf); println();
-
     qf = Quaternion(Rf)
-
-    # Rf_2 = dcm(qf)
-    # println("Rf_2 =")
-    # show(stdout, "text/plain", Rf_2); println();
-
     # >> Docking tolerances <<
     rf_tol = 0.1
     vf_tol = 0.01
     ang_tol = deg2rad(1)
     ωf_tol = deg2rad(0.01)
-
-
-    # Docking port (inertial) frame
-    # Baseline docked configuration
-    # q_dock = Quaternion(deg2rad(180), yi)*Quaternion(deg2rad(180), xi)
-    # q_init = q_dock*Quaternion(deg2rad(180), zi)*Quaternion(deg2rad(10), yi)
-    # q0 = q_init
-    q0 = Quaternion(deg2rad(10), yi)
-    # qf = q_dock
+    # >> Plume impingement <<
+    r_appch = 10.0
     # >> Time of flight <<
     tf_min = 100.0
     tf_max = 500.0
@@ -375,7 +360,7 @@ function RendezvousProblem()::RendezvousProblem
 
     traj = RendezvousTrajectoryParameters(
         r0, rf, v0, vf, q0, qf, ω0, ωf, rf_tol, vf_tol, ang_tol, ωf_tol,
-        tf_min, tf_max, κ1, κ1_grid, κ2, β, γ)
+        r_appch, tf_min, tf_max, κ1, κ1_grid, κ2, β, γ)
 
     mdl = RendezvousProblem(sc, env, traj)
 

@@ -465,9 +465,15 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
 
     # Parameters
     veh = pbm.mdl.vehicle
+    traj = pbm.mdl.traj
     n_rcs = length(veh.id_rcs)
-    _common_s_sz = 2*n_rcs
-    or_normalize = veh.csm.imp_max-veh.csm.imp_min
+    _common_s_sz = 2*n_rcs+4
+
+    fmax = veh.csm.imp_max
+    fmin = veh.csm.imp_min
+
+    or_mib_normalize = fmax-fmin
+    or_plume_normalize = norm(traj.r0)-traj.r_appch
 
     problem_set_s!(
         pbm, algo,
@@ -481,19 +487,48 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
             for i=1:n_rcs
                 id_f, id_fr = veh.id_rcs[i], veh.id_rcs_ref[i]
                 f, fr = u[id_f], u[id_fr]
-                above_mib = fr-veh.csm.imp_min
+                above_mib = fr-fmin
                 OR = or(above_mib;
                         κ1=traj.κ1, κ2=traj.κ2,
-                        normalize=or_normalize)
+                        normalize=or_mib_normalize)
                 s[2*(i-1)+1] = f-OR*fr
                 s[2*(i-1)+2] = OR*fr-f
+            end
+
+            # No firing near the target by forward-facing thrusters
+            quads = (:A, :B, :C, :D)
+            r = x[veh.id_r]
+            for i=1:4
+                j = veh.csm.rcs_select[quads[i], :pf]
+                id_f = veh.id_rcs[j]
+                f = u[id_f]
+                can_fire = r'*r-traj.r_appch^2
+                OR = or(can_fire;
+                        κ1=traj.κ1, κ2=traj.κ2,
+                        normalize=or_plume_normalize)
+                s[2*n_rcs+i] = f-OR*fmax
             end
 
             return s
         end,
         # Jacobian ds/dx
         (t, k, x, u, p, pbm) -> begin
+            veh = pbm.mdl.vehicle
+
             C = zeros(_common_s_sz, pbm.nx)
+
+            # No firing near the target by forward-facing thrusters
+            quads = (:A, :B, :C, :D)
+            r = x[veh.id_r]
+            for i=1:4
+                can_fire = r'*r-traj.r_appch^2
+                ∇can_fire = 2*r
+                OR, ∇OR = or((can_fire, ∇can_fire);
+                             κ1=traj.κ1, κ2=traj.κ2,
+                             normalize=or_plume_normalize)
+                C[2*n_rcs+i, veh.id_r] = -∇OR*fmax
+            end
+
             return C
         end,
         # Jacobian ds/du
@@ -506,16 +541,24 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
             for i = 1:n_rcs
                 id_f, id_fr = veh.id_rcs[i], veh.id_rcs_ref[i]
                 fr = u[id_fr]
-                above_mib = fr-veh.csm.imp_min
+                above_mib = fr-fmin
                 ∇above_mib = [1.0]
                 OR, ∇OR = or((above_mib, ∇above_mib);
                              κ1=traj.κ1, κ2=traj.κ2,
-                             normalize=or_normalize)
+                             normalize=or_mib_normalize)
                 ∇ORfr = ∇OR[1]*fr+OR
                 D[2*(i-1)+1, id_f] = 1.0
                 D[2*(i-1)+1, id_fr] = -∇ORfr
                 D[2*(i-1)+2, id_f] = -1.0
                 D[2*(i-1)+2, id_fr] = ∇ORfr
+            end
+
+            # No firing near the target by forward-facing thrusters
+            quads = (:A, :B, :C, :D)
+            for i=1:4
+                j = veh.csm.rcs_select[quads[i], :pf]
+                id_f = veh.id_rcs[j]
+                D[2*n_rcs+i, id_f] = 1.0
             end
 
             return D
