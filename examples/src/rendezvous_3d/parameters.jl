@@ -226,14 +226,15 @@ end # struct
 """ Chaser vehicle parameters. """
 struct ChaserParameters
     # Indices
-    id_r::IntRange       # Inertial position (state)
-    id_v::IntRange       # Inertial velocity (state)
-    id_q::IntRange       # Quaternion (state)
-    id_ω::IntRange       # Body frame angular velocity (state)
-    id_rcs::IntRange     # RCS impulses (input)
-    id_rcs_ref::IntRange # RCS impulse references (input)
-    id_rcs_eq::Int       # RCS impulse actual minus reference (input)
-    id_t::Int            # Time dilation (parameter)
+    id_r::IntRange        # Inertial position (state)
+    id_v::IntRange        # Inertial velocity (state)
+    id_q::IntRange        # Quaternion (state)
+    id_ω::IntRange        # Body frame angular velocity (state)
+    id_rcs::IntRange      # RCS impulses (input)
+    id_rcs_ref::IntRange  # RCS impulse references (input)
+    id_rcs_eq::Int        # RCS impulse actual minus reference (input)
+    id_t::Int             # Time dilation (parameter)
+    id_dock_tol::IntRange # Docking tolerance (parameter)
     # Vehicle
     csm::ApolloCSM   # Apollo command and service module vehicle
 end # struct
@@ -257,12 +258,22 @@ mutable struct RendezvousTrajectoryParameters
     qf::Quaternion      # Terminal attitude
     ω0::RealVector      # Initial angular velocity
     ωf::RealVector      # Terminal angular velocity
+    # Docking tolerances
+    v_axial_min::RealValue  # Minimum axial (closing) velocity
+    v_axial_max::RealValue  # Maximum axial (closing) velocity
+    v_radial_tol::RealValue # Radial (transverse) velocity
+    r_radial_tol::RealValue # Radial alignment of x-axes
+    ω_tol::RealValue        # Angular velocity (about any axis)
+    x_ang_tol::RealValue    # Angular alignment of x-axes
+    roll_tol::RealValue     # Roll attitude (about x axis)
     # Time of flight
     tf_min::RealValue   # Minimum flight time
     tf_max::RealValue   # Maximum flight time
     # Homotopy
     κ1::RealValue       # Sigmoid homotopy parameter
+    κ1_grid::RealVector # Sweep of all homotopy parameters
     κ2::RealValue       # Normalization homotopy parameter
+    β::RealValue        # Relative cost improvement triggering homotopy update
     γ::RealValue        # Control weight for deadband relaxation
 end # struct
 
@@ -305,11 +316,12 @@ function RendezvousProblem()::RendezvousProblem
     id_rcs_ref = (1:16).+id_rcs[end]
     id_rcs_eq = id_rcs_ref[end]+1
     id_t = 1
+    id_dock_tol = (1:13).+1
     # Vehicle
     csm = ApolloCSM()
 
-    sc = ChaserParameters(id_r, id_v, id_q, id_ω, id_rcs,
-                          id_rcs_ref, id_rcs_eq, id_t, csm)
+    sc = ChaserParameters(id_r, id_v, id_q, id_ω, id_rcs, id_rcs_ref,
+                          id_rcs_eq, id_t, id_dock_tol, csm)
 
     # ..:: Trajectory ::..
     # >> Boundary conditions <<
@@ -319,6 +331,14 @@ function RendezvousProblem()::RendezvousProblem
     vf = -0.1*xi
     ω0 = zeros(3)
     ωf = zeros(3)
+    # >> Docking tolerances <<
+    v_axial_min = convert_units(0.1, :ftps, :mps)
+    v_axial_max = convert_units(1.0, :ftps, :mps)
+    v_radial_tol = convert_units(0.5, :ftps, :mps)
+    r_radial_tol = convert_units(1.0, :ft, :m)
+    ω_tol = convert_units(0.1, :deg, :rad)
+    x_ang_tol = convert_units(10.0, :deg, :rad)
+    roll_tol = convert_units(10.0, :deg, :rad)
     # Docking port (inertial) frame
     # Baseline docked configuration
     q_dock = Quaternion(deg2rad(180), yi)*Quaternion(deg2rad(180), xi)
@@ -329,13 +349,19 @@ function RendezvousProblem()::RendezvousProblem
     tf_min = 100.0
     tf_max = 500.0
     # >> Homotopy <<
-    κ1 = NaN
     κ2 = 1.0
+    β = 10e0/100
     γ = 3e-1
+    Nhom = 10 # Number of homotopy values to sweep through
+    hom_grid = LinRange(0.0, 1.0, Nhom)
+    hom_κ1 = Homotopy(1e-4; δ_max=5.0) #noerr
+    κ1_grid = [hom_κ1(v) for v in hom_grid]
+    κ1 = κ1_grid[1]
 
     traj = RendezvousTrajectoryParameters(
         r0, rf, v0, vf, q0, qf, ω0, ωf,
-        tf_min, tf_max, κ1, κ2, γ)
+        v_axial_min, v_axial_max, v_radial_tol, r_radial_tol, ω_tol,
+        x_ang_tol, roll_tol, tf_min, tf_max, κ1, κ1_grid, κ2, β, γ)
 
     mdl = RendezvousProblem(sc, env, traj)
 

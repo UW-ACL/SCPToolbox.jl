@@ -451,17 +451,22 @@ Plot the control inputs versus time.
 # Arguments
 - `mdl`: the problem description object.
 - `sol`: the problem solution.
+- `history`: SCP iteration data history.
 """
 function plot_inputs(mdl::RendezvousProblem,
-                     sol::SCPSolution)::Nothing #noerr
+                     sol::SCPSolution, #noerr
+                     history::SCPHistory)::Nothing #noerr
 
     # Parameters
+    interm_sol = [spbm.sol for spbm in history.subproblems]
     algo = sol.algo
     veh = mdl.vehicle
+    traj = mdl.traj
     spread = 0.4
     stem_colors = [Red, Green, Blue, DarkBlue] #noerr
     marker_darken_factor = 0.3
     padx=0.05
+    polar_resol = 1000
 
     # Plotting data
     dt_τ = sol.td
@@ -472,32 +477,43 @@ function plot_inputs(mdl::RendezvousProblem,
     t_spread = Δt*spread/2
 
     f = sol.ud[veh.id_rcs, :]
+    f_ref = sol.ud[veh.id_rcs_ref, :]
 
     f_quad = Dict()
+    f_quad_ref = Dict()
     for quad in (:A, :B, :C, :D)
         _f_quad = RealVector[]
+        _f_quad_ref = RealVector[]
         for thruster in (:pf, :pa, :rf, :ra)
             push!(_f_quad, f[veh.csm.rcs_select[quad, thruster], :])
+            push!(_f_quad_ref, f_ref[veh.csm.rcs_select[quad, thruster], :])
         end
         f_quad[quad] = hcat(_f_quad...)'
+        f_quad_ref[quad] = hcat(_f_quad_ref...)'
     end
 
     dirs = ["\$+x\$", "\$-x\$", "\$+z\$", "\$-z\$"]
+    thruster_label = (i) -> @sprintf("Thruster %s", dirs[i])
     data = [Dict(:u=>f_quad[:A],
-                 :ylabel=>"Quad A impulse [N\$\\cdot\$m\$\\cdot\$s]",
-                 :legend=>(i)->@sprintf("Along %s", dirs[i])),
+                 :u_ref=>f_quad_ref[:A],
+                 :ylabel=>"Quad A impulse [N\$\\cdot\$s]",
+                 :legend=>thruster_label),
             Dict(:u=>f_quad[:B],
-                 :ylabel=>"Quad B impulse [N\$\\cdot\$m\$\\cdot\$s]",
-                 :legend=>(i)->@sprintf("Along %s", dirs[i])),
+                 :u_ref=>f_quad_ref[:B],
+                 :ylabel=>"Quad B impulse [N\$\\cdot\$s]",
+                 :legend=>thruster_label),
             Dict(:u=>f_quad[:C],
-                 :ylabel=>"Quad C impulse [N\$\\cdot\$m\$\\cdot\$s]",
-                 :legend=>(i)->@sprintf("Along %s", dirs[i])),
+                 :u_ref=>f_quad_ref[:C],
+                 :ylabel=>"Quad C impulse [N\$\\cdot\$s]",
+                 :legend=>thruster_label),
             Dict(:u=>f_quad[:D],
-                 :ylabel=>"Quad D impulse [N\$\\cdot\$m\$\\cdot\$s]",
-                 :legend=>(i)->@sprintf("Along %s", dirs[i]))]
+                 :u_ref=>f_quad_ref[:D],
+                 :ylabel=>"Quad D impulse [N\$\\cdot\$s]",
+                 :legend=>thruster_label)]
 
-    fig = create_figure((10, 16))
-    gspec = fig.add_gridspec(ncols=1, nrows=6)
+    fig = create_figure((14, 16))
+    gspec = fig.add_gridspec(ncols=2, nrows=6,
+                             width_ratios=[0.8, 0.2])
 
     axes = []
 
@@ -505,13 +521,24 @@ function plot_inputs(mdl::RendezvousProblem,
 
         # Data
         u = data[i_plt][:u]
+        ur = data[i_plt][:u_ref]
         num_inputs = size(u, 1)
+        fr_rng = LinRange(0, veh.csm.imp_max, polar_resol)
+        above_mib = (fr)->fr-veh.csm.imp_min
+        f_polar = map(fr_rng) do fr
+            or(above_mib(fr);
+               κ1=traj.κ1, κ2=traj.κ2,
+               # minval=-veh.csm.imp_min,
+               maxval=veh.csm.imp_max-veh.csm.imp_min)*fr
+        end
 
-        ax = setup_axis!(gspec[i_plt],
+        # >> Draw the timeseries plot <<
+
+        ax = setup_axis!(gspec[i_plt, 1],
                          ylabel=data[i_plt][:ylabel])
         push!(axes, ax)
 
-        if i_plt==1
+        if i_plt<length(data)
             ax.tick_params(axis="x", which="both", bottom=false, top=false,
                            labelbottom=false)
         else
@@ -566,6 +593,7 @@ function plot_inputs(mdl::RendezvousProblem,
         xmin = -t_spread-x_pad
         xmax = x_rng+x_pad
         ax.set_xlim(xmin, xmax)
+        ylim_timeseries = ax.get_ylim()
 
         # Plot "zero" baseline
         ax.plot([xmin, xmax], [0, 0],
@@ -575,16 +603,72 @@ function plot_inputs(mdl::RendezvousProblem,
                 zorder=10)
 
         # Legend
-        leg = ax.legend(framealpha=0.8,
-                        fontsize=8,
-                        loc="upper left")
-        leg.set_zorder(100)
+        if i_plt==1
+            leg = ax.legend(framealpha=0.8,
+                            fontsize=8,
+                            loc="upper center",
+                            ncol=4,
+                            bbox_to_anchor=(0.5, 1.2))
+            leg.set_zorder(100)
+        end
+
+        # >> Draw the deadband polar plot <<
+
+        ax = setup_axis!(gspec[i_plt, 2];
+                         axis="square")
+
+        ax.tick_params(axis="y", which="both", left=false, right=false,
+                       labelleft=false)
+
+        if i_plt<length(data)
+            ax.tick_params(axis="x", which="both", bottom=false, top=false,
+                           labelbottom=false)
+        else
+            ax.set_xlabel("Impulse reference [N\$\\cdot\$s]")
+        end
+
+        # Continuous polar without deadband
+        ax.plot(fr_rng, fr_rng,
+                color=Red,
+                linewidth=1,
+                linestyle="--",
+                solid_capstyle="round",
+                dash_capstyle="round",
+                dashes=(3, 3),
+                zorder=10)
+
+        # Continuous polar with deadband
+        ax.plot(fr_rng, f_polar,
+                color=Green,
+                linewidth=2,
+                solid_capstyle="round",
+                zorder=10,
+                clip_on=true)
+
+        # >> The discrete-time (ref, actual) trajectory values <<
+        for i = 1:num_inputs
+            clr = stem_colors[i]
+            darker_clr = darken_color(clr, marker_darken_factor)
+
+            ax.plot(ur[i, :], u[i, :],
+                    linestyle="none",
+                    marker="o",
+                    markersize=4,
+                    markeredgecolor="white",
+                    markeredgewidth=0.2,
+                    markerfacecolor=darker_clr,
+                    zorder=100)
+        end
+
+        ax.set_xlim(ylim_timeseries)
+        ax.set_ylim(ylim_timeseries)
 
     end
 
+    plt.subplots_adjust(wspace=0.02, hspace=0.1)
     fig.align_ylabels(axes)
 
-    save_figure("rendezvous_inputs", algo)
+    save_figure("rendezvous_inputs", algo, tight_layout=false)
 
     return nothing
 end # function

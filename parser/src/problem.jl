@@ -34,9 +34,9 @@ using Utils
 export TrajectoryProblem
 export problem_set_dims!, problem_advise_scale!,
     problem_set_integration_action!, problem_set_guess!,
-    problem_set_constants!, problem_set_terminal_cost!,
+    problem_set_callback!, problem_set_constants!, problem_set_terminal_cost!,
     problem_set_running_cost!, problem_set_dynamics!, problem_set_X!,
-    problem_set_U!, problem_set_s!, problem_set_bc!
+    problem_set_U!, problem_set_s!, problem_set_bc!, problem_add_table_column!
 export DiscretizationType, FOH, IMPULSE
 
 # ..:: Globals ::..
@@ -47,27 +47,30 @@ const RealTuple = Tuple{Types.RealTypes, Types.RealTypes}
 const VectorOfTuples = Vector{Union{Nothing, RealTuple}}
 const SIA = Types.SpecialIntegrationActions
 const Func = Types.Func
+const TableColumnDef = Tuple{Symbol, String, String, Int, Function}
 
 # ..:: Data structures ::..
 
 """ Trajectory problem definition."""
 mutable struct TrajectoryProblem
     # >> Variable sizes <<
-    nx::Int     # Number of state variables
-    nu::Int     # Number of input variables
-    np::Int     # Number of parameter variables
-    nq::Int     # Number of parameter constants
+    nx::Int             # Number of state variables
+    nu::Int             # Number of input variables
+    np::Int             # Number of parameter variables
+    nq::Int             # Number of parameter constants
     # >> Variable scaling advice <<
     xrg::VectorOfTuples # State bounds
     urg::VectorOfTuples # Input bounds
     prg::VectorOfTuples # Variable parameter bounds
     qrg::VectorOfTuples # Constant parameter bounds
     # >> Numerical integration <<
-    integ_actions::SIA # Special variable treatment
+    integ_actions::SIA  # Special variable treatment
     # >> Constant parameter value <<
-    setq::Func  # Sets the constant parameter's value
+    setq::Func          # Sets the constant parameter's value
     # >> Initial guess <<
-    guess::Func # (SCvx/GuSTO) The initial trajectory guess
+    guess::Func         # (SCvx/GuSTO) The initial trajectory guess
+    # >> Callback during solution <<
+    callback!::Func     # Callback function after subproblem solution
     # >> Cost function <<
     φ::Func     # (SCvx/GuSTO) Terminal cost
     Γ::Func     # (SCvx) Running cost
@@ -104,6 +107,7 @@ mutable struct TrajectoryProblem
     # >> Other <<
     mdl::Any    # Problem-specific data structure
     scp::Any    # SCP algorithm parameter data structure
+    table_cols::Vector{TableColumnDef} # Extra progress table columns
 end # struct
 
 """
@@ -130,6 +134,7 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     propag_actions = SIA(undef, 0)
     setq = nothing
     guess = nothing
+    callback! = nothing
     φ = nothing
     Γ = nothing
     S = nothing
@@ -160,11 +165,13 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     Hf = nothing
     Kf = nothing
     scp = nothing
+    table_cols = TableColumnDef[]
 
     pbm = TrajectoryProblem(nx, nu, np, nq, xrg, urg, prg, qrg, propag_actions,
-                            setq, guess, φ, Γ, S, dSdp, ℓ, dℓdx, dℓdp, g, dgdx,
-                            dgdp, S_cvx, ℓ_cvx, g_cvx, f, A, B, F, X, U, s, C,
-                            D, G, gic, H0, K0, gtc, Hf, Kf, mdl, scp)
+                            setq, guess, callback!, φ, Γ, S, dSdp, ℓ, dℓdx,
+                            dℓdp, g, dgdx, dgdp, S_cvx, ℓ_cvx, g_cvx, f, A, B,
+                            F, X, U, s, C, D, G, gic, H0, K0, gtc, Hf, Kf, mdl,
+                            scp, table_cols)
 
     return pbm
 end # function
@@ -260,6 +267,44 @@ Define the initial trajectory guess.
 function problem_set_guess!(pbm::TrajectoryProblem,
                             guess::Func)::Nothing
     pbm.guess = (N) -> guess(N, pbm)
+    return nothing
+end # function
+
+"""
+    problem_set_callback!(pbm, cb)
+
+Set a callback function which is called after each subproblem solution and just
+prior to making a decision to stop the iterations. By the time this function is
+called, the stopping criterion has been evaluated, but not acted upon (pending
+the result of this callback). The callback function must satisfy the following
+contract:
+- At the input: it receives the argument `bay` which is a dictionary which the
+  user may freely use to store any information that would like to be accessed
+  for post-processing.
+- At the input: it receives the argument `subproblem` which is the complete
+  data structure for the SCP subproblem. While you can technically modify it,
+  be aware of the consequence of tampering with the internals of the solver! It
+  is generally **not** recommended to modify `subproblem` during the callback.
+- At the input: it receives the argument `mdl` which is the problem-specific
+  data object (i.e., the `mdl` field of `TrajectoryProblem`). This is what you
+  should modify in the callback, should you have to update anything to guide
+  the solution process along.
+- At the output: the callback function should return a single boolean flag
+  `true` if any value modifications were made inside the function. If so, the
+  solver will ignore the stopping criterion and continue iterating. This is
+  because the problem definition has changed, so if the current solution
+  triggered the stopping criterion, it may no longer do so under the new
+  problem parameters.
+
+# Arguments
+- `pbm`: the trajectory problem structure.
+- `cb`: the callback function.
+"""
+function problem_set_callback!(pbm::TrajectoryProblem,
+                               cb::Func)::Nothing
+    pbm.callback! = (subproblem) -> cb(subproblem.sol.bay,
+                                       subproblem,
+                                       pbm.mdl)
     return nothing
 end # function
 
@@ -526,5 +571,36 @@ function problem_set_bc!(pbm::TrajectoryProblem,
         pbm.Kf = !isnothing(K) ? (x, p) -> K(x, p, pbm) : nothing
     end
 
+    return nothing
+end # function
+
+"""
+    problem_add_table_column!(pbm, id, header, format, width, value)
+
+Append a new column to the progress table printout during the SCP iteration
+process. The arguments follow the constructor of the `Table` object. The
+`value` argument is a function which receives the `bay` field of
+`SCPSubproblemSolution`. This is a `Dict` object that stores user-set values in
+the callback function, see `problem_set_callback!`. Thus, to have access to
+values that you want to display in the table column, you must put them into
+`bay` during the callback.
+
+# Arguments
+- `pbm`: the trajectory problem structure.
+- `id`: a unique symbol referencing the new column.
+- `header`: column heading string.
+- `format`: column format specifier.
+- `width`: column width (number of characters).
+- `col_value`: a function with the signature `value(bay)` which receives the
+  user-set `bay` field of `SCPSubproblemSolution` (during callback) and returns
+  a value appropriate to be `printf`'ed for the column.
+"""
+function problem_add_table_column!(pbm::TrajectoryProblem,
+                                   id::Symbol,
+                                   header::String,
+                                   format::String,
+                                   width::Int,
+                                   col_value::Function)::Nothing
+    push!(pbm.table_cols, (id, header, format, width, col_value))
     return nothing
 end # function

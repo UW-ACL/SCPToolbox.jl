@@ -151,7 +151,7 @@ const Constraints = Vector{ConicConstraint}
 # ..:: Methods ::..
 
 """
-    F([; jacobians, scalar])
+    ProgFunc([; jacobians, scalar])
 
 Compute the function value and (optionally) Jacobians. This basically forwards
 data to the underlying `DifferentiableFunction`, which handles the computation.
@@ -165,16 +165,17 @@ data to the underlying `DifferentiableFunction`, which handles the computation.
 - `f`: the function value. The Jacobians can be queried later by using the
   `jacobian` function.
 """
-function (F::ProgramFunction)(
+function (ProgFunc::ProgramFunction)(
     ;jacobians::Bool=false,
     scalar::Bool=false)::FunctionValueOutputType
 
     # Compute the input argument values
-    x_input = [value(blk) for blk in F.x]
-    p_input = [value(blk) for blk in F.p]
+    x_input = [value(blk) for blk in ProgFunc.x]
+    p_input = [value(blk) for blk in ProgFunc.p]
     args = vcat(x_input, p_input)
 
-    f_value = F.f(args...; jacobians=jacobians, scalar=scalar) # Core call
+    f_value = ProgFunc.f(args...; jacobians=jacobians,
+                         scalar=scalar) # Core call
 
     return f_value
 end # function

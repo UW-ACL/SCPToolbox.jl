@@ -196,7 +196,7 @@ function all_jacobians(F::FunctionLinearCombination)::Vector{JacobianDictType}
 end # function
 
 """
-    F([; jacobians, scalar])
+    FuncLinComb([; jacobians, scalar])
 
 Evaluate the function linear combination. This calls the underlying
 `ProgramFunction` objects, so see its documentation.
@@ -207,15 +207,15 @@ Evaluate the function linear combination. This calls the underlying
 # Returns
 - `bar`: description.
 """
-function (F::FunctionLinearCombination)(
+function (FuncLinComb::FunctionLinearCombination)(
     ;jacobians::Bool=false,
     scalar::Bool=false)::FunctionValueOutputType
 
-    for i = 1:length(F)
-        F.f[i](jacobians=jacobians, scalar=scalar)
+    for i = 1:length(FuncLinComb)
+        FuncLinComb.f[i](jacobians=jacobians, scalar=scalar)
     end
 
-    return value(F, scalar=scalar)
+    return value(FuncLinComb, scalar=scalar)
 end # function
 
 """

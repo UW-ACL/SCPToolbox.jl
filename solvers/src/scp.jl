@@ -25,6 +25,7 @@ if LangServer
     using .Utils.Types: sample
     using .Parser.TrajectoryProblem
     import .Parser.ConicLinearProgram: @add_constraint, @new_variable
+    import .Parser.ConicLinearProgram: @add_cost
     import .Parser.ConicLinearProgram: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
     import .Parser.ConicLinearProgram: QuadraticCost
     import .Parser.ConicLinearProgram: solve!
@@ -169,7 +170,7 @@ function SCPProblem(
 end # function
 
 """
-    SCPSubproblemSolution!(spbm)
+    SCPSubproblemSolution(spbm)
 
 Create the subproblem solution structure. This calls the SCP algorithm-specific
 function, and also saves some general properties of the solution.
@@ -177,7 +178,7 @@ function, and also saves some general properties of the solution.
 # Arguments
 - `spbm`: the subproblem structure.
 """
-function SCPSubproblemSolution!(spbm::T)::Nothing where {T<:SCPSubproblem}
+function SCPSubproblemSolution(spbm::T)::Nothing where {T<:SCPSubproblem}
     # Save the solution
     # (this complicated-looking thing calls the constructor for the
     #  SCPSubproblemSolution child type)
@@ -808,7 +809,7 @@ function solve_subproblem!(spbm::T)::Nothing where {T<:SCPSubproblem}
     solve!(spbm.prg)
 
     # Save the solution
-    SCPSubproblemSolution!(spbm)
+    SCPSubproblemSolution(spbm)
 
     return nothing
 end # function

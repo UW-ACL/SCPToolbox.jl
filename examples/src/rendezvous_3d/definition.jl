@@ -28,19 +28,23 @@ if LangServer
     import .Utils.Types: slerp_interpolate, Log, skew
 end
 
+using Printf
+
 using Parser
 
 # ..:: Methods ::..
 
 function define_problem!(pbm::TrajectoryProblem,
-                         algo::Symbol)::Nothing
+                         algo::Symbol,
+                         N::Int)::Nothing
 
     set_dims!(pbm)
     set_scale!(pbm)
     set_integration!(pbm)
+    set_callback!(pbm)
     set_cost!(pbm, algo)
     set_dynamics!(pbm)
-    set_convex_constraints!(pbm)
+    set_convex_constraints!(pbm, N)
     set_nonconvex_constraints!(pbm, algo)
     set_bcs!(pbm)
 
@@ -51,7 +55,7 @@ end # function
 
 function set_dims!(pbm::TrajectoryProblem)::Nothing
 
-    problem_set_dims!(pbm, 13, 33, 1)
+    problem_set_dims!(pbm, 13, 33, 14)
 
     return nothing
 end # function
@@ -62,6 +66,7 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     mdl = pbm.mdl
     veh = mdl.vehicle
     traj = mdl.traj
+    env = mdl.env
     n_rcs = length(veh.id_rcs)
 
     advise! = problem_advise_scale!
@@ -81,7 +86,16 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     advise!(pbm, :input, veh.id_rcs_eq, (0, n_rcs*veh.csm.imp_min))
 
     # >> Parameters <<
+    vf = dot(traj.vf, env.xi)
     advise!(pbm, :parameter, veh.id_t, (traj.tf_min, traj.tf_max))
+    advise!(pbm, :parameter, veh.id_dock_tol[veh.id_r],
+            (-traj.r_radial_tol, traj.r_radial_tol))
+    advise!(pbm, :parameter, veh.id_dock_tol[veh.id_v[1]],
+            (-traj.v_axial_max-vf, -traj.v_axial_min-vf))
+    advise!(pbm, :parameter, veh.id_dock_tol[veh.id_v[2:3]],
+            (-traj.v_radial_tol, traj.v_radial_tol))
+    advise!(pbm, :parameter, veh.id_dock_tol[veh.id_ω],
+            (-traj.ω_tol, traj.ω_tol))
 
     return nothing
 end # function
@@ -97,6 +111,54 @@ function set_integration!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
+end # function
+
+function set_callback!(pbm::TrajectoryProblem)::Nothing
+
+    # Callback to update homotopy parameter
+    problem_set_callback!(
+        pbm, (bay, subproblem, mdl) -> begin
+            pars = subproblem.def.pars
+            sol = subproblem.sol
+            ref = subproblem.ref
+            traj = mdl.traj
+
+            # Save current homotopy
+            bay[:κ1] = traj.κ1 # Current homotopy
+
+            # >> Update logic for homotopy value <<
+
+            increase_homotopy = sol.improv_rel<=mdl.traj.β
+
+            i_last = haskey(ref.bay, :last_update) ? ref.bay[:last_update] : 1
+            if increase_homotopy
+                i = findfirst(mdl.traj.κ1_grid.==mdl.traj.κ1)
+                if i<length(mdl.traj.κ1_grid)
+
+                    traj.κ1 = mdl.traj.κ1_grid[i+1]
+
+                    # Update maximum iterations to maintain iter_max for
+                    # solving with the new homotopy value
+                    pars.iter_max += sol.iter-i_last
+                    bay[:last_update] = sol.iter
+
+                else
+                    # Homotopy is at maximum value, can't go any higher
+                    increase_homotopy = false
+                end
+            else
+                bay[:last_update] = i_last
+            end
+            bay[:κ1_updated] = increase_homotopy
+
+            return increase_homotopy
+        end)
+
+    # Add table column to show homotopy parameter
+    problem_add_table_column!(
+        pbm, :homotopy_κ1, "κ1", "%s", 10,
+        bay->@sprintf("%.2e%s", bay[:κ1], bay[:κ1_updated] ? "*" : ""))
+
 end # function
 
 function set_guess!(pbm::TrajectoryProblem)::Nothing
@@ -205,18 +267,29 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
         # Jacobian df/dx
         (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
+            env = pbm.mdl.env
 
             tdil = p[veh.id_t]
             v = x[veh.id_v]
             q = Quaternion(x[veh.id_q])
             ω = x[veh.id_ω]
 
+            xi, yi, zi = env.xi, env.yi, env.zi
+            norb = env.n
+
+            # Rigid body terms
             dfqdq = 0.5*skew(Quaternion(ω), :R)
             dfqdω = 0.5*skew(q)
             dfωdω = -veh.csm.J\(skew(ω)*veh.csm.J-skew(veh.csm.J*ω))
 
+            # Clohessy-Wiltshire dynamics terms
+            dfvdv = 2*norb*(zi*xi'-xi*zi')
+            dfvdr = norb^2*(3*zi*zi'-yi*yi')
+
             A = zeros(pbm.nx, pbm.nx)
             A[veh.id_r, veh.id_v] = I(3)
+            A[veh.id_v, veh.id_r] = dfvdr
+            A[veh.id_v, veh.id_v] = dfvdv
             A[veh.id_q, veh.id_q] = dfqdq
             A[veh.id_q, veh.id_ω] = dfqdω[:, 1:3]
             A[veh.id_ω, veh.id_ω] = dfωdω
@@ -265,7 +338,66 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end # function
 
-function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
+function set_convex_constraints!(pbm::TrajectoryProblem,
+                                 N::Int)::Nothing
+
+    # Convex path constraints on the state
+    problem_set_X!(
+        pbm, (t, k, x, p, pbm, ocp) -> begin
+            veh = pbm.mdl.vehicle
+            traj = pbm.mdl.traj
+            env = pbm.mdl.env
+
+            if k==N
+
+                qf = x[veh.id_q]
+                Δxf = p[veh.id_dock_tol]
+                Δrf = Δxf[veh.id_r]
+                Δvf = Δxf[veh.id_v]
+                Δωf = Δxf[veh.id_ω]
+
+                xi = env.xi
+
+                @add_constraint(
+                    ocp, LINF, "dock_pos_tol",
+                    (Δrf,), begin
+                        local Δrf, = arg #noerr
+                        vcat(0.1, Δrf)
+                    end)
+
+                @add_constraint(
+                    ocp, ZERO, "dock_pos_axial_exact",
+                    (Δrf,), begin
+                        local Δrf, = arg #noerr
+                        dot(Δrf, xi)
+                    end)
+
+                @add_constraint(
+                    ocp, LINF, "dock_vel_tol",
+                    (Δvf,), begin
+                        local Δvf, = arg #noerr
+                        vcat(0.01, Δvf)
+                    end)
+
+                ang_max = deg2rad(1)
+                @add_constraint(
+                    ocp, NONPOS, "dock_att_tol",
+                    (qf,), begin
+                        local qf = arg[1] #noerr
+                        qerr_w = qf[1:3]'*traj.qf.v+qf[4]*traj.qf.w
+                        cos(ang_max/2)-qerr_w
+                    end)
+
+                @add_constraint(
+                    ocp, LINF, "dock_ang_vel_tol",
+                    (Δωf,), begin
+                        local Δωf, = arg #noerr
+                        vcat(deg2rad(0.01), Δωf)
+                    end)
+
+            end
+
+        end)
 
     # Convex path constraints on the input
     problem_set_U!(
@@ -355,7 +487,7 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 above_mib = fr-veh.csm.imp_min
                 OR = or(above_mib;
                         κ1=traj.κ1, κ2=traj.κ2,
-                        minval=-veh.csm.imp_min,
+                        # minval=-veh.csm.imp_min,
                         maxval=veh.csm.imp_max-veh.csm.imp_min)
                 s[2*(i-1)+1] = f-OR*fr
                 s[2*(i-1)+2] = OR*fr-f
@@ -382,7 +514,7 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 ∇above_mib = [1.0]
                 OR, ∇OR = or((above_mib, ∇above_mib);
                              κ1=traj.κ1, κ2=traj.κ2,
-                             minval=-veh.csm.imp_min,
+                             # minval=-veh.csm.imp_min,
                              maxval=veh.csm.imp_max-veh.csm.imp_min)
                 ∇ORfr = ∇OR[1]*fr+OR
                 D[2*(i-1)+1, id_f] = 1.0
@@ -443,7 +575,8 @@ function set_bcs!(pbm::TrajectoryProblem)::Nothing
             rhs[veh.id_v] = traj.vf
             rhs[veh.id_q] = vec(traj.qf)
             rhs[veh.id_ω] = traj.ωf
-            g = x-rhs
+            Δx = p[veh.id_dock_tol]
+            g = x+Δx-rhs
             return g
         end,
         # Jacobian dg/dx
@@ -455,6 +588,7 @@ function set_bcs!(pbm::TrajectoryProblem)::Nothing
         (x, p, pbm) -> begin
             veh = pbm.mdl.vehicle
             K = zeros(pbm.nx, pbm.np)
+            K[:, veh.id_dock_tol] = I(pbm.nx)
             return K
         end)
 

@@ -61,7 +61,7 @@ const OptVarArgBlk = Optional{VarArgBlk}
 export Parameters, create, solve
 
 #= Structure holding the PTR algorithm parameters. =#
-struct Parameters <: SCPParameters
+mutable struct Parameters <: SCPParameters
     N::Int               # Number of temporal grid nodes
     Nsub::Int            # Number of subinterval integration time nodes
     iter_max::Int        # Maximum number of iterations
@@ -102,8 +102,10 @@ mutable struct SubproblemSolution <: SCPSubproblemSolution
     feas::Bool            # Dynamic feasibility flag
     defect::RealMatrix    # "Defect" linearization accuracy metric
     deviation::RealTypes  # Deviation from reference trajectory
+    improv_rel::RealTypes # Relative cost improvement
     unsafe::Bool          # Indicator that the solution is unsafe to use
     dyn::DLTV             # The dynamics
+    bay::Dict             # Storage bay for user-set values during callback
 end # struct
 
 #= Subproblem definition in JuMP format for the convex numerical optimizer. =#
@@ -150,7 +152,8 @@ Returns:
 function create(pars::Parameters,
                 traj::TrajectoryProblem)::SCPProblem
 
-    table = ST.Table([
+    # Default progress table columns
+    default_columns = [
         # Iteration count
         (:iter, "k", "%d", 2),
         # Solver status
@@ -180,7 +183,14 @@ function create(pars::Parameters,
         # Maximum input trust region size
         (:tru_max, "ηu", "%.2f", 5),
         # Parameter trust region size
-        (:trp, "ηp", "%.2f", 5)])
+        (:trp, "ηp", "%.2f", 5)]
+
+    # User-defined extra columns
+    user_columns = [tuple(col[1:4]...) for col in traj.table_cols]
+
+    all_columns = [default_columns; user_columns]
+
+    table = ST.Table(all_columns)
 
     pbm = SCPProblem(pars, traj, table)
 
@@ -305,8 +315,10 @@ function SubproblemSolution(
     feas = false
     defect = fill(NaN, nx, N-1)
     deviation = NaN
+    improv_rel = NaN
     unsafe = false
     dyn = DLTV(nx, nu, np, nv, N, disc)
+    bay = Dict()
 
     vd = RealMatrix(undef, 0, N)
     vs = RealMatrix(undef, 0, N)
@@ -321,7 +333,8 @@ function SubproblemSolution(
 
     subsol = SubproblemSolution(iter, x, u, p, vd, vs, vic, vtc, J,
                                 J_tr, J_vc, J_aug, ηx, ηu, ηp, status,
-                                feas, defect, deviation, unsafe, dyn)
+                                feas, defect, deviation, improv_rel,
+                                unsafe, dyn, bay)
 
     # Compute the DLTV dynamics around this solution
     discretize!(subsol, pbm)
@@ -402,10 +415,14 @@ function solve(pbm::SCPProblem,
 
     history = SCPHistory()
 
+    callback_fun! = pbm.traj.callback!
+    user_callback = !isnothing(callback_fun!)
+
     # ..:: Iterate ::..
 
-    for k = 1:pbm.pars.iter_max
-        # >> Construct the subproblem <<
+    k = 1 # Iteration counter
+    while true
+        # Construct the subproblem
         spbm = Subproblem(pbm, k, ref)
 
         add_dynamics!(spbm)
@@ -419,7 +436,7 @@ function solve(pbm::SCPProblem,
         save!(history, spbm)
 
         try
-            # >> Solve the subproblem <<
+            # Solve the subproblem
             solve_subproblem!(spbm)
 
             # "Emergency exit" the PTR loop if something bad happened
@@ -429,14 +446,22 @@ function solve(pbm::SCPProblem,
                 break
             end
 
-            # >> Check stopping criterion <<
+            # Check stopping criterion
             stop = check_stopping_criterion!(spbm)
-            if stop
+
+            # Run a user-defined callback
+            if user_callback
+                user_acted = callback_fun!(spbm)
+            end
+
+            # Stop iterating if stopping criterion triggered **and** user did
+            # not modify anything in the callback
+            if stop && !(user_callback && user_acted)
                 print_info(spbm)
                 break
             end
 
-            # >> Update reference trajectory <<
+            # Update reference trajectory
             ref = spbm.sol
         catch e
             isa(e, SCPError) || rethrow(e)
@@ -444,8 +469,14 @@ function solve(pbm::SCPProblem,
             break
         end
 
-        # >> Print iteration info <<
+        # Print iteration info
         print_info(spbm)
+
+        # Stop at maximum iterations
+        k += 1
+        if k>pbm.pars.iter_max
+            break
+        end
     end
 
     reset(pbm.common.table)
@@ -966,11 +997,11 @@ function check_stopping_criterion!(spbm::Subproblem)::Bool
     # Check predicted cost improvement
     J_ref = ref.J_aug
     J_sol = sol.J_aug
-    improv_rel = abs(J_ref-J_sol)/abs(J_ref)
+    sol.improv_rel = abs(J_ref-J_sol)/abs(J_ref)
 
     # Compute stopping criterion
     stop = (spbm.iter>1 &&
-            (sol.feas && (improv_rel<=ε_rel || sol.deviation<=ε_abs)))
+        (sol.feas && (sol.improv_rel<=ε_rel || sol.deviation<=ε_abs)))
 
     return stop
 end # function
@@ -981,10 +1012,11 @@ Args:
     spbm: the subproblem that was solved.
     err: an PTR-specific error message. =#
 function print_info(spbm::Subproblem,
-                          err::Union{Nothing, SCPError}=nothing)::Nothing
+                    err::Union{Nothing, SCPError}=nothing)::Nothing
 
     # Convenience variables
     sol = spbm.sol
+    traj = spbm.def.traj
     ref = spbm.ref
     table = spbm.def.common.table
 
@@ -1027,6 +1059,12 @@ function print_info(spbm::Subproblem,
                      :trx_max => ηx_max,
                      :tru_max => ηu_max,
                      :trp => ηp)
+
+        # Set user-defined columns
+        for col in traj.table_cols
+            id, col_value = col[1], col[end]
+            assoc[id] = col_value(sol.bay)
+        end
 
         print(assoc, table)
     end

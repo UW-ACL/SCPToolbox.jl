@@ -338,7 +338,7 @@ function set_jacobian!(out::DFOut, key::JacobianKeys,
 end # function
 
 """
-    F(args...[; jacobians, scalar])
+    DiffF(args...[; jacobians, scalar])
 
 Call the core method. The result is cached inside the `DifferentiableFunction`
 structure. The call is done type-safely in the sense that the input and output
@@ -358,11 +358,11 @@ this is not met.
 # Returns
 - `f_value`: the function value from the call.
 """
-function (F::DiffblF)(args::InputArgumentType...;
-                      jacobians::Bool=false,
-                      scalar::Bool=false)::FunctionValueOutputType
+function (DiffF::DiffblF)(args::InputArgumentType...;
+                          jacobians::Bool=false,
+                          scalar::Bool=false)::FunctionValueOutputType
     nargin = length(args)
-    narg_expected = F.xargs+F.pargs
+    narg_expected = DiffF.xargs+DiffF.pargs
     if nargin!=narg_expected
         msg = string("argument count mismatch for the function call ",
                      @sprintf("(expected %d but got %d arguments)",
@@ -371,9 +371,9 @@ function (F::DiffblF)(args::InputArgumentType...;
         throw(err)
     end
     # Make the call to the core function
-    F.out[] = F.f(args..., F.consts[], jacobians)
-    F.evaluated = true
-    f_value = value(F.out[], scalar=scalar)
+    DiffF.out[] = DiffF.f(args..., DiffF.consts[], jacobians)
+    DiffF.evaluated = true
+    f_value = value(DiffF.out[], scalar=scalar)
     return f_value
 end # function
 

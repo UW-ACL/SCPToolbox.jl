@@ -620,16 +620,19 @@ uniform scaling of the predicates.
 function or(predicates...;
             κ1::RealValue=1.0,
             κ2::RealValue=1.0,
-            minval::RealValue=-1.0,
+            # minval::RealValue=-1.0,
             maxval::RealValue=1.0)::Union{
                 Tuple{RealValue, RealVector},
                 RealValue}
 
-    c = (maxval+minval)/2
-    rng = (maxval-minval)/2
-    scale = (p) -> (p-c)/rng
+    # @assert minval<0
+    @assert maxval>0
+    # scale = (p) -> p/((p>=0) ? maxval : -minval)
+    scale = (p) -> p/maxval
+
     if typeof(predicates[1])<:Tuple
-        ∇scale = (∇p) -> ∇p/(maxval-minval)
+        # ∇scale = (∇p) -> ∇p/(maxval-minval)
+        ∇scale = (∇p) -> ∇p/maxval
         f = RealVector([scale(p[1]) for p in predicates])
         ∇f = [∇scale(p[2]) for p in predicates]
         OR, ∇OR = indicator(f, ∇f; κ1=κ1, κ2=κ2)
@@ -681,10 +684,13 @@ function convert_units(x::RealValue, orig::Symbol, new::Symbol)::RealValue
 end # function
 
 # Available converters
-_in2m(x) = x*0.0254 # inches to meters
+_deg2rad(x) = deg2rad(x)        # degrees to radians
+_in2m(x) = x*0.0254             # inches to meters
+_ft2m(x) = x*0.3048             # feet to meters
+_ftps2mps(x) = x*0.3048         # feet per second to meters per second
 _ft2slug2m2kg(x) = x*1.35581795 # slug*ft^2 to kg*m^2
-_lb2kg(x) = x*0.453592 # lb to kg
-_lbf2N(x) = x*4.448222 # lbf to N
+_lb2kg(x) = x*0.453592          # lb to kg
+_lbf2N(x) = x*4.448222          # lbf to N
 
 """
     homtransf(q, r)
