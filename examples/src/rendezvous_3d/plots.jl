@@ -22,6 +22,7 @@ if LangServer
 end
 
 using PyPlot
+using Colors
 using Printf
 
 using Solvers #noerr
@@ -46,6 +47,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
     axis_inf_scale = 1e4
     pad_x = 0.1
     pad_y = 0.1
+    pad_label_abs = 10
     equal_ar = true # Equal aspect ratio
     input_scale = 0.2
 
@@ -110,21 +112,21 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
                        :y=>pad_x*(bbox[:y][:max]-bbox[:y][:min]))
 
         # Plot axes "guidelines"
-        origin = [0; 0]
+        origin = mdl.traj.rf[prj]
         xtip = [1; 0]
         ytip = [0; 1]
-        ax.plot([origin[1], xtip[1]*axis_inf_scale],
-                [origin[2], xtip[2]*axis_inf_scale],
+        ax.plot([origin[1], origin[1]+xtip[1]*axis_inf_scale],
+                [origin[2], origin[2]+xtip[2]*axis_inf_scale],
                 color=DarkBlue, #noerr
                 linewidth=0.5,
                 solid_capstyle="round")
-        ax.plot([origin[1], ytip[1]*axis_inf_scale],
-                [origin[2], ytip[2]*axis_inf_scale],
+        ax.plot([origin[1], origin[1]+ytip[1]*axis_inf_scale],
+                [origin[2], origin[2]+ytip[2]*axis_inf_scale],
                 color=DarkBlue, #noerr
                 linewidth=0.5,
                 solid_capstyle="round")
 
-        # Plot the conitnuous-time trajectory
+        # Plot the continuous-time trajectory
         line_segs = Vector{RealMatrix}(undef, 0)
         line_clrs = Vector{NTuple{4, RealValue}}(undef, 0)
         overlap = 3
@@ -209,20 +211,20 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
         ax.add_collection(thrusts)
 
         # Label the LVLH axes
-        padding_x = pad_x*(x_rng[2])
-        padding_y = pad_y*(y_rng[2])
-        xlabel_pos = xtip*(x_rng[2]-padding_x)
-        ylabel_pos = ytip*(y_rng[2]-padding_y)
-        ax.text(xlabel_pos[1], xlabel_pos[2],
-                @sprintf("\$\\hat %s\$", ax_x_name),
-                ha="center",
-                va="center",
-                backgroundcolor="white")
-        ax.text(ylabel_pos[1], ylabel_pos[2],
-                @sprintf("\$\\hat %s\$", ax_y_name),
-                ha="center",
-                va="center",
-                backgroundcolor="white")
+        ax.annotate(@sprintf("\$\\hat %s\$", ax_x_name),
+                    xy=(x_rng[2], origin[2]),
+                    xytext=(-pad_label_abs, 0),
+                    textcoords="offset points",
+                    ha="right",
+                    va="center",
+                    bbox=Dict(:pad=>2, :fc=>"white", :ec=>"none"))
+        ax.annotate(@sprintf("\$\\hat %s\$", ax_y_name),
+                    xy=(origin[1], y_rng[2]),
+                    xytext=(0, pad_label_abs),
+                    textcoords="offset points",
+                    ha="center",
+                    va="center",
+                    bbox=Dict(:pad=>2, :fc=>"white", :ec=>"none"))
 
         ax.invert_yaxis()
 
@@ -243,7 +245,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
     ax_pos = [ax_pos.x0, ax_pos.y0-0.05, ax_pos.width, ax_pos.height]
     cbar_ax.set_position(ax_pos)
 
-    save_figure("rendezvous_trajectory_2d", algo)
+    save_figure("rendezvous_trajectory_2d", algo, tight_layout=false)
 
     return nothing
 end # function
@@ -459,6 +461,7 @@ function plot_inputs(mdl::RendezvousProblem,
 
     # Parameters
     interm_sol = [spbm.sol for spbm in history.subproblems]
+    num_iter = length(interm_sol)
     algo = sol.algo
     veh = mdl.vehicle
     traj = mdl.traj
@@ -476,38 +479,67 @@ function plot_inputs(mdl::RendezvousProblem,
     Δt = tf/(dt_res-1)
     t_spread = Δt*spread/2
 
-    f = sol.ud[veh.id_rcs, :]
-    f_ref = sol.ud[veh.id_rcs_ref, :]
+    # Get RCS controls solution history
+    f_quad = Dict[]
+    f_quad_ref = Dict[]
+    κ1_val = Real[]
+    for i = 1:num_iter
 
-    f_quad = Dict()
-    f_quad_ref = Dict()
-    for quad in (:A, :B, :C, :D)
-        _f_quad = RealVector[]
-        _f_quad_ref = RealVector[]
-        for thruster in (:pf, :pa, :rf, :ra)
-            push!(_f_quad, f[veh.csm.rcs_select[quad, thruster], :])
-            push!(_f_quad_ref, f_ref[veh.csm.rcs_select[quad, thruster], :])
+        f = interm_sol[i].ud[veh.id_rcs, :]
+        f_ref = interm_sol[i].ud[veh.id_rcs_ref, :]
+
+        push!(f_quad, Dict())
+        push!(f_quad_ref, Dict())
+        push!(κ1_val, interm_sol[i].bay[:κ1])
+
+        for quad in (:A, :B, :C, :D)
+            _f_quad = RealVector[]
+            _f_quad_ref = RealVector[]
+            for thruster in (:pf, :pa, :rf, :ra)
+                push!(_f_quad,
+                      f[veh.csm.rcs_select[quad, thruster], :])
+                push!(_f_quad_ref,
+                      f_ref[veh.csm.rcs_select[quad, thruster], :])
+            end
+            f_quad[i][quad] = hcat(_f_quad...)'
+            f_quad_ref[i][quad] = hcat(_f_quad_ref...)'
         end
-        f_quad[quad] = hcat(_f_quad...)'
-        f_quad_ref[quad] = hcat(_f_quad_ref...)'
     end
+
+    # f = sol.ud[veh.id_rcs, :]
+    # f_ref = sol.ud[veh.id_rcs_ref, :]
+    # f_quad = Dict()
+    # f_quad_ref = Dict()
+    # for quad in (:A, :B, :C, :D)
+    #     _f_quad = RealVector[]
+    #     _f_quad_ref = RealVector[]
+    #     for thruster in (:pf, :pa, :rf, :ra)
+    #         push!(_f_quad, f[veh.csm.rcs_select[quad, thruster], :])
+    #         push!(_f_quad_ref, f_ref[veh.csm.rcs_select[quad, thruster], :])
+    #     end
+    #     f_quad[quad] = hcat(_f_quad...)'
+    #     f_quad_ref[quad] = hcat(_f_quad_ref...)'
+    # end
+
+    # f_quad = f_quad[end]
+    # f_quad_ref = f_quad_ref[end]
 
     dirs = ["\$+x\$", "\$-x\$", "\$+z\$", "\$-z\$"]
     thruster_label = (i) -> @sprintf("Thruster %s", dirs[i])
-    data = [Dict(:u=>f_quad[:A],
-                 :u_ref=>f_quad_ref[:A],
+    data = [Dict(:u=>(i)->f_quad[i][:A],
+                 :u_ref=>(i)->f_quad_ref[i][:A],
                  :ylabel=>"Quad A impulse [N\$\\cdot\$s]",
                  :legend=>thruster_label),
-            Dict(:u=>f_quad[:B],
-                 :u_ref=>f_quad_ref[:B],
+            Dict(:u=>(i)->f_quad[i][:B],
+                 :u_ref=>(i)->f_quad_ref[i][:B],
                  :ylabel=>"Quad B impulse [N\$\\cdot\$s]",
                  :legend=>thruster_label),
-            Dict(:u=>f_quad[:C],
-                 :u_ref=>f_quad_ref[:C],
+            Dict(:u=>(i)->f_quad[i][:C],
+                 :u_ref=>(i)->f_quad_ref[i][:C],
                  :ylabel=>"Quad C impulse [N\$\\cdot\$s]",
                  :legend=>thruster_label),
-            Dict(:u=>f_quad[:D],
-                 :u_ref=>f_quad_ref[:D],
+            Dict(:u=>(i)->f_quad[i][:D],
+                 :u_ref=>(i)->f_quad_ref[i][:D],
                  :ylabel=>"Quad D impulse [N\$\\cdot\$s]",
                  :legend=>thruster_label)]
 
@@ -520,14 +552,14 @@ function plot_inputs(mdl::RendezvousProblem,
     for i_plt = 1:length(data)
 
         # Data
-        u = data[i_plt][:u]
-        ur = data[i_plt][:u_ref]
+        u = data[i_plt][:u](num_iter)
+        ur = data[i_plt][:u_ref](num_iter)
         num_inputs = size(u, 1)
         fr_rng = LinRange(0, veh.csm.imp_max, polar_resol)
         above_mib = (fr)->fr-veh.csm.imp_min
-        f_polar = map(fr_rng) do fr
+        f_polar = (κ1) -> map(fr_rng) do fr
             or(above_mib(fr);
-               κ1=traj.κ1, κ2=traj.κ2,
+               κ1=κ1, κ2=traj.κ2,
                normalize=veh.csm.imp_max-veh.csm.imp_min)*fr
         end
 
@@ -555,7 +587,7 @@ function plot_inputs(mdl::RendezvousProblem,
 
                 # Stem line
                 ax.plot([xloc, xloc], [0, uik],
-                        linewidth=2,
+                        linewidth=1.5,
                         color=clr,
                         solid_capstyle="round",
                         clip_on=false,
@@ -592,6 +624,7 @@ function plot_inputs(mdl::RendezvousProblem,
         xmin = -t_spread-x_pad
         xmax = x_rng+x_pad
         ax.set_xlim(xmin, xmax)
+        ax.set_ylim(nothing, veh.csm.imp_max-ax.get_ylim()[1])
         ylim_timeseries = ax.get_ylim()
 
         # Plot "zero" baseline
@@ -628,23 +661,23 @@ function plot_inputs(mdl::RendezvousProblem,
 
         # Continuous polar without deadband
         ax.plot(fr_rng, fr_rng,
-                color=Red,
+                color=DarkBlue,
                 linewidth=1,
                 linestyle="--",
                 solid_capstyle="round",
                 dash_capstyle="round",
                 dashes=(3, 3),
-                zorder=10)
+                zorder=100)
 
         # Continuous polar with deadband
-        ax.plot(fr_rng, f_polar,
-                color=Green,
+        ax.plot(fr_rng, f_polar(κ1_val[end]),
+                color=Red,
                 linewidth=2,
                 solid_capstyle="round",
-                zorder=10,
+                zorder=100,
                 clip_on=true)
 
-        # >> The discrete-time (ref, actual) trajectory values <<
+        # The discrete-time (ref, actual) inputs
         for i = 1:num_inputs
             clr = stem_colors[i]
             darker_clr = darken_color(clr, marker_darken_factor)
@@ -657,6 +690,47 @@ function plot_inputs(mdl::RendezvousProblem,
                     markeredgewidth=0.2,
                     markerfacecolor=darker_clr,
                     zorder=100)
+        end
+
+        # Plot the intermediate solution history in the background
+        prev_κ1 = NaN
+        κ1_min, κ1_max = κ1_val[1], κ1_val[end]
+        cmap = generate_colormap(
+            "Greys",
+            midval=0.5*(log10(κ1_max)+log10(κ1_min)),
+            minval=log10(κ1_min),
+            maxval=log10(κ1_max))
+        for k = 1:num_iter
+            # Get homotopy value at this iteration
+            κ1 = κ1_val[k]
+
+            # Draw the continuous polar with deadband
+            lc = rgb(cmap, κ1)
+            if prev_κ1!=κ1
+                prev_κ1 = κ1
+                ax.plot(fr_rng, f_polar(κ1),
+                        color=lc,
+                        linewidth=0.75,
+                        solid_capstyle="round",
+                        zorder=50,
+                        clip_on=true)
+            end
+
+            # Draw the discrete-time (ref, actual) inputs
+            darker_clr = darken_color("#"*hex(RGB(lc...)),
+                                      marker_darken_factor)
+            for i = 1:num_inputs
+                u = data[i_plt][:u](k)
+                ur = data[i_plt][:u_ref](k)
+
+                ax.plot(ur[i, :], u[i, :],
+                        linestyle="none",
+                        marker="o",
+                        markersize=1.5,
+                        markeredgewidth=0,
+                        markerfacecolor=darker_clr,
+                        zorder=50)
+            end
         end
 
         ax.set_xlim(ylim_timeseries)

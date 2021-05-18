@@ -129,6 +129,28 @@ struct Quaternion
 
         return q
     end # function
+
+    """
+        Quaternion(dcm)
+
+    Construct quaternion from a direction cosine matrix.
+
+    # Arguments
+    - `dcm`: direction cosine (rotation) matrix.
+
+    # Returns
+    - `q`: the equivalent unit quaternion.
+    """
+    function Quaternion(dcm::RealMatrix)::Quaternion
+
+        yaw, pitch, roll = rpy(dcm)
+        q_yaw = Quaternion(yaw, [0; 0; 1])
+        q_pitch = Quaternion(pitch, [0; 1; 0])
+        q_roll = Quaternion(roll, [1; 0; 0])
+        q = q_yaw*q_pitch*q_roll
+
+        return q
+    end # function
 end # struct
 
 """
@@ -362,7 +384,27 @@ end # function
 """
     rpy(q)
 
-Compute Euler angle sequence associated with a quaternion.
+Compute Euler angle sequence associated with a quaternion. This just forwards
+the call to the `rpy(dcm)` function, so see its docstring for details.
+
+# Arguments
+- `q`: the quaternion.
+
+# Returns
+- `yaw`: the yaw angle (in radians).
+- `pitch`: the pitch angle (in radians).
+- `roll`: the roll angle (in radians).
+"""
+function rpy(q::Quaternion)::Tuple{Real, Real, Real}
+    R = dcm(q)
+    yaw, pitch, roll = rpy(R)
+    return yaw, pitch, roll
+end # function
+
+"""
+    rpy(dcm)
+
+Compute Euler angle sequence associated with a direction cosine matrix.
 
 Use the Z-Y'-X'' convention (Tait-Bryan angles [1]):
   0. Begin with the world coordinate system {X,Y,Z};
@@ -385,10 +427,11 @@ References:
 - `q`: the quaternion.
 
 # Returns
-- `v`: a 3-tuple of the angles (yaw, pitch, roll) (in radians).
+- `yaw`: the yaw angle (in radians).
+- `pitch`: the pitch angle (in radians).
+- `roll`: the roll angle (in radians).
 """
-function rpy(q::Quaternion)::Tuple{Real, Real, Real}
-    R = dcm(q)
+function rpy(R::RealMatrix)::Tuple{Real, Real, Real}
     pitch = acos(max(0.0, min(1.0, sqrt(R[1, 1]^2+R[2, 1]^2))))
     roll = atan(R[3, 2], R[3, 3])
     yaw = atan(R[2, 1], R[1, 1])

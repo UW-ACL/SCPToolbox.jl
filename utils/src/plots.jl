@@ -505,7 +505,7 @@ function generate_colormap(style::String="inferno_r";
         nrm = matplotlib.colors.Normalize(vmin=minval, vmax=maxval)
     else
         nrm = matplotlib.colors.TwoSlopeNorm(
-            center=midval, vmin=minval, vmax=maxval)
+            midval, vmin=minval, vmax=maxval)
     end
     cmap = matplotlib.cm.ScalarMappable(norm=nrm, cmap=cmap)
     return cmap

@@ -104,7 +104,7 @@ struct ApolloCSM
     H_RQ::Dict{Symbol, RealMatrix}
     H_QT::Dict{Symbol, RealMatrix}
     H_DT::Dict{RCSKey, RealMatrix}
-    H_DL::RealMatrix
+    H_DP::RealMatrix
     # Vectors (in D frame)
     r_rcs::Dict{RCSKey, RealVector} # Thrust application points
     f_rcs::Dict{RCSKey, RealVector} # Thrust vectors
@@ -169,11 +169,11 @@ struct ApolloCSM
 
         # Thrusters with respect to dynamical frame
         H_DT = Dict()
-        Disp_DDA = hominv(H_SD)
+        H_DS = hominv(H_SD)
         for quad in (:A, :B, :C, :D)
             for thruster in (:pf, :pa, :rf, :ra)
                 k = (quad, thruster)
-                H_DT[k] = Disp_DDA*H_SR*H_RQ[quad]*H_QT[thruster]
+                H_DT[k] = H_DS*H_SR*H_RQ[quad]*H_QT[thruster]
             end
         end
 
@@ -183,10 +183,12 @@ struct ApolloCSM
         f_rcs = Dict(k=>homrot(H_DT[k])*f_rcs_T for k in keys(H_DT))
 
         # Docking port position in structural frame
-        H_SL = H(cvu.([1110.25; 0.0; 0.0], :in, :m))
+        docked_orientation = -30
+        H_SP = H(cvu.([1110.25; 0.0; 0.0], :in, :m))
+        H_SP *= H(roll=docked_orientation)
 
         # Docking port in dynamical frame
-        H_DL = Disp_DDA*H_SL
+        H_DP = H_DS*H_SP
 
         # Mass properties
         m = convert_units(66850.6, :lb, :kg)
@@ -216,7 +218,7 @@ struct ApolloCSM
         end
 
         # Compile all into CSM object
-        csm = new(H_SD, H_SR, H_RQ, H_QT, H_DT, H_DL, r_rcs, f_rcs, m, J,
+        csm = new(H_SD, H_SR, H_RQ, H_QT, H_DT, H_DP, r_rcs, f_rcs, m, J,
                   imp_min, imp_max, rcs_select)
 
         return csm
@@ -323,22 +325,41 @@ function RendezvousProblem()::RendezvousProblem
     # ..:: Trajectory ::..
     # >> Boundary conditions <<
     r0 = 50.0*xi+10.0*zi+5.0*yi
-    rf = 0.0*xi
+    # rf = 0.0*xi
     v0 = 0.0*xi
     vf = -0.1*xi
     ω0 = zeros(3)
     ωf = zeros(3)
+
+    H_LP = homtransf(yaw=180)
+    H_LD = H_LP*hominv(csm.H_DP)
+
+    rf = homdisp(H_LD)
+    Rf = homrot(H_LD)
+
+    # println("Rf =")
+    # show(stdout, "text/plain", Rf); println();
+
+    qf = Quaternion(Rf)
+
+    # Rf_2 = dcm(qf)
+    # println("Rf_2 =")
+    # show(stdout, "text/plain", Rf_2); println();
+
     # >> Docking tolerances <<
     rf_tol = 0.1
     vf_tol = 0.01
     ang_tol = deg2rad(1)
     ωf_tol = deg2rad(0.01)
+
+
     # Docking port (inertial) frame
     # Baseline docked configuration
-    q_dock = Quaternion(deg2rad(180), yi)*Quaternion(deg2rad(180), xi)
-    q_init = q_dock*Quaternion(deg2rad(180), zi)*Quaternion(deg2rad(10), yi)
-    q0 = q_init
-    qf = q_dock
+    # q_dock = Quaternion(deg2rad(180), yi)*Quaternion(deg2rad(180), xi)
+    # q_init = q_dock*Quaternion(deg2rad(180), zi)*Quaternion(deg2rad(10), yi)
+    # q0 = q_init
+    q0 = Quaternion(deg2rad(10), yi)
+    # qf = q_dock
     # >> Time of flight <<
     tf_min = 100.0
     tf_max = 500.0
