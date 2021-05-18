@@ -494,32 +494,40 @@ References:
 """
 function logsumexp(
     f::RealVector,
-    ∇f::Union{Nothing, Vector{Vector{Float64}}}=nothing;
+    ∇f::Optional{Vector}=nothing,
+    ∇²f::Optional{Vector}=nothing;
     t::RealValue=1.0)::Union{
+        Tuple{RealValue, RealVector, RealMatrix},
         Tuple{RealValue, RealVector},
         RealValue}
 
     n = length(f)
+    compute_gradient = !isnothing(∇f)
+    compute_hessian = !isnothing(∇²f)
 
     # Value
     a = maximum(t*f)
-    sumexp = sum([exp(t*f[i]-a) for i=1:n])
-    logsumexp = a+log(sumexp)
+    E = sum(exp(t*f[i]-a) for i=1:n)
+    logsumexp = a+log(E)
     L = logsumexp/t
 
-    # Gradient
-    if !isnothing(∇f)
-        ∇L = sum([∇f[i]*exp(t*f[i]-a) for i=1:n])/sumexp
+    if compute_gradient
+        Ei = [exp(t*f[i]-a)/E for i=1:n]
+        ∇L = sum(∇f[i]*Ei[i] for i=1:n)
+        if compute_hessian
+            ∇a = t*∇f[argmax(f)]
+            ∇²L = sum((∇²f[i]+(∇f[i]-∇L)*(t*∇f[i]-∇a)')*Ei[i] for i=1:n)
+            return L, ∇L, ∇²L
+        end
         return L, ∇L
     end
-
     return L
 end # function
 
 """
     sigmoid(f[, ∇f][; κ])
 
-Compute a sigmoid function. The sigmoid represence a logical "OR" combination
+Compute a sigmoid function. The sigmoid represents a logical "OR" combination
 of its argument, in the sense that its value tends to one as any argument
 becomes more positive.
 
@@ -534,23 +542,35 @@ becomes more positive.
 - `σ`: the sigmoid function value.
 - `∇σ`: the sigmoid function gradient. Only returned in ∇f provided.
 """
-function sigmoid(f::RealVector,
-                 ∇f::Union{Nothing, Vector{Vector{Float64}}}=nothing;
+function sigmoid(value::RealVector,
+                 gradient::Optional{Vector}=nothing,
+                 hessian::Optional{Vector}=nothing;
                  κ::RealValue=1.0)::Union{
+                     Tuple{RealValue, RealVector, RealMatrix},
                      Tuple{RealValue, RealVector},
                      RealValue}
 
-    L = logsumexp(f, ∇f; t=κ)
-    if !isnothing(∇f)
+    compute_gradient = !isnothing(gradient)
+    compute_hessian = !isnothing(hessian)
+
+    L = logsumexp(value, gradient, hessian, t=κ)
+
+    if compute_hessian
+        L, ∇L, ∇²L = L
+    elseif compute_gradient
         L, ∇L = L
     end
+
     σ = 1-1/(1+exp(κ*L))
-    if !isnothing(∇f)
-        coeff = exp(κ*L+2*log(1-σ))
-        ∇σ = κ*coeff*∇L
+    if compute_gradient
+        c = exp(κ*L+2*log(1-σ))
+        ∇σ = κ*c*∇L
+        if compute_hessian
+            ∇²σ = κ*(1-2*σ)*∇L*∇σ'+κ*c*∇²L
+            return σ, ∇σ, ∇²σ
+        end
         return σ, ∇σ
     end
-
     return σ
 end # function
 
@@ -575,30 +595,32 @@ set is defined as any time either element of f is nonnegative.
 - `δ`: the sigmoid function value.
 - `∇δ`: the sigmoid function gradient. Only returned in ∇f provided.
 """
-function indicator(f::RealVector,
-                   ∇f::Union{Nothing, Vector{Vector{Float64}}}=nothing;
+function indicator(value::RealVector,
+                   gradient::Optional{Vector}=nothing,
+                   hessian::Optional{Vector}=nothing;
                    κ::RealValue=1.0,
                    match::Optional{RealVector}=nothing)::Union{
+                       Tuple{RealValue, RealVector, RealMatrix},
                        Tuple{RealValue, RealVector},
                        RealValue}
 
+    compute_gradient = !isnothing(gradient)
+    match_value = !isnothing(match)
+
     # Output value matching
-    if isnothing(match)
-        Δσ = 0
-    else
-        offset = Utils.sigmoid(match; κ=κ)
+    Δσ = 0
+    if match_value
+        offset = sigmoid(match; κ=κ)
         Δσ = 1-offset
     end
 
     # Compute sigmoid
-    σ = Utils.sigmoid(f, ∇f; κ=κ)
-    σ = isnothing(∇f) ? σ+Δσ : (σ[1]+Δσ, σ[2])
-
-    if !isnothing(∇f)
-        σ, ∇σ = σ
-        return σ, ∇σ
+    σ = sigmoid(value, gradient, hessian, κ=κ)
+    if compute_gradient
+        σ = (σ[1]+Δσ, σ[2:end]...)
+        return σ
     end
-    return σ
+    return σ+Δσ
 end # function
 
 """
@@ -624,10 +646,13 @@ scaling of the predicates.
 - `OR`: the smooth OR value (1≡true).
 - `∇OR`: the smooth OR gradient. Only returned in `∇f` provided.
 """
-function or(predicates...;
+function or(predicates::RealVector,
+            gradient::Optional{Vector}=nothing,
+            hessian::Optional{Vector}=nothing;
             κ::RealValue=1.0,
             match::Optional{Union{RealValue, RealVector}}=nothing,
             normalize::RealValue=1.0)::Union{
+                Tuple{RealValue, RealVector, RealMatrix},
                 Tuple{RealValue, RealVector},
                 RealValue}
 
@@ -640,17 +665,21 @@ function or(predicates...;
         match = [match]
     end
 
-    if typeof(predicates[1])<:Tuple
-        ∇scale = ∇p -> ∇p/normalize
-        f = collect(map(p->scale(p[1]), predicates))
-        ∇f = collect(map(p->∇scale(p[2]), predicates))
-        OR, ∇OR = indicator(f, ∇f; κ=κ, match=match)
-        return OR, ∇OR
-    else
-        f = collect(map(scale, predicates))
-        OR = indicator(f; κ=κ, match=match)
-        return OR
+    compute_gradient = !isnothing(gradient)
+    compute_hessian = !isnothing(hessian)
+
+    predicates = collect(map(scale, predicates))
+    if compute_gradient
+        gradient = collect(map(scale, gradient))
     end
+    if compute_hessian
+        hessian = collect(map(scale, hessian))
+    end
+
+    OR = indicator(predicates, gradient, hessian,
+                   κ=κ, match=match)
+
+    return OR
 end # function
 
 """

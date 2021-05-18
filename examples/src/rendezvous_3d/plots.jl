@@ -531,7 +531,7 @@ function plot_inputs(mdl::RendezvousProblem,
         or_mib_normalize = veh.csm.imp_max-veh.csm.imp_min
         above_mib = (fr)->fr-veh.csm.imp_min
         f_polar = (hom) -> map(fr_rng) do fr
-            or(above_mib(fr);
+            or([above_mib(fr)],
                κ=hom, match=or_mib_normalize,
                normalize=or_mib_normalize)*fr
         end

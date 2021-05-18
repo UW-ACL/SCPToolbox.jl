@@ -211,7 +211,7 @@ function set_cost!(pbm::TrajectoryProblem,
             f_min = veh.csm.imp_min
             f_max = veh.csm.imp_max
 
-            return sum(f)/f_max+traj.γ*feq/f_min
+            return sum(f)/f_max#+traj.γ*feq/f_min
         end)
 
     return nothing
@@ -467,13 +467,60 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
     veh = pbm.mdl.vehicle
     traj = pbm.mdl.traj
     n_rcs = length(veh.id_rcs)
-    _common_s_sz = 2*n_rcs+4
+    _common_s_sz = 3*n_rcs+4
 
     # Normalization parameters (max values of OR predicates)
     fmax = veh.csm.imp_max
     fmin = veh.csm.imp_min
     or_mib_max = fmax-fmin
     or_plume_max = norm(traj.r0)-traj.r_appch
+
+    mib_logic = (fr) -> begin
+        OR, ∇OR, ∇²OR = [], [], []
+        for i=1:length(fr)
+            value_mib = [fr[i]-fmin]
+            grad_mib = [[1.0]]
+            hess_mib = [fill(0.0, 1, 1)]
+            out = or(value_mib, grad_mib, hess_mib,
+                     κ=traj.hom, match=or_mib_max,
+                     normalize=or_mib_max)
+            push!(OR, out[1])
+            push!(∇OR, out[2][1]) # (scalarize)
+            push!(∇²OR, out[3][1, 1]) # (scalarize)
+        end
+        if length(fr)==1
+            OR, ∇OR, ∇²OR = OR[1], ∇OR[1], ∇²OR[1]
+        end
+        return OR, ∇OR, ∇²OR
+    end
+
+    δ_mib = 1 # Numerical check distance
+    mib_inflection = () -> begin
+        fr_db = [fmin]
+        fr_db_plus = [fmin+δ_mib]
+        fr_db_minus = [fmin-δ_mib]
+
+        OR_db, ∇OR_db, _ = mib_logic(fr_db)
+        OR_db_plus, ∇OR_db_plus, _ = mib_logic(fr_db_plus)
+        OR_db_minus, ∇OR_db_minus, _ = mib_logic(fr_db_minus)
+
+        grad = ∇OR_db*fr_db[1]+OR_db
+        grad_plus = ∇OR_db_plus*fr_db_plus[1]+OR_db_plus
+        grad_minus = ∇OR_db_minus*fr_db_minus[1]+OR_db_minus
+
+        return grad>grad_minus && grad>grad_plus
+    end
+    # γ = 0.9 # TODO put into parameters
+
+    rcs_quads = (:A, :B, :C, :D)
+    plume_logic = (r) -> begin
+        value_plume = [r'*r-traj.r_appch^2]
+        grad_plume = [2*r]
+        OR, ∇OR = or(value_plume, grad_plume,
+                     κ=traj.hom, match=or_plume_max,
+                     normalize=or_plume_max)
+        return OR, ∇OR
+    end
 
     problem_set_s!(
         pbm, algo,
@@ -484,31 +531,35 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
 
             s = zeros(_common_s_sz)
 
+            # Minimum impulse bit
+            fr = map(i->u[veh.id_rcs_ref[i]], 1:n_rcs)
+            OR, ∇OR, _ = mib_logic(fr)
             for i=1:n_rcs
-                id_f, id_fr = veh.id_rcs[i], veh.id_rcs_ref[i]
-                f, fr = u[id_f], u[id_fr]
-                above_mib = fr-fmin
-                OR = or(above_mib;
-                        κ=traj.hom,
-                        match=or_mib_max,
-                        normalize=or_mib_max)
-                s[2*(i-1)+1] = f-OR*fr
-                s[2*(i-1)+2] = OR*fr-f
+                f = u[veh.id_rcs[i]]
+                s[3*(i-1)+1] = f-OR[i]*fr[i]
+                s[3*(i-1)+2] = OR[i]*fr[i]-f
+            end
+
+            # Forbid exploiting of deadband relaxation
+            if mib_inflection()
+                fr_db = [fmin+δ_mib]
+                OR_db, ∇OR_db, _ = mib_logic(fr_db)
+                mib_max_grad = ∇OR_db*fr_db[1]+OR_db
+                # fr_db = [fmin]
+                # OR_db, ∇OR_db, _ = mib_logic(fr_db)
+                # mib_max_grad = (∇OR_db*fr_db[1]+OR_db)*γ
+                for i=1:n_rcs
+                    dfdfr = ∇OR[i]*fr[i]+OR[i]
+                    s[3*(i-1)+3] = dfdfr-mib_max_grad
+                end
             end
 
             # No firing near the target by forward-facing thrusters
-            quads = (:A, :B, :C, :D)
             r = x[veh.id_r]
+            OR, _ = plume_logic(r)
             for i=1:4
-                j = veh.csm.rcs_select[quads[i], :pf]
-                id_f = veh.id_rcs[j]
-                f = u[id_f]
-                can_fire = r'*r-traj.r_appch^2
-                OR = or(can_fire;
-                        κ=traj.hom,
-                        match=or_plume_max,
-                        normalize=or_plume_max)
-                s[2*n_rcs+i] = f-OR*fmax
+                f = u[veh.id_rcs[veh.csm.rcs_select[rcs_quads[i], :pf]]]
+                s[3*n_rcs+i] = f-OR*fmax
             end
 
             return s
@@ -520,16 +571,10 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
             C = zeros(_common_s_sz, pbm.nx)
 
             # No firing near the target by forward-facing thrusters
-            quads = (:A, :B, :C, :D)
             r = x[veh.id_r]
+            _, ∇OR = plume_logic(r)
             for i=1:4
-                can_fire = r'*r-traj.r_appch^2
-                ∇can_fire = 2*r
-                OR, ∇OR = or((can_fire, ∇can_fire);
-                             κ=traj.hom,
-                             match=or_plume_max,
-                             normalize=or_plume_max)
-                C[2*n_rcs+i, veh.id_r] = -∇OR*fmax
+                C[3*n_rcs+i, veh.id_r] = -∇OR*fmax
             end
 
             return C
@@ -541,28 +586,31 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
 
             D = zeros(_common_s_sz, pbm.nu)
 
-            for i = 1:n_rcs
+            # Minimum impulse bit
+            fr = map(i->u[veh.id_rcs_ref[i]], 1:n_rcs)
+            OR, ∇OR, ∇²OR = mib_logic(fr)
+            for i=1:n_rcs
                 id_f, id_fr = veh.id_rcs[i], veh.id_rcs_ref[i]
-                fr = u[id_fr]
-                above_mib = fr-fmin
-                ∇above_mib = [1.0]
-                OR, ∇OR = or((above_mib, ∇above_mib);
-                             κ=traj.hom,
-                             match=or_mib_max,
-                             normalize=or_mib_max)
-                ∇ORfr = ∇OR[1]*fr+OR
-                D[2*(i-1)+1, id_f] = 1.0
-                D[2*(i-1)+1, id_fr] = -∇ORfr
-                D[2*(i-1)+2, id_f] = -1.0
-                D[2*(i-1)+2, id_fr] = ∇ORfr
+                ∇ORfr = ∇OR[i]*fr[i]+OR[i]
+                D[3*(i-1)+1, id_f] = 1.0
+                D[3*(i-1)+1, id_fr] = -∇ORfr
+                D[3*(i-1)+2, id_f] = -1.0
+                D[3*(i-1)+2, id_fr] = ∇ORfr
+            end
+
+            # Forbid exploiting of deadband relaxation
+            if mib_inflection()
+                for i=1:n_rcs
+                    id_fr = veh.id_rcs_ref[i]
+                    d2fdfr2 = ∇²OR[i]*fr[i]+2*∇OR[i]
+                    D[3*(i-1)+3, id_fr] = d2fdfr2
+                end
             end
 
             # No firing near the target by forward-facing thrusters
-            quads = (:A, :B, :C, :D)
             for i=1:4
-                j = veh.csm.rcs_select[quads[i], :pf]
-                id_f = veh.id_rcs[j]
-                D[2*n_rcs+i, id_f] = 1.0
+                id_f = veh.id_rcs[veh.csm.rcs_select[rcs_quads[i], :pf]]
+                D[3*n_rcs+i, id_f] = 1.0
             end
 
             return D
