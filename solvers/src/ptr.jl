@@ -997,11 +997,11 @@ function check_stopping_criterion!(spbm::Subproblem)::Bool
     # Check predicted cost improvement
     J_ref = ref.J_aug
     J_sol = sol.J_aug
-    sol.improv_rel = abs(J_ref-J_sol)/abs(J_ref)
+    sol.improv_rel = (J_ref-J_sol)/abs(J_ref)
 
     # Compute stopping criterion
     stop = (spbm.iter>1 &&
-        (sol.feas && (sol.improv_rel<=ε_rel || sol.deviation<=ε_abs)))
+        (sol.feas && (abs(sol.improv_rel)<=ε_rel || sol.deviation<=ε_abs)))
 
     return stop
 end # function

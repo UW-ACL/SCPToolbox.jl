@@ -25,7 +25,7 @@ if LangServer
     using .Parser
     import .Parser.ConicLinearProgram: @add_constraint
     import .Parser.ConicLinearProgram: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
-    import .Utils.Types: slerp_interpolate, Log, skew
+    import .Utils.Types: slerp_interpolate, Log, skew, rotate, ddq
 end
 
 using Printf
@@ -124,7 +124,9 @@ function set_callback!(pbm::TrajectoryProblem)::Nothing
 
             # >> Update logic for homotopy value <<
 
-            increase_homotopy = sol.improv_rel<=mdl.traj.β
+            worsen_tol = -1e-1/100
+            increase_homotopy = (sol.improv_rel<=mdl.traj.β &&
+                sol.improv_rel>=worsen_tol)
 
             i_last = haskey(ref.bay, :last_update) ? ref.bay[:last_update] : 1
             if increase_homotopy
@@ -206,10 +208,12 @@ function set_cost!(pbm::TrajectoryProblem,
             veh = pbm.mdl.vehicle
 
             f = u[veh.id_rcs]
+            feq = u[veh.id_rcs_eq]
 
+            f_min = veh.csm.imp_min
             f_max = veh.csm.imp_max
 
-            return sum(f)/f_max
+            return sum(f)/f_max+3e-1*sum(feq)/f_min
         end)
 
     return nothing
@@ -234,13 +238,15 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
 
             n_rcs = length(veh.id_rcs)
             dir_rcs = [veh.csm.f_rcs[veh.csm.rcs_select[i]] for i=1:n_rcs]
+            dir_rcs_iner = [rotate(dir_rcs[i], q) for i=1:n_rcs]
             pos_rcs = [veh.csm.r_rcs[veh.csm.rcs_select[i]] for i=1:n_rcs]
             iJ = inv(veh.csm.J)
             xi, yi, zi = env.xi, env.yi, env.zi
             norb = env.n
 
             f = zeros(pbm.nx)
-            f[veh.id_v] = sum(rcs[i]*dir_rcs[i] for i=1:n_rcs)/veh.csm.m
+            # f[veh.id_v] = sum(rcs[i]*dir_rcs[i] for i=1:n_rcs)/veh.csm.m
+            f[veh.id_v] = sum(rcs[i]*dir_rcs_iner[i] for i=1:n_rcs)/veh.csm.m
             f[veh.id_ω] = iJ*sum(rcs[i]*cross(pos_rcs[i], dir_rcs[i])
                                  for i=1:n_rcs)
             if !impulse
@@ -267,11 +273,15 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             v = x[veh.id_v]
             q = Quaternion(x[veh.id_q])
             ω = x[veh.id_ω]
+            rcs = u[veh.id_rcs]
 
+            n_rcs = length(veh.id_rcs)
+            dir_rcs = [veh.csm.f_rcs[veh.csm.rcs_select[i]] for i=1:n_rcs]
             xi, yi, zi = env.xi, env.yi, env.zi
             norb = env.n
 
             # Rigid body terms
+            dfvdq = sum(rcs[i]*ddq(q, dir_rcs[i]) for i=1:n_rcs)/veh.csm.m
             dfqdq = 0.5*skew(Quaternion(ω), :R)
             dfqdω = 0.5*skew(q)
             dfωdω = -veh.csm.J\(skew(ω)*veh.csm.J-skew(veh.csm.J*ω))
@@ -284,6 +294,7 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             A[veh.id_r, veh.id_v] = I(3)
             A[veh.id_v, veh.id_r] = dfvdr
             A[veh.id_v, veh.id_v] = dfvdv
+            A[veh.id_v, veh.id_q] = dfvdq
             A[veh.id_q, veh.id_q] = dfqdq
             A[veh.id_q, veh.id_ω] = dfqdω[:, 1:3]
             A[veh.id_ω, veh.id_ω] = dfωdω
@@ -296,16 +307,18 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             veh = pbm.mdl.vehicle
             impulse = k<0
 
+            q = Quaternion(x[veh.id_q])
             tdil = p[veh.id_t]
 
             n_rcs = length(veh.id_rcs)
             dir_rcs = [veh.csm.f_rcs[veh.csm.rcs_select[i]] for i=1:n_rcs]
+            dir_rcs_iner = [rotate(dir_rcs[i], q) for i=1:n_rcs]
             pos_rcs = [veh.csm.r_rcs[veh.csm.rcs_select[i]] for i=1:n_rcs]
             iJ = inv(veh.csm.J)
 
             B = zeros(pbm.nx, pbm.nu)
             for i=1:n_rcs
-                B[veh.id_v, veh.id_rcs[i]] = dir_rcs[i]/veh.csm.m
+                B[veh.id_v, veh.id_rcs[i]] = dir_rcs_iner[i]/veh.csm.m
             end
             for i=1:n_rcs
                 B[veh.id_ω, veh.id_rcs[i]] = iJ*cross(pos_rcs[i], dir_rcs[i])
@@ -527,23 +540,25 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
 
             s = zeros(_common_s_sz)
 
-            # Minimum impulse bit
-            fr = map(i->u[veh.id_rcs_ref[i]], 1:n_rcs)
-            OR, ∇OR, _ = mib_logic(fr)
-            for i=1:n_rcs
-                f = u[veh.id_rcs[i]]
-                s[3*(i-1)+1] = f-OR[i]*fr[i]
-                s[3*(i-1)+2] = OR[i]*fr[i]-f
-            end
-
-            # Forbid exploiting of deadband relaxation
-            if mib_inflection()
-                fr_db = [fmin+traj.γ]
-                OR_db, ∇OR_db, _ = mib_logic(fr_db)
-                mib_max_grad = ∇OR_db*fr_db[1]+OR_db
+            if traj.mib
+                # Minimum impulse bit
+                fr = map(i->u[veh.id_rcs_ref[i]], 1:n_rcs)
+                OR, ∇OR, _ = mib_logic(fr)
                 for i=1:n_rcs
-                    dfdfr = ∇OR[i]*fr[i]+OR[i]
-                    s[3*(i-1)+3] = dfdfr-mib_max_grad
+                    f = u[veh.id_rcs[i]]
+                    s[3*(i-1)+1] = f-OR[i]*fr[i]
+                    s[3*(i-1)+2] = OR[i]*fr[i]-f
+                end
+
+                # Forbid exploiting of deadband relaxation
+                if mib_inflection()
+                    fr_db = [fmin+traj.γ]
+                    OR_db, ∇OR_db, _ = mib_logic(fr_db)
+                    mib_max_grad = ∇OR_db*fr_db[1]+OR_db
+                    for i=1:n_rcs
+                        dfdfr = ∇OR[i]*fr[i]+OR[i]
+                        s[3*(i-1)+3] = dfdfr-mib_max_grad
+                    end
                 end
             end
 
@@ -579,24 +594,26 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
 
             D = zeros(_common_s_sz, pbm.nu)
 
-            # Minimum impulse bit
-            fr = map(i->u[veh.id_rcs_ref[i]], 1:n_rcs)
-            OR, ∇OR, ∇²OR = mib_logic(fr)
-            for i=1:n_rcs
-                id_f, id_fr = veh.id_rcs[i], veh.id_rcs_ref[i]
-                ∇ORfr = ∇OR[i]*fr[i]+OR[i]
-                D[3*(i-1)+1, id_f] = 1.0
-                D[3*(i-1)+1, id_fr] = -∇ORfr
-                D[3*(i-1)+2, id_f] = -1.0
-                D[3*(i-1)+2, id_fr] = ∇ORfr
-            end
-
-            # Forbid exploiting of deadband relaxation
-            if mib_inflection()
+            if traj.mib
+                # Minimum impulse bit
+                fr = map(i->u[veh.id_rcs_ref[i]], 1:n_rcs)
+                OR, ∇OR, ∇²OR = mib_logic(fr)
                 for i=1:n_rcs
-                    id_fr = veh.id_rcs_ref[i]
-                    d2fdfr2 = ∇²OR[i]*fr[i]+2*∇OR[i]
-                    D[3*(i-1)+3, id_fr] = d2fdfr2
+                    id_f, id_fr = veh.id_rcs[i], veh.id_rcs_ref[i]
+                    ∇ORfr = ∇OR[i]*fr[i]+OR[i]
+                    D[3*(i-1)+1, id_f] = 1.0
+                    D[3*(i-1)+1, id_fr] = -∇ORfr
+                    D[3*(i-1)+2, id_f] = -1.0
+                    D[3*(i-1)+2, id_fr] = ∇ORfr
+                end
+
+                # Forbid exploiting of deadband relaxation
+                if mib_inflection()
+                    for i=1:n_rcs
+                        id_fr = veh.id_rcs_ref[i]
+                        d2fdfr2 = ∇²OR[i]*fr[i]+2*∇OR[i]
+                        D[3*(i-1)+3, id_fr] = d2fdfr2
+                    end
                 end
             end
 

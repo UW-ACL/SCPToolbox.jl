@@ -24,7 +24,7 @@ end
 import Base: *, adjoint, vec, getindex
 import ..skew
 
-export Quaternion, dcm, rpy, slerp_interpolate, rotate, Log, skew
+export Quaternion, dcm, rpy, slerp_interpolate, rotate, Log, skew, ddq
 
 """
 `Quaternion` encodes a quaternion object. Stored in vectorized form/indexing,
@@ -488,4 +488,26 @@ function slerp_interpolate(q0::Quaternion,
     Δq_t = Quaternion(τ*Δα, Δa)
     qt = q0*Δq_t
     return qt
+end # function
+
+"""
+    ddq(q, a)
+
+Compute the Jacobian with respect to `q` of the rotation operation `q*a*q'`.
+
+# Arguments
+- `q`: the unit quaternion being used for rotation, and the onw with respect to
+  which the derivative is taken.
+- `a`: the vector being rotated.
+
+# Returns
+- `J`: the jacobian ``\\frac{\\partial(q\\otimes a\\otimes q^*)}{\\partial
+  q}``.
+"""
+function ddq(q::Quaternion, a::RealVector)::RealMatrix
+    J = RealMatrix(undef, 3, 4)
+    J[:, 1] = q.w*a+cross(q.v, a)
+    J[:, 2:4] = dot(q.v, a)*I(3)+q.v*a'-a*q.v'-q.w*skew(a)
+    J *= 2
+    return J
 end # function

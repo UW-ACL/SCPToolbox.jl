@@ -40,7 +40,7 @@ include("tree.jl")
 end # module
 
 using .Types
-export Quaternion, dcm, rpy, slerp_interpolate, rotate, Log, skew
+export Quaternion, dcm, rpy, slerp_interpolate, rotate, Log, skew, ddq
 export Ellipsoid, project, ∇
 export Hyperrectangle
 export DLTV

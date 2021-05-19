@@ -59,8 +59,18 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
     ct_pos = hcat([sample(sol.xc, τ)[veh.id_r] for τ in ct_τ]...) #noerr
     ct_vel = hcat([sample(sol.xc, τ)[veh.id_v] for τ in ct_τ]...) #noerr
     ct_speed = squeeze(mapslices(norm, ct_vel, dims=(1)))
-    dt_thrust = sum(sol.ud[veh.id_rcs[i], :]*
-        veh.csm.f_rcs[veh.csm.rcs_select[i]]' for i=1:length(veh.id_rcs))'
+    n_rcs = length(veh.id_rcs)
+    N = size(sol.ud, 2)
+    dt_thrust = zeros(3, N)
+    dir_rcs = [veh.csm.f_rcs[veh.csm.rcs_select[i]] for i=1:n_rcs]
+    for k = 1:size(dt_thrust, 2)
+        q = Quaternion(sol.xd[veh.id_q, k])
+        dir_rcs_iner = [rotate(dir_rcs[i], q) for i=1:n_rcs] #noerr
+        dt_thrust[:, k] = sum(sol.ud[veh.id_rcs[i], k]*dir_rcs_iner[i]
+                              for i=1:n_rcs)
+    end
+    # dt_thrust = sum(sol.ud[veh.id_rcs[i], :]*
+    #     veh.csm.f_rcs[veh.csm.rcs_select[i]]' for i=1:)'
 
     # Colormap
     v_cmap = generate_colormap("inferno";
