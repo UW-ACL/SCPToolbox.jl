@@ -357,7 +357,7 @@ function RendezvousProblem()::RendezvousProblem
     β = 1e1/100
     γc = 3e-1
     γg = 5.0
-    hom_steps = 15 # Number of homotopy values to sweep through
+    hom_steps = 10 # Number of homotopy values to sweep through
     hom_obj = Homotopy(1e-2; δ_max=10.0) #noerr
     hom_grid = map(hom_obj, LinRange(0.0, 1.0, hom_steps))
     hom = hom_grid[1]
