@@ -72,7 +72,7 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
 
     # >> States <<
     env = mdl.env
-    r0 = 50.0*env.xi-10.0*env.zi+20.0*env.yi
+    r0 = traj.r0#50.0*env.xi-10.0*env.zi+20.0*env.yi
     r0_nrm = norm(r0)
     v_max = r0_nrm/traj.tf_min
     rot_ang, _ = Log(traj.q0'*traj.qf)
@@ -173,7 +173,7 @@ function set_guess!(pbm::TrajectoryProblem)::Nothing
 
             # >> Parameter guess <<
             p = zeros(pbm.np)
-            flight_time = 0.5*(traj.tf_min+traj.tf_max)
+            flight_time = 0.8*(traj.tf_min+traj.tf_max)
             p[veh.id_t] = flight_time
 
             # >> Input guess <<
