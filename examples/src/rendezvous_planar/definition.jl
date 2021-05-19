@@ -147,7 +147,7 @@ function set_cost!(pbm::TrajectoryProblem,
 
     problem_set_running_cost!(
         pbm, algo,
-        (t, k, x, u, p, q, pbm) -> begin
+        (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
             l1f = u[veh.id_l1f]
@@ -156,8 +156,6 @@ function set_cost!(pbm::TrajectoryProblem,
             f_nrml = veh.f_max
             runn = sum(l1f)/f_nrml
             runn += traj.γ*sum(l1feq)/f_nrml
-            # f_nrml = veh.f_max^2
-            # runn = sum(f.^2)/f_nrml
             return runn
         end)
 

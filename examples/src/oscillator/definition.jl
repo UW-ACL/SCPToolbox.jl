@@ -40,7 +40,6 @@ function define_problem!(pbm::TrajectoryProblem,
                          algo::Symbol)::Nothing
 
     set_dims!(pbm)
-    set_constants!(pbm)
     set_scale!(pbm)
     set_cost!(pbm, algo)
     set_dynamics!(pbm)
@@ -58,21 +57,7 @@ function set_dims!(pbm::TrajectoryProblem)::Nothing
     # Parameters
     np = pbm.mdl.vehicle.id_l1r[end]
 
-    problem_set_dims!(pbm, 2, 4, np, 1)
-
-    return nothing
-end # function
-
-function set_constants!(pbm::TrajectoryProblem)::Nothing
-
-    problem_set_constants!(
-        pbm, (pbm) -> begin
-            veh = pbm.mdl.vehicle
-            traj = pbm.mdl.traj
-            q = zeros(pbm.nq)
-            q[veh.id_γ] = traj.γ
-            return q
-        end)
+    problem_set_dims!(pbm, 2, 4, np)
 
     return nothing
 end # function
@@ -149,14 +134,13 @@ function set_cost!(pbm::TrajectoryProblem,
 
     problem_set_running_cost!(
         pbm, algo,
-        (t, k, x, u, p, q, pbm) -> begin
+        (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
 
             l1aa = u[veh.id_l1aa]
             l1adiff = u[veh.id_l1adiff]
             l1r = p[veh.id_l1r[k]]
-            γ = q[veh.id_γ]
 
             r_nrml = traj.r0
             a_nrml = veh.a_max
@@ -164,27 +148,9 @@ function set_cost!(pbm::TrajectoryProblem,
             # Compute value
             f = l1r/r_nrml
             f += traj.α*l1aa/a_nrml
-            f += γ*l1adiff/a_nrml
+            f += traj.γ*l1adiff/a_nrml
 
-            if x isa Array{T} where {T<:Real}
-                # Jacobians
-                J = Dict()
-
-                J[:u] = zeros(pbm.nu)
-                J[:p] = zeros(pbm.np)
-                J[:q] = zeros(pbm.nq)
-                J[:u][veh.id_l1aa] = traj.α/a_nrml
-                J[:u][veh.id_l1adiff] = γ/a_nrml
-                J[:p][veh.id_l1r[k]] = 1/r_nrml
-                J[:q][veh.id_γ] = l1adiff/a_nrml
-
-                J[(:q, :u)] = zeros(pbm.nu, pbm.nq)
-                J[(:q, :u)][veh.id_l1adiff, veh.id_γ] = 1/a_nrml
-
-                return f, J
-            else
-                return f
-            end
+            return f
         end)
 
     return nothing

@@ -204,7 +204,7 @@ function set_cost!(pbm::TrajectoryProblem,
 
     problem_set_running_cost!(
         pbm, algo,
-        (t, k, x, u, p, q, pbm) -> begin
+        (t, k, x, u, p, pbm) -> begin
             traj = pbm.mdl.traj
             veh = pbm.mdl.vehicle
 

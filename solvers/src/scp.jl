@@ -58,12 +58,9 @@ struct SCPScaling
     cu::RealVector  # Input scaling offset vector
     Sp::RealMatrix  # Parameter scaling coefficient matrix
     cp::RealVector  # Parameter scaling offset matrix
-    Sq::RealMatrix  # Constant parameter scaling coefficient matrix
-    cq::RealVector  # Constant parameter scaling offset matrix
     iSx::RealMatrix # Inverse of state scaling matrix
     iSu::RealMatrix # Inverse of input scaling matrix
     iSp::RealMatrix # Inverse of parameter scaling coefficient matrix
-    iSq::RealMatrix # Inverse of constant parameter scaling coefficient matrix
 end # struct
 
 """" Common constant terms used throughout the algorithm."""
@@ -370,28 +367,23 @@ function compute_scaling(
     nx = traj.nx
     nu = traj.nu
     np = traj.np
-    nq = traj.nq
     solver = pars.solver
     solver_opts = pars.solver_opts
     zero_intvl_tol = sqrt(eps())
-    add! = CLP.add!
 
     # Map varaibles to these scaled intervals
     intrvl_x = [0.0; 1.0]
     intrvl_u = [0.0; 1.0]
     intrvl_p = [0.0; 1.0]
-    intrvl_q = [0.0; 1.0]
 
     # >> Compute physical variable bounding boxes <<
 
     x_bbox = fill(1.0, nx, 2)
     u_bbox = fill(1.0, nu, 2)
     p_bbox = fill(1.0, np, 2)
-    q_bbox = fill(1.0, nq, 2)
     x_bbox[:, 1] .= 0.0
     u_bbox[:, 1] .= 0.0
     p_bbox[:, 1] .= 0.0
-    q_bbox[:, 1] .= 0.0
 
     defs = [Dict(:dim => nx,
                  :set => traj.X,
@@ -462,19 +454,10 @@ function compute_scaling(
         end
     end
 
-    for j = 1:2 # 1:min, 2:max
-        for i = 1:nq
-            if !isnothing(traj.qrg[i])
-                q_bbox[i, j] = traj.qrg[i][j]
-            end
-        end
-    end
-
     # >> Compute scaling matrices and offset vectors <<
     wdth_x = intrvl_x[2]-intrvl_x[1]
     wdth_u = intrvl_u[2]-intrvl_u[1]
     wdth_p = intrvl_p[2]-intrvl_p[1]
-    wdth_q = intrvl_q[2]-intrvl_q[1]
 
     # State scaling terms
     x_min, x_max = x_bbox[:, 1], x_bbox[:, 2]
@@ -501,16 +484,8 @@ function compute_scaling(
     cp = p_min-diag_Sp*intrvl_p[1]
 
     # Constant parameter scaling terms
-    q_min, q_max = q_bbox[:, 1], q_bbox[:, 2]
-    diag_Sq = (q_max-q_min)/wdth_q
-    diag_Sq[diag_Sq .< zero_intvl_tol] .= 1.0
-    Sq = collect(Diagonal(diag_Sq))
-    iSq = inv(Sq)
-    cq = q_min-diag_Sq*intrvl_q[1]
 
-    # Constant parameter scaling terms
-
-    scale = SCPScaling(Sx, cx, Su, cu, Sp, cp, Sq, cq, iSx, iSu, iSp, iSq)
+    scale = SCPScaling(Sx, cx, Su, cu, Sp, cp, iSx, iSu, iSp)
 
     return scale
 end # function
@@ -641,16 +616,10 @@ function add_nonconvex_constraints!(
             xk, uk, vsk = x[:,k], u[:,k], spbm.vs[:, k]
 
             @add_constraint(prg, NONPOS, "path_ncvx",
-                            (xk, uk, p, vsk), begin # Value
+                            (xk, uk, p, vsk), begin
                                 local xk, uk, p, vsk = arg #noerr
                                 local lhs = C*xk+D*uk+G*p+r
                                 lhs-vsk
-                            end, begin # Jacobians
-                                if LangServer; local J = Dict(); end
-                                J[1] = C
-                                J[2] = D
-                                J[3] = G
-                                J[4] = -collect(Int, I(ns))
                             end)
         else
             break
@@ -698,26 +667,17 @@ function add_bcs!(
         if relaxed
             spbm.vic = @new_variable(prg, nic, "vic")
             @add_constraint(prg, ZERO, "initial_condition",
-                            (x0, p, spbm.vic), begin # Value
+                            (x0, p, spbm.vic), begin
                                 local x0, p, vic = arg #noerr
                                 local lhs = H0*x0+K0*p+ℓ0
                                 lhs+vic
-                            end, begin # Jacobian
-                                if LangServer; local J = Dict(); end
-                                J[1] = H0
-                                J[2] = K0
-                                J[3] = collect(Int, I(nic))
                             end)
         else
             @add_constraint(prg, ZERO, "initial_condition",
-                            (x0, p), begin # Value
+                            (x0, p), begin
                                 local x0, p = arg #noerr
                                 local lhs = H0*x0+K0*p+ℓ0
                                 lhs
-                            end, begin # Jacobian
-                                if LangServer; local J = Dict(); end
-                                J[1] = H0
-                                J[2] = K0
                             end)
         end
     end
@@ -733,26 +693,17 @@ function add_bcs!(
         if relaxed
             spbm.vtc = @new_variable(prg, ntc, "vtc")
             @add_constraint(prg, ZERO, "terminal_condition",
-                            (xf, p, spbm.vtc), begin # Value
+                            (xf, p, spbm.vtc), begin
                                 local xf, p, vtc = arg #noerr
                                 local lhs = Hf*xf+Kf*p+ℓf
                                 lhs+vtc
-                            end, begin # Jacobian
-                                if LangServer; local J = Dict(); end
-                                J[1] = Hf
-                                J[2] = Kf
-                                J[3] = collect(Int, I(ntc))
                             end)
         else
             @add_constraint(prg, ZERO, "terminal_condition",
-                            (xf, p), begin # Value
+                            (xf, p), begin
                                 local xf, p = arg #noerr
                                 local lhs = Hf*xf+Kf*p+ℓf
                                 lhs
-                            end, begin # Jacobian
-                                if LangServer; local J = Dict(); end
-                                J[1] = Hf
-                                J[2] = Kf
                             end)
         end
     end

@@ -34,7 +34,7 @@ using Utils
 export TrajectoryProblem
 export problem_set_dims!, problem_advise_scale!,
     problem_set_integration_action!, problem_set_guess!,
-    problem_set_callback!, problem_set_constants!, problem_set_terminal_cost!,
+    problem_set_callback!, problem_set_terminal_cost!,
     problem_set_running_cost!, problem_set_dynamics!, problem_set_X!,
     problem_set_U!, problem_set_s!, problem_set_bc!, problem_add_table_column!
 export DiscretizationType, FOH, IMPULSE
@@ -57,16 +57,12 @@ mutable struct TrajectoryProblem
     nx::Int             # Number of state variables
     nu::Int             # Number of input variables
     np::Int             # Number of parameter variables
-    nq::Int             # Number of parameter constants
     # >> Variable scaling advice <<
     xrg::VectorOfTuples # State bounds
     urg::VectorOfTuples # Input bounds
     prg::VectorOfTuples # Variable parameter bounds
-    qrg::VectorOfTuples # Constant parameter bounds
     # >> Numerical integration <<
     integ_actions::SIA  # Special variable treatment
-    # >> Constant parameter value <<
-    setq::Func          # Sets the constant parameter's value
     # >> Initial guess <<
     guess::Func         # (SCvx/GuSTO) The initial trajectory guess
     # >> Callback during solution <<
@@ -126,13 +122,10 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     nx = 0
     nu = 0
     np = 0
-    nq = 0
     xrg = VectorOfTuples(undef, 0)
     urg = VectorOfTuples(undef, 0)
     prg = VectorOfTuples(undef, 0)
-    qrg = VectorOfTuples(undef, 0)
     propag_actions = SIA(undef, 0)
-    setq = nothing
     guess = nothing
     callback! = nothing
     φ = nothing
@@ -167,11 +160,11 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     scp = nothing
     table_cols = TableColumnDef[]
 
-    pbm = TrajectoryProblem(nx, nu, np, nq, xrg, urg, prg, qrg, propag_actions,
-                            setq, guess, callback!, φ, Γ, S, dSdp, ℓ, dℓdx,
-                            dℓdp, g, dgdx, dgdp, S_cvx, ℓ_cvx, g_cvx, f, A, B,
-                            F, X, U, s, C, D, G, gic, H0, K0, gtc, Hf, Kf, mdl,
-                            scp, table_cols)
+    pbm = TrajectoryProblem(nx, nu, np, xrg, urg, prg, propag_actions, guess,
+                            callback!, φ, Γ, S, dSdp, ℓ, dℓdx, dℓdp, g, dgdx,
+                            dgdp, S_cvx, ℓ_cvx, g_cvx, f, A, B, F, X, U, s, C,
+                            D, G, gic, H0, K0, gtc, Hf, Kf, mdl, scp,
+                            table_cols)
 
     return pbm
 end # function
@@ -187,21 +180,16 @@ Set the problem dimensions.
 - `pbm`: the trajectory problem structure.
 - `nx`: state dimension.
 - `nu`: input dimension.
-- `np`: variable parameter dimension.
-- `nq`: (optional) constant parameter dimension.
+- `np`: parameter dimension.
 """
 function problem_set_dims!(pbm::TrajectoryProblem,
-                           nx::Int, nu::Int, np::Int, nq::Int=0)::Nothing
+                           nx::Int, nu::Int, np::Int)::Nothing
     pbm.nx = nx
     pbm.nu = nu
     pbm.np = np
     pbm.xrg = fill(nothing, nx)
     pbm.urg = fill(nothing, nu)
     pbm.prg = fill(nothing, np)
-    if nq>0
-        pbm.nq = nq
-        pbm.qrg = fill(nothing, nq)
-    end
     return nothing
 end # function
 
@@ -213,7 +201,7 @@ variable scaling that may occur.
 
 # Arguments
 - `pbm`: the trajectory problem structure.
-- `which`: either `:state`, `:input`, `:parameter`, or `:constant`.
+- `which`: either `:state`, `:input`, or `:parameter`.
 - `idx`: which elements this range applies to.
 - `rg`: the range itself, (min, max).
 """
@@ -227,8 +215,7 @@ function problem_advise_scale!(pbm::TrajectoryProblem,
     end
     map = Dict(:state => (pbm.nx, pbm.xrg),
                :input => (pbm.nu, pbm.urg),
-               :parameter => (pbm.np, pbm.prg),
-               :constant => (pbm.nq, pbm.qrg))
+               :parameter => (pbm.np, pbm.prg))
     nz, zrg = map[which]
     for i in LinearIndices(1:nz)[idx]
         zrg[i] = rg
@@ -309,21 +296,6 @@ function problem_set_callback!(pbm::TrajectoryProblem,
 end # function
 
 """
-    problem_set_constants!(pbm, setq)
-
-Define the value of the constant parameter argument `q`.
-
-# Arguments
-- `pbm`: the trajectory problem structure.
-- `setq`: a function which returns the constant parameter's value.
-"""
-function problem_set_constants!(pbm::TrajectoryProblem,
-                                setq::Func)::Nothing
-    pbm.setq = () -> setq(pbm)
-    return nothing
-end # function
-
-"""
     problem_set_terminal_cost!(pbm, φ)
 
 Define the terminal cost.
@@ -369,7 +341,7 @@ function problem_set_running_cost!(pbm::TrajectoryProblem,
                                    dgdx::Func=nothing,
                                    dgdp::Func=nothing)::Nothing
     if algo in (:scvx, :ptr)
-        pbm.Γ = (t, k, x, u, p, q) -> SΓ(t, k, x, u, p, q, pbm)
+        pbm.Γ = (t, k, x, u, p) -> SΓ(t, k, x, u, p, pbm)
     else
         pbm.S = !isnothing(SΓ) ? (t, k, p) -> SΓ(t, k, p, pbm) : nothing
         pbm.dSdp = !isnothing(dSdp) ? (t, k, p) -> dSdp(t, k, p, pbm) : nothing
