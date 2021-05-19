@@ -326,7 +326,7 @@ function RendezvousProblem()::RendezvousProblem
 
     # ..:: Trajectory ::..
     # >> Boundary conditions <<
-    r0 = 100.0*xi-10.0*zi+20.0*yi
+    r0 = 100.0*xi-20.0*zi+20.0*yi
     v0 = 0.0*xi
     vf = -0.1*xi
     q0 = Quaternion(deg2rad(10), yi)
@@ -347,7 +347,7 @@ function RendezvousProblem()::RendezvousProblem
     r_appch = 20.0
     # >> Time of flight <<
     tf_min = 100.0
-    tf_max = 1200.0
+    tf_max = 1000.0
     # >> Homotopy <<
     β = 1e1/100
     γc = 3e-1
