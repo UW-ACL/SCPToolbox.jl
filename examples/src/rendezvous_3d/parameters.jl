@@ -327,7 +327,7 @@ function RendezvousProblem()::RendezvousProblem
     # ..:: Trajectory ::..
     # >> Boundary conditions <<
     # r0 = 50.0*xi+2.0*zi+0.0*yi
-    r0 = 50.0*xi+2.0*zi+2.0*yi
+    r0 = 100.0*xi-10.0*zi+20.0*yi
     v0 = 0.0*xi
     vf = -0.1*xi
     q0 = Quaternion(deg2rad(10), yi)
@@ -350,7 +350,7 @@ function RendezvousProblem()::RendezvousProblem
     r_appch = 20.0
     # >> Time of flight <<
     tf_min = 100.0
-    tf_max = 1000.0
+    tf_max = 1200.0
     # >> Homotopy <<
     β = 1e1/100
     # γ = 1.0
@@ -359,7 +359,7 @@ function RendezvousProblem()::RendezvousProblem
     hom_steps = 10 # Number of homotopy values to sweep through
     # hom_obj = Homotopy(1e-4; δ_max=5.0) #noerr
     # hom_obj = Homotopy(2e-2; δ_max=5.0) #noerr
-    hom_obj = Homotopy(1e-2; δ_max=5.0) #noerr
+    hom_obj = Homotopy(1e-2; δ_max=10.0) #noerr
     hom_grid = map(hom_obj, LinRange(0.0, 1.0, hom_steps))
     hom = hom_grid[1]
 

@@ -71,7 +71,9 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     advise! = problem_advise_scale!
 
     # >> States <<
-    r0_nrm = norm(traj.r0)
+    env = mdl.env
+    r0 = 50.0*env.xi-10.0*env.zi+20.0*env.yi
+    r0_nrm = norm(r0)
     v_max = r0_nrm/traj.tf_min
     rot_ang, _ = Log(traj.q0'*traj.qf)
     ω_max = abs(rot_ang)/traj.tf_min
