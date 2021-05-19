@@ -327,7 +327,7 @@ function RendezvousProblem()::RendezvousProblem
     # ..:: Trajectory ::..
     # >> Boundary conditions <<
     # r0 = 50.0*xi+2.0*zi+0.0*yi
-    r0 = 200.0*xi-50.0*zi+50.0*yi
+    r0 = 50.0*xi+2.0*zi+2.0*yi
     v0 = 0.0*xi
     vf = -0.1*xi
     q0 = Quaternion(deg2rad(10), yi)
