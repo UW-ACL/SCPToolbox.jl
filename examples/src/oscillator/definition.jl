@@ -363,8 +363,10 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
 
             above_db = ar-veh.a_db
             below_db = -veh.a_db-ar
-            OR = or(above_db, below_db;
-                    κ1=traj.κ1, κ2=traj.κ2)
+            OR = or([above_db; below_db],
+                    κ=traj.κ1,
+                    match=veh.a_max-veh.a_db,
+                    normalize=veh.a_max-veh.a_db)
 
             s = zeros(_common_s_sz)
 
@@ -390,9 +392,11 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
             ∇above_db = [1.0]
             below_db = -veh.a_db-ar
             ∇below_db = [-1.0]
-            OR, ∇OR = or((above_db, ∇above_db),
-                         (below_db, ∇below_db);
-                         κ1=traj.κ1, κ2=traj.κ2)
+            OR, ∇OR = or([above_db; below_db],
+                         [∇above_db, ∇below_db],
+                         κ=traj.κ1,
+                         match=veh.a_max-veh.a_db,
+                         normalize=veh.a_max-veh.a_db)
             ∇ORar = ∇OR[1]*ar+OR
 
             D = zeros(_common_s_sz, pbm.nu)

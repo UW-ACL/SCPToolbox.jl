@@ -32,56 +32,40 @@ export ptr
 function ptr()::Nothing
 
     # Problem definition
-    N = 30
-    mdl = OscillatorProblem(N)
+    N = 25
+    mdl = RendezvousProblem()
     pbm = TrajectoryProblem(mdl)
-    define_problem!(pbm, :ptr)
+    define_problem!(pbm, :ptr, N)
 
     # PTR algorithm parameters
     Nsub = 10
-    iter_max = 10
-    disc_method = FOH
-    wvc = 1e2
-    wtr = 1e-3
-    ε_abs = -Inf#1e-5
+    iter_max = 30
+    disc_method = IMPULSE
+    wvc = 1e4
+    wtr = 5e0
+    ε_abs = -Inf
     ε_rel = 1e-3/100
     feas_tol = 5e-3
     q_tr = Inf
     q_exit = Inf
     solver = ECOS
-    solver_options = Dict("verbose"=>0)
+    solver_options = Dict("verbose"=>0, "maxit"=>1000)
     pars = Solvers.PTR.Parameters(
-        N, Nsub, iter_max, disc_method, wvc, wtr, ε_abs, ε_rel,
-        feas_tol, q_tr, q_exit, solver, solver_options)
-
-    # Homotopy parameters
-    Nhom = 10
-    hom_κ1 = Homotopy(1e-8)
-    hom_grid = LinRange(0.0, 1.0, Nhom)
+        N, Nsub, iter_max, disc_method, wvc, wtr, ε_abs,
+        ε_rel, feas_tol, q_tr, q_exit, solver,
+        solver_options)
 
     # Solve the trajectory generation problem
-    ptr_pbm = Solvers.PTR.create(pars, pbm)
-    sols, historys = [], []
-    for i = 1:Nhom
-        mdl.traj.κ1 = hom_κ1(hom_grid[i])
-        warm = (i==1) ? nothing : sols[end]
-
-        @printf("[%d/%d] Homotopy (κ=%.2e)\n", i, Nhom, mdl.traj.κ1)
-
-        sol_i, history_i = Solvers.PTR.solve(ptr_pbm, warm)
-
-        push!(sols, sol_i)
-        push!(historys, history_i)
-    end
-    sol = sols[end]
-    history = historys[end]
+    ptr = Solvers.PTR.create(pars, pbm)
+    sol, history = Solvers.PTR.solve(ptr)
 
     @test sol.status == @sprintf("%s", SCP_SOLVED)
 
     # Make plots
-    plot_timeseries(mdl, sol, history)
-    plot_deadband(mdl, sol)
-    plot_convergence(history, "oscillator")
+    plot_trajectory_2d(mdl, sol)
+    plot_state_timeseries(mdl, sol)
+    plot_inputs(mdl, sol, history)
+    plot_convergence(history, "rendezvous_3d")
 
     return nothing
 end # function

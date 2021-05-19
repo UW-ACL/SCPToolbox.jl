@@ -177,9 +177,10 @@ function plot_deadband(mdl::OscillatorProblem,
     ar_rng = LinRange(a_min, a_max, resol)
     above_db = (ar)->ar-veh.a_db
     below_db = (ar)->-veh.a_db-ar
-    aa_polar = map((ar)->or(above_db(ar),
-                            below_db(ar);
-                            κ1=traj.κ1, κ2=traj.κ2)*ar,
+    aa_polar = map((ar)->or([above_db(ar); below_db(ar)],
+                            κ=traj.κ1,
+                            match=veh.a_max-veh.a_db,
+                            normalize=veh.a_max-veh.a_db)*ar,
                    ar_rng)
 
     # Without deadband

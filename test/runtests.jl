@@ -15,11 +15,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("../examples/src/Examples.jl")
-    using .Examples
-end
-
 using Printf
 using Test
 using Examples
@@ -27,5 +22,11 @@ using Examples
 @testset "Oscillator" begin
     @printf("..:: Oscillator with PTR ::..\n\n")
     Examples.Oscillator.ptr()
+    @printf("success!\n")
+end
+
+@testset "Rendezvous3D" begin
+    @printf("..:: 3D Rendezvous with discrete logic ::..\n\n")
+    Examples.Rendezvous3D.ptr()
     @printf("success!\n")
 end

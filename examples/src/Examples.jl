@@ -35,6 +35,7 @@ module Rendezvous3D
 include("rendezvous_3d/parameters.jl")
 include("rendezvous_3d/definition.jl")
 include("rendezvous_3d/plots.jl")
+include("rendezvous_3d/tests.jl")
 end #module
 
 end # module
