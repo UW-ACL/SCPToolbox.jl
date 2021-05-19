@@ -356,7 +356,7 @@ function RendezvousProblem()::RendezvousProblem
     # γ = 1.0
     γ = 5.0
     mib = false
-    hom_steps = 30 # Number of homotopy values to sweep through
+    hom_steps = 10 # Number of homotopy values to sweep through
     # hom_obj = Homotopy(1e-4; δ_max=5.0) #noerr
     # hom_obj = Homotopy(2e-2; δ_max=5.0) #noerr
     hom_obj = Homotopy(1e-2; δ_max=5.0) #noerr

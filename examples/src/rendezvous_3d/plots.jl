@@ -525,9 +525,9 @@ function plot_inputs(mdl::RendezvousProblem,
                  :ylabel=>"Quad D impulse [N\$\\cdot\$s]",
                  :legend=>thruster_label)]
 
-    fig = create_figure((14, 16))
+    fig = create_figure((10, 18))
     gspec = fig.add_gridspec(ncols=2, nrows=6,
-                             width_ratios=[0.8, 0.2])
+                             width_ratios=[0.7, 0.3])
 
     axes = []
 
@@ -654,7 +654,7 @@ function plot_inputs(mdl::RendezvousProblem,
 
         # Continuous polar with deadband
         ax.plot(fr_rng, f_polar(hom_val[end]),
-                color=Red,
+                color=Yellow,
                 linewidth=2,
                 solid_capstyle="round",
                 zorder=100,
@@ -673,47 +673,6 @@ function plot_inputs(mdl::RendezvousProblem,
                     markeredgewidth=0.2,
                     markerfacecolor=darker_clr,
                     zorder=100)
-        end
-
-        # Plot the intermediate solution history in the background
-        prev_hom = NaN
-        hom_min, hom_max = hom_val[1], hom_val[end]
-        cmap = generate_colormap(
-            "Greys",
-            midval=0.5*(log10(hom_max)+log10(hom_min)),
-            minval=log10(hom_min),
-            maxval=log10(hom_max))
-        for k = 1:num_iter
-            # Get homotopy value at this iteration
-            hom = hom_val[k]
-
-            # Draw the continuous polar with deadband
-            lc = rgb(cmap, hom)
-            if prev_hom!=hom
-                prev_hom = hom
-                ax.plot(fr_rng, f_polar(hom),
-                        color=lc,
-                        linewidth=0.75,
-                        solid_capstyle="round",
-                        zorder=50,
-                        clip_on=true)
-            end
-
-            # Draw the discrete-time (ref, actual) inputs
-            darker_clr = darken_color("#"*hex(RGB(lc...)),
-                                      marker_darken_factor)
-            for i = 1:num_inputs
-                u = data[i_plt][:u](k)
-                ur = data[i_plt][:u_ref](k)
-
-                ax.plot(ur[i, :], u[i, :],
-                        linestyle="none",
-                        marker="o",
-                        markersize=1.5,
-                        markeredgewidth=0,
-                        markerfacecolor=darker_clr,
-                        zorder=50)
-            end
         end
 
         ax.set_xlim(ylim_timeseries)
