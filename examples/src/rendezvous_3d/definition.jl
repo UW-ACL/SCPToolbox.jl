@@ -72,8 +72,7 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
 
     # >> States <<
     env = mdl.env
-    r0 = traj.r0#50.0*env.xi-10.0*env.zi+20.0*env.yi
-    r0_nrm = norm(r0)
+    r0_nrm = norm(traj.r0)
     v_max = r0_nrm/traj.tf_min
     rot_ang, _ = Log(traj.q0'*traj.qf)
     ω_max = abs(rot_ang)/traj.tf_min
@@ -215,7 +214,7 @@ function set_cost!(pbm::TrajectoryProblem,
             f_min = veh.csm.imp_min
             f_max = veh.csm.imp_max
 
-            return sum(f)/f_max+3e-1*sum(feq)/f_min
+            return sum(f)/f_max+traj.γc*sum(feq)/f_min
         end)
 
     return nothing
@@ -509,8 +508,8 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
 
     mib_inflection = () -> begin
         fr_db = [fmin]
-        fr_db_plus = [fmin+traj.γ]
-        fr_db_minus = [fmin-traj.γ]
+        fr_db_plus = [fmin+traj.γg]
+        fr_db_minus = [fmin-traj.γg]
 
         OR_db, ∇OR_db, _ = mib_logic(fr_db)
         OR_db_plus, ∇OR_db_plus, _ = mib_logic(fr_db_plus)
@@ -542,25 +541,23 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
 
             s = zeros(_common_s_sz)
 
-            if traj.mib
-                # Minimum impulse bit
-                fr = map(i->u[veh.id_rcs_ref[i]], 1:n_rcs)
-                OR, ∇OR, _ = mib_logic(fr)
-                for i=1:n_rcs
-                    f = u[veh.id_rcs[i]]
-                    s[3*(i-1)+1] = f-OR[i]*fr[i]
-                    s[3*(i-1)+2] = OR[i]*fr[i]-f
-                end
+            # Minimum impulse bit
+            fr = map(i->u[veh.id_rcs_ref[i]], 1:n_rcs)
+            OR, ∇OR, _ = mib_logic(fr)
+            for i=1:n_rcs
+                f = u[veh.id_rcs[i]]
+                s[3*(i-1)+1] = f-OR[i]*fr[i]
+                s[3*(i-1)+2] = OR[i]*fr[i]-f
+            end
 
-                # Forbid exploiting of deadband relaxation
-                if mib_inflection()
-                    fr_db = [fmin+traj.γ]
-                    OR_db, ∇OR_db, _ = mib_logic(fr_db)
-                    mib_max_grad = ∇OR_db*fr_db[1]+OR_db
-                    for i=1:n_rcs
-                        dfdfr = ∇OR[i]*fr[i]+OR[i]
-                        s[3*(i-1)+3] = dfdfr-mib_max_grad
-                    end
+            # Forbid exploiting of deadband relaxation
+            if mib_inflection()
+                fr_db = [fmin+traj.γg]
+                OR_db, ∇OR_db, _ = mib_logic(fr_db)
+                mib_max_grad = ∇OR_db*fr_db[1]+OR_db
+                for i=1:n_rcs
+                    dfdfr = ∇OR[i]*fr[i]+OR[i]
+                    s[3*(i-1)+3] = dfdfr-mib_max_grad
                 end
             end
 
@@ -596,26 +593,24 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
 
             D = zeros(_common_s_sz, pbm.nu)
 
-            if traj.mib
-                # Minimum impulse bit
-                fr = map(i->u[veh.id_rcs_ref[i]], 1:n_rcs)
-                OR, ∇OR, ∇²OR = mib_logic(fr)
-                for i=1:n_rcs
-                    id_f, id_fr = veh.id_rcs[i], veh.id_rcs_ref[i]
-                    ∇ORfr = ∇OR[i]*fr[i]+OR[i]
-                    D[3*(i-1)+1, id_f] = 1.0
-                    D[3*(i-1)+1, id_fr] = -∇ORfr
-                    D[3*(i-1)+2, id_f] = -1.0
-                    D[3*(i-1)+2, id_fr] = ∇ORfr
-                end
+            # Minimum impulse bit
+            fr = map(i->u[veh.id_rcs_ref[i]], 1:n_rcs)
+            OR, ∇OR, ∇²OR = mib_logic(fr)
+            for i=1:n_rcs
+                id_f, id_fr = veh.id_rcs[i], veh.id_rcs_ref[i]
+                ∇ORfr = ∇OR[i]*fr[i]+OR[i]
+                D[3*(i-1)+1, id_f] = 1.0
+                D[3*(i-1)+1, id_fr] = -∇ORfr
+                D[3*(i-1)+2, id_f] = -1.0
+                D[3*(i-1)+2, id_fr] = ∇ORfr
+            end
 
-                # Forbid exploiting of deadband relaxation
-                if mib_inflection()
-                    for i=1:n_rcs
-                        id_fr = veh.id_rcs_ref[i]
-                        d2fdfr2 = ∇²OR[i]*fr[i]+2*∇OR[i]
-                        D[3*(i-1)+3, id_fr] = d2fdfr2
-                    end
+            # Forbid exploiting of deadband relaxation
+            if mib_inflection()
+                for i=1:n_rcs
+                    id_fr = veh.id_rcs_ref[i]
+                    d2fdfr2 = ∇²OR[i]*fr[i]+2*∇OR[i]
+                    D[3*(i-1)+3, id_fr] = d2fdfr2
                 end
             end
 

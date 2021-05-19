@@ -274,8 +274,8 @@ mutable struct RendezvousTrajectoryParameters
     hom::RealValue       # Sigmoid homotopy parameter
     hom_grid::RealVector # Sweep of all homotopy parameters
     β::RealValue         # Relative cost improvement triggering homotopy update
-    γ::RealValue         # Deadband relaxation keepout zone
-    mib::Bool            # Enforce the minimum impulse-bit constraint
+    γc::RealValue        # Deadband relaxation cost weight
+    γg::RealValue        # Deadband relaxation gradient keepout zone
 end # struct
 
 """ Rendezvous trajectory optimization problem parameters all in one. """
@@ -326,13 +326,10 @@ function RendezvousProblem()::RendezvousProblem
 
     # ..:: Trajectory ::..
     # >> Boundary conditions <<
-    # r0 = 50.0*xi+2.0*zi+0.0*yi
     r0 = 100.0*xi-10.0*zi+20.0*yi
     v0 = 0.0*xi
     vf = -0.1*xi
     q0 = Quaternion(deg2rad(10), yi)
-    # q0 = Quaternion(deg2rad(100), zi)*Quaternion(deg2rad(10), yi)
-    # q0 = Quaternion(deg2rad(180), zi)*Quaternion(deg2rad(10), yi)
     ω0 = zeros(3)
     ωf = zeros(3)
     # Terminal pose based on docking orientation
@@ -353,19 +350,16 @@ function RendezvousProblem()::RendezvousProblem
     tf_max = 1200.0
     # >> Homotopy <<
     β = 1e1/100
-    # γ = 1.0
-    γ = 5.0
-    mib = false
+    γc = 3e-1
+    γg = 5.0
     hom_steps = 10 # Number of homotopy values to sweep through
-    # hom_obj = Homotopy(1e-4; δ_max=5.0) #noerr
-    # hom_obj = Homotopy(2e-2; δ_max=5.0) #noerr
     hom_obj = Homotopy(1e-2; δ_max=10.0) #noerr
     hom_grid = map(hom_obj, LinRange(0.0, 1.0, hom_steps))
     hom = hom_grid[1]
 
     traj = RendezvousTrajectoryParameters(
         r0, rf, v0, vf, q0, qf, ω0, ωf, rf_tol, vf_tol, ang_tol, ωf_tol,
-        r_appch, tf_min, tf_max, hom, hom_grid, β, γ, mib)
+        r_appch, tf_min, tf_max, hom, hom_grid, β, γc, γg)
 
     mdl = RendezvousProblem(sc, env, traj)
 
