@@ -479,13 +479,14 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
     veh = pbm.mdl.vehicle
     traj = pbm.mdl.traj
     n_rcs = length(veh.id_rcs)
-    _common_s_sz = 3*n_rcs+4
+    _common_s_sz = 3*n_rcs+5
 
     # Normalization parameters (max values of OR predicates)
     fmax = veh.csm.imp_max
     fmin = veh.csm.imp_min
     or_mib_max = fmax-fmin
-    or_plume_max = norm(traj.r0)-traj.r_appch
+    or_plume_max = norm(traj.r0)-traj.r_plume
+    or_appch_max = norm(traj.r0)-traj.r_appch
 
     mib_logic = (fr) -> begin
         OR, ∇OR, ∇²OR = [], [], []
@@ -524,10 +525,19 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
 
     rcs_quads = (:A, :B, :C, :D)
     plume_logic = (r) -> begin
-        value_plume = [r'*r-traj.r_appch^2]
+        value_plume = [r'*r-traj.r_plume^2]
         grad_plume = [2*r]
         OR, ∇OR = or(value_plume, grad_plume,
                      κ=traj.hom, match=or_plume_max,
+                     normalize=or_plume_max)
+        return OR, ∇OR
+    end
+
+    appch_cone_logic = (r) -> begin
+        value_plume = [r'*r-traj.r_appch^2]
+        grad_plume = [2*r]
+        OR, ∇OR = or(value_plume, grad_plume,
+                     κ=traj.hom, match=or_appch_max,
                      normalize=or_plume_max)
         return OR, ∇OR
     end
@@ -537,6 +547,7 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
         # Constraint s
         (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
+            env = pbm.mdl.env
             traj = pbm.mdl.traj
 
             s = zeros(_common_s_sz)
@@ -569,11 +580,17 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 s[3*n_rcs+i] = f-OR*fmax
             end
 
+            # Approach cone near target
+            OR, _ = appch_cone_logic(r)
+            cosmax = cos(traj.θ_appch)
+            s[end] = (cosmax-OR*(1+cosmax))-dot(r/norm(r), env.xi)
+
             return s
         end,
         # Jacobian ds/dx
         (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
+            env = pbm.mdl.env
 
             C = zeros(_common_s_sz, pbm.nx)
 
@@ -583,6 +600,13 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
             for i=1:4
                 C[3*n_rcs+i, veh.id_r] = -∇OR*fmax
             end
+
+            # Approach cone near target
+            r = x[veh.id_r]
+            _, ∇OR = appch_cone_logic(r)
+            cosmax = cos(traj.θ_appch)
+            C[end, veh.id_r] = -∇OR*(1+cosmax)+
+                1/norm(r)*(r*r'/(r'*r)-I(3))*env.xi
 
             return C
         end,

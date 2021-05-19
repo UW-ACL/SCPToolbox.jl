@@ -44,6 +44,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
     # Parameters
     algo = sol.algo
     veh = mdl.vehicle
+    traj = mdl.traj
     axis_inf_scale = 1e4
     pad_x = 0.1
     pad_y = 0.1
@@ -69,8 +70,6 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
         dt_thrust[:, k] = sum(sol.ud[veh.id_rcs[i], k]*dir_rcs_iner[i]
                               for i=1:n_rcs)
     end
-    # dt_thrust = sum(sol.ud[veh.id_rcs[i], :]*
-    #     veh.csm.f_rcs[veh.csm.rcs_select[i]]' for i=1:)'
 
     # Colormap
     v_cmap = generate_colormap("inferno";
@@ -144,11 +143,11 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
             push!(line_segs, ct_pos_2d[:, k:k+overlap]')
             push!(line_clrs, v_cmap.to_rgba(ct_speed[k]))
         end
-        traj = PyPlot.matplotlib.collections.LineCollection(
+        trajectory = PyPlot.matplotlib.collections.LineCollection(
             line_segs, zorder=10,
             colors = line_clrs,
             linewidths=3)
-        ax.add_collection(traj)
+        ax.add_collection(trajectory)
 
         # Plot the discrete-time trajectory
         ax.scatter(dt_pos_2d[1, :], dt_pos_2d[2, :],
@@ -226,6 +225,64 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
                     ha="center",
                     va="center",
                     bbox=Dict(:pad=>2, :fc=>"white", :ec=>"none"))
+
+        # Plume cone
+        if 1 in prj
+            θ_sweep_sph = LinRange(0, 2*pi, 100)
+            sph_perim = hcat(map(θ->traj.r_plume*[cos(θ); sin(θ)],
+                                 θ_sweep_sph)...)
+            sph_x = sph_perim[1, :]
+            sph_y = sph_perim[2, :]
+
+            ax.plot(sph_x, sph_y,
+                    color=Red,
+                    linewidth=0.6,
+                    solid_capstyle="round",
+                    solid_joinstyle="round",
+                    zorder=4)
+        end
+
+        # Approach cone
+        if 1 in prj
+            # Side-view
+            θ_sweep = LinRange(-traj.θ_appch, traj.θ_appch, 100)
+            cone_perim = hcat(map(θ->traj.r_appch*[cos(θ); sin(θ)],
+                                  θ_sweep)...)
+            cone_x = [0; cone_perim[1, :]; 0]
+            cone_y = [0; cone_perim[2, :]; 0]
+
+            # Draw the approach sphere
+            θ_sweep_sph = LinRange(traj.θ_appch, 2*pi-traj.θ_appch, 100)
+            sph_perim = hcat(map(θ->traj.r_appch*[cos(θ); sin(θ)],
+                                 θ_sweep_sph)...)
+            sph_x = sph_perim[1, :]
+            sph_y = sph_perim[2, :]
+
+            ax.plot(sph_x, sph_y,
+                    color=DarkBlue,
+                    linewidth=0.6,
+                    solid_capstyle="round",
+                    solid_joinstyle="round",
+                    zorder=4)
+        else
+            # Front-on view
+            θ_sweep = LinRange(0, 2*pi, 100)
+            r_intersect = traj.r_appch*sin(traj.θ_appch)
+            cone_perim = hcat(map(θ->r_intersect*[cos(θ); sin(θ)],
+                                  θ_sweep)...)
+            cone_x = cone_perim[1, :]
+            cone_y = cone_perim[2, :]
+        end
+        ax.plot(cone_x, cone_y,
+                color=Green,
+                linestyle="--",
+                linewidth=1.5,
+                solid_capstyle="round",
+                solid_joinstyle="round",
+                dash_capstyle="round",
+                dash_joinstyle="round",
+                dashes=(3, 3),
+                zorder=5)
 
         ax.invert_yaxis()
 

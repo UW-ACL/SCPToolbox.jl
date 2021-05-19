@@ -252,24 +252,27 @@ end
 """ Parameters of the chaser trajectory. """
 mutable struct RendezvousTrajectoryParameters
     # Boundary conditions
-    r0::RealVector      # Initial position
-    rf::RealVector      # Terminal position
-    v0::RealVector      # Initial velocity
-    vf::RealVector      # Terminal velocity
-    q0::Quaternion      # Initial attitude
-    qf::Quaternion      # Terminal attitude
-    ω0::RealVector      # Initial angular velocity
-    ωf::RealVector      # Terminal angular velocity
+    r0::RealVector       # Initial position
+    rf::RealVector       # Terminal position
+    v0::RealVector       # Initial velocity
+    vf::RealVector       # Terminal velocity
+    q0::Quaternion       # Initial attitude
+    qf::Quaternion       # Terminal attitude
+    ω0::RealVector       # Initial angular velocity
+    ωf::RealVector       # Terminal angular velocity
     # Docking tolerances
-    rf_tol::RealValue   # Radial x-axis alignment
-    vf_tol::RealValue   # Velocity mismatch (in all axes)
-    ang_tol::RealValue  # Angular mismatch (net angle)
-    ωf_tol::RealValue   # Angular velocity mismatch (in all axes)
+    rf_tol::RealValue    # Radial x-axis alignment
+    vf_tol::RealValue    # Velocity mismatch (in all axes)
+    ang_tol::RealValue   # Angular mismatch (net angle)
+    ωf_tol::RealValue    # Angular velocity mismatch (in all axes)
     # Plume impingement
-    r_appch::RealValue  # Approach radius below which plume impingement danger
+    r_plume::RealValue   # Approach radius below which plume impingement danger
+    # Maneuver approach cone
+    r_appch::RealValue   # Approach sphere radius
+    θ_appch::RealValue   # Approach cone half-angle
     # Time of flight
-    tf_min::RealValue   # Minimum flight time
-    tf_max::RealValue   # Maximum flight time
+    tf_min::RealValue    # Minimum flight time
+    tf_max::RealValue    # Maximum flight time
     # Homotopy
     hom::RealValue       # Sigmoid homotopy parameter
     hom_grid::RealVector # Sweep of all homotopy parameters
@@ -343,8 +346,10 @@ function RendezvousProblem()::RendezvousProblem
     vf_tol = 0.01
     ang_tol = deg2rad(1)
     ωf_tol = deg2rad(0.01)
-    # >> Plume impingement <<
-    r_appch = 20.0
+    # >> Plume and approach spheres <<
+    r_plume = 20
+    r_appch = 30
+    θ_appch = deg2rad(10)
     # >> Time of flight <<
     tf_min = 100.0
     tf_max = 1000.0
@@ -352,14 +357,14 @@ function RendezvousProblem()::RendezvousProblem
     β = 1e1/100
     γc = 3e-1
     γg = 5.0
-    hom_steps = 10 # Number of homotopy values to sweep through
+    hom_steps = 15 # Number of homotopy values to sweep through
     hom_obj = Homotopy(1e-2; δ_max=10.0) #noerr
     hom_grid = map(hom_obj, LinRange(0.0, 1.0, hom_steps))
     hom = hom_grid[1]
 
     traj = RendezvousTrajectoryParameters(
         r0, rf, v0, vf, q0, qf, ω0, ωf, rf_tol, vf_tol, ang_tol, ωf_tol,
-        r_appch, tf_min, tf_max, hom, hom_grid, β, γc, γg)
+        r_plume, r_appch, θ_appch, tf_min, tf_max, hom, hom_grid, β, γc, γg)
 
     mdl = RendezvousProblem(sc, env, traj)
 
