@@ -704,15 +704,19 @@ function _scp__discretize!(
 end
 
 """
-    _scp__add_dynamics!(spbm)
+    _scp__add_dynamics!(spbm[; relaxed])
 
 Add dynamics constraints to the problem.
 
 # Arguments
 - `spbm`: the subproblem definition.
+
+# Keywords
+- `relaxed`: (optional) if true then relax dynamics with a virtual control,
+  else impose the linearized dynamics as-is.
 """
 function _scp__add_dynamics!(
-    spbm::T)::Nothing where {T<:SCPSubproblem}
+    spbm::T; relaxed::Bool=true)::Nothing where {T<:SCPSubproblem}
 
     # Variables and parameters
     N = spbm.def.pars.N
@@ -731,8 +735,13 @@ function _scp__add_dynamics!(
         Bp = @k(spbm.ref.dyn.Bp)
         F = @k(spbm.ref.dyn.F)
         r = @k(spbm.ref.dyn.r)
-        E = @k(spbm.ref.dyn.E)
-        acc!(spbm.mdl, Cone(xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk), :zero))
+        if relaxed
+            E = @k(spbm.ref.dyn.E)
+            acc!(spbm.mdl, Cone(xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk), :zero))
+        else
+            acc!(spbm.mdl, Cone(xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r), :zero))
+            acc!(spbm.mdl, Cone(vdk, :zero))
+        end
     end
 
     return nothing

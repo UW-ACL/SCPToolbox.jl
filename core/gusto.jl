@@ -399,7 +399,7 @@ function gusto_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution,
         spbm = GuSTOSubproblem(pbm, k, λ, η, ref)
 
         _gusto__add_cost!(spbm)
-        _scp__add_dynamics!(spbm)
+        _scp__add_dynamics!(spbm; relaxed=false)
         _scp__add_convex_input_constraints!(spbm)
         _scp__add_bcs!(spbm; relaxed=false)
 
