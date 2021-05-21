@@ -725,24 +725,23 @@ function _scp__add_dynamics!(
     x = spbm.x
     u = spbm.u
     p = spbm.p
-    vd = spbm.vd
 
     # Add dynamics constraint to optimization model
     acc! = add_conic_constraint!
     Cone = T_ConvexConeConstraint
     for k = 1:N-1
-        xk, xkp1, uk, ukp1, vdk = @k(x), @kp1(x), @k(u), @kp1(u), @k(vd)
+        xk, xkp1, uk, ukp1 = @k(x), @kp1(x), @k(u), @kp1(u)
         A = @k(spbm.ref.dyn.A)
         Bm = @k(spbm.ref.dyn.Bm)
         Bp = @k(spbm.ref.dyn.Bp)
         F = @k(spbm.ref.dyn.F)
         r = @k(spbm.ref.dyn.r)
         if relaxed
+            vdk = @k(spbm.vd)
             E = @k(spbm.ref.dyn.E)
             acc!(spbm.mdl, Cone(xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r+E*vdk), :zero))
         else
             acc!(spbm.mdl, Cone(xkp1-(A*xk+Bm*uk+Bp*ukp1+F*p+r), :zero))
-            acc!(spbm.mdl, Cone(vdk, :zero))
         end
     end
 

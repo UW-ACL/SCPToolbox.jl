@@ -38,8 +38,7 @@ define_problem!(pbm, :gusto)
 
 N = 30
 Nsub = 15
-iter_max = 10
-ω = 500.0
+iter_max = 15
 λ_init = 1e4
 λ_max = 1e9
 ρ_0 = 0.1
@@ -52,16 +51,16 @@ iter_max = 10
 η_ub = 10.0
 μ = 0.8
 iter_μ = 6
-ε_abs = 1e-5
-ε_rel = 0.01/100
+ε_abs = 0#1e-5
+ε_rel = 0#0.01/100
 feas_tol = 1e-3
 pen = :quad
 hom = 100.0
 q_tr = Inf
 q_exit = Inf
 solver = ECOS
-solver_options = Dict("verbose"=>0, "maxiter"=>1000)
-pars = GuSTOParameters(N, Nsub, iter_max, ω, λ_init, λ_max, ρ_0, ρ_1, β_sh,
+solver_options = Dict("verbose"=>0)
+pars = GuSTOParameters(N, Nsub, iter_max, λ_init, λ_max, ρ_0, ρ_1, β_sh,
                        β_gr, γ_fail, η_init, η_lb, η_ub, μ, iter_μ, ε_abs,
                        ε_rel, feas_tol, pen, hom, q_tr, q_exit, solver,
                        solver_options)

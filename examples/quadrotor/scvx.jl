@@ -38,7 +38,7 @@ define_problem!(pbm, :scvx)
 
 N = 30
 Nsub = 15
-iter_max = 50
+iter_max = 15
 λ = 30.0
 ρ_0 = 0.0
 ρ_1 = 0.1
@@ -48,8 +48,8 @@ iter_max = 50
 η_init = 1.0
 η_lb = 1e-3
 η_ub = 10.0
-ε_abs = 1e-5
-ε_rel = 0.01/100
+ε_abs = 0#1e-5
+ε_rel = 0#0.01/100
 feas_tol = 1e-3
 q_tr = Inf
 q_exit = Inf
