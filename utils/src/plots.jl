@@ -38,36 +38,62 @@ const OptPyObject = Union{PyPlot.PyObject, Nothing}
 # ..:: Methods ::..
 
 """
-    plot_timeseries_bound!(ax, x_min, x_max, y_bnd, height)
+    plot_timeseries_bound!(ax, x_min, x_max, y_bnd, height[; lw])
 
-Plot a constant y-value bound keep-out zone of a timeseries. Supposedly to show a minimum or a maximum of a quantity on a time history plot.
+Plot a constant y-value bound keep-out zone of a timeseries. Supposedly to show
+a minimum or a maximum of a quantity on a time history plot.
 
 # Arguments
 - `ax`: the figure axis object.
 - `x_min`: the left-most value.
 - `x_max`: the right-most value.
-- `y_bnd`: the bound value.
+- `y_bnd`: the bound value, or a vector of values (in which it is assumed that
+  the vector components are evenly spaced).
 - `height`: the "thickness" of the keep-out slab on the plot.
+
+# Keywords
+- `lw`: (optional) the line width for the border.
+- `abs`: (optional) toggle using `height` as a relative height above or below
+  `y_bnd` (when false) or as an absolute value setting (when true).
 """
 function plot_timeseries_bound!(ax::PyPlot.PyObject,
                                 x_min::Types.RealTypes,
                                 x_max::Types.RealTypes,
-                                y_bnd::Types.RealTypes,
-                                height::Types.RealTypes)::Nothing
+                                y_bnd::Union{Types.RealTypes, Types.RealVector},
+                                height::Types.RealTypes;
+                                lw::Types.RealTypes=1.75,
+                                abs::Bool=false)::Nothing
 
-    y_other = y_bnd+height
-    x = [x_min, x_max, x_max, x_min, x_min]
-    y = [y_bnd, y_bnd, y_other, y_other, y_bnd]
+    if !abs
+        y_max = maximum(y_bnd)
+        y_min = minimum(y_bnd)
+        y_other = (height>=0) ? y_max+height : y_min+height
+    else
+        y_other = height
+    end
+
+    if y_bnd isa Array
+        x_bnd = LinRange(x_min, x_max, length(y_bnd))
+        y_other = repeat([y_other], length(y_bnd))
+        x = vcat(x_bnd, reverse(x_bnd), x_bnd[1])
+        y = vcat(y_bnd, y_other, y_bnd[1])
+        x_bndry = x_bnd
+        y_bndry = y_bnd
+    else
+        x = [x_min, x_max, x_max, x_min, x_min]
+        y = [y_bnd, y_bnd, y_other, y_other, y_bnd]
+        x_bndry = [x_min, x_max]
+        y_bndry = [y_bnd, y_bnd]
+    end
 
     fc = parse(RGB, "#db6245")
     ax.fill(x, y,
             facecolor=rgb2pyplot(fc, a=0.5),
             edgecolor="none")
 
-    ax.plot([x_min, x_max],
-            [y_bnd, y_bnd],
+    ax.plot(x_bndry, y_bndry,
             color="#db6245",
-            linewidth=1.75,
+            linewidth=lw,
             linestyle="--",
             dashes=(2, 3),
             solid_capstyle="round",

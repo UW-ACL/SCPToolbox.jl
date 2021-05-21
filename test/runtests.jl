@@ -15,18 +15,26 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
+#nolint: Examples
+
 using Printf
 using Test
 using Examples
 
-@testset "Oscillator" begin
-    @printf("..:: Oscillator with PTR ::..\n\n")
-    Examples.Oscillator.ptr()
+@testset "RocketLanding" begin
+    @printf("..:: Lossless convexification rocket landing ::..\n\n")
+    Examples.RocketLanding.lcvx()
     @printf("success!\n")
 end
 
-@testset "Rendezvous3D" begin
-    @printf("..:: 3D Rendezvous with discrete logic ::..\n\n")
-    Examples.Rendezvous3D.ptr()
-    @printf("success!\n")
-end
+# @testset "Oscillator" begin
+#     @printf("..:: Oscillator with PTR ::..\n\n")
+#     Examples.Oscillator.ptr()
+#     @printf("success!\n")
+# end
+
+# @testset "Rendezvous3D" begin
+#     @printf("..:: 3D Rendezvous with discrete logic ::..\n\n")
+#     Examples.Rendezvous3D.ptr()
+#     @printf("success!\n")
+# end

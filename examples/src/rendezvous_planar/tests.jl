@@ -16,24 +16,12 @@ You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 if isdefined(@__MODULE__, :LanguageServer)
-    include("../../../solvers/src/Solvers.jl")
-    include("../../../parser/src/Parser.jl")
-    include("../../../utils/src/Utils.jl")
-    include("../../../parser/src/problem.jl")
     include("definition.jl")
     include("plots.jl")
-    using .Solvers
-    using .Parser
-    using .Utils
-    using .Utils.Types: Homotopy
 end
 
 using ECOS
-using Printf
 using Test
-using Parser
-using Utils
-import Solvers
 
 export ptr
 

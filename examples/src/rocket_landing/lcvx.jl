@@ -150,7 +150,7 @@ T_2 = 0.8*T_max # [N] Max allowed thrust of single engine
 ρ_max = n_eng*T_2*cos(ϕ)
 γ_gs = 86*π/180
 γ_p = 40*π/180
-v_max = 800*1e3/3600
+v_max = 500*1e3/3600
 r0 = (2*e_x+0*e_y+1.5*e_z)*1e3
 v0 = 80*e_x+30*e_y-75*e_z
 Δt = 1e0
@@ -191,7 +191,7 @@ function golden(f::Function,a::LCvxReal,b::LCvxReal,
         bracket = sort([a,b,c,d])
         @printf("golden bracket: [%3.f,%.3f,%.3f,%.3f]\n", bracket...)
     end
-    x_sol = (a+b)/2
+    x_sol = b
     sol = (x_sol,f(x_sol))
     return sol
 end
@@ -584,7 +584,7 @@ ax.set_xticks(ticks=[0,1,2,3])
 ax.set_yticks(ticks=[-1,0,1])
 ax.set_xlim([0,3])
 ax.set_ylim([-1,1])
-fig.savefig("../../figures/lcvx_3dof_rocket_pos_xy.pdf",bbox_inches="tight")
+fig.savefig("../../../figures/lcvx_3dof_rocket_pos_xy.pdf",bbox_inches="tight")
 # @ (x,z) trajectory @
 fig = plt.figure(figsize=(4,4))
 plt.clf()
@@ -620,7 +620,7 @@ ax.set_xticks(ticks=[0,1,2,3])
 ax.set_yticks(ticks=[0,1,2])
 ax.set_ylim([-1,2])
 ax.set_xlim([0,3])
-fig.savefig("../../figures/lcvx_3dof_rocket_pos_xz.pdf",bbox_inches="tight")
+fig.savefig("../../../figures/lcvx_3dof_rocket_pos_xz.pdf",bbox_inches="tight")
 # @ (y,z) trajectory @
 fig = plt.figure(figsize=(4,4))
 plt.clf()
@@ -649,7 +649,7 @@ ax.set_xticks(ticks=[-1,-0.5,0,0.5,1])
 ax.set_yticks(ticks=[0,1,2])
 ax.set_xlim([-1,1])
 ax.set_ylim([-0.5,2])
-fig.savefig("../../figures/lcvx_3dof_rocket_pos_yz.pdf",bbox_inches="tight")
+fig.savefig("../../../figures/lcvx_3dof_rocket_pos_yz.pdf",bbox_inches="tight")
 ################################################################################
 
 ################################################################################
@@ -669,11 +669,11 @@ ax.plot(t_sim, v_sim_nrm; style_ct...)
 ax.plot(t, v_nrm; style_dt...)
 ax.set_xticks(ticks=[0,20,40,60,75])
 ax.set_yticks(ticks=[0,200,400,600,800,850])
-ax.set_xlim([0,75])
+# ax.set_xlim([0,75])
 ax.set_ylim([0,v_max+50])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel(L"Speed $\|v(t)\|_2$ [km/h]")
-fig.savefig("../../figures/lcvx_3dof_rocket_speed.pdf",bbox_inches="tight")
+fig.savefig("../../../figures/lcvx_3dof_rocket_speed.pdf",bbox_inches="tight")
 ################################################################################
 
 ################################################################################
@@ -693,11 +693,11 @@ ax.plot(t_sim, mass_sim; style_ct...)
 ax.plot(t, mass; style_dt...)
 ax.set_xticks(ticks=[0,20,40,60,75])
 ax.set_yticks(ticks=[1450,1500,1600,1700,1800,1900,1950])
-ax.set_xlim([0,75])
+# ax.set_xlim([0,75])
 ax.set_ylim([1450,1950])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel("Mass [kg]")
-fig.savefig("../../figures/lcvx_3dof_rocket_mass.pdf",bbox_inches="tight")
+fig.savefig("../../../figures/lcvx_3dof_rocket_mass.pdf",bbox_inches="tight")
 ################################################################################
 
 ################################################################################
@@ -719,11 +719,11 @@ ax.plot(t_sim, T_sim_nrm; style_ct...)
 ax.plot(t[1:end-1], T_nrm; style_dt...)
 ax.set_xticks(ticks=[0,20,40,60,75])
 ax.set_yticks(ticks=[0,4,8,12,16])
-ax.set_xlim([0,75])
+# ax.set_xlim([0,75])
 ax.set_ylim([0,16])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel("Thrust [kN]")
-fig.savefig("../../figures/lcvx_3dof_rocket_thrust.pdf",bbox_inches="tight")
+fig.savefig("../../../figures/lcvx_3dof_rocket_thrust.pdf",bbox_inches="tight")
 ################################################################################
 
 ################################################################################
@@ -751,11 +751,11 @@ ax.plot(t_sim, T_z_sim; style_ct...)
 ax.plot(t[1:end-1], T_z; style_dt...)
 ax.set_xticks(ticks=[0,20,40,60,75])
 ax.set_yticks(ticks=[0,5,10,15])
-ax.set_xlim([0,75])
+# ax.set_xlim([0,75])
 ax.set_ylim([0,15])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel(L"Thrust along $\hat e_z$ [kN]")
-fig.savefig("../../figures/lcvx_3dof_rocket_thrust_z.pdf",bbox_inches="tight")
+fig.savefig("../../../figures/lcvx_3dof_rocket_thrust_z.pdf",bbox_inches="tight")
 ################################################################################
 
 ################################################################################
@@ -775,9 +775,9 @@ ax.plot(t_sim, pa_sim; style_ct...)
 ax.plot(t[1:end-1], pa; style_dt...)
 ax.set_xticks(ticks=[0,20,40,60,75])
 ax.set_yticks(ticks=[0,10,20,30,40,50])
-ax.set_xlim([0,75])
+# ax.set_xlim([0,75])
 ax.set_ylim([0,50])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel(L"Pointing angle [$^\circ$]")
-fig.savefig("../../figures/lcvx_3dof_rocket_angle.pdf",bbox_inches="tight")
+fig.savefig("../../../figures/lcvx_3dof_rocket_angle.pdf",bbox_inches="tight")
 ################################################################################

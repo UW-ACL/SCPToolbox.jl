@@ -19,11 +19,6 @@ LangServer = isdefined(@__MODULE__, :LanguageServer)
 
 if LangServer
     include("parameters.jl")
-    include("../../../parser/src/Parser.jl")
-    include("../../../utils/src/trajectory.jl")
-    using .Parser
-    import .Parser.ConicLinearProgram: @add_constraint
-    import .Parser.ConicLinearProgram: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
 end
 
 using LinearAlgebra

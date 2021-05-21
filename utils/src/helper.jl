@@ -26,7 +26,8 @@ using Printf
 
 export skew, get_interval, linterp, zohinterp, diracinterp,
     straightline_interpolate, rk4, trapz, ∇trapz, logsumexp, or, squeeze,
-    convert_units, homtransf, hominv, homdisp, homrot, make_indent
+    convert_units, homtransf, hominv, homdisp, homrot, make_indent,
+    golden, c2d
 
 export @preprintf
 
@@ -204,6 +205,112 @@ function straightline_interpolate(
 
     return v
 end # function
+
+"""
+    c2d(A, B, p, Δt)
+
+Discretize continuous-time linear time invartiant dynamics at a Δt time step
+using zeroth-order hold (ZOH). This effectively convert the following system:
+
+```math
+\\dot x(t) = A x(t)+B u(t)+p,
+```
+
+to the following discrete-time system:
+
+```math
+x_{k+1} = A_d x_k+B_d u_k+p_d
+```
+
+# Arguments
+- `A`: the state coefficient matrix.
+- `B`: the input coefficient matrix.
+- `p`: a constant exogenous disturbance vector.
+- `Δt`: the time step.
+
+# Returns
+- `Ad`: the discrete-time state coefficient matrix.
+- `Bd`: the discrete-time input coefficient matrix.
+- `pd`: the discrete-time exogenous disturbance time step.
+"""
+function c2d(A::RealMatrix,
+             B::RealMatrix,
+             p::RealVector,
+             Δt::RealValue)::Tuple{RealMatrix, RealMatrix, RealVector}
+
+    n = size(A, 1)
+    m = size(B, 2)
+
+    M = exp(RealMatrix([A B p; zeros(m+1, n+m+1)])*Δt)
+
+    Ad = M[1:n,1:n]
+    Bd = M[1:n,n+1:n+m]
+    pd = M[1:n,n+m+1]
+
+    return Ad, Bd, pd
+end # function
+
+"""
+    golden(f, a, b[; tol])
+
+Golden search for minimizing a unimodal function ``f(x)`` on the interval `[a,
+b]` to within a prescribed tolerance in ``x``. Implementation is based on [1].
+
+References
+
+[1] M. J. Kochenderfer and T. A. Wheeler, Algorithms for
+Optimization. Cambridge, Massachusetts: The MIT Press, 2019.
+
+# Arguments
+- `f`: oracle with call signature `v=f(x)` where `v` is saught to be minimized.
+- `a`: search domain lower bound.
+- `b`: search domain upper bound.
+
+# Keywords
+- `tol`: (optional) tolerance in terms of maximum distance that the minimizer
+  `x∈[a,b]` is away from `a` or `b`.
+- `verbose`: (optional) print the golden searchprogress.
+
+# Returns
+- `sol`: a tuple where `s[1]` is the argmin and `s[2]` is the min.
+"""
+function golden(f::Function, a::RealValue, b::RealValue;
+                tol::RealValue=1e-3,
+                verbose::Bool=true)::Tuple{RealValue, RealValue}
+
+    φ = (1+sqrt(5))/2
+    n = ceil(log((b-a)/tol)/log(φ)+1)
+    ρ = φ-1
+    d = ρ*b+(1-ρ)*a
+    yd = f(d)
+
+    if verbose
+        @printf("Golden search bracket:\n")
+    end
+
+    for i = 1:n-1 #noinfo
+
+        c = ρ*a+(1-ρ)*b
+        yc = f(c)
+
+        if yc<yd
+            b,d,yd = d,c,yc
+        else
+            a,b = b,c
+        end
+
+        bracket = sort([a,b,c,d])
+
+        if verbose
+            @printf("%-10.3e | %-10.3e | %-10.3e | %-10.3e\n", bracket...)
+        end
+    end
+
+    x_sol = b
+    sol = (x_sol, f(x_sol))
+
+    return sol
+end
 
 """
     rk4(f, x0, tspan[; full, actions])

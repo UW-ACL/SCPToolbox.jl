@@ -19,11 +19,11 @@ LangServer = isdefined(@__MODULE__, :LanguageServer)
 
 if LangServer
     include("parameters.jl")
+    include("definition.jl")
 end
 
 using PyPlot
 using Colors
-using Printf
 
 using Solvers #noerr
 

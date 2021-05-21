@@ -18,9 +18,6 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 if isdefined(@__MODULE__, :LanguageServer)
     include("parameters.jl")
-    include("../../../solvers/src/Solvers.jl")
-    include("../../../solvers/src/scp.jl")
-    using .Solvers
 end
 
 using Solvers
