@@ -31,7 +31,6 @@ struct GuSTOParameters <: SCPParameters
     N::T_Int          # Number of temporal grid nodes
     Nsub::T_Int       # Number of subinterval integration time nodes
     iter_max::T_Int   # Maximum number of iterations
-    ω::T_Real         # Dynamics virtual control weight
     λ_init::T_Real    # Initial soft penalty weight
     λ_max::T_Real     # Maximum soft penalty weight
     ρ_0::T_Real       # Trust region update threshold (lower, good solution)
@@ -62,13 +61,10 @@ mutable struct GuSTOSubproblemSolution <: SCPSubproblemSolution
     xd::T_RealMatrix     # States
     ud::T_RealMatrix     # Inputs
     p::T_RealVector      # Parameter vector
-    # >> Virtual control terms <<
-    vd::T_RealMatrix     # Dynamics virtual control
     # >> Cost values <<
     J::T_Real            # The original cost
     J_st::T_Real         # The state constraint soft penalty
     J_tr::T_Real         # The trust region soft penalty
-    J_vc::T_Real         # The virtual control soft penalty
     J_aug::T_Real        # Overall nonlinear cost
     L::T_Real            # J *linearized* about reference solution
     L_st::T_Real         # J_st *linearized* about reference solution
@@ -106,7 +102,6 @@ mutable struct GuSTOSubproblem <: SCPSubproblem
     L::T_Objective               # The original cost
     L_st::T_Objective            # The state constraint soft penalty
     L_tr::T_Objective            # The trust region soft penalty
-    L_vc::T_Objective            # The virtual control soft penalty
     L_aug::T_Objective           # Overall cost
     # >> Scaled variables <<
     xh::T_OptiVarMatrix          # Discrete-time states
@@ -116,8 +111,6 @@ mutable struct GuSTOSubproblem <: SCPSubproblem
     x::T_OptiVarMatrix           # Discrete-time states
     u::T_OptiVarMatrix           # Discrete-time inputs
     p::T_OptiVarVector           # Parameters
-    # >> Virtual control (never scaled) <<
-    vd::T_OptiVarMatrix          # Dynamics virtual control
     # >> Statistics <<
     nvar::T_Int                    # Total number of decision variables
     ncons::Dict{T_Symbol, Any}     # Number of constraints
@@ -148,8 +141,6 @@ function GuSTOProblem(pars::GuSTOParameters,
         (:iter, "k", "%d", 2),
         # Solver status
         (:status, "status", "%s", 8),
-        # Maximum dynamics virtual control element
-        (:maxvd, "vd", "%.0e", 5),
         # Overall cost (including penalties)
         (:cost, "J", "%.2e", 9),
         # Maximum deviation in state
@@ -215,7 +206,6 @@ function GuSTOSubproblem(pbm::SCPProblem,
     nu = pbm.traj.nu
     np = pbm.traj.np
     N = pbm.pars.N
-    _E = pbm.common.E
 
     # Optimization problem handle
     solver = pars.solver
@@ -234,7 +224,6 @@ function GuSTOSubproblem(pbm::SCPProblem,
     L = missing
     L_st = missing
     L_tr = missing
-    L_vc = missing
     L_aug = missing
 
     # Decision variables (scaled)
@@ -246,13 +235,12 @@ function GuSTOSubproblem(pbm::SCPProblem,
     x = scale.Sx*xh.+scale.cx
     u = scale.Su*uh.+scale.cu
     p = scale.Sp*ph.+scale.cp
-    vd = @variable(mdl, [1:size(_E, 2), 1:N-1], base_name="vd")
 
     # Trust region shrink factor
     κ = (iter < pars.iter_μ) ? 1.0 : pars.μ^(1+iter-pars.iter_μ)
 
     spbm = GuSTOSubproblem(iter, mdl, algo, pbm, λ, η, κ, sol, ref, L, L_st,
-                           L_tr, L_vc, L_aug, xh, uh, ph, x, u, p, vd, nvar,
+                           L_tr, L_aug, xh, uh, ph, x, u, p, nvar,
                            ncons, timing)
 
     return spbm
@@ -303,18 +291,15 @@ function GuSTOSubproblemSolution(
     reject = false
     dyn = T_DLTV(nx, nu, np, nv, N)
 
-    vd = T_RealMatrix(undef, 0, N)
-
     J = NaN
     J_st = NaN
     J_tr = NaN
-    J_vc = NaN
     J_aug = NaN
     L = NaN
     L_st = NaN
     L_aug = NaN
 
-    subsol = GuSTOSubproblemSolution(iter, x, u, p, vd, J, J_st, J_tr, J_vc,
+    subsol = GuSTOSubproblemSolution(iter, x, u, p, J, J_st, J_tr,
                                      J_aug, L, L_st, L_aug, status, feas,
                                      defect, deviation, unsafe, cost_error,
                                      dyn_error, ρ, tr_update, λ_update, reject,
@@ -348,15 +333,11 @@ function GuSTOSubproblemSolution(spbm::GuSTOSubproblem)::T_GuSTOSubSol
     # Form the partly uninitialized subproblem
     sol = GuSTOSubproblemSolution(x, u, p, spbm.iter, spbm.def)
 
-    # Save the virtual control values and penalty terms
-    sol.vd = value.(spbm.vd)
-
     # Save the optimal cost values
     sol.J = _gusto__original_cost(x, u, p, spbm, :nonconvex)
     sol.J_st = _gusto__state_penalty_cost(x, p, spbm, :nonconvex)
     sol.J_tr = value.(spbm.L_tr)
-    sol.J_vc = value.(spbm.L_vc)
-    sol.J_aug = sol.J+sol.J_st+sol.J_tr+sol.J_vc
+    sol.J_aug = sol.J+sol.J_st+sol.J_tr
     sol.L = value.(spbm.L)
     sol.L_st = value.(spbm.L_st)
     sol.L_aug = value.(spbm.L_aug)
@@ -484,16 +465,14 @@ function _gusto__add_cost!(spbm::GuSTOSubproblem)::Nothing
     x = spbm.x
     u = spbm.u
     p = spbm.p
-    vd = spbm.vd
 
     # Compute the cost components
     spbm.L = _gusto__original_cost(x, u, p, spbm)
     spbm.L_st = _gusto__state_penalty_cost(x, p, spbm)
     spbm.L_tr = _gusto__trust_region_cost(x, p, spbm)
-    spbm.L_vc = _gusto__virtual_control_cost(vd, spbm)
 
     # Overall cost
-    spbm.L_aug = spbm.L+spbm.L_st+spbm.L_tr+spbm.L_vc
+    spbm.L_aug = spbm.L+spbm.L_st+spbm.L_tr
 
     # Associate cost function with the model
     set_objective_function(spbm.mdl, spbm.L_aug)
@@ -875,43 +854,6 @@ function _gusto__trust_region_cost(x::T_OptiVarMatrix,
 end
 
 """
-    _gusto__virtual_control_cost(vd, spbm)
-
-Compute the virtual control penalty.
-
-# Arguments
-- `vd`: the discrete-time dynamics virtual control trajectory.
-- `spbm`: the subproblem structure.
-
-# Returns
-- `cost_vc`: the virtual control penalty cost.
-"""
-function _gusto__virtual_control_cost(vd::T_OptiVarMatrix,
-                                      spbm::GuSTOSubproblem)::T_Objective
-
-    # Parameters
-    pars = spbm.def.pars
-    ω = pars.ω
-    N = pars.N
-    t = spbm.def.common.t_grid
-    E = spbm.ref.dyn.E
-    vc_l1 = @variable(spbm.mdl, [1:N-1], base_name="vc_l1")
-
-    # Integrated running cost
-    cost_vc_integrand = Vector{T_Objective}(undef, N)
-    cost_vc_integrand[end] = 0.0
-    for k = 1:N-1
-        vck_l1 = @k(vc_l1)
-        C = T_ConvexConeConstraint(vcat(vck_l1, @k(E)*@k(vd)), :l1)
-        add_conic_constraint!(spbm.mdl, C)
-        @k(cost_vc_integrand) = ω*vck_l1
-    end
-    cost_vc = trapz(cost_vc_integrand, t)
-
-    return cost_vc
-end
-
-"""
     _gusto__check_stopping_criterion!(spbm)
 
 Check if stopping criterion is triggered.
@@ -972,7 +914,6 @@ function _gusto__update_trust_region!(
     pbm = spbm.def
     traj = pbm.traj
     N = pbm.pars.N
-    Nsub = pbm.pars.Nsub
     t = pbm.common.t_grid
     sol = spbm.sol
     ref = spbm.ref
@@ -1049,7 +990,6 @@ function _gusto__update_rule!(
     ρ0 = pars.ρ_0
     ρ1 = pars.ρ_1
     λ_init = pars.λ_init
-    λ_max = pars.λ_max
     γ_fail = pars.γ_fail
     β_sh = pars.β_sh
     β_gr = pars.β_gr
@@ -1196,7 +1136,6 @@ function _gusto__print_info(spbm::GuSTOSubproblem,
         # Associate values with columns
         assoc = Dict(:iter => spbm.iter,
                      :status => status,
-                     :maxvd => norm(sol.vd, Inf),
                      :cost => sol.J_aug,
                      :dx => max_dxh,
                      :du => max_duh,
