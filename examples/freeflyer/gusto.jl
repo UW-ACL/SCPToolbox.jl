@@ -35,68 +35,6 @@ pbm = TrajectoryProblem(mdl)
 
 define_problem!(pbm, :gusto)
 
-# >> Dynamics constraint <<
-_gusto_freeflyer__f = (t, k, x, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    v = x[veh.id_v]
-    q = T_Quaternion(x[veh.id_q])
-    ω = x[veh.id_ω]
-    tdil = p[veh.id_t]
-    f = [zeros(pbm.nx) for i=1:pbm.nu+1]
-    f[1][veh.id_r] = v
-    f[1][veh.id_q] = 0.5*vec(q*ω)
-    iJ = veh.J\I(3)
-    f[1][veh.id_ω] = -iJ*cross(ω, veh.J*ω)
-    for j = 1:3
-        # ---
-        iT = veh.id_T[j]
-        iM = veh.id_M[j]
-        f[iT+1][veh.id_v[j]] = 1/veh.m
-        f[iM+1][veh.id_ω] = iJ[:, j]
-        # ---
-    end
-    f = [_f*tdil for _f in f]
-    return f
-end
-
-problem_set_dynamics!(
-    pbm,
-    # Dynamics f
-    (t, k, x, p, pbm) -> begin
-    return _gusto_freeflyer__f(t, k, x, p, pbm)
-    end,
-    # Jacobian df/dx
-    (t, k, x, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    tdil = p[veh.id_t]
-    v = x[veh.id_v]
-    q = T_Quaternion(x[veh.id_q])
-    ω = x[veh.id_ω]
-    dfqdq = 0.5*skew(T_Quaternion(ω), :R)
-    dfqdω = 0.5*skew(q)
-    dfωdω = -veh.J\(skew(ω)*veh.J-skew(veh.J*ω))
-    A = [zeros(pbm.nx, pbm.nx) for i=1:pbm.nu+1]
-    A[1][veh.id_r, veh.id_v] = I(3)
-    A[1][veh.id_q, veh.id_q] = dfqdq
-    A[1][veh.id_q, veh.id_ω] = dfqdω[:, 1:3]
-    A[1][veh.id_ω, veh.id_ω] = dfωdω
-    A = [_A*tdil for _A in A]
-    return A
-    end,
-    # Jacobian df/dp
-    (t, k, x, p, pbm) -> begin
-    veh = pbm.mdl.vehicle
-    tdil = p[veh.id_t]
-    F = [zeros(pbm.nx, pbm.np) for i=1:pbm.nu+1]
-    _f = _gusto_freeflyer__f(t, k, x, p, pbm)
-    for i = 1:pbm.nu+1
-    # ---
-    F[i][:, veh.id_t] = _f[i]/tdil
-    # ---
-    end
-    return F
-    end)
-
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: GuSTO algorithm parameters :::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
