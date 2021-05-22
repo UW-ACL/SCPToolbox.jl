@@ -60,8 +60,30 @@ pars = SCvxParameters(N, Nsub, iter_max, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
 # :: Solve trajectory generation problem ::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-scvx_pbm = SCvxProblem(pars, pbm)
-sol, history = scvx_solve(scvx_pbm)
+# Number of trials. All trials will give the same solution, but we need many to
+# plot statistically meaningful timing results
+num_trials = 100
+
+sol_list = Vector{SCPSolution}(undef, num_trials)
+history_list = Vector{SCPHistory}(undef, num_trials)
+
+for trial = 1:num_trials
+    local pbm = SCvxProblem(pars, pbm)
+    @printf("Trial %d/%d\n", trial, num_trials)
+    if trial>1
+        # Suppress output
+        real_stdout = stdout
+        (rd, wr) = redirect_stdout()
+    end
+    sol_list[trial], history_list[trial] = solve(pbm)
+    if trial>1
+        redirect_stdout(real_stdout)
+    end
+end
+
+# Save one solution instance - for plotting a single trial
+sol = sol_list[end]
+history = history_list[end]
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -71,4 +93,4 @@ plot_trajectory_history(mdl, history)
 plot_final_trajectory(mdl, sol)
 plot_timeseries(mdl, sol)
 plot_obstacle_constraints(mdl, sol)
-plot_convergence(history, "freeflyer")
+plot_convergence(history_list, "freeflyer")
