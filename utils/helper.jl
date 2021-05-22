@@ -17,6 +17,7 @@ You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 using LinearAlgebra
+using Statistics
 using JuMP
 using Printf
 using PyPlot
@@ -994,6 +995,12 @@ end
 """
 function plot_convergence(history, name::T_String)::Nothing
 
+    plot_statistics = history isa AbstractArray
+    if plot_statistics
+        all_histories = history
+        history = history[end]
+    end
+
     # Common values
     algo = history.subproblems[1].algo
     clr = get_colormap()(1.0)
@@ -1070,6 +1077,14 @@ function plot_convergence(history, name::T_String)::Nothing
 
     # ..:: Timing performance plot ::..
 
+    # Restore the array of histories
+    if plot_statistics
+        trials = all_histories[2:end]
+    else
+        # Make it an array so we can write general code below
+        trials = [history]
+    end
+
     ax = fig.add_subplot(212)
 
     ax.set_axisbelow(true)
@@ -1095,48 +1110,70 @@ function plot_convergence(history, name::T_String)::Nothing
     darken = (c) -> rgb2pyplot(weighted_color_mean(
         1-darken_factor, parse(RGB, c), colorant"black"))
 
-    spbms = history.subproblems[1:end-1]
-    discretize = [spbm.timing[:discretize] for spbm in spbms]
-    solve = [spbm.timing[:solve] for spbm in spbms]
-    formulate = [spbm.timing[:formulate] for spbm in spbms]
-    overhead = [spbm.timing[:overhead] for spbm in spbms]
-    total = [spbm.timing[:total] for spbm in spbms]
-    ymax = maximum((formulate+discretize+solve+overhead)[2:end])*1.1
+    num_scp_iters = length(trials[1].subproblems)-1
+    discretize = map(i->[trial.subproblems[i].timing[:discretize]
+                         for trial in trials], 1:num_scp_iters)
+    solve = map(i->[trial.subproblems[i].timing[:solve]
+                    for trial in trials], 1:num_scp_iters)
+    formulate = map(i->[trial.subproblems[i].timing[:formulate]
+                        for trial in trials], 1:num_scp_iters)
+    overhead = map(i->[trial.subproblems[i].timing[:overhead]
+                        for trial in trials], 1:num_scp_iters)
+    total = map(trial->cumsum([
+        trial.subproblems[i].timing[:discretize]+
+            trial.subproblems[i].timing[:solve]+
+            trial.subproblems[i].timing[:formulate]+
+            trial.subproblems[i].timing[:overhead]
+        # trial.subproblems[i].timing[:total]
+        for i=1:num_scp_iters]), trials)
+
+    av_discretize = map(median, discretize)
+    av_solve = map(median, solve)
+    av_formulate = map(median, formulate)
+    av_overhead = map(median, overhead)
+
+    total = hcat(total...)
+    av_total = map(iter->median(total[iter, :]), 1:num_scp_iters)
+    min_total = map(iter->quantile(total[iter, :], 0.1), 1:num_scp_iters)
+    max_total = map(iter->quantile(total[iter, :], 0.9), 1:num_scp_iters)
+
+    ymax = maximum((av_formulate+av_discretize+
+        av_solve+av_overhead))*1.1
 
     for i = 1:2
         linew = (i==1) ? 0 : lw
         z = (i==1) ? 0 : -1
         lbl = (str) -> (i==1) ? str : nothing
 
-        ax.bar(labels, discretize, width,
+        ax.bar(labels, av_formulate, width,
+               label=lbl("Formulate"),
+               color=DarkBlue,
+               linewidth=linew,
+               edgecolor=darken(DarkBlue),
+               joinstyle=js,
+               zorder=z)
+        ax.bar(labels, av_discretize, width,
+               bottom=av_formulate,
                label=lbl("Discretize"),
                color=Yellow,
                linewidth=linew,
                edgecolor=darken(Yellow),
                joinstyle=js,
                zorder=z)
-        ax.bar(labels, solve, width,
-               bottom=discretize,
+        ax.bar(labels, av_solve, width,
+               bottom=av_discretize+av_formulate,
                label=lbl("Solve"),
                color=Red,
                linewidth=linew,
                edgecolor=darken(Red),
                joinstyle=js,
                zorder=z)
-        ax.bar(labels, formulate, width,
-               bottom=discretize+solve,
-               label=lbl("Formulate"),
+        ax.bar(labels, av_overhead, width,
+               bottom=av_discretize+av_formulate+av_solve,
+               label=lbl("Overhead"),
                color=Green,
                linewidth=linew,
                edgecolor=darken(Green),
-               joinstyle=js,
-               zorder=z)
-        ax.bar(labels, overhead, width,
-               bottom=discretize+solve+formulate,
-               label=lbl("Overhead"),
-               color=DarkBlue,
-               linewidth=linew,
-               edgecolor=darken(DarkBlue),
                joinstyle=js,
                zorder=z)
     end
@@ -1156,7 +1193,8 @@ function plot_convergence(history, name::T_String)::Nothing
     ax2.tick_params(axis="y", colors=ax2_clr)
     ax2.spines["right"].set_edgecolor(ax2_clr)
 
-    ax2.plot(iters, cumsum(total),
+    # Plots average
+    ax2.plot(iters, av_total,
              color=ax2_clr,
              linewidth=2,
              marker="o",
@@ -1165,7 +1203,8 @@ function plot_convergence(history, name::T_String)::Nothing
              markeredgecolor="white",
              clip_on=false,
              zorder=100)
-    ax2.plot(iters, cumsum(total),
+
+    ax2.plot(iters, av_total,
              color="white",
              linewidth=2+outline_w,
              marker="o",
@@ -1173,7 +1212,30 @@ function plot_convergence(history, name::T_String)::Nothing
              markeredgewidth=outline_w,
              markeredgecolor="white",
              clip_on=false,
-             zorder=99)
+             zorder=90)
+
+    # Plot error bars
+    error_bars = Vector{Matrix{Float64}}(undef, 0)
+    for iter = 1:num_scp_iters
+        error_bar = hcat([iter; min_total[iter]],
+                         [iter; max_total[iter]])
+        push!(error_bars, error_bar')
+    end
+    errors = PyPlot.matplotlib.collections.LineCollection(
+        error_bars, zorder=95,
+        colors = ax2_clr,
+        linewidths=2,
+        capstyle="round")
+    ax2.add_collection(errors)
+
+    error_outlines = PyPlot.matplotlib.collections.LineCollection(
+        error_bars, zorder=94,
+        colors = "white",
+        linewidths=2+outline_w,
+        capstyle="round")
+    ax2.add_collection(error_outlines)
+
+    ax2.set_ylim(nothing, max_total[end]*1.05)
 
     ax_bot = ax
 
