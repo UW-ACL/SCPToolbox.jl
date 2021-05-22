@@ -18,6 +18,20 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 module Examples
 
+module DoubleIntegrator
+include("double_integrator/parameters.jl")
+include("double_integrator/definition.jl")
+include("double_integrator/plots.jl")
+include("double_integrator/tests.jl")
+end # module
+
+module RocketLanding
+include("rocket_landing/parameters.jl")
+include("rocket_landing/definition.jl")
+include("rocket_landing/plots.jl")
+include("rocket_landing/tests.jl")
+end # module
+
 module Oscillator
 include("oscillator/parameters.jl")
 include("oscillator/definition.jl")
@@ -37,12 +51,5 @@ include("rendezvous_3d/definition.jl")
 include("rendezvous_3d/plots.jl")
 include("rendezvous_3d/tests.jl")
 end #module
-
-module RocketLanding
-include("rocket_landing/parameters.jl")
-include("rocket_landing/definition.jl")
-include("rocket_landing/plots.jl")
-include("rocket_landing/tests.jl")
-end # module
 
 end # module

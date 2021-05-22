@@ -1,4 +1,4 @@
-#= Spacecraft rendezvous plots.
+#= Rocket landing plots.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington)

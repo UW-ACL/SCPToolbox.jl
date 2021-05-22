@@ -21,20 +21,27 @@ using Printf
 using Test
 using Examples
 
-@testset "RocketLanding" begin
-    @printf("..:: Lossless convexification rocket landing ::..\n\n")
-    Examples.RocketLanding.lcvx()
-    @printf("success!\n")
+""" Print a heading for the test set. """
+test_heading(algo, description) = printstyled(
+    @sprintf("(%s) %s\n", algo, description),
+    color=:blue, bold=true)
+
+@testset "DoubleIntegrator" begin
+    test_heading("LCvx", "Double integrator")
+    Examples.DoubleIntegrator.lcvx()
 end
 
-# @testset "Oscillator" begin
-#     @printf("..:: Oscillator with PTR ::..\n\n")
-#     Examples.Oscillator.ptr()
-#     @printf("success!\n")
-# end
+@testset "RocketLanding" begin
+    test_heading("LCvx", "Rocket landing")
+    Examples.RocketLanding.lcvx()
+end
 
-# @testset "Rendezvous3D" begin
-#     @printf("..:: 3D Rendezvous with discrete logic ::..\n\n")
-#     Examples.Rendezvous3D.ptr()
-#     @printf("success!\n")
-# end
+@testset "Oscillator" begin
+    test_heading("PTR", "Oscillator")
+    Examples.Oscillator.ptr()
+end
+
+@testset "Rendezvous3D" begin
+    test_heading("PTR", "Apollo rendezvous")
+    Examples.Rendezvous3D.ptr()
+end
