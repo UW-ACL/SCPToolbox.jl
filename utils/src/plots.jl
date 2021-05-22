@@ -221,7 +221,6 @@ function plot_convergence(history, name::String)::Nothing
 
     ax.set_yscale("log")
     ax.grid(linewidth=0.3, alpha=0.5, axis="y", which="major")
-    ax.grid(linewidth=0.2, alpha=0.5, axis="y", which="minor", linestyle="--")
     ax.set_axisbelow(true)
     ax.set_facecolor("white")
     ax.autoscale(tight=true, axis="x")
@@ -247,7 +246,7 @@ function plot_convergence(history, name::String)::Nothing
     y_major = matplotlib.ticker.LogLocator(base = 10.0, numticks = 5)
     ax.yaxis.set_major_locator(y_major)
     y_minor = matplotlib.ticker.LogLocator(
-        base = 10.0, subs = (1:10)*0.1, numticks = 10)
+        base = 10.0, subs = (1:10)*0.1, numticks = 100)
     ax.yaxis.set_minor_locator(y_minor)
     ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
 
