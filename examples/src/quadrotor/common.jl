@@ -32,6 +32,7 @@ function define_problem!(pbm::TrajectoryProblem,
     _common__set_dims!(pbm)
     _common__set_scale!(pbm)
     _common__set_cost!(pbm, algo)
+    _common__set_dynamics!(pbm)
     _common__set_convex_constraints!(pbm)
     _common__set_nonconvex_constraints!(pbm, algo)
     _common__set_bcs!(pbm)
@@ -139,6 +140,53 @@ function _common__set_cost!(pbm::TrajectoryProblem,
 
     return nothing
 end
+
+function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
+
+    problem_set_dynamics!(
+        pbm,
+        # Dynamics f
+        (t, k, x, u, p, pbm) -> begin
+            g = pbm.mdl.env.g
+            veh = pbm.mdl.vehicle
+            v = x[veh.id_v]
+            uu = u[veh.id_u]
+            tdil = p[veh.id_t]
+            f = zeros(pbm.nx)
+            f[veh.id_r] = v
+            f[veh.id_v] = uu+g
+            f *= tdil
+            return f
+        end,
+        # Jacobian df/dx
+        (t, k, x, u, p, pbm) -> begin
+            veh = pbm.mdl.vehicle
+            tdil = p[veh.id_t]
+            A = zeros(pbm.nx, pbm.nx)
+            A[veh.id_r, veh.id_v] = I(3)
+            A *= tdil
+            return A
+        end,
+        # Jacobian df/du
+        (t, k, x, u, p, pbm) -> begin
+            veh = pbm.mdl.vehicle
+            tdil = p[veh.id_t]
+            B = zeros(pbm.nx, pbm.nu)
+            B[veh.id_v, veh.id_u] = I(3)
+            B *= tdil
+            return B
+        end,
+        # Jacobian df/dp
+        (t, k, x, u, p, pbm) -> begin
+            veh = pbm.mdl.vehicle
+            tdil = p[veh.id_t]
+            F = zeros(pbm.nx, pbm.np)
+            F[:, veh.id_t] = pbm.f(t, k, x, u, p)/tdil
+            return F
+        end)
+
+    return nothing
+end # function
 
 function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
