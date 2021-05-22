@@ -69,8 +69,30 @@ pars = GuSTOParameters(N, Nsub, iter_max, λ_init, λ_max, ρ_0, ρ_1, β_sh,
 # :: Solve trajectory generation problem ::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-gusto_pbm = GuSTOProblem(pars, pbm)
-sol, history = gusto_solve(gusto_pbm)
+# Number of trials. All trials will give the same solution, but we need many to
+# plot statistically meaningful timing results
+num_trials = 100
+
+sol_list = Vector{SCPSolution}(undef, num_trials)
+history_list = Vector{SCPHistory}(undef, num_trials)
+
+for trial = 1:num_trials
+    local gusto_pbm = GuSTOProblem(pars, pbm)
+    @printf("Trial %d/%d\n", trial, num_trials)
+    if trial>1
+        # Suppress output
+        real_stdout = stdout
+        (rd, wr) = redirect_stdout()
+    end
+    sol_list[trial], history_list[trial] = gusto_solve(gusto_pbm)
+    if trial>1
+        redirect_stdout(real_stdout)
+    end
+end
+
+# Save one solution instance - for plotting a single trial
+sol = sol_list[end]
+history = history_list[end]
 
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -80,4 +102,4 @@ plot_trajectory_history(mdl, history)
 plot_final_trajectory(mdl, sol)
 plot_input_norm(mdl, sol)
 plot_tilt_angle(mdl, sol)
-plot_convergence(history, "quadrotor")
+plot_convergence(history_list, "quadrotor")
