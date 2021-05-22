@@ -491,14 +491,19 @@ function compute_scaling(
 end # function
 
 """
-    add_dynamics!(spbm)
+    add_dynamics!(spbm[; relaxed])
 
 Add dynamics constraints to the problem.
 
 # Arguments
 - `spbm`: the subproblem definition.
+
+# Keywords
+- `relaxed`: (optional) if true then relax dynamics with a virtual control,
+  else impose the linearized dynamics as-is.
 """
-function add_dynamics!(spbm::SCPSubproblem)::Nothing
+function add_dynamics!(spbm::SCPSubproblem;
+                       relaxed::Bool=true)::Nothing
 
     # Variables and parameters
     N = spbm.def.pars.N
@@ -507,7 +512,7 @@ function add_dynamics!(spbm::SCPSubproblem)::Nothing
     x = spbm.x
     u = spbm.u
     p = spbm.p
-    vd = spbm.vd
+    vd = relaxed ? spbm.vd : nothing
 
     # Add dynamics constraint to optimization model
     for k = 1:N-1

@@ -410,48 +410,53 @@ Impose the `k`th-stage state update constraint for the dynamics `dyn`. By the
 - `prg`: the conic optimization problem object to which to add the constraint.
 """
 function state_update!(k::Int, x::VarArgBlk, u::VarArgBlk, p::VarArgBlk,
-                       v::VarArgBlk, dyn::DLTV, prg::ConicProgram)::Nothing
+                       v::Optional{VarArgBlk}, dyn::DLTV,
+                       prg::ConicProgram)::Nothing
+
+    novc = isnothing(v)
 
     xk, xkp1 = x[:, k], x[:, k+1]
-    vdk = v[:, k]
+    vdk = novc ? nothing : v[:, k]
     A = dyn.A[:, :, k]
     B = [Bi[:, :, k] for Bi in dyn.B]
     F = dyn.F[:, :, k]
     r = dyn.r[:, k]
     E = dyn.E[:, :, k]
-    Id = collect(Int, I(length(xk)))
 
     if dyn.method==FOH
         uk, ukp1 = u[:, k], u[:, k+1]
-        @add_constraint(
-            prg, ZERO, "dynamics",
-            (xkp1, xk, uk, ukp1, p, vdk), begin # Value
-                local xkp1, xk, uk, ukp1, p, vdk = arg #noerr
-                xkp1-(A*xk+B[1]*uk+B[2]*ukp1+F*p+r+E*vdk)
-            end, begin # Jacobians
-                if LangServer; local J = Dict(); end
-                J[1] = Id
-                J[2] = -A
-                J[3] = -B[1]
-                J[4] = -B[2]
-                J[5] = -F
-                J[6] = -E
-            end)
+        if novc
+            @add_constraint(
+                prg, ZERO, "dynamics",
+                (xkp1, xk, uk, ukp1, p), begin # Value
+                    local xkp1, xk, uk, ukp1, p = arg #noerr
+                    xkp1-(A*xk+B[1]*uk+B[2]*ukp1+F*p+r)
+                end)
+        else
+            @add_constraint(
+                prg, ZERO, "dynamics",
+                (xkp1, xk, uk, ukp1, p, vdk), begin # Value
+                    local xkp1, xk, uk, ukp1, p, vdk = arg #noerr
+                    xkp1-(A*xk+B[1]*uk+B[2]*ukp1+F*p+r+E*vdk)
+                end)
+        end
     elseif dyn.method==IMPULSE
         uk = u[:, k]
-        @add_constraint(
-            prg, ZERO, "dynamics",
-            (xkp1, xk, uk, p, vdk), begin # Value
-                local xkp1, xk, uk, p, vdk = arg #noerr
-                xkp1-(A*xk+B[1]*uk+F*p+r+E*vdk)
-            end, begin # Jacobians
-                if LangServer; local J = Dict(); end
-                J[1] = Id
-                J[2] = -A
-                J[3] = -B[1]
-                J[4] = -F
-                J[5] = -E
-            end)
+        if novc
+            @add_constraint(
+                prg, ZERO, "dynamics",
+                (xkp1, xk, uk, p), begin # Value
+                    local xkp1, xk, uk, p = arg #noerr
+                    xkp1-(A*xk+B[1]*uk+F*p+r)
+                end)
+        else
+            @add_constraint(
+                prg, ZERO, "dynamics",
+                (xkp1, xk, uk, p, vdk), begin # Value
+                    local xkp1, xk, uk, p, vdk = arg #noerr
+                    xkp1-(A*xk+B[1]*uk+F*p+r+E*vdk)
+                end)
+        end
     end
 
     return nothing

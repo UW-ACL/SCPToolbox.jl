@@ -33,6 +33,7 @@ function define_problem!(pbm::TrajectoryProblem,
     _common__set_scale!(pbm)
     _common__set_integration!(pbm)
     _common__set_cost!(pbm, algo)
+    _common__set_dynamics!(pbm)
     _common__set_convex_constraints!(pbm)
     _common__set_nonconvex_constraints!(pbm, algo)
     _common__set_bcs!(pbm)
@@ -219,6 +220,67 @@ function _common__set_cost!(pbm::TrajectoryProblem,
                 return S
             end)
     end
+
+    return nothing
+end # function
+
+function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
+
+    problem_set_dynamics!(
+        pbm,
+        # Dynamics f
+        (t, k, x, u, p, pbm) -> begin
+            veh = pbm.mdl.vehicle
+            tdil = p[veh.id_t] # Time dilation
+            v = x[veh.id_v]
+            q = T_Quaternion(x[veh.id_q])
+            ω = x[veh.id_ω]
+            T = u[veh.id_T]
+            M = u[veh.id_M]
+            f = zeros(pbm.nx)
+            f[veh.id_r] = v
+            f[veh.id_v] = T/veh.m
+            f[veh.id_q] = 0.5*vec(q*ω)
+            f[veh.id_ω] = veh.J\(M-cross(ω, veh.J*ω))
+            f *= tdil
+            return f
+        end,
+        # Jacobian df/dx
+        (t, k, x, u, p, pbm) -> begin
+            veh = pbm.mdl.vehicle
+            tdil = p[veh.id_t]
+            v = x[veh.id_v]
+            q = T_Quaternion(x[veh.id_q])
+            ω = x[veh.id_ω]
+            dfqdq = 0.5*skew(T_Quaternion(ω), :R)
+            dfqdω = 0.5*skew(q)
+            dfωdω = -veh.J\(skew(ω)*veh.J-skew(veh.J*ω))
+            A = zeros(pbm.nx, pbm.nx)
+            A[veh.id_r, veh.id_v] = I(3)
+            A[veh.id_q, veh.id_q] = dfqdq
+            A[veh.id_q, veh.id_ω] = dfqdω[:, 1:3]
+            A[veh.id_ω, veh.id_ω] = dfωdω
+            A *= tdil
+            return A
+        end,
+        # Jacobian df/du
+        (t, k, x, u, p, pbm) -> begin
+            veh = pbm.mdl.vehicle
+            tdil = p[veh.id_t]
+            B = zeros(pbm.nx, pbm.nu)
+            B[veh.id_v, veh.id_T] = (1.0/veh.m)*I(3)
+            B[veh.id_ω, veh.id_M] = veh.J\I(3)
+            B *= tdil
+            return B
+        end,
+        # Jacobian df/dp
+        (t, k, x, u, p, pbm) -> begin
+            veh = pbm.mdl.vehicle
+            tdil = p[veh.id_t]
+            F = zeros(pbm.nx, pbm.np)
+            F[:, veh.id_t] = pbm.f(t, k, x, u, p)/tdil
+            return F
+        end)
 
     return nothing
 end # function

@@ -46,6 +46,8 @@ const ST = Types
 
 const IntRange = ST.IntRange
 
+const Optional = ST.Optional
+
 const RealTypes = ST.RealTypes
 const RealVector = ST.RealVector
 const RealMatrix = ST.RealMatrix
