@@ -747,7 +747,9 @@ tight_layout_applied = false
 function save_figure(filename::String, algo::String="";
                      tmp::Bool=false,
                      path::Union{String, Nothing}=nothing,
-                     tight_layout::Bool=true)::Nothing
+                     tight_layout::Bool=true,
+                     facecolor::Vector=zeros(4),
+                     dpi::Int=300)::Nothing
 
     global tight_layout_applied
 
@@ -763,20 +765,22 @@ function save_figure(filename::String, algo::String="";
     filename = isempty(algo) ? @sprintf("%s", filename) :
         @sprintf("%s_%s", algo, filename)
 
-    if filename[end-3:end]!=".pdf"
-        filename *= ".pdf"
-    end
-
     # Save figure
     if !tmp
         plt.savefig(@sprintf("%s%s", path, filename),
-                    bbox_inches="tight", pad_inches=0.01, facecolor=zeros(4))
+                    bbox_inches="tight",
+                    pad_inches=0.01,
+                    facecolor=facecolor,
+                    dpi=dpi)
         plt.close()
         tight_layout_applied = false # reset
     else
         filename = split(filename, "/")[end] # Get just the name
         plt.savefig(@sprintf("/tmp/%s", filename),
-                    bbox_inches="tight", pad_inches=0.01, facecolor=zeros(4))
+                    bbox_inches="tight",
+                    pad_inches=0.01,
+                    facecolor=facecolor,
+                    dpi=dpi)
     end
 
     return nothing

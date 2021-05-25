@@ -27,7 +27,7 @@ end
 using Statistics
 using PyPlot
 
-export Mesh3D, Camera3D, Axis3D, Scene3D
+export Mesh3D, Camera3D, Axis3D, Light3D, Scene3D
 export name, rename, add!, move!, scale!, normalize!, render
 export scene_pitch, scene_yaw, scene_pan, scene_roll
 export world_axis
@@ -248,6 +248,7 @@ end # struct
 mutable struct Mesh3D <: AbstractObject3D
     V::RealMatrix              # Vertices
     F::IntMatrix               # Faces association indices
+    N::Optional{RealMatrix}    # Face normals (if specified)
     face_color::MeshColorSpec  # Mesh face color ("none" if no color)
     edge_color::MeshColorSpec  # Mesh edge color ("none" if no color)
     edge_width::MeshWidthSpec  # Mesh edge width
@@ -255,15 +256,18 @@ mutable struct Mesh3D <: AbstractObject3D
     scene_properties::SceneProperties{Mesh3D} # 3D scene properties
 
     """
-        Mesh3D(V, F[; name, face_color, edge_color, edge_width])
+        Mesh3D(V, F[, N; name, face_color, edge_color, edge_width])
 
     Basic constructor.
 
     # Arguments
     - `V`: a 3xN matrix of vertices, where each column is a vertex.
-    - `F`: a 3xM matrix of faces. If a column has values `[i;j;k]` then it
-      means that the face is created from the vertices in columns `i`, `j`, and
-      `k` of the `V` matrix.
+    - `F`: a 3xM or 4xM matrix of faces. If a column has values `[i;j;k;l]`
+      then it means that the face is created from the vertices in columns `i`,
+      `j`, and `k` of the `V` matrix. If an extra 4th row is present, the value
+      `l` corresponds to the column of the `N` matrix which stores the normal
+      for this face.
+    - `N`: a 3xN matrix of face normals, where each column is a normal.
 
     # Keywords
     - `name`: (optional) a name for the mesh, which makes it easier to
@@ -276,7 +280,8 @@ mutable struct Mesh3D <: AbstractObject3D
     - `obj`: the newly created mesh object.
     """
     function Mesh3D(V::RealMatrix,
-                    F::IntMatrix;
+                    F::IntMatrix,
+                    N::Optional{RealMatrix}=nothing;
                     name::String="mesh",
                     face_color::MeshColorSpec="none",
                     edge_color::MeshColorSpec="black",
@@ -289,7 +294,7 @@ mutable struct Mesh3D <: AbstractObject3D
         default_properties = SceneProperties{Mesh3D}(name)
         default_local_pose = homtransf()
 
-        obj = new(V, F, face_color, edge_color, edge_width,
+        obj = new(V, F, N, face_color, edge_color, edge_width,
                   default_local_pose, default_properties)
 
         return obj
@@ -315,9 +320,9 @@ mutable struct Mesh3D <: AbstractObject3D
                     edge_color::MeshColorSpec="black",
                     edge_width::MeshWidthSpec=0.1)::Mesh3D
 
-        V, F = load_wavefront(filepath)
+        V, F, N = load_wavefront(filepath)
 
-        obj = Mesh3D(V, F, name=name, face_color=face_color,
+        obj = Mesh3D(V, F, N, name=name, face_color=face_color,
                      edge_color=edge_color, edge_width=edge_width)
 
         return obj
@@ -412,6 +417,41 @@ mutable struct Axis3D <: AbstractObject3D
         axis = new(visible, axis_length, axis_width, default_properties)
 
         return axis
+    end # function
+end # struct
+
+"""
+`Light3D` is a light source object which allows to apply shading to the scene.
+"""
+mutable struct Light3D <: AbstractObject3D
+    az::RealValue # Azimuth angle
+    el::RealValue # Elevation angle
+    scene_properties::SceneProperties{Light3D} # 3D scene properties
+
+    """
+        Light3D()
+
+    Basic constructor.
+
+    # Arguments
+    - `az`: light source vector azimuth angle (in degrees).
+    - `el`: light source vector elevation angle (in degrees).
+
+    # Returns
+    - `light`: the newly created light source.
+    """
+    function Light3D(az::RealValue,
+                     el::RealValue;
+                     name::String="light")::Light3D
+
+        @assert az>=0 && az<=360
+        @assert el>=0 && el<=90
+
+        default_properties = SceneProperties{Light3D}(name)
+
+        light = new(az, el, default_properties)
+
+        return light
     end # function
 end # struct
 
@@ -956,9 +996,12 @@ the `Object3D` basic constructor.
 # Returns
 - `V`: floating point array of vertices.
 - `F`: integer array of faces.
+- `N`: floating point array for face normals.
 """
-function load_wavefront(filepath::String)::Tuple{RealMatrix, IntMatrix}
-    V, F = [], []
+function load_wavefront(filepath::String)::Tuple{RealMatrix,
+                                                 IntMatrix,
+                                                 Optional{RealMatrix}}
+    V, F, N = [], [], []
     f = open(filepath, "r")
     for line in readlines(f)
         if startswith(line, "#")
@@ -966,17 +1009,26 @@ function load_wavefront(filepath::String)::Tuple{RealMatrix, IntMatrix}
         end
         values = split(line) #noinfo
         if isempty(values)
-            println("here")
         elseif values[1]=="v"
             push!(V, [parse(Float64, x) for x in values[2:4]])
+        elseif values[1]=="vn"
+            push!(N, [parse(Float64, x) for x in values[2:4]])
         elseif values[1]=="f"
-            push!(F, [parse(Int, x) for x in values[2:4]])
+            values = map(s->split(s, "//"), values[2:4]) #noinfo
+            vertices = map(v->v[1], values)
+            if length(values[1])==2
+                # There is face normal information
+                normal = values[1][2]
+                push!(vertices, normal)
+            end
+            push!(F, [parse(Int, x) for x in vertices])
         end
     end
     close(f)
     V = hcat(V...)
     F = hcat(F...)
-    return V, F
+    N = isempty(N) ? nothing : hcat(N...)
+    return V, F, N
 end # function
 
 """
@@ -1061,7 +1113,9 @@ function render(scene::Scene3D,
     ax.add_collection(scene_baked)
 
     # Save figure to file
-    save_figure(path, tight_layout=false)
+    save_figure(path,
+                tight_layout=false,
+                dpi=800)
 
     return nothing
 end # function
@@ -1089,11 +1143,13 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
     ec = Vector{String}[]
     ew = RealVector[]
 
-    persp = perspective(camera) # Perspect projection to camera
+    # Perspective projection to camera
+    persp = perspective(camera)
 
     traverse(scene.objects) do obj, _
         # Do not render cameras and invisible axes
         if (obj isa Camera3D ||
+            obj isa Light3D ||
             (obj isa Axis3D && !obj.visible))
             return
         end
@@ -1106,7 +1162,7 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
             obj = MeshAxis3D(ax_obj)
             add!(ax_obj, obj)
         end
-        verts, faces = obj.V, obj.F
+        verts, faces, normals = obj.V, obj.F, obj.N
 
         # Relative pose
         rel_pose = relative_pose(obj, camera, Body, Body)
@@ -1121,10 +1177,24 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
         tris = RealTensor[]
         id_face_keep = Int[]
         for i=1:num_faces
-            face_verts = verts[1:3, faces[:, i]]
+            face_verts = verts[1:3, faces[1:3, i]]
             # Filter out faces outside the clipping volume
             if any(face_verts.>1) || any(face_verts.<-1)
                 continue
+            end
+            # Filter out faces whose normal points away from the camera
+            if !isnothing(normals)
+                base = face_verts[:, 1]
+                normal = normals[:, faces[4, i]]
+                tip = base+normal
+                proj_base = proj*[base; 1]
+                proj_tip = proj*[tip; 1]
+                proj_base ./= proj_base[4]
+                proj_tip ./= proj_tip[4]
+                proj_normal = (proj_base-proj_tip)[1:3]
+                if proj_normal[3]<0
+                    continue
+                end
             end
             push!(tris, reshape(face_verts', 1, 3, 3))
             push!(id_face_keep, i)
@@ -1137,12 +1207,38 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
             return
         end
 
+        # Find the light source
+        light = find_light(obj)
+        let_there_be_light = !isnothing(light) && !isnothing(normals)
+        if let_there_be_light
+            light = PyPlot.matplotlib.colors.LightSource(
+                azdeg=light.az, altdeg=light.el)
+        end
+
+        # Illuminate the face and edge colors
+        face_colors = (obj.face_color isa Vector) ?
+            obj.face_color : repeat([obj.face_color], size(faces, 2))
+        edge_colors = (obj.edge_color isa Vector) ?
+            obj.edge_color : repeat([obj.edge_color], size(faces, 2))
+        if let_there_be_light
+            # Update face colors according to illumination by the light source
+            normals_array = hcat(map(i->normals[:, i], faces[4, :])...)'
+            shade = light.shade_normals(normals_array, fraction=1.0)
+            for i = 1:size(faces, 2)
+                dark_fraction = 1-shade[i]
+                face_colors[i] = "#"*hex(RGB(darken_color(
+                    face_colors[i], dark_fraction)[1:3]...))
+                edge_colors[i] = "#"*hex(RGB(darken_color(
+                    edge_colors[i], dark_fraction)[1:3]...))
+            end
+        end
+        face_colors = face_colors[id_face_keep]
+        edge_colors = edge_colors[id_face_keep]
+
         # Save to concatenated list
         push!(tris_3d, tris)
-        push!(fc, (obj.face_color isa Vector) ? obj.face_color[id_face_keep] :
-            repeat([obj.face_color], num_faces))
-        push!(ec, (obj.edge_color isa Vector) ? obj.edge_color[id_face_keep] :
-            repeat([obj.edge_color], num_faces))
+        push!(fc, face_colors)
+        push!(ec, edge_colors)
         push!(ew, (obj.edge_width isa Vector) ? obj.edge_width[id_face_keep] :
             repeat([obj.edge_width], num_faces))
 
@@ -1183,6 +1279,54 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
     out = BakedScene3D(tris, fc, ec, ew)
 
     return out
+end # function
+
+"""
+    find_light(obj)
+
+Find a light source that should be used for illuminating the provided
+object. This is done by finding the light source lowest on the tree that is
+some sibling or distance sibling of the object. The function proceeds all the
+way until the object tree's root, at which point it stops if there is still no
+light source found.
+
+# Arguments
+- `obj`: the object for which a light source is to be provided.
+
+# Returns
+- `light`: the light source, or `nothing` if none.
+
+# Throws
+- `ErrorException` if a node is encountered with more than one `Light3D`
+  child. This is an ambiguous case (which light to pick?) that we do not
+  support.
+"""
+function find_light(obj::AbstractObject3D)::Optional{Light3D}
+
+    parent = owner(obj)
+
+    while true
+        # Find any child nodes that are lights
+        child_lights = findall(parent) do data
+            return data isa Light3D
+        end
+
+        if length(child_lights)>1
+            err = ErrorException(
+                @sprintf("%s has %d light sources (only 1 allowed)",
+                         name(parent), length(child_lights)))
+            throw(err)
+        elseif length(child_lights)==1
+            light = child_lights[1]
+            return light
+        elseif is_root(parent)
+            # At the object tree root - no light source found
+            return nothing
+        else
+            # Go up a tree level
+            parent = parent.parent
+        end
+    end
 end # function
 
 """
