@@ -630,7 +630,7 @@ function Sphere3D(r::Real;
     F = Vector{Types.IntVector}(undef, 0)
     for i = 2:el
         if i==2
-            vbot = V2I[[0; 0; -r]]
+            vbot = V2I[-1*[0; 0; r]]
             for j = 1:az
                 jn = (j==az) ? 1 : j+1
                 v3 = V2I[coord(el_vals[i], az_vals[jn])]
@@ -1205,6 +1205,9 @@ Render the scene.
   error will be thrown due to ambiguity.
 
 # Keywords
+- `canvas_size`: (optional) size of the render window.
+- `bg_color`: (optional) the background color, specified as an RGB/RGBA vector
+  or a string.
 
 # Throws
 - `ArgumentError` if not exactly one camera is found in the scene, when the
@@ -1214,9 +1217,7 @@ function render(scene::Scene3D,
                 camera::Optional{Union{Camera3D, String}}=nothing,
                 path::String="./figures/scene3d_render.pdf";
                 canvas_size::Tuple{Real, Real}=(5, 5),
-                canvas_xlim::Tuple{Real, Real}=(-1, 1),
-                canvas_ylim::Tuple{Real, Real}=(-1, 1),
-                canvas_aspect::Real=1)::Nothing
+                bg_color=zeros(4))::Nothing
 
     # Get the camera
     if camera isa String || isnothing(camera)
@@ -1247,9 +1248,9 @@ function render(scene::Scene3D,
 
     # Add an axis
     ax = fig.add_axes([0, 0, 1, 1],
-                      xlim=canvas_xlim,
-                      ylim=canvas_ylim,
-                      aspect=canvas_aspect,
+                      xlim=(-1, 1),
+                      ylim=(-1, 1),
+                      aspect=1/camera.aspect,
                       frameon=false)
 
     # Sanitize axes
@@ -1274,7 +1275,8 @@ function render(scene::Scene3D,
     # Save figure to file
     save_figure(path,
                 tight_layout=false,
-                dpi=800)
+                dpi=800,
+                facecolor=bg_color)
 
     return nothing
 end # function
@@ -1559,11 +1561,36 @@ function Base.show(io::IO, scene::Scene3D)::Nothing
     @preprintf(io, indent, "%d faces\n", face_count)
 
     # >> Print the object tree hierarchy <<
+    full_tree = String[]
     @preprintf(io, indent, "\nObject tree:\n")
     traverse(scene.objects) do obj, depth
         local_indent = indent*(" "^(2*(depth+1)))
-        @preprintf(io, local_indent, "%s\n", name(obj))
+        push!(full_tree, @sprintf("%s%s", local_indent, name(obj)))
     end
+    # Remove repeated lines
+    line = 1
+    short_tree = ""
+    while true
+        this_line = full_tree[line]
+        count_instances = 1
+        for next_line = line+1:length(full_tree)
+            if full_tree[next_line]==this_line
+                count_instances += 1
+            else
+                break
+            end
+        end
+        if count_instances>1
+            short_tree *= @sprintf("%s (%d)\n", this_line, count_instances)
+        else
+            short_tree *= @sprintf("%s\n", this_line)
+        end
+        line += count_instances
+        if line>length(full_tree)
+            break
+        end
+    end
+    println(short_tree)
 
     return nothing
 end # function

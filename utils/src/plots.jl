@@ -727,7 +727,7 @@ function create_figure(size::Tuple{T, V})::Figure where {T<:Real, V<:Real}
 end # function
 
 """
-    save_figure(filename[, algo][; tmp, path])
+    save_figure(filename[, algo][; tmp, path, tight_layout, facecolor, dpi])
 
 Save the current figure to a PDF file. The filename is prepended with the name
 of the SCP algorithm used for the solution.
@@ -741,14 +741,16 @@ of the SCP algorithm used for the solution.
 # Keywords
 - `tmp`: (optional) whether this is a temporary file.
 - `path`: (optional) where to save the figure.
-- `tightlayout`: (optional) apply tight layout to the subplot arrangement.
+- `tight_layout`: (optional) apply tight layout to the subplot arrangement.
+- `facecolor`: (optional) color of the background (transparent by default).
+- `dpi`: (optional) dots per inch, relevant for raster image formats like PNG.
 """
 tight_layout_applied = false
 function save_figure(filename::String, algo::String="";
                      tmp::Bool=false,
                      path::Union{String, Nothing}=nothing,
                      tight_layout::Bool=true,
-                     facecolor::Vector=zeros(4),
+                     facecolor=zeros(4),
                      dpi::Int=300)::Nothing
 
     global tight_layout_applied
@@ -762,8 +764,11 @@ function save_figure(filename::String, algo::String="";
         tight_layout_applied = true
     end
 
-    filename = isempty(algo) ? @sprintf("%s", filename) :
-        @sprintf("%s_%s", algo, filename)
+    if !isempty(algo)
+        filedir = split(filename, "/")
+        filedir[end] = @sprintf("%s_%s", algo, filedir[end])
+        filename = string(filedir...)
+    end
 
     # Save figure
     if !tmp
