@@ -27,7 +27,7 @@ end
 using Statistics
 using PyPlot
 
-export Mesh3D, Camera3D, Axis3D, Light3D, Scene3D
+export Mesh3D, Camera3D, Axis3D, Light3D, Scene3D, Sphere3D, Line3D
 export name, rename, add!, move!, scale!, normalize!, render
 export scene_pitch, scene_yaw, scene_pan, scene_roll
 export world_axis
@@ -350,7 +350,7 @@ mutable struct Camera3D <: AbstractObject3D
 
     Basic constructor.
 
-    # Arguments
+    # Keywords
     - `fovy`: (optional) the y-axis field of view opening angle, in degrees.
     - `aspect`: (optional) the view plane aspect ratio.
     - `znear`: (optional) the near clip plane distance in front of camera.
@@ -403,6 +403,8 @@ mutable struct Axis3D <: AbstractObject3D
     # Keywords
     - `name`: (optional) a name for the axis.
     - `visible`: (optional) whether to render the axis in the scene.
+    - `axis_length`: (optional) the length of the axis mesh, if drawn.
+    - `axis_width`: (optional) the width of the axes vectors, if drawn.
 
     # Returns
     - `axis`: the new axis object.
@@ -429,13 +431,16 @@ mutable struct Light3D <: AbstractObject3D
     scene_properties::SceneProperties{Light3D} # 3D scene properties
 
     """
-        Light3D()
+        Light3D(ax, el[; name])
 
     Basic constructor.
 
     # Arguments
     - `az`: light source vector azimuth angle (in degrees).
     - `el`: light source vector elevation angle (in degrees).
+
+    # Keywords
+    - `name`: (optional) a name for the light source.
 
     # Returns
     - `light`: the newly created light source.
@@ -567,6 +572,160 @@ function MeshAxis3D(axis::Axis3D)::Mesh3D
     axis_mesh = Mesh3D(V, F, face_color=fc, edge_color="none", edge_width=0)
 
     return axis_mesh
+end # function
+
+"""
+    Sphere3D(r[; az, el, name, face_color,
+             edge_color, edge_width])
+
+Generate a spherical mesh of a given radius.
+
+# Arguments
+- `r`: the sphere radius.
+
+# Keywords
+- `az`: (optional) number of steps in the azimuth direction (which spans 0 to
+  360 degrees about the `z` axis).
+- `el`: (optional) number of steps in the elevation direction (which spans -90 to
+  90 degrees "climbing" along the `z` axis).
+- For the other arguments, see the `Mesh3D` basic constructor.
+
+# Returns
+- `sphere`: the sphere `Mesh3D` object.
+"""
+function Sphere3D(r::Real;
+                  az::Int=30,
+                  el::Int=20,
+                  name::String="sphere",
+                  face_color::MeshColorSpec="none",
+                  edge_color::MeshColorSpec="black",
+                  edge_width::MeshWidthSpec=0.1)::Mesh3D
+
+    # Parameters
+    az_vals = LinRange(0, 2*pi, az+1)
+    el_vals = LinRange(-pi/2, pi/2, el)
+    coord = (el, az) -> [r*cos(el)*cos(az); r*cos(el)*sin(az); r*sin(el)]
+
+    # Generate the vertices
+    V = RealMatrix(undef, 3, 2+(el-2)*az)
+    V2I = Dict{RealVector, Int}()
+    k = 1
+    for i = 1:el
+        if i==1 || i==el
+            V[:, k] = ((i==1) ? -1 : 1)*[0; 0; r]
+            V2I[V[:, k]] = k
+            k += 1
+        else
+            φ = el_vals[i]
+            for j = 1:az
+                θ = az_vals[j]
+                V[:, k] = coord(φ, θ)
+                V2I[V[:, k]] = k
+                k += 1
+            end
+        end
+    end
+
+    # Generate the faces
+    F = Vector{Types.IntVector}(undef, 0)
+    for i = 2:el
+        if i==2
+            vbot = V2I[[0; 0; -r]]
+            for j = 1:az
+                jn = (j==az) ? 1 : j+1
+                v3 = V2I[coord(el_vals[i], az_vals[jn])]
+                v4 = V2I[coord(el_vals[i], az_vals[j])]
+                push!(F, [vbot; v3; v4])
+            end
+        elseif i==el
+            vtop = V2I[[0; 0; r]]
+            ip = i-1
+            for j = 1:az
+                jn = (j==az) ? 1 : j+1
+                v3 = V2I[coord(el_vals[ip], az_vals[jn])]
+                v4 = V2I[coord(el_vals[ip], az_vals[j])]
+                push!(F, [v4; v3; vtop])
+            end
+        else
+            ip = i-1
+            for j = 1:az
+                jn = (j==az) ? 1 : j+1
+                v1 = V2I[coord(el_vals[ip], az_vals[j])]
+                v2 = V2I[coord(el_vals[ip], az_vals[jn])]
+                v3 = V2I[coord(el_vals[i], az_vals[jn])]
+                v4 = V2I[coord(el_vals[i], az_vals[j])]
+                push!(F, [v1; v2; v4])
+                push!(F, [v2; v3; v4])
+            end
+        end
+    end
+    F = hcat(F...)
+
+    # Make the mesh object
+    sphere = Mesh3D(V, F,
+                    name=name,
+                    face_color=face_color,
+                    edge_color=edge_color,
+                    edge_width=edge_width)
+
+    return sphere
+end # function
+
+"""
+    Line3D(v1, v2[, nseg][; name, face_color,
+           edge_color, edge_width])
+
+Generate a straight line mesh.
+
+# Arguments
+- `vs`: one endpoint.
+- `vs`: second endpoint.
+- `nseg`: (optional) the number of segments composing the line.
+
+# Keywords
+- For the other arguments, see the `Mesh3D` basic constructor.
+
+# Returns
+- `line`: the line `Mesh3D` object.
+"""
+function Line3D(v1::RealVector,
+                v2::RealVector,
+                nseg::Int=100;
+                name::String="sphere",
+                edge_color::MeshColorSpec="black",
+                edge_width::MeshWidthSpec=0.1)
+
+    # Parameters
+    vx = LinRange(v1[1], v2[1], nseg+1)
+    vy = LinRange(v1[2], v2[2], nseg+1)
+    vz = LinRange(v1[3], v2[3], nseg+1)
+
+    # Generate the vertices
+    V = RealMatrix(undef, 3, nseg+1)
+    V2I = Dict{RealVector, Int}()
+    k = 1
+    for i = 1:nseg+1
+        V[:, k] = [vx[i]; vy[i]; vz[i]]
+        V2I[V[:, k]] = k
+        k += 1
+    end
+
+    # Generate the faces
+    F = Vector{Types.IntVector}(undef, 0)
+    for i = 2:nseg+1
+        v1 = V2I[[vx[i-1]; vy[i-1]; vz[i-1]]]
+        v2 = V2I[[vx[i]; vy[i]; vz[i]]]
+        push!(F, [v1; v1; v2])
+    end
+    F = hcat(F...)
+
+    # Make the mesh object
+    line = Mesh3D(V, F,
+                  name=name,
+                  edge_color=edge_color,
+                  edge_width=edge_width)
+
+    return line
 end # function
 
 """
@@ -1179,10 +1338,12 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
         for i=1:num_faces
             face_verts = verts[1:3, faces[1:3, i]]
             # Filter out faces outside the clipping volume
-            if any(face_verts.>1) || any(face_verts.<-1)
+            outside_verts = (face_verts.>1) .| (face_verts.<-1)
+            if any(all(outside_verts[i, :]) for i=1:3)
                 continue
             end
             # Filter out faces whose normal points away from the camera
+            # "backface culling"
             if !isnothing(normals)
                 base = face_verts[:, 1]
                 normal = normals[:, faces[4, i]]
@@ -1192,7 +1353,7 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
                 proj_base ./= proj_base[4]
                 proj_tip ./= proj_tip[4]
                 proj_normal = (proj_base-proj_tip)[1:3]
-                if proj_normal[3]<0
+                if proj_normal[3]<-0.05 # some buffer (exact would be <0)
                     continue
                 end
             end
