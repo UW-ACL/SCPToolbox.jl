@@ -1533,13 +1533,16 @@ function Base.show(io::IO, scene::Scene3D)::Nothing
 
     match_axis = (obj) -> typeof(obj)==Axis3D
     match_camera = (obj) -> typeof(obj)==Camera3D
+    match_light = (obj) -> typeof(obj)==Light3D
     match_mesh = (obj) -> typeof(obj)==Mesh3D
 
     all_axes = findall(match_axis, scene.objects)
     all_cameras = findall(match_camera, scene.objects)
+    all_lights = findall(match_light, scene.objects)
     all_meshes = findall(match_mesh, scene.objects)
 
     @preprintf(io, indent, "%d cameras\n", length(all_cameras))
+    @preprintf(io, indent, "%d lights\n", length(all_lights))
     @preprintf(io, indent, "%d axes\n", length(all_axes))
     @preprintf(io, indent, "%d meshes\n", length(all_meshes))
 

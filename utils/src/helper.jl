@@ -574,12 +574,14 @@ function ∇trapz(grid::RealVector)::RealVector
 end # function
 
 """
-    logsumexp(f[, ∇f][; t])
+    logsumexp(f[, ∇f, ∇²f][; t])
 
 Compute log-sum-exp function value and its gradient. Numerically stable
 implementation based on [1]. The log-sum-exp function is:
 
-` L(x) = 1/t*log( ∑_i^{m} exp(t*f_i(x)) ). `
+```julia
+L(x) = 1/t*log( ∑_i^{m} exp(t*f_i(x)) ).
+```
 
 As t increases, this becomes an increasingly accurate approximation of `max_i
 f_i(x)`.
@@ -591,6 +593,7 @@ References:
 # Arguments
 - `f`: the function in the exponent.
 - `∇f`: (optional) the gradient of the function.
+- `∇²f`: (optional) the Hessian of the function.
 
 # Keywords
 - `t`: (optional) the homotopy parameter.
@@ -598,6 +601,7 @@ References:
 # Returns
 - `L`: the log-sum-exp function value.
 - `∇L`: the log-sum-exp function gradient. Only returned in ∇f provided.
+- `∇²L`: the log-sum-exp function Hessian. Only returned in ∇²f provided.
 """
 function logsumexp(
     f::RealVector,
@@ -632,22 +636,23 @@ function logsumexp(
 end # function
 
 """
-    sigmoid(f[, ∇f][; κ])
+    sigmoid(value[, gradient, hessian][; κ])
 
-Compute a sigmoid function. The sigmoid represents a logical "OR" combination
-of its argument, in the sense that its value tends to one as any argument
-becomes more positive.
+Compute sigmoid function value. The sigmoid represents a logical "OR"
+combination of its argument, in the sense that its value tends to one as any
+argument becomes more positive.
 
 # Arguments
-- `f`: the function in the exponent.
-- `∇f`: (optional) the gradient of the function.
+- `value`: the function in the exponent.
+- `gradient`: (optional) a list of gradients for each element of `value`.
+- `hessian`: (optional) a list of Hessians for each element of `value`.
 
 # Keywords
 - `κ`: (optional) the sharpness parameter.
 
 # Returns
-- `σ`: the sigmoid function value.
-- `∇σ`: the sigmoid function gradient. Only returned in ∇f provided.
+- `σ`: the sigmoid function value (and its gradients and Hessians, depending on
+  whether `gradient` and `hessian` are provided).
 """
 function sigmoid(value::RealVector,
                  gradient::Optional{Vector}=nothing,
@@ -682,25 +687,25 @@ function sigmoid(value::RealVector,
 end # function
 
 """
-    indicator(f[, ∇f][; κ1, κ2])
+    indicator(value[, gradient, hessian][; κ, match])
 
-Like a sigmoid, except that for very small κ1 values the function is
-approximately equal to one everywhere, and not 0.5 as is the case for a
-sigmoid. Thus, low κ1 values are associated with "always in the set", where the
-set is defined as any time either element of f is nonnegative.
+Sigmoid function that is matched with the exact value (i.e. the value that
+would be obtained for `κ=Inf`) at the value `match` of `value`.
 
 # Arguments
-- `f`: the function in the exponent.
-- `∇f`: (optional) the gradient of the function.
+- `value`: vector value. The exact indicator returns one if any element of
+  `value` is positive.
+- `gradient`: (optional) a list of gradients for each element of `value`.
+- `hessian`: (optional) a list of Hessians for each element of `value`.
 
 # Keywords
 - `κ`: (optional) sigmoid sharpness parameter.
-- `match`: (optional) critical value of `f` at which to match the smoothed
+- `match`: (optional) critical value of `value` at which to match the smoothed
   indicator value to the exact value.
 
 # Returns
-- `δ`: the sigmoid function value.
-- `∇δ`: the sigmoid function gradient. Only returned in ∇f provided.
+- `σ`: the sigmoid function value (and its gradients and Hessians, depending on
+  whether `gradient` and `hessian` are provided).
 """
 function indicator(value::RealVector,
                    gradient::Optional{Vector}=nothing,
@@ -731,27 +736,28 @@ function indicator(value::RealVector,
 end # function
 
 """
-    or(p1[, p2, ..., pN][; κ1, κ2, normalize])
+    or(predicates[, gradient, hessian][; κ, match, normalize])
 
 A smooth logical OR. By passing the `normalize`, the function can be made scale
 invariant, i.e. the shape of the OR function will not change due to uniform
 scaling of the predicates.
 
 # Arguments
-- `predicates`: (optional) the predicates to be composed as logical
-  "OR". Provide either a list of reals `f` or a list of (real, vector) tuples
-  `(f, ∇f)`.
+- `predicates`: the predicates to be composed with logical "OR". Each predicate
+  element is taken as "true" if it is positive.
+- `gradient`: (optional) a list of gradients for each predicate.
+- `hessian`: (optional) a list of Hessians for each predicate.
 
 # Keywords
-- `κ1`: (optional) sigmoid sharpness parameter.
+- `κ`: (optional) sigmoid sharpness parameter.
 - `match`: (optional) value of the predicates at which to match the smooth or
   function to its exact value, via y-shifting.
-- `normalize`: (optional) normalization value to divide the predicated by
+- `normalize`: (optional) normalization value to divide the predicates by
   (e.g., their expected maximum value).
 
 # Returns
-- `OR`: the smooth OR value (1≡true).
-- `∇OR`: the smooth OR gradient. Only returned in `∇f` provided.
+- `OR`: the smooth OR value, together with its gradient and Hessian (if the
+  gradients and hessians of the predicates are provided)
 """
 function or(predicates::RealVector,
             gradient::Optional{Vector}=nothing,
