@@ -97,7 +97,7 @@ function plot_final_trajectory(mdl::PlanarRendezvousProblem,
     y_min = -5
     set_axis_equal(ax, (-1.5, traj.r0[1]+1.5, y_min, missing))
 
-    save_figure("rendezvous_planar_traj", algo)
+    save_figure("rendezvous_planar_traj.pdf", algo)
 
     return nothing
 end
@@ -173,7 +173,7 @@ function plot_attitude(mdl::PlanarRendezvousProblem,
 
     fig.align_ylabels(axes)
 
-    save_figure("rendezvous_planar_attitude", algo)
+    save_figure("rendezvous_planar_attitude.pdf", algo)
 
     return nothing
 end
@@ -293,7 +293,7 @@ function plot_thrusts(mdl::PlanarRendezvousProblem,
 
     end
 
-    save_figure("rendezvous_planar_thrusts", algo)
+    save_figure("rendezvous_planar_thrusts.pdf", algo)
 
     return nothing
 end

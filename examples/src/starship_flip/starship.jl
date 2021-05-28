@@ -642,7 +642,7 @@ function plot_trajectory_history(mdl::StarshipProblem,
                 zorder=100)
     end
 
-    save_figure("starship_traj_iters", algo)
+    save_figure("starship_traj_iters.pdf", algo)
 
     return nothing
 end
@@ -761,7 +761,7 @@ function plot_final_trajectory(mdl::StarshipProblem,
             clip_on=false,
             zorder=100)
 
-    save_figure("starship_final_traj", algo)
+    save_figure("starship_final_traj.pdf", algo)
 
     return nothing
 end
@@ -827,7 +827,7 @@ function plot_velocity(mdl::StarshipProblem,
     # Plot switch time
     _starship__plot_switch_time(ax, t1)
 
-    save_figure("starship_velocity", algo)
+    save_figure("starship_velocity.pdf", algo)
 
     return nothing
 end
@@ -901,7 +901,7 @@ function plot_thrust(mdl::StarshipProblem,
     # Plot switch time
     _starship__plot_switch_time(ax, t1)
 
-    save_figure("starship_thrust", algo)
+    save_figure("starship_thrust.pdf", algo)
 
     return nothing
 end
@@ -1048,7 +1048,7 @@ function plot_gimbal(mdl::StarshipProblem,
     # Plot switch time
     _starship__plot_switch_time(ax, t1)
 
-    save_figure("starship_gimbal", algo)
+    save_figure("starship_gimbal.pdf", algo)
 
     return nothing
 end

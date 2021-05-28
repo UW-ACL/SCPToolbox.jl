@@ -129,7 +129,7 @@ function plot_timeseries(mdl::OscillatorProblem,
 
     fig.align_ylabels(axes)
 
-    save_figure("oscillator_timeseries", algo)
+    save_figure("oscillator_timeseries.pdf", algo)
 
     return nothing
 end # function
@@ -207,7 +207,7 @@ function plot_deadband(mdl::OscillatorProblem,
             clip_on=false,
             zorder=100)
 
-    save_figure("oscillator_deadband", algo)
+    save_figure("oscillator_deadband.pdf", algo)
 
     return nothing
 end # function

@@ -257,7 +257,7 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
 
     set_axis_equal(ax, (5.5, missing, -3, 7.5))
 
-    save_figure("freeflyer_traj_iters", algo)
+    save_figure("freeflyer_traj_iters.pdf", algo)
 
     return nothing
 end
@@ -371,7 +371,7 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
 
     set_axis_equal(ax, (5.5, missing, -3, 7.5))
 
-    save_figure("freeflyer_final_traj", algo)
+    save_figure("freeflyer_final_traj.pdf", algo)
 
     return nothing
 end
@@ -529,7 +529,7 @@ function plot_timeseries(mdl::FreeFlyerProblem,
     fig.align_ylabels(axes[[1,3]])
     fig.align_ylabels(axes[[2,4]])
 
-    save_figure("freeflyer_timeseries", algo)
+    save_figure("freeflyer_timeseries.pdf", algo)
 
     return nothing
 end
@@ -663,7 +663,7 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
                     framealpha=0.8, fontsize=8, loc="upper center")
     leg.set_zorder(200)
 
-    save_figure("freeflyer_obstacles", algo)
+    save_figure("freeflyer_obstacles.pdf", algo)
 
     return nothing
 end

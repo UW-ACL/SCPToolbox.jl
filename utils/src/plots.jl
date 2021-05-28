@@ -418,7 +418,7 @@ function plot_convergence(history, name::String)::Nothing
 
     fig.align_ylabels([ax_top, ax_bot])
 
-    save_figure(@sprintf("%s_convergence", name), algo)
+    save_figure(@sprintf("%s_convergence.pdf", name), algo)
 
     return nothing
 end # function
@@ -672,7 +672,7 @@ function set_axis_equal(
                 Union{Real, Missing}})::Nothing
 
     ax.axis("equal")
-    save_figure("scp_tmp_fig", "", tmp=true)
+    save_figure("scp_tmp_fig.pdf", "", tmp=true)
     x_rng = ax.get_xlim()
     y_rng = ax.get_ylim()
     ar = (y_rng[2]-y_rng[1])/(x_rng[2]-x_rng[1])
@@ -729,8 +729,8 @@ end # function
 """
     save_figure(filename[, algo][; tmp, path, tight_layout, facecolor, dpi])
 
-Save the current figure to a PDF file. The filename is prepended with the name
-of the SCP algorithm used for the solution.
+Save the current figure to file. The filename is prepended with the name of the
+SCP algorithm used for the solution, if provided.
 
 # Arguments
 - `filename`: the filename of the figure.

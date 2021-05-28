@@ -121,7 +121,7 @@ function plot_thrust(rocket::Rocket, sol::Solution, sim::Solution)::Nothing
                     loc="lower left")
     leg.set_zorder(200)
 
-    save_figure("rocket_landing_thrust_mag", "lcvx")
+    save_figure("rocket_landing_thrust_mag.pdf", "lcvx")
 
     # ..:: Thrust z-component plot ::..
 
@@ -176,7 +176,7 @@ function plot_thrust(rocket::Rocket, sol::Solution, sim::Solution)::Nothing
                     loc="lower left")
     leg.set_zorder(200)
 
-    save_figure("rocket_landing_thrust_z", "lcvx")
+    save_figure("rocket_landing_thrust_z.pdf", "lcvx")
 
     return nothing
 end # function
@@ -248,7 +248,7 @@ function plot_mass(rocket::Rocket, sol::Solution, sim::Solution)::Nothing
     ax.set_xticks(vcat(ax.get_xticks(), round(Int, tf)))
     ax.set_xlim(0, round(tf, digits=3))
 
-    save_figure("rocket_landing_mass", "lcvx")
+    save_figure("rocket_landing_mass.pdf", "lcvx")
 
     return nothing
 end # function
@@ -323,7 +323,7 @@ function plot_velocity(rocket::Rocket, sol::Solution,
     ax.set_xticks(vcat(ax.get_xticks(), round(Int, tf)))
     ax.set_xlim(0, round(tf, digits=3))
 
-    save_figure("rocket_landing_velocity", "lcvx")
+    save_figure("rocket_landing_velocity.pdf", "lcvx")
 
     return nothing
 end # function
@@ -402,7 +402,7 @@ function plot_pointing_angle(rocket::Rocket, sol::Solution,
     ax.set_xticks(vcat(ax.get_xticks(), round(Int, tf)))
     ax.set_xlim(0, round(tf, digits=3))
 
-    save_figure("rocket_landing_angle", "lcvx")
+    save_figure("rocket_landing_angle.pdf", "lcvx")
 
     return nothing
 end # function
@@ -596,7 +596,7 @@ function plot_position(rocket::Rocket, sol::Solution,
     ax_pos = [ax_pos.x0-0.01, ax_pos.y0, ax_pos.width, ax_pos.height]
     cbar_ax.set_position(ax_pos)
 
-    save_figure("rocket_landing_downrange_altitude", "lcvx")
+    save_figure("rocket_landing_downrange_altitude.pdf", "lcvx")
 
     # ..:: Crossrange vs. altitude plot ::..
 
@@ -734,7 +734,7 @@ function plot_position(rocket::Rocket, sol::Solution,
                     loc="upper left")
     leg.set_zorder(200)
 
-    save_figure("rocket_landing_crossrange_altitude", "lcvx")
+    save_figure("rocket_landing_crossrange_altitude.pdf", "lcvx")
 
     return nothing
 end # function

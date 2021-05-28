@@ -171,7 +171,7 @@ function plot_trajectory(sol_lcvx::Solution,
         framealpha=0.8, fontsize=8, loc="center left")
     leg.set_zorder(100)
 
-    save_figure(@sprintf("double_integrator_%d", choice), "lcvx")
+    save_figure(@sprintf("double_integrator_%d.pdf", choice), "lcvx")
 
     return nothing
 end # function

@@ -203,7 +203,7 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
 
     set_axis_equal(ax, (-0.5, missing, -0.5, 6.5))
 
-    save_figure("quadrotor_traj_iters", algo)
+    save_figure("quadrotor_traj_iters.pdf", algo)
 
     return nothing
 end
@@ -309,7 +309,7 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
 
     set_axis_equal(ax, (-0.5, missing, -0.5, 6.5))
 
-    save_figure("quadrotor_final_traj", algo)
+    save_figure("quadrotor_final_traj.pdf", algo)
 
     return nothing
 end
@@ -396,7 +396,7 @@ function plot_input_norm(mdl::QuadrotorProblem,
     ax.set_xlim((0.0, tf_max))
     ax.set_xticks(LinRange(0, tf_max, 6))
 
-    save_figure("quadrotor_input", algo)
+    save_figure("quadrotor_input.pdf", algo)
 
     return nothing
 end
@@ -463,7 +463,7 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
     ax.set_xlim((0.0, tf_max))
     ax.set_xticks(LinRange(0, tf_max, 6))
 
-    save_figure("quadrotor_tilt", algo)
+    save_figure("quadrotor_tilt.pdf", algo)
 
     return nothing
 end
