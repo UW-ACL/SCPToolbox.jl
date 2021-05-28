@@ -303,7 +303,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
     ax_pos = [ax_pos.x0, ax_pos.y0-0.05, ax_pos.width, ax_pos.height]
     cbar_ax.set_position(ax_pos)
 
-    save_figure("rendezvous_trajectory_2d.pdf", algo, tight_layout=false)
+    save_figure("rendezvous_3d_trajectory_2d.pdf", algo, tight_layout=false)
 
     return nothing
 end # function
@@ -498,7 +498,7 @@ function plot_state_timeseries(mdl::RendezvousProblem,
     fig.align_ylabels(ax_list[4:6])
     fig.align_ylabels(ax2_list[4:6])
 
-    save_figure("rendezvous_timeseries.pdf", algo)
+    save_figure("rendezvous_3d_timeseries.pdf", algo)
 
     return nothing
 end # function
@@ -740,7 +740,7 @@ function plot_inputs(mdl::RendezvousProblem,
     plt.subplots_adjust(wspace=0.02, hspace=0.1)
     fig.align_ylabels(axes)
 
-    save_figure("rendezvous_inputs.pdf", algo, tight_layout=false)
+    save_figure("rendezvous_3d_inputs.pdf", algo, tight_layout=false)
 
     return nothing
 end # function

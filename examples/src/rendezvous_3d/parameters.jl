@@ -347,7 +347,7 @@ function RendezvousProblem()::RendezvousProblem
     tf_max = 1000.0
     # >> Homotopy <<
     β = 1e1/100
-    γc = 3e-1
+    γc = 1.0
     γg = 5.0
     hom_steps = 10 # Number of homotopy values to sweep through
     hom_obj = Homotopy(1e-2; δ_max=10.0) #noerr
