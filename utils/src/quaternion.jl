@@ -398,6 +398,10 @@ the call to the `rpy(dcm)` function, so see its docstring for details.
 function rpy(q::Quaternion)::Tuple{Real, Real, Real}
     R = dcm(q)
     yaw, pitch, roll = rpy(R)
+    # From Wikipedia (en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles)
+    # yaw = atan(2*(q.w*q.v[3]+q.v[1]*q.v[2]), 1-2*(q.v[2]^2+q.v[3]^2))
+    # pitch = asin(2*(q.w*q.v[2]-q.v[3]*q.v[1]))
+    # roll = atan(2*(q.w*q.v[1]+q.v[2]*q.v[3]), 1-2*(q.v[1]^2+q.v[2]^2))
     return yaw, pitch, roll
 end # function
 
@@ -432,7 +436,7 @@ References:
 - `roll`: the roll angle (in radians).
 """
 function rpy(R::RealMatrix)::Tuple{Real, Real, Real}
-    pitch = acos(max(0.0, min(1.0, sqrt(R[1, 1]^2+R[2, 1]^2))))
+    pitch = asin(-R[3, 1])
     roll = atan(R[3, 2], R[3, 3])
     yaw = atan(R[2, 1], R[1, 1])
     return yaw, pitch, roll

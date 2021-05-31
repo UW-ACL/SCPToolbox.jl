@@ -168,15 +168,25 @@ function plot_prisms!(ax::PyPlot.PyObject,
 end # function
 
 """
-    plot_convergence(history, name)
+    plot_convergence(history, name[; xlabel, options, horizontal])
 
 Optimization algorithm convergence and performance plot.
 
 # Arguments
 - `history`: SCP iteration data history.
 - `name`: the example name.
+
+# Keywords
+- `xlabel`: (optional) optional extra string to append to iteration axis label.
+- `options`: (optional) pass custom options to `rcParams` that override the
+  default ones set in this function.
+- `horizontal`: (optional) whether to layout the subplot in a row (by default,
+  layout is in a column).
 """
-function plot_convergence(history, name::String)::Nothing
+function plot_convergence(history, name::String;
+                          xlabel::Optional{String}=nothing,
+                          options::Dict=Dict(),
+                          horizontal::Bool=false)::Nothing
 
     plot_statistics = history isa AbstractArray
     if plot_statistics
@@ -211,7 +221,8 @@ function plot_convergence(history, name::String)::Nothing
     end
     iters = Types.IntVector(1:num_iter)
 
-    fig = create_figure((5, 6))
+    fig = create_figure(horizontal ? (11, 4) : (5, 6),
+                        options=options)
 
     if num_iter<=15
         xticks = iters
@@ -230,7 +241,7 @@ function plot_convergence(history, name::String)::Nothing
         trials = [history]
     end
 
-    ax = fig.add_subplot(211)
+    ax = fig.add_subplot(horizontal ? 121 : 211)
 
     ax.set_yscale("log")
     ax.grid(linewidth=0.3, alpha=0.5, axis="y", which="major")
@@ -240,9 +251,9 @@ function plot_convergence(history, name::String)::Nothing
     ax.margins(x=0.04, y=0.04)
     ax.set_xticks(xticks)
 
-    ax.set_xlabel("Iteration number")
+    ax.set_xlabel("Iteration number"*(isnothing(xlabel) ? "" : ", "*xlabel))
     ax.set_ylabel(string("Distance from solution, ",
-                         "\$\\frac{\\|X^i-X^*\\|_2}{",
+                         "\$\\frac{\\|X_{(\\ell)}-X^*\\|_2}{",
                          "\\|X^*\\|_2}\$"))
 
     ax.plot(iters, DX,
@@ -267,7 +278,7 @@ function plot_convergence(history, name::String)::Nothing
 
     # ..:: Timing performance plot ::..
 
-    ax = fig.add_subplot(212)
+    ax = fig.add_subplot(horizontal ? 122 : 212)
 
     ax.set_axisbelow(true)
     ax.set_facecolor("white")
@@ -313,8 +324,7 @@ function plot_convergence(history, name::String)::Nothing
     min_total = map(iter->quantile(total[iter, :], 0.1), 1:num_scp_iters)
     max_total = map(iter->quantile(total[iter, :], 0.9), 1:num_scp_iters)
 
-    ymax = maximum((av_formulate+av_discretize+
-        av_solve+av_overhead))*1.1
+    ymax = maximum((av_formulate+av_discretize+av_solve+av_overhead))*1.1
 
     #nolint: DarkBlue, Blue, Yellow, Red, Green
     for i = 1:2
@@ -329,24 +339,24 @@ function plot_convergence(history, name::String)::Nothing
                edgecolor=darken(DarkBlue),
                joinstyle=js,
                zorder=z)
-        ax.bar(labels, av_discretize, width,
-               bottom=av_formulate,
-               label=lbl("Discretize"),
-               color=Yellow,
-               linewidth=linew,
-               edgecolor=darken(Yellow),
-               joinstyle=js,
-               zorder=z)
         ax.bar(labels, av_solve, width,
-               bottom=av_discretize+av_formulate,
+               bottom=av_formulate,
                label=lbl("Solve"),
                color=Red,
                linewidth=linew,
                edgecolor=darken(Red),
                joinstyle=js,
                zorder=z)
+        ax.bar(labels, av_discretize, width,
+               bottom=av_formulate+av_solve,
+               label=lbl("Discretize"),
+               color=Yellow,
+               linewidth=linew,
+               edgecolor=darken(Yellow),
+               joinstyle=js,
+               zorder=z)
         ax.bar(labels, av_overhead, width,
-               bottom=av_discretize+av_formulate+av_solve,
+               bottom=av_formulate+av_solve+av_discretize,
                label=lbl("Overhead"),
                color=Green,
                linewidth=linew,
@@ -695,27 +705,36 @@ function set_axis_equal(
 end # function
 
 """
-    create_figure(size)
+    create_figure(size[; options])
 
 Create an empty figure for plotting.
 
 # Arguments
 - `size`: the figure size (width, height).
 
+# Keywords
+- `options`: pass custom options to `rcParams` that override the default ones
+  set in this function.
+
 # Returns
 - `fig`: the figure object.
 """
-function create_figure(size::Tuple{T, V})::Figure where {T<:Real, V<:Real}
+function create_figure(size::Tuple{T, V};
+                       options::Dict=Dict())::Figure where {T<:Real, V<:Real}
 
     # Set plot parameters
     rcParams = PyPlot.PyDict(PyPlot.matplotlib."rcParams")
-    rcParams["text.usetex"] = true
-    rcParams["font.family"] = "sans-serif"
-    rcParams["axes.labelsize"] = 14
-    rcParams["xtick.labelsize"] = 12
-    rcParams["ytick.labelsize"] = 12
-    rcParams["text.latex.preamble"] = string("\\usepackage{sansmath}",
-                                             "\\sansmath")
+    set_with_default(key, val) = begin
+        rcParams[key] = (key in keys(options)) ? options[key] : val
+    end
+    set_with_default("text.usetex", true)
+    set_with_default("font.family", "sans-serif")
+    set_with_default("axes.labelsize", 14)
+    set_with_default("xtick.labelsize", 12)
+    set_with_default("ytick.labelsize", 12)
+    set_with_default("text.latex.preamble",
+                     string("\\usepackage{sansmath}",
+                            "\\sansmath"))
 
     plt.ioff()
 

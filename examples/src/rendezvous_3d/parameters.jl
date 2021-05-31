@@ -16,6 +16,10 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
+#nolint: convert_units, linterp
+#nolint: Utils, Types
+#nolint: homtransf, hominv, homdisp, homrot
+
 using LinearAlgebra
 
 using Utils
@@ -106,6 +110,8 @@ struct ApolloCSM
     # Propulsion properties
     imp_min::RealValue # [N*s] Minimum RCS thruster impulse
     imp_max::RealValue # [N*s] Maximum RCS thruster impulse
+    Frcs::RealValue    # [N] Constant thrust produced when firing
+    fuel::Function     # [kg/s] Fuel consumption rate for one thruster
     # Other
     rcs_select::Dict   # Selection map thruster index <--> symbol
 
@@ -194,6 +200,23 @@ struct ApolloCSM
         # Propulsion properties
         imp_min = 50.0
         imp_max = 445.0
+        Frcs = 445.0
+
+        # Piecewise affine map for single thruster fuel consumption map (pulse
+        # duration to fuel consumed)
+        pulse = [36.552; 50.042; 63.532; 77.022; 90.512; 104.002; 117.492;
+                 130.982; 144.472; 157.962; 171.452; 184.942]
+        pulse = (pulse.-pulse[1])./(pulse[end]-pulse[1]).*(1000-14).+14
+        pulse .*= 1e-3
+        pushfirst!(pulse, 0)
+
+        fuel = [108.433; 108.121; 107.656; 106.527; 105.143; 103.189; 99.941;
+                94.992; 87.920; 78.050; 62.829; 40.849]
+        fuel = (fuel.-fuel[1])./(fuel[end]-fuel[1]).*(0.364-0.005).+0.005
+        fuel = convert_units.(fuel, :lb, :kg)
+        pushfirst!(fuel, 0)
+
+        fuel_consum = t -> linterp(t, fuel, pulse)
 
         # Thruster selection map converting back and forth between thruster
         # number and humand-readable thruster identifier using the quad and
@@ -211,7 +234,7 @@ struct ApolloCSM
 
         # Compile all into CSM object
         csm = new(H_SD, H_SR, H_RQ, H_QT, H_DT, H_DP, r_rcs, f_rcs, m, J,
-                  imp_min, imp_max, rcs_select)
+                  imp_min, imp_max, Frcs, fuel_consum, rcs_select)
 
         return csm
     end # function
@@ -324,7 +347,7 @@ function RendezvousProblem()::RendezvousProblem
     r0 = 100.0*xi-20.0*zi+20.0*yi
     v0 = 0.0*xi
     vf = -0.1*xi
-    q0 = Quaternion(deg2rad(10), yi)
+    q0 = Quaternion(deg2rad(0), yi)
     ω0 = zeros(3)
     ωf = zeros(3)
     # Terminal pose based on docking orientation
@@ -361,4 +384,40 @@ function RendezvousProblem()::RendezvousProblem
     mdl = RendezvousProblem(sc, env, traj)
 
     return mdl
+end # function
+
+"""
+    fuel_consumption(mdl, impulses)
+
+Compute the Apollo CSM fuel consumption given a history of thruster impulses.
+
+# Arguments
+- `mdl`: the problem definition object.
+- `impulses`: a matrix of impulses where each column stores the duration of
+  impulses of each thruster for that control opportunity.
+
+# Returns
+- `fuel`: the amount of fuel consumed by this impulse history.
+"""
+function fuel_consumption(mdl::RendezvousProblem,
+                          impulses::RealMatrix)::RealValue
+
+    # Extract pulse durations
+    csm = mdl.vehicle.csm
+    dt = impulses./csm.Frcs
+    N = size(dt, 2) # History length
+
+    # Integrate the fuel consumption
+    fuel = 0.0
+    for k = 1:N
+        dtk = dt[:, k]
+        fuel_k = sum(csm.fuel.(dtk))
+        fuel += fuel_k
+        # dtk = sort(dtk)
+        # diff_dtk = diff(dtk)
+        # pushfirst!(diff_dtk, dtk[1])
+        # csm.c1*sum((nrcs-i+1)^2*diff_dtk[i] for i=1:nrcs)
+    end
+
+    return fuel
 end # function

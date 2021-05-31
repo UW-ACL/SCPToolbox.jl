@@ -15,6 +15,13 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
+#nolint: create_figure, save_figure, generate_colormap, squeeze
+#nolint: setup_axis!, darken_color
+#nolint: Red, DarkBlue, Yellow, Green, Blue
+#nolint: or, set_axis_equal, rgb2pyplot
+#nolint: SCPSolution
+#nolint: sample
+
 LangServer = isdefined(@__MODULE__, :LanguageServer)
 
 if LangServer
@@ -26,6 +33,24 @@ using PyPlot
 using Colors
 
 using Solvers #noerr
+
+# ..:: Globals ::..
+
+const fig_opts = Dict(
+    "font.family"=>"serif",
+    "text.latex.preamble"=>
+        string("\\usepackage{newtxtext}",
+               "\\usepackage{newtxmath}",
+               "\\usepackage{siunitx}"))
+
+const gray = rgb2pyplot(weighted_color_mean(
+    0.1, colorant"black", colorant"white"))
+
+const red = rgb2pyplot(weighted_color_mean(
+    0.2, parse(RGB, Red), colorant"white"))
+
+const time_mark_clr = rgb2pyplot(weighted_color_mean(
+    0.5, colorant"black", colorant"white"))
 
 # ..:: Methods ::..
 
@@ -86,7 +111,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
                  :x_name=>"y",
                  :y_name=>"z")]
 
-    fig = create_figure((6, 10))
+    fig = create_figure((6, 10), options=fig_opts)
 
     num_plts = length(data)
     gspec = fig.add_gridspec(ncols=1, nrows=num_plts+1,
@@ -121,7 +146,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
                        :y=>pad_y*(bbox[:y][:max]-bbox[:y][:min]))
 
         # Plot axes "guidelines"
-        origin = mdl.traj.rf[prj]
+        origin = [0; 0]#mdl.traj.rf[prj]
         xtip = [1; 0]
         ytip = [0; 1]
         ax.plot([origin[1], origin[1]+xtip[1]*axis_inf_scale],
@@ -211,14 +236,14 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
         ax.add_collection(thrusts)
 
         # Label the LVLH axes
-        ax.annotate(@sprintf("\$\\hat %s\$", ax_x_name),
+        ax.annotate(@sprintf("\$\\hat %s_{\\mathcal L}\$", ax_x_name),
                     xy=(x_rng[2], origin[2]),
                     xytext=(-pad_label_abs, 0),
                     textcoords="offset points",
                     ha="right",
                     va="center",
                     bbox=Dict(:pad=>2, :fc=>"white", :ec=>"none"))
-        ax.annotate(@sprintf("\$\\hat %s\$", ax_y_name),
+        ax.annotate(@sprintf("\$\\hat %s_{\\mathcal L}\$", ax_y_name),
                     xy=(origin[1], y_rng[2]),
                     xytext=(0, pad_label_abs),
                     textcoords="offset points",
@@ -323,6 +348,7 @@ function plot_state_timeseries(mdl::RendezvousProblem,
     # Parameters
     algo = sol.algo
     veh = mdl.vehicle
+    traj = mdl.traj
     marker_darken_factor = 0.3
     outline_w = 1.5
 
@@ -355,6 +381,12 @@ function plot_state_timeseries(mdl::RendezvousProblem,
     dt_rpy = rad2deg.(dt_rpy)
     ct_ω = rad2deg.(ct_ω)
     dt_ω = rad2deg.(dt_ω)
+
+    # Find approach and plume sphere entry times
+    k_appch = findfirst(k->norm(ct_r[:, k])<=traj.r_appch, 1:ct_res)
+    k_plume = findfirst(k->norm(ct_r[:, k])<=traj.r_plume, 1:ct_res)
+    t_appch = ct_t[k_appch]
+    t_plume = ct_t[k_plume]
 
     data=[Dict(:y1_dt=>dt_r[1, :],
                :y1_ct=>ct_r[1, :],
@@ -396,7 +428,7 @@ function plot_state_timeseries(mdl::RendezvousProblem,
                :x_label=>"Time [s]")]
 
     # >> Initialize figure <<
-    fig = create_figure((10, 10))
+    fig = create_figure((10, 10), options=fig_opts)
     gspec = fig.add_gridspec(ncols=2, nrows=3)
     id_splot = [1 2;3 4;5 6]
 
@@ -491,6 +523,40 @@ function plot_state_timeseries(mdl::RendezvousProblem,
                  clip_on=false,
                  zorder=9)
 
+        # Plot reflines for the approach and plume sphere entry times
+        label_text = Dict(t_appch=>"Approach", t_plume=>"Plume")
+        ax_ylim = ax.get_ylim()
+        for t in [t_appch, t_plume]
+            ax.axvline(x=t,
+                       color=time_mark_clr,
+                       linestyle="--",
+                       linewidth=0.7,
+                       dash_joinstyle="round",
+                       dash_capstyle="round",
+                       dashes=(3, 3),
+                       zorder=5)
+
+            ax.annotate(label_text[t] ,
+                        color=time_mark_clr,
+                        xy=(t, ax_ylim[2]),
+                        xytext=(0, -10),#0.1*(ax_ylim[2]-ax_ylim[1])),
+                        textcoords="offset points",
+                        ha="center",
+                        va="top",
+                        rotation=90,
+                        zorder=5,
+                        bbox=Dict(:pad=>1, :fc=>"white", :ec=>"none"))
+        end
+
+        # Make an x tick for the final time
+        ax_xticks = ax.get_xticks()
+        ax_xlim = ax.get_xlim()
+        if ax_xticks[end]!=tf
+            push!(ax_xticks, tf)
+        end
+        ax.set_xticks(ax_xticks)
+        ax.set_xlim(ax_xlim)
+
     end
 
     fig.align_ylabels(ax_list[1:3])
@@ -522,6 +588,7 @@ function plot_inputs(mdl::RendezvousProblem,
     num_iter = length(interm_sol)
     algo = sol.algo
     veh = mdl.vehicle
+    traj = mdl.traj
     spread = 0.4
     stem_colors = [Red, Green, Blue, DarkBlue] #noerr
     marker_darken_factor = 0.3
@@ -535,6 +602,16 @@ function plot_inputs(mdl::RendezvousProblem,
     dt_res = length(dt_τ)
     Δt = tf/(dt_res-1)
     t_spread = Δt*spread/2
+
+    # Find approach and plume sphere entry times
+    ct_res = 1000
+    ct_τ = RealVector(LinRange(0, 1, ct_res))
+    ct_t = ct_τ*tf
+    ct_pos = hcat([sample(sol.xc, τ)[veh.id_r] for τ in ct_τ]...)
+    k_appch = findfirst(k->norm(ct_pos[:, k])<=traj.r_appch, 1:ct_res)
+    k_plume = findfirst(k->norm(ct_pos[:, k])<=traj.r_plume, 1:ct_res)
+    t_appch = ct_t[k_appch]
+    t_plume = ct_t[k_plume]
 
     # Get RCS controls solution history
     f_quad = Dict[]
@@ -563,26 +640,29 @@ function plot_inputs(mdl::RendezvousProblem,
         end
     end
 
-    dirs = ["\$+x\$", "\$-x\$", "\$+z\$", "\$-z\$"]
+    dirs = ["\$+\\hat x_{\\mathcal B}\$",
+            "\$-\\hat x_{\\mathcal B}\$",
+            "\$+\\hat y_{\\mathcal B}\$ (A)",
+            "\$-\\hat y_{\\mathcal B}\$ (A)"]
     thruster_label = (i) -> @sprintf("Thruster %s", dirs[i])
     data = [Dict(:u=>(i)->f_quad[i][:A],
                  :u_ref=>(i)->f_quad_ref[i][:A],
-                 :ylabel=>"Quad A impulse [N\$\\cdot\$s]",
+                 :ylabel=>"Quad A impulse [\\si{\\newton\\second}]",
                  :legend=>thruster_label),
             Dict(:u=>(i)->f_quad[i][:B],
                  :u_ref=>(i)->f_quad_ref[i][:B],
-                 :ylabel=>"Quad B impulse [N\$\\cdot\$s]",
+                 :ylabel=>"Quad B impulse [\\si{\\newton\\second}]",
                  :legend=>thruster_label),
             Dict(:u=>(i)->f_quad[i][:C],
                  :u_ref=>(i)->f_quad_ref[i][:C],
-                 :ylabel=>"Quad C impulse [N\$\\cdot\$s]",
+                 :ylabel=>"Quad C impulse [\\si{\\newton\\second}]",
                  :legend=>thruster_label),
             Dict(:u=>(i)->f_quad[i][:D],
                  :u_ref=>(i)->f_quad_ref[i][:D],
-                 :ylabel=>"Quad D impulse [N\$\\cdot\$s]",
+                 :ylabel=>"Quad D impulse [\\si{\\newton\\second}]",
                  :legend=>thruster_label)]
 
-    fig = create_figure((10, 18))
+    fig = create_figure((10, 18), options=fig_opts)
     gspec = fig.add_gridspec(ncols=2, nrows=6,
                              width_ratios=[0.7, 0.3])
 
@@ -674,6 +754,30 @@ function plot_inputs(mdl::RendezvousProblem,
                 solid_capstyle="round",
                 zorder=10)
 
+        # Plot reflines for the approach and plume sphere entry times
+        label_text = Dict(t_appch=>"Approach", t_plume=>"Plume")
+        for t in [t_appch, t_plume]
+            ax.axvline(x=t,
+                       color=time_mark_clr,
+                       linestyle="--",
+                       linewidth=0.7,
+                       dash_joinstyle="round",
+                       dash_capstyle="round",
+                       dashes=(3, 3),
+                       zorder=10)
+
+            ax.annotate(label_text[t] ,
+                        color=time_mark_clr,
+                        xy=(t, ylim_timeseries[2]),
+                        xytext=(0, -10),
+                        textcoords="offset points",
+                        ha="center",
+                        va="top",
+                        rotation=90,
+                        zorder=10,
+                        bbox=Dict(:pad=>1, :fc=>"white", :ec=>"none"))
+        end
+
         # Legend
         if i_plt==1
             leg = ax.legend(framealpha=0.8,
@@ -683,6 +787,15 @@ function plot_inputs(mdl::RendezvousProblem,
                             bbox_to_anchor=(0.5, 1.2))
             leg.set_zorder(100)
         end
+
+        # Make an x tick for the final time
+        ax_xticks = ax.get_xticks()
+        ax_xlim = ax.get_xlim()
+        if ax_xticks[end]!=tf
+            push!(ax_xticks, tf)
+        end
+        ax.set_xticks(ax_xticks)
+        ax.set_xlim(ax_xlim)
 
         # >> Draw the deadband polar plot <<
 
@@ -696,7 +809,7 @@ function plot_inputs(mdl::RendezvousProblem,
             ax.tick_params(axis="x", which="both", bottom=false, top=false,
                            labelbottom=false)
         else
-            ax.set_xlabel("Impulse reference [N\$\\cdot\$s]")
+            ax.set_xlabel("Impulse reference [\\si{\\newton\\second}]")
         end
 
         # Continuous polar without deadband
@@ -741,6 +854,331 @@ function plot_inputs(mdl::RendezvousProblem,
     fig.align_ylabels(axes)
 
     save_figure("rendezvous_3d_inputs.pdf", algo, tight_layout=false)
+
+    return nothing
+end # function
+
+"""
+    plot_cost_evolution(mdl, sol)
+
+Plot how the cost versus algorithm iterations.
+
+# Arguments
+- `mdl`: the problem description object.
+- `history`: SCP iteration data history.
+"""
+function plot_cost_evolution(mdl::RendezvousProblem,
+                             history::SCPHistory)::Nothing
+
+    # Parameters
+    algo = history.subproblems[1].algo
+    nxticks = 8
+    β = mdl.traj.β*100
+    β_lower = -1e-1
+    ylabel_size = 12
+
+    # Values
+    Niter = length(history.subproblems)
+    iters = collect(1:Niter)
+    J = map(spbm->spbm.sol.J_aug, history.subproblems)
+    dJ = map(i->(J[i-1]-J[i])/abs(J[i-1]), 2:Niter)*100
+    hom = map(spbm->spbm.sol.bay[:hom], history.subproblems)
+    hom_updated = map(spbm->spbm.sol.bay[:hom_updated],
+                      history.subproblems)
+
+    fig = create_figure((7, 6), options=fig_opts)
+    axes = []
+
+    # >> Plot the cost evolution <<
+
+    ax = setup_axis!(311,
+                     ylabel="Cost function value, \$J_{\\ell}\$")
+    push!(axes, ax)
+    ax.tick_params(axis="x", which="both", bottom=false, top=false,
+                   labelbottom=false)
+
+    ax.plot(iters, J,
+            color=gray,
+            marker="o",
+            markersize=5,
+            markerfacecolor=DarkBlue,
+            markeredgecolor="white",
+            markeredgewidth=1,
+            zorder=20,
+            solid_capstyle="round",
+            solid_joinstyle="round",
+            clip_on=false)
+
+    for iter = 1:Niter
+        if hom_updated[iter]
+            ax.plot(iter, J[iter],
+                    marker="o",
+                    markersize=5,
+                    markerfacecolor=Red,
+                    markeredgecolor="white",
+                    markeredgewidth=1,
+                    zorder=25,
+                    clip_on=false)
+        end
+    end
+
+    # X-ticks (iterations)
+    xticks = map(x->round(Int, x), range(1, Niter, length=nxticks))
+    ax.set_xticks(xticks)
+
+    ax.set_xlim(0, Niter+1)
+
+    # >> Plot the relative cost change per iteration <<
+
+    ax = setup_axis!(312,
+                     ylabel="Cost decrease, "*
+                         "\$\\frac{J_{\\ell-1}-J_{\\ell}}{|J_{\\ell-1}|}\$"*
+                         " [\\%]")
+    push!(axes, ax)
+    ax.tick_params(axis="x", which="both", bottom=false, top=false,
+                   labelbottom=false)
+
+    ax.plot(iters[2:end], dJ,
+            color=gray,
+            marker="o",
+            markersize=5,
+            markerfacecolor=DarkBlue,
+            markeredgecolor="white",
+            markeredgewidth=1,
+            zorder=20,
+            solid_capstyle="round",
+            solid_joinstyle="round",
+            clip_on=false)
+
+    # Trigger boudns
+    for i=1:2
+        ax.axhline(y=(i==1) ? β : β_lower,
+                   zorder=15,
+                   color=Red,
+                   linestyle="--",
+                   linewidth=1,
+                   dash_joinstyle="round",
+                   dash_capstyle="round",
+                   dashes=(3, 3),
+                   clip_on=true)
+
+        ax.annotate((i==1) ? "\$\\beta_{\\mathrm{trig}}\$" :
+            "\$\\beta_{\\mathrm{worse}}\$",
+                    color=Red,
+                    xy=(1, (i==1) ? β : β_lower),
+                    xytext=(0, ((i==1) ? 1 : -1)*2),
+                    textcoords="offset points",
+                    ha="center",
+                    va=(i==1) ? "bottom" : "top",
+                    zorder=30,
+                    bbox=Dict(:pad=>1, :fc=>"white", :ec=>"none"))
+    end
+
+    for iter = 2:Niter
+        if hom_updated[iter]
+            ax.plot(iter, dJ[iter-1],
+                    marker="o",
+                    markersize=5,
+                    markerfacecolor=Red,
+                    markeredgecolor="white",
+                    markeredgewidth=1,
+                    zorder=25,
+                    clip_on=false)
+        end
+    end
+
+    # X-ticks (iterations)
+    xticks = map(x->round(Int, x), range(1, Niter, length=nxticks))
+    ax.set_xticks(xticks)
+    ax.set_xlim(0, Niter+1)
+
+    # Y-ticks
+    yticks = ax.get_yticks()
+    ylims = ax.get_ylim()
+    if yticks[end]!=maximum(dJ)
+        yticks[end] = maximum(dJ)
+    end
+    ax.set_yticks(yticks)
+    ax.set_ylim(ylims)
+
+    # >> Homotopy value evolution <<
+
+    ax = setup_axis!(313,
+                     xlabel="Iteration number, \$\\ell\$",
+                     ylabel="Homotopy parameter, \$\\kappa\$")
+    push!(axes, ax)
+    ax.set_yscale("log")
+
+    ax.plot(iters, hom,
+            color=gray,
+            marker="o",
+            markersize=5,
+            markerfacecolor=DarkBlue,
+            markeredgecolor="white",
+            markeredgewidth=1,
+            zorder=20,
+            solid_capstyle="round",
+            solid_joinstyle="round",
+            clip_on=false)
+
+    for iter = 1:Niter
+        if hom_updated[iter]
+            ax.plot(iter, hom[iter],
+                    marker="o",
+                    markersize=5,
+                    markerfacecolor=Red,
+                    markeredgecolor="white",
+                    markeredgewidth=1,
+                    zorder=25,
+                    clip_on=false)
+        end
+    end
+
+    for iter = 1:Niter
+        if hom_updated[iter]
+            for axi in axes
+                axi.axvline(
+                    x=iter,
+                    color=Red,
+                    linestyle="--",
+                    linewidth=0.7,
+                    dash_joinstyle="round",
+                    dash_capstyle="round",
+                    dashes=(3, 3),
+                    zorder=10)
+            end
+        end
+    end
+
+    # X-ticks (iterations)
+    xticks = map(x->round(Int, x), range(1, Niter, length=nxticks))
+    ax.set_xticks(xticks)
+
+    ax.set_xlim(0, Niter+1)
+
+    # >> Finalize figure and save <<
+
+    map(ax->ax.yaxis.label.set_size(ylabel_size), axes)
+    fig.align_ylabels(axes)
+
+    save_figure("rendezvous_3d_cost.pdf", algo)
+
+    return nothing
+end # function
+
+"""
+    plot_homotopy_threshold_sweep(mdl, betas, sols)
+
+Plot the effect of the homotopy update threshold on the number of iterations
+and optimal cost.
+
+# Arguments
+- `mdl`: the problem description object.
+- `betas`: the array of beta values tested.
+- `sols`: list of solutions for each beta value.
+"""
+function plot_homotopy_threshold_sweep(
+    mdl::RendezvousProblem, #nowarn
+    betas::RealVector,
+    sols::Vector{SCPSolution})::Nothing
+
+    # Parameters
+    algo = sols[1].algo
+
+    # Values
+    impulses = sol->sol.ud[mdl.vehicle.id_rcs, :]
+    J = map(sol->sol.cost, sols) #noinfo
+    fuel = map(sol->fuel_consumption(mdl, impulses(sol)), sols)
+    iters = map(sol->sol.iterations, sols)
+
+    create_figure((7, 3), options=fig_opts)
+
+    # >> Plot the effect on cost <<
+    axJ = setup_axis!(111,
+                      xlabel="Homotopy update tolerance "*
+                          "\$\\beta_{\\mathrm{trig}}\$")
+    axJ.grid(false)
+    axJ_clr = DarkBlue
+    axJ.set_ylabel("Fuel consumption [\\si{\\kilo\\gram}]",
+                   color=axJ_clr)
+    axJ.tick_params(axis="y", colors=axJ_clr)
+    axJ.spines["right"].set_edgecolor(axJ_clr)
+
+    axJ.plot(betas, fuel,
+             color=gray,
+             linewidth=2,
+             marker="o",
+             markersize=5,
+             markerfacecolor=DarkBlue,
+             markeredgecolor="white",
+             markeredgewidth=1,
+             zorder=100,
+             solid_capstyle="round",
+             solid_joinstyle="round",
+             clip_on=false)
+
+    xticks = axJ.get_xticks()
+    xlims = axJ.get_xlim()
+    xticks = filter(x->x>=0, xticks)
+    xticks[1] = betas[1]
+    xticks[end] = betas[end]
+    axJ.set_xticks(xticks)
+    axJ.set_xlim(xlims)
+
+    yticks = axJ.get_yticks()
+    ylims = axJ.get_ylim()
+    if yticks[1]!=minimum(fuel)
+        pushfirst!(yticks, round(minimum(fuel), digits=2))
+    end
+    if yticks[end]!=maximum(fuel)
+        push!(yticks, round(maximum(fuel), digits=2))
+    end
+    axJ.set_yticks(yticks)
+    axJ.set_ylim(ylims)
+
+    # >> Plot the effect on the number of iterations <<
+    axN = axJ.twinx()
+    axN.grid(linewidth=0.3, alpha=0.5)
+    axN_clr = Red
+    outline_w = 1.5
+    axN.set_ylabel("Number of PTR iterations", color=axN_clr)
+    axN.tick_params(axis="y", colors=axN_clr)
+    axN.spines["right"].set_edgecolor(axN_clr)
+    axN.tick_params(axis="x", which="both", bottom=false, top=false,
+                    labelbottom=false)
+
+    axN.plot(betas, iters,
+             color=red,
+             linewidth=2,
+             marker="o",
+             markersize=5,
+             markerfacecolor=Red,
+             markeredgewidth=0,
+             zorder=20,
+             solid_capstyle="round",
+             solid_joinstyle="round",
+             clip_on=false)
+
+    axN.plot(betas, iters,
+             color="white",
+             linewidth=2+outline_w,
+             marker="o",
+             markersize=5,
+             markerfacecolor="white",
+             markeredgecolor="white",
+             markeredgewidth=outline_w,
+             zorder=19,
+             solid_capstyle="round",
+             solid_joinstyle="round",
+             clip_on=false)
+
+    yticks = axN.get_yticks()
+    nyticks = 5
+    yticks = map(y->round(Int, y),
+                 range(minimum(iters), maximum(iters), length=nyticks))
+    axN.set_yticks(yticks)
+
+    save_figure("rendezvous_3d_homotopy_threshold.pdf", algo)
 
     return nothing
 end # function
