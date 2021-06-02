@@ -594,6 +594,7 @@ function plot_inputs(mdl::RendezvousProblem,
     marker_darken_factor = 0.3
     padx=0.05
     polar_resol = 1000
+    axis_label_size = 13
 
     # Plotting data
     dt_τ = sol.td
@@ -647,19 +648,23 @@ function plot_inputs(mdl::RendezvousProblem,
     thruster_label = (i) -> @sprintf("Thruster %s", dirs[i])
     data = [Dict(:u=>(i)->f_quad[i][:A],
                  :u_ref=>(i)->f_quad_ref[i][:A],
-                 :ylabel=>"Quad A impulse [\\si{\\newton\\second}]",
+                 :ylabel=>"Quad A impulse, \$\\Delta t_{ik}F_{\\mathrm{rcs}}\$"*
+                     " [\\si{\\newton\\second}]",
                  :legend=>thruster_label),
             Dict(:u=>(i)->f_quad[i][:B],
                  :u_ref=>(i)->f_quad_ref[i][:B],
-                 :ylabel=>"Quad B impulse [\\si{\\newton\\second}]",
+                 :ylabel=>"Quad B impulse, \$\\Delta t_{ik}F_{\\mathrm{rcs}}\$"*
+                     " [\\si{\\newton\\second}]",
                  :legend=>thruster_label),
             Dict(:u=>(i)->f_quad[i][:C],
                  :u_ref=>(i)->f_quad_ref[i][:C],
-                 :ylabel=>"Quad C impulse [\\si{\\newton\\second}]",
+                 :ylabel=>"Quad C impulse, \$\\Delta t_{ik}F_{\\mathrm{rcs}}\$"*
+                     " [\\si{\\newton\\second}]",
                  :legend=>thruster_label),
             Dict(:u=>(i)->f_quad[i][:D],
                  :u_ref=>(i)->f_quad_ref[i][:D],
-                 :ylabel=>"Quad D impulse [\\si{\\newton\\second}]",
+                 :ylabel=>"Quad D impulse, \$\\Delta t_{ik}F_{\\mathrm{rcs}}\$"*
+                     " [\\si{\\newton\\second}]",
                  :legend=>thruster_label)]
 
     fig = create_figure((10, 18), options=fig_opts)
@@ -694,6 +699,7 @@ function plot_inputs(mdl::RendezvousProblem,
                            labelbottom=false)
         else
             ax.set_xlabel("Time [s]")
+            ax.xaxis.label.set_size(axis_label_size)
         end
 
         # Plot the stems
@@ -778,6 +784,31 @@ function plot_inputs(mdl::RendezvousProblem,
                         bbox=Dict(:pad=>1, :fc=>"white", :ec=>"none"))
         end
 
+        # Plot reflines for min and max impulse
+        label_text = ["\$\\Delta t_{\\min}F_{\\mathrm{rcs}}\$",
+                      "\$\\Delta t_{\\max}F_{\\mathrm{rcs}}\$"]
+        imp = [veh.csm.imp_min, veh.csm.imp_max]
+        for i=1:2
+            ax.axhline(y=imp[i],
+                       color=Red,
+                       linestyle="--",
+                       linewidth=0.7,
+                       dash_joinstyle="round",
+                       dash_capstyle="round",
+                       dashes=(3, 3),
+                       zorder=10)
+
+            ax.annotate(label_text[i],
+                        color=Red,
+                        xy=(tf/2, imp[i]),
+                        xytext=(0, 0),
+                        textcoords="offset points",
+                        ha="center",
+                        va="center",
+                        zorder=10,
+                        bbox=Dict(:pad=>1, :fc=>"white", :ec=>"none"))
+        end
+
         # Legend
         if i_plt==1
             leg = ax.legend(framealpha=0.8,
@@ -809,8 +840,10 @@ function plot_inputs(mdl::RendezvousProblem,
             ax.tick_params(axis="x", which="both", bottom=false, top=false,
                            labelbottom=false)
         else
-            ax.set_xlabel("Impulse reference [\\si{\\newton\\second}]")
+            ax.set_xlabel("Impulse reference, \$\\Delta t_{ik}'F_{\\mathrm{rcs}}\$"*
+                " [\\si{\\newton\\second}]")
         end
+        ax.xaxis.label.set_size(axis_label_size)
 
         # Continuous polar without deadband
         ax.plot(fr_rng, fr_rng,
@@ -851,6 +884,7 @@ function plot_inputs(mdl::RendezvousProblem,
     end
 
     plt.subplots_adjust(wspace=0.02, hspace=0.1)
+    map(ax->ax.yaxis.label.set_size(axis_label_size), axes)
     fig.align_ylabels(axes)
 
     save_figure("rendezvous_3d_inputs.pdf", algo, tight_layout=false)
