@@ -65,7 +65,7 @@ pars = SCvxParameters(N, Nsub, iter_max, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
 
 # Number of trials. All trials will give the same solution, but we need many to
 # plot statistically meaningful timing results
-num_trials = 100
+num_trials = 50
 
 sol_list = Vector{SCPSolution}(undef, num_trials)
 history_list = Vector{SCPHistory}(undef, num_trials)

@@ -71,7 +71,7 @@ pars = GuSTOParameters(N, Nsub, iter_max, λ_init, λ_max, ρ_0, ρ_1, β_sh,
 
 # Number of trials. All trials will give the same solution, but we need many to
 # plot statistically meaningful timing results
-num_trials = 100
+num_trials = 50
 
 sol_list = Vector{SCPSolution}(undef, num_trials)
 history_list = Vector{SCPHistory}(undef, num_trials)

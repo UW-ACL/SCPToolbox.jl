@@ -1122,8 +1122,8 @@ function plot_convergence(history, name::T_String)::Nothing
     total = map(trial->cumsum([
         trial.subproblems[i].timing[:discretize]+
             trial.subproblems[i].timing[:solve]+
-            trial.subproblems[i].timing[:formulate]+
-            trial.subproblems[i].timing[:overhead]
+            trial.subproblems[i].timing[:formulate]# +
+            # trial.subproblems[i].timing[:overhead]
         # trial.subproblems[i].timing[:total]
         for i=1:num_scp_iters]), trials)
 
@@ -1138,7 +1138,8 @@ function plot_convergence(history, name::T_String)::Nothing
     max_total = map(iter->quantile(total[iter, :], 0.9), 1:num_scp_iters)
 
     ymax = maximum((av_formulate+av_discretize+
-        av_solve+av_overhead))*1.1
+        av_solve# +av_overhead
+                    ))*1.1
 
     for i = 1:2
         linew = (i==1) ? 0 : lw
@@ -1168,14 +1169,14 @@ function plot_convergence(history, name::T_String)::Nothing
                edgecolor=darken(Red),
                joinstyle=js,
                zorder=z)
-        ax.bar(labels, av_overhead, width,
-               bottom=av_discretize+av_formulate+av_solve,
-               label=lbl("Overhead"),
-               color=Green,
-               linewidth=linew,
-               edgecolor=darken(Green),
-               joinstyle=js,
-               zorder=z)
+        # ax.bar(labels, av_overhead, width,
+        #        bottom=av_discretize+av_formulate+av_solve,
+        #        label=lbl("Overhead"),
+        #        color=Green,
+        #        linewidth=linew,
+        #        edgecolor=darken(Green),
+        #        joinstyle=js,
+        #        zorder=z)
     end
 
     ax.set_ylim(top=ymax)
@@ -1236,6 +1237,12 @@ function plot_convergence(history, name::T_String)::Nothing
     ax2.add_collection(error_outlines)
 
     ax2.set_ylim(nothing, max_total[end]*1.05)
+
+    # y_max = ax2.get_ylim()[2]
+    # y_tick_count = 6
+    # y_tick_step = round(Int, (y_max-1)/(y_tick_count))
+    # y_ticks = collect(1:y_tick_step:y_max)
+    # ax2.set_yticks(y_ticks)
 
     ax_bot = ax
 

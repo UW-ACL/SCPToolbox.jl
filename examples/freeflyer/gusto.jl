@@ -73,20 +73,20 @@ pars = GuSTOParameters(N, Nsub, iter_max, λ_init, λ_max, ρ_0, ρ_1, β_sh,
 
 # Number of trials. All trials will give the same solution, but we need many to
 # plot statistically meaningful timing results
-num_trials = 100
+num_trials = 50
 
 sol_list = Vector{SCPSolution}(undef, num_trials)
 history_list = Vector{SCPHistory}(undef, num_trials)
 
 for trial = 1:num_trials
-    local pbm = GuSTOProblem(pars, pbm)
+    local gusto = GuSTOProblem(pars, pbm)
     @printf("Trial %d/%d\n", trial, num_trials)
     if trial>1
         # Suppress output
         real_stdout = stdout
         (rd, wr) = redirect_stdout()
     end
-    sol_list[trial], history_list[trial] = solve(pbm)
+    sol_list[trial], history_list[trial] = gusto_solve(gusto)
     if trial>1
         redirect_stdout(real_stdout)
     end
