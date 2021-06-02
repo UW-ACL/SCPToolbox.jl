@@ -57,12 +57,13 @@ end # struct
 # ..:: Methods ::..
 
 
-function DoubleIntegratorParameters(choice::Int)::DoubleIntegratorParameters
+function DoubleIntegratorParameters(
+    choice::Int, T::RealValue=10)::DoubleIntegratorParameters
 
     @assert choice in (1, 2)
 
     # Parameters
-    T = 10
+    T = T
     N = 50 # Number of discretization time grid nodes
     A = [0 1;0 0]
     B = [0; 1]

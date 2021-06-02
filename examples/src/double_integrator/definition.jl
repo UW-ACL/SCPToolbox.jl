@@ -57,45 +57,46 @@ function solve_lcvx(mdl::DoubleIntegratorParameters)::Solution
     Bp = mdl.Bp
     w = mdl.w
     s = mdl.s
+    dt = T/(N-1)
 
-    mdl = ConicProgram(nothing;
+    ocp = ConicProgram(nothing;
                        solver=ECOS.Optimizer,
                        solver_options=Dict("verbose"=>0))
 
-    x = @new_variable(mdl, (2, N), "x")
-    u = @new_variable(mdl, (1, N), "u")
-    σ = @new_variable(mdl, (1, N), "σ")
-    σ² = @new_variable(mdl, (1, N), "σ²")
+    x = @new_variable(ocp, (2, N), "x")
+    u = @new_variable(ocp, (1, N), "u")
+    σ = @new_variable(ocp, (1, N), "σ")
+    σ² = @new_variable(ocp, (1, N), "σ²")
 
-    @add_constraint(mdl, ZERO, "initial_condition", (x[:, 1],), begin
+    @add_constraint(ocp, ZERO, "initial_condition", (x[:, 1],), begin
                         local x0 = arg[1]
                         x0
                     end)
 
-    @add_constraint(mdl, ZERO, "final_condition", (x[:, end],), begin
+    @add_constraint(ocp, ZERO, "final_condition", (x[:, end],), begin
                         local xf = arg[1]
                         xf-[s; 0]
                     end)
 
     for k = 1:N
-        @add_constraint(mdl, NONPOS, "sigma_ub", (σ[k],), begin
+        @add_constraint(ocp, NONPOS, "sigma_ub", (σ[k],), begin
                             local σk = arg[1][1]
                             σk-2
                         end)
-        @add_constraint(mdl, NONPOS, "sigma_lb", (σ[k],), begin
+        @add_constraint(ocp, NONPOS, "sigma_lb", (σ[k],), begin
                             local σk = arg[1][1]
                             1-σk
                         end)
-        @add_constraint(mdl, L1, "lcvx_equality", (u[k], σ[k]), begin
+        @add_constraint(ocp, L1, "lcvx_equality", (u[k], σ[k]), begin
                             local uk, σk = arg
                             vcat(σk, uk)
                         end)
-        @add_constraint(mdl, GEOM, "slack_squared", (σ[k], σ²[k]), begin
+        @add_constraint(ocp, GEOM, "slack_squared", (σ[k], σ²[k]), begin
                             local σk, σ²k = arg
                             vcat(σk, σ²k, 1)
                         end)
         if k<N
-            @add_constraint(mdl, ZERO, "dynamics",
+            @add_constraint(ocp, ZERO, "dynamics",
                             (x[:, k+1], x[:, k], u[:, k], u[:, k+1]), begin
                                 local xn, x, u, un = arg
                                 xn-(A*x+Bm.*u+Bp.*un+w)
@@ -103,12 +104,12 @@ function solve_lcvx(mdl::DoubleIntegratorParameters)::Solution
         end
     end
 
-    @add_cost(mdl, (σ²,), begin
+    @add_cost(ocp, (σ²,), begin
                   local σ² = arg[1]
-                  sum(σ²)
+                  sum(σ²)*dt
               end)
 
-    status = solve!(mdl)
+    status = solve!(ocp)
 
     if status!=MOI.OPTIMAL
         msg = @sprintf("Numerical solution error (%s)", status)
@@ -120,6 +121,7 @@ function solve_lcvx(mdl::DoubleIntegratorParameters)::Solution
 
     t = collect(LinRange(0, T, N))
     sol = Solution(t, x, u)
+    cost = objective_value(ocp) #noinfo
 
     return sol
 end # function
