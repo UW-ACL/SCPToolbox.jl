@@ -19,6 +19,7 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 #nolint: TrajectoryProblem
 #nolint: IMPULSE, SCP_SOLVED
 #nolint: plot_convergence
+#nolint: SCPSolution, SCPHistory
 
 if isdefined(@__MODULE__, :LanguageServer)
     include("definition.jl")
@@ -33,6 +34,8 @@ using Utils
 import Solvers
 
 export ptr
+
+const PTR = Solvers.PTR
 
 function ptr()::Nothing
 
@@ -55,14 +58,14 @@ function ptr()::Nothing
     q_exit = Inf
     solver = ECOS
     solver_options = Dict("verbose"=>0, "maxit"=>1000)
-    pars = Solvers.PTR.Parameters(
+    pars = PTR.Parameters(
         N, Nsub, iter_max, disc_method, wvc, wtr, ε_abs,
         ε_rel, feas_tol, q_tr, q_exit, solver,
         solver_options)
 
-    test_single(pbm, pars)
-    test_runtime(pbm, pars)
-    test_homotopy_update(pbm, pars)
+    test_single(mdl, pbm, pars)
+    test_runtime(mdl, pbm, pars)
+    test_homotopy_update(mdl, pbm, pars)
 
     return nothing
 end # function
@@ -73,6 +76,7 @@ end # function
 Compute a single trajectory.
 
 # Arguments
+- `mdl`: the rendezvous problem definition.
 - `pbm`: the rendezvous trajectory problem.
 - `pars`: the rendezvous trajectory problem.
 
@@ -80,7 +84,8 @@ Compute a single trajectory.
 - `sol`: the trajectory solution.
 - `history`: the iterate history.
 """
-function test_single(pbm::TrajectoryProblem,
+function test_single(mdl::RendezvousProblem,
+                     pbm::TrajectoryProblem,
                      pars::PTR.Parameters)::Tuple{SCPSolution,
                                                   SCPHistory}
 
@@ -110,13 +115,15 @@ end # function
 Run the algorithm several times and plot runtime statistics.
 
 # Arguments
+- `mdl`: the rendezvous problem definition.
 - `pbm`: the rendezvous trajectory problem.
 - `pars`: the rendezvous trajectory problem.
 
 # Returns
 - `history_list`: vector of iterate histories for each trial.
 """
-function test_runtime(pbm::TrajectoryProblem,
+function test_runtime(mdl::RendezvousProblem, #nowarn
+                      pbm::TrajectoryProblem,
                       pars::PTR.Parameters)::Vector{SCPHistory}
 
     test_heading("Runtime statistics")
@@ -158,6 +165,7 @@ end # function
 Test a sweep of homotopy update thresholds.
 
 # Arguments
+- `mdl`: the rendezvous problem definition.
 - `pbm`: the rendezvous trajectory problem.
 - `pars`: the rendezvous trajectory problem.
 
@@ -166,8 +174,9 @@ Test a sweep of homotopy update thresholds.
 - `sol_list`: vector of trajectory solutions that were obtained for each
   setting.
 """
-function test_homotopy_update(pbm::TrajectoryProblem,
-                              pars::PTR.Parameters)::Tuepl{
+function test_homotopy_update(mdl::RendezvousProblem,
+                              pbm::TrajectoryProblem,
+                              pars::PTR.Parameters)::Tuple{
                                   Vector{Float64},
                                   Vector{SCPSolution}}
 
