@@ -27,7 +27,7 @@ using Printf
 export skew, get_interval, linterp, zohinterp, diracinterp,
     straightline_interpolate, rk4, trapz, ∇trapz, logsumexp, or, squeeze,
     convert_units, homtransf, hominv, homdisp, homrot, make_indent,
-    golden, c2d
+    golden, c2d, test_heading
 
 export @preprintf
 
@@ -928,6 +928,11 @@ function hominv(T::RealMatrix)::RealMatrix
     iT = [iR -iR*v; zeros(3)' 1]
     return iT
 end # function
+
+""" Print a heading for the test. """
+test_heading(description) = printstyled(
+    @sprintf("%s\n", description),
+    color=:blue, bold=true)
 
 """
     make_indent(io)

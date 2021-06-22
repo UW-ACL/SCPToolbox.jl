@@ -56,7 +56,7 @@ module Starship
 include("starship_flip/parameters.jl")
 include("starship_flip/definition.jl")
 include("starship_flip/plots.jl")
-# include("starship_flip/tests.jl")
+include("starship_flip/tests.jl")
 end #module
 
 end # module

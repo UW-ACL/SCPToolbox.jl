@@ -55,16 +55,20 @@ const time_mark_clr = rgb2pyplot(weighted_color_mean(
 # ..:: Methods ::..
 
 """
-    plot_trajectory_2d(mdl, sol)
+    plot_trajectory_2d(mdl, sol[; attitude])
 
 Plot the final converged trajectory, projected onto 2D planes.
 
 # Arguments
 - `mdl`: the problem description object.
 - `sol`: the problem solution.
+
+# Keywords
+- `attitude`: (optional) whether to also plot the attitude time history.
 """
 function plot_trajectory_2d(mdl::RendezvousProblem,
-                            sol::SCPSolution)::Nothing #noerr
+                            sol::SCPSolution;
+                            attitude::Bool=false)::Nothing #noerr
 
     # Parameters
     algo = sol.algo
@@ -111,11 +115,24 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
                  :x_name=>"y",
                  :y_name=>"z")]
 
-    fig = create_figure((6, 10), options=fig_opts)
-
     num_plts = length(data)
-    gspec = fig.add_gridspec(ncols=1, nrows=num_plts+1,
-                             height_ratios=[0.05, fill(1, num_plts)...])
+    if !attitude
+        fig = create_figure((6, 10), options=fig_opts)
+
+        gspec = fig.add_gridspec(ncols=1, nrows=num_plts+1,
+                                 height_ratios=[0.05, fill(1, num_plts)...])
+    else
+        fig_opts_copy = convert(Dict{String, Any}, copy(fig_opts))
+        fig_opts_copy["axes.labelsize"] = 16
+        fig_opts_copy["xtick.labelsize"] = 14
+        fig_opts_copy["ytick.labelsize"] = 14
+
+        fig = create_figure((10, 10), options=fig_opts_copy)
+
+        gspec = fig.add_gridspec(ncols=3, nrows=num_plts+1,
+                                 height_ratios=[0.05, fill(1, num_plts)...],
+                                 width_ratios=[0.64, 0.06, 0.3])
+    end
 
     axes = []
 
@@ -327,8 +344,197 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
     ax_pos = cbar_ax.get_position()
     ax_pos = [ax_pos.x0, ax_pos.y0-0.05, ax_pos.width, ax_pos.height]
     cbar_ax.set_position(ax_pos)
+    cbar_ax.xaxis.labelpad = 10
 
-    save_figure("rendezvous_3d_trajectory_2d.pdf", algo, tight_layout=false)
+    # >> Timeseries plots <<
+
+    if attitude
+
+        marker_darken_factor = 0.3
+        outline_w = 1.5
+
+        y1_clr = Blue #noerr
+        y2_clr = Red #noerr
+        darker_y1_clr = darken_color(y1_clr, marker_darken_factor)
+        darker_y2_clr = darken_color(y2_clr, marker_darken_factor)
+
+        # Plotting data
+        dt_τ = sol.td
+        tf = sol.p[veh.id_t]
+        ct_t = ct_τ*tf
+        dt_t = dt_τ*tf
+
+        ct_r = hcat([sample(sol.xc, τ)[veh.id_r] for τ in ct_τ]...) #noerr
+        ct_q = hcat([sample(sol.xc, τ)[veh.id_q] for τ in ct_τ]...) #noerr
+        ct_rpy = mapslices(q->collect(rpy(Quaternion(q))), ct_q, dims=1) #noerr
+        ct_ω = hcat([sample(sol.xc, τ)[veh.id_ω] for τ in ct_τ]...) #noerr
+
+        dt_q = sol.xd[veh.id_q, :]
+        dt_rpy = mapslices(q->collect(rpy(Quaternion(q))), dt_q, dims=1) #noerr
+        dt_ω = sol.xd[veh.id_ω, :]
+
+        ct_rpy = rad2deg.(ct_rpy)
+        dt_rpy = rad2deg.(dt_rpy)
+        ct_ω = rad2deg.(ct_ω)
+        dt_ω = rad2deg.(dt_ω)
+
+        # Find approach and plume sphere entry times
+        k_appch = findfirst(k->norm(ct_r[:, k])<=traj.r_appch, 1:ct_res)
+        k_plume = findfirst(k->norm(ct_r[:, k])<=traj.r_plume, 1:ct_res)
+        t_appch = ct_t[k_appch]
+        t_plume = ct_t[k_plume]
+
+        data=[Dict(:y1_dt=>dt_rpy[3, :],
+                   :y1_ct=>ct_rpy[3, :],
+                   :y2_dt=>dt_ω[1, :],
+                   :y2_ct=>ct_ω[1, :],
+                   :y1_label=>"Roll angle [\$^\\circ\$]",
+                   :y2_label=>"Body \$x\$ angular rate [\$^\\circ\$/s]"),
+              Dict(:y1_dt=>dt_rpy[2, :],
+                   :y1_ct=>ct_rpy[2, :],
+                   :y2_dt=>dt_ω[2, :],
+                   :y2_ct=>ct_ω[2, :],
+                   :y1_label=>"Pitch angle [\$^\\circ\$]",
+                   :y2_label=>"Body \$y\$ angular rate [\$^\\circ\$/s]"),
+              Dict(:y1_dt=>dt_rpy[1, :],
+                   :y1_ct=>ct_rpy[1, :],
+                   :y2_dt=>dt_ω[3, :],
+                   :y2_ct=>ct_ω[3, :],
+                   :y1_label=>"Yaw angle [\$^\\circ\$]",
+                   :y2_label=>"Body \$z\$ angular rate [\$^\\circ\$/s]")]
+
+        ax_list = []
+        ax2_list = []
+
+        for i = 1:3
+
+            # Data
+            y1_data_dt = data[i][:y1_dt]
+            y1_data_ct = data[i][:y1_ct]
+            y2_data_dt = data[i][:y2_dt]
+            y2_data_ct = data[i][:y2_ct]
+
+            ax = setup_axis!(gspec[i+1, 3],
+                             tight="both",
+                             xlabel="Time [s]")
+            ax2 = ax.twinx()
+
+            push!(ax_list, ax)
+            push!(ax2_list, ax2)
+
+            ax.set_ylabel(data[i][:y1_label], color=y1_clr)
+            ax.tick_params(axis="y", colors=y1_clr)
+            ax.spines["left"].set_edgecolor(y1_clr)
+
+            ax2.set_ylabel(data[i][:y2_label], color=y2_clr)
+            ax2.tick_params(axis="y", colors=y2_clr)
+            ax2.spines["right"].set_edgecolor(y2_clr)
+            ax2.spines["top"].set_visible(false)
+            ax2.spines["bottom"].set_visible(false)
+            ax2.spines["left"].set_visible(false)
+            ax2.set_axisbelow(true)
+
+            # Continuous-time trajectory
+            ax.plot(ct_t, y1_data_ct,
+                    color=y1_clr, #noerr
+                    linewidth=2,
+                    solid_joinstyle="round",
+                    solid_capstyle="round",
+                    clip_on=false,
+                    zorder=10)
+
+            ax2.plot(ct_t, y2_data_ct,
+                     color=y2_clr, #noerr
+                     linewidth=2,
+                     solid_joinstyle="round",
+                     solid_capstyle="round",
+                     clip_on=false,
+                     zorder=10)
+            ax2.plot(ct_t, y2_data_ct,
+                     color="white",
+                     linewidth=2+outline_w,
+                     solid_joinstyle="round",
+                     solid_capstyle="round",
+                     clip_on=false,
+                     zorder=9)
+
+            # Discrete-time trajectory
+            ax.plot(dt_t, y1_data_dt,
+                    linestyle="none",
+                    marker="o",
+                    markersize=3.5,
+                    markerfacecolor=darker_y1_clr, #noerr
+                    markeredgecolor="white",
+                    markeredgewidth=0.2,
+                    clip_on=false,
+                    zorder=20)
+
+            ax2.plot(dt_t, y2_data_dt,
+                     linestyle="none",
+                     marker="o",
+                     markersize=3.5,
+                     markerfacecolor=darker_y2_clr, #noerr
+                     markeredgecolor="white",
+                     markeredgewidth=0.2,
+                     clip_on=false,
+                     zorder=20)
+            ax2.plot(dt_t, y2_data_dt,
+                     linestyle="none",
+                     marker="o",
+                     markersize=3.5+outline_w,
+                     markerfacecolor="white",
+                     markeredgewidth=0,
+                     clip_on=false,
+                     zorder=9)
+
+            # Plot reflines for the approach and plume sphere entry times
+            label_text = Dict(t_appch=>"Approach", t_plume=>"Plume")
+            ax_ylim = ax.get_ylim()
+            for t in [t_appch, t_plume]
+                ax.axvline(x=t,
+                           color=time_mark_clr,
+                           linestyle="--",
+                           linewidth=0.7,
+                           dash_joinstyle="round",
+                           dash_capstyle="round",
+                           dashes=(3, 3),
+                           zorder=5)
+
+                ax.annotate(label_text[t] ,
+                            color=time_mark_clr,
+                            xy=(t, ax_ylim[2]),
+                            xytext=(0, -10),#0.1*(ax_ylim[2]-ax_ylim[1])),
+                            textcoords="offset points",
+                            ha="center",
+                            va="top",
+                            rotation=90,
+                            zorder=5,
+                            bbox=Dict(:pad=>1, :fc=>"white", :ec=>"none"))
+            end
+
+            # Make an x tick for the final time
+            ax_xticks = ax.get_xticks()
+            ax_xlim = ax.get_xlim()
+            if ax_xticks[end]!=tf
+                push!(ax_xticks, tf)
+            end
+            ax.set_xticks(ax_xticks)
+            ax.set_xlim(ax_xlim)
+
+        end
+
+        fig.align_ylabels(ax_list[1:3])
+        fig.align_ylabels(ax2_list[1:3])
+
+    end
+
+    if attitude
+        save_figure("rendezvous_3d_trajectory_2d_with_attitude.pdf",
+                    algo, tight_layout=false)
+    else
+        save_figure("rendezvous_3d_trajectory_2d.pdf",
+                    algo, tight_layout=false)
+    end
 
     return nothing
 end # function
@@ -557,6 +763,18 @@ function plot_state_timeseries(mdl::RendezvousProblem,
         ax.set_xticks(ax_xticks)
         ax.set_xlim(ax_xlim)
 
+        # Make a y-tick for the largest time for yaw
+        if i==3
+            ax_yticks = ax.get_yticks()
+            ax_ylim = ax.get_ylim()
+            max_val = maximum(y1_data_ct)
+            if ax_yticks[end]!=max_val
+                push!(ax_yticks, max_val)
+            end
+            ax.set_yticks(ax_yticks)
+            ax.set_ylim(ax_ylim)
+        end
+
     end
 
     fig.align_ylabels(ax_list[1:3])
@@ -570,7 +788,7 @@ function plot_state_timeseries(mdl::RendezvousProblem,
 end # function
 
 """
-    plot_control(mdl, sol)
+    plot_control(mdl, sol[; quad])
 
 Plot the control inputs versus time.
 
@@ -578,10 +796,14 @@ Plot the control inputs versus time.
 - `mdl`: the problem description object.
 - `sol`: the problem solution.
 - `history`: SCP iteration data history.
+
+# Keywords
+- `quad`: (optional): which quad in particular to plot the inputs for.
 """
 function plot_inputs(mdl::RendezvousProblem,
                      sol::SCPSolution, #noerr
-                     history::SCPHistory)::Nothing #noerr
+                     history::SCPHistory;
+                     quad::Types.Optional{String}=nothing)::Nothing #noerr
 
     # Parameters
     interm_sol = [spbm.sol for spbm in history.subproblems]
@@ -645,6 +867,21 @@ function plot_inputs(mdl::RendezvousProblem,
             "\$-\\hat x_{\\mathcal B}\$",
             "\$+\\hat y_{\\mathcal B}\$ (A)",
             "\$-\\hat y_{\\mathcal B}\$ (A)"]
+    if !isnothing(quad)
+        if quad=="A"
+            dirs[3] = "\$+\\hat y_{\\mathcal B}\$"
+            dirs[4] = "\$-\\hat y_{\\mathcal B}\$"
+        elseif quad=="B"
+            dirs[3] = "\$+\\hat z_{\\mathcal B}\$"
+            dirs[4] = "\$-\\hat z_{\\mathcal B}\$"
+        elseif quad=="C"
+            dirs[3] = "\$-\\hat y_{\\mathcal B}\$"
+            dirs[4] = "\$+\\hat y_{\\mathcal B}\$"
+        elseif quad=="D"
+            dirs[3] = "\$-\\hat z_{\\mathcal B}\$"
+            dirs[4] = "\$+\\hat z_{\\mathcal B}\$"
+        end
+    end
     thruster_label = (i) -> @sprintf("Thruster %s", dirs[i])
     data = [Dict(:u=>(i)->f_quad[i][:A],
                  :u_ref=>(i)->f_quad_ref[i][:A],
@@ -667,8 +904,15 @@ function plot_inputs(mdl::RendezvousProblem,
                      " [\\si{\\newton\\second}]",
                  :legend=>thruster_label)]
 
-    fig = create_figure((10, 18), options=fig_opts)
-    gspec = fig.add_gridspec(ncols=2, nrows=6,
+    if !isnothing(quad)
+        data_map = Dict("A"=>1, "B"=>2, "C"=>3, "D"=>4)
+        data = [data[data_map[quad]]]
+    end
+
+    fig_height = isnothing(quad) ? 12.5 : 2.9
+    fig_rows = isnothing(quad) ? 4 : 1
+    fig = create_figure((10, fig_height), options=fig_opts)
+    gspec = fig.add_gridspec(ncols=2, nrows=fig_rows,
                              width_ratios=[0.7, 0.3])
 
     axes = []
@@ -887,7 +1131,12 @@ function plot_inputs(mdl::RendezvousProblem,
     map(ax->ax.yaxis.label.set_size(axis_label_size), axes)
     fig.align_ylabels(axes)
 
-    save_figure("rendezvous_3d_inputs.pdf", algo, tight_layout=false)
+    if isnothing(quad)
+        filename = "rendezvous_3d_inputs.pdf"
+    else
+        filename = @sprintf("rendezvous_3d_inputs_%s.pdf", quad)
+    end
+    save_figure(filename, algo, tight_layout=false)
 
     return nothing
 end # function
@@ -920,21 +1169,25 @@ function plot_cost_evolution(mdl::RendezvousProblem,
     hom_updated = map(spbm->spbm.sol.bay[:hom_updated],
                       history.subproblems)
 
-    fig = create_figure((7, 6), options=fig_opts)
+    fig_opts_copy = convert(Dict{String, Any}, copy(fig_opts))
+    fig_opts_copy["axes.labelsize"] = 16
+    fig_opts_copy["axes.titlesize"] = 16
+    fig_opts_copy["xtick.labelsize"] = 14
+    fig_opts_copy["ytick.labelsize"] = 14
+    fig = create_figure((10, 3), options=fig_opts_copy)
     axes = []
 
     # >> Plot the cost evolution <<
 
-    ax = setup_axis!(311,
-                     ylabel="Cost function value, \$J_{\\ell}\$")
+    ax = setup_axis!(131,
+                     xlabel="Iteration number, \$\\ell\$")
     push!(axes, ax)
-    ax.tick_params(axis="x", which="both", bottom=false, top=false,
-                   labelbottom=false)
+    ax.set_title("Cost function value, \$J_{\\ell}\$", pad=10)
 
     ax.plot(iters, J,
             color=gray,
             marker="o",
-            markersize=5,
+            markersize=4,
             markerfacecolor=DarkBlue,
             markeredgecolor="white",
             markeredgewidth=1,
@@ -947,7 +1200,7 @@ function plot_cost_evolution(mdl::RendezvousProblem,
         if hom_updated[iter]
             ax.plot(iter, J[iter],
                     marker="o",
-                    markersize=5,
+                    markersize=4,
                     markerfacecolor=Red,
                     markeredgecolor="white",
                     markeredgewidth=1,
@@ -964,18 +1217,17 @@ function plot_cost_evolution(mdl::RendezvousProblem,
 
     # >> Plot the relative cost change per iteration <<
 
-    ax = setup_axis!(312,
-                     ylabel="Cost decrease, "*
-                         "\$\\frac{J_{\\ell-1}-J_{\\ell}}{|J_{\\ell-1}|}\$"*
-                         " [\\%]")
+    ax = setup_axis!(132,
+                     xlabel="Iteration number, \$\\ell\$")
     push!(axes, ax)
-    ax.tick_params(axis="x", which="both", bottom=false, top=false,
-                   labelbottom=false)
+    ax.set_title("Cost decrease, "*
+        "\$\\frac{J_{\\ell-1}-J_{\\ell}}{|J_{\\ell-1}|}\$"*
+        " [\\%]", pad=10)
 
     ax.plot(iters[2:end], dJ,
             color=gray,
             marker="o",
-            markersize=5,
+            markersize=4,
             markerfacecolor=DarkBlue,
             markeredgecolor="white",
             markeredgewidth=1,
@@ -1012,7 +1264,7 @@ function plot_cost_evolution(mdl::RendezvousProblem,
         if hom_updated[iter]
             ax.plot(iter, dJ[iter-1],
                     marker="o",
-                    markersize=5,
+                    markersize=4,
                     markerfacecolor=Red,
                     markeredgecolor="white",
                     markeredgewidth=1,
@@ -1037,16 +1289,16 @@ function plot_cost_evolution(mdl::RendezvousProblem,
 
     # >> Homotopy value evolution <<
 
-    ax = setup_axis!(313,
-                     xlabel="Iteration number, \$\\ell\$",
-                     ylabel="Homotopy parameter, \$\\kappa\$")
+    ax = setup_axis!(133,
+                     xlabel="Iteration number, \$\\ell\$")
     push!(axes, ax)
+    ax.set_title("Homotopy parameter, \$\\kappa\$", pad=10)
     ax.set_yscale("log")
 
     ax.plot(iters, hom,
             color=gray,
             marker="o",
-            markersize=5,
+            markersize=4,
             markerfacecolor=DarkBlue,
             markeredgecolor="white",
             markeredgewidth=1,
@@ -1059,7 +1311,7 @@ function plot_cost_evolution(mdl::RendezvousProblem,
         if hom_updated[iter]
             ax.plot(iter, hom[iter],
                     marker="o",
-                    markersize=5,
+                    markersize=4,
                     markerfacecolor=Red,
                     markeredgecolor="white",
                     markeredgewidth=1,

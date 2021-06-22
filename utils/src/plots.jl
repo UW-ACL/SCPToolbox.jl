@@ -730,6 +730,7 @@ function create_figure(size::Tuple{T, V};
     set_with_default("text.usetex", true)
     set_with_default("font.family", "sans-serif")
     set_with_default("axes.labelsize", 14)
+    set_with_default("axes.titlesize", 14)
     set_with_default("xtick.labelsize", 12)
     set_with_default("ytick.labelsize", 12)
     set_with_default("text.latex.preamble",

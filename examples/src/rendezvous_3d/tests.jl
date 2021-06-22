@@ -1,4 +1,4 @@
-#= Tests for forced harmonic oscillator with input deadband.
+#= Tests for spacecraft rendezvous with discrete logic.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington)
@@ -18,7 +18,7 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 #nolint: Parser, Utils, Solvers
 #nolint: TrajectoryProblem
 #nolint: IMPULSE, SCP_SOLVED
-#nolint: plot_convergence
+#nolint: plot_convergence, test_heading
 #nolint: SCPSolution, SCPHistory
 
 if isdefined(@__MODULE__, :LanguageServer)
@@ -102,8 +102,10 @@ function test_single(mdl::RendezvousProblem,
 
     # Make plots
     plot_trajectory_2d(mdl, sol)
+    plot_trajectory_2d(mdl, sol; attitude=true)
     plot_state_timeseries(mdl, sol)
     plot_inputs(mdl, sol, history)
+    plot_inputs(mdl, sol, history; quad="D")
     plot_cost_evolution(mdl, history)
 
     return sol, history
@@ -226,8 +228,3 @@ function reset_homotopy(pbm::TrajectoryProblem)::Nothing
     pbm.mdl.traj.hom = pbm.mdl.traj.hom_grid[1] # Reset homotopy
     return nothing
 end # function
-
-""" Print a heading for the test. """
-test_heading(description) = printstyled(
-    @sprintf("%s\n", description),
-    color=:blue, bold=true)

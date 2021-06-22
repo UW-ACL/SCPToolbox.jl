@@ -45,3 +45,8 @@ end
     test_heading("PTR", "Apollo rendezvous")
     Examples.Rendezvous3D.ptr()
 end
+
+@testset "Starship" begin
+    test_heading("PTR", "Starship flip")
+    Examples.Starship.ptr()
+end

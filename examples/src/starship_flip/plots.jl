@@ -1,5 +1,10 @@
 #= Starship landing plots.
 
+Disclaimer: the data in this example is obtained entirely from publicly
+available information, e.g. on reddit.com/r/spacex, nasaspaceflight.com, and
+spaceflight101.com. No SpaceX engineers were involved in the creation of this
+code.
+
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington)
 
@@ -20,7 +25,7 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 #nolint: generate_colormap, create_figure, rgb2pyplot
 #nolint: plot_timeseries_bound!
 #nolint: sample
-#nolint: save_figure
+#nolint: save_figure, set_axis_equal
 
 LangServer = isdefined(@__MODULE__, :LanguageServer)
 
@@ -51,7 +56,7 @@ function plot_trajectory_history(mdl::StarshipProblem,
     cmap_offset = 0.1
     alph_offset = 0.3
 
-    fig = create_figure((3, 4))
+    fig = create_figure((3.4, 5))
     ax = fig.add_subplot()
 
     ax.axis("equal")
@@ -95,6 +100,8 @@ function plot_trajectory_history(mdl::StarshipProblem,
                 zorder=100)
     end
 
+    set_axis_equal(ax, (-200, missing, -25, 650))
+
     save_figure("starship_traj_iters.pdf", algo)
 
     return nothing
@@ -118,7 +125,7 @@ function plot_final_trajectory(mdl::StarshipProblem,
                                         vmax=maximum(speed))
     v_cmap = matplotlib.cm.ScalarMappable(norm=v_nrm, cmap=v_cmap)
 
-    fig = create_figure((3, 4))
+    fig = create_figure((4, 5))
     ax = fig.add_subplot()
 
     ax.axis("equal")
@@ -214,6 +221,8 @@ function plot_final_trajectory(mdl::StarshipProblem,
             clip_on=false,
             zorder=100)
 
+    set_axis_equal(ax, (-200, missing, -25, 650))
+
     save_figure("starship_final_traj.pdf", algo)
 
     return nothing
@@ -239,7 +248,7 @@ function plot_velocity(mdl::StarshipProblem,
     τ2t = (τ) -> ((τ<=τs) ? τ/τs*t1 : t1+(τ-τs)/(1-τs)*t2)
     xy_clrs = ["#db6245", "#5da9a1"]
 
-    fig = create_figure((5, 2.5))
+    fig = create_figure((6, 3))
     ax = fig.add_subplot()
 
     ax.grid(linewidth=0.3, alpha=0.5)
@@ -308,7 +317,7 @@ function plot_thrust(mdl::StarshipProblem,
     y_top = 7.0
     y_bot = 0.0
 
-    fig = create_figure((5, 2.5))
+    fig = create_figure((6, 3))
     ax = fig.add_subplot()
 
     ax.grid(linewidth=0.3, alpha=0.5)
@@ -377,7 +386,7 @@ function plot_gimbal(mdl::StarshipProblem,
     scale = 180/pi
     τ2t = (τ) -> ((τ<=τs) ? τ/τs*t1 : t1+(τ-τs)/(1-τs)*t2)
 
-    fig = create_figure((5, 5))
+    fig = create_figure((6, 6))
 
     ct_res = 500
     ct_τ = RealVector(LinRange(0.0, 1.0, ct_res))
