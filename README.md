@@ -16,8 +16,9 @@ the following IEEE Control Systems Magazine publication:
   author       = {Danylo Malyuta and Taylor P. Reynolds and Michael Szmuk
                   and Thomas Lew and Riccardo Bonalli and Marco Pavone
                   and Behcet Acikmese},
-  title	       = {Convex Optimization-Based Trajectory Generation},
-  journal      = {{IEEE} Control Systems Magazine (work in progress)}
+  title	       = {Convex Optimization for Trajectory Generation},
+  journal      = {{IEEE} Control Systems Magazine (in review)},
+  pages        = {arXiv:2106.09125}
 }
 ```
 
