@@ -40,6 +40,7 @@ If you use this code, kindly cite the following associated publication.
                   and Thomas Lew and Riccardo Bonalli and Marco Pavone
                   and Behcet Acikmese},
   title	       = {Convex Optimization for Trajectory Generation},
-  journal      = {{IEEE} Control Systems Magazine (work in progress)}
+  journal      = {{IEEE} Control Systems Magazine (in review)},
+  pages        = {arXiv:2106.09125}
 }
 ```
