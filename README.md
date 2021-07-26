@@ -7,7 +7,7 @@
 <img alt="SCP Toolbox"
     title="SCP Toolbox"
     src="./figures/logo.png"
-    style="width: 400px; display: block; margin-left: auto; margin-right: auto;">
+    style="width: 200px; display: block; margin-left: auto; margin-right: auto;">
 
 ***
 
