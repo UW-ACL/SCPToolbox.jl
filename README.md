@@ -1,9 +1,38 @@
-# SCP for Trajectory Optimization
+<h1 align="center">SCP Toolbox</h1>
 
-This repository contains sequential convex programming (SCP) algorithms for
-real-time generation of dynamically feasible trajectories of aerospace,
-robotic, and other systems. Under the hood, the algorithms rely on optimal
-control and convex numerical optimization theory.
+<p align="center">
+  <a href="http://www.gnu.org/licenses/gpl-3.0.txt"><img src="https://img.shields.io/badge/license-GPL_3-green.svg" alt="License GPL 3" /></a>
+</p>
+
+<img alt="SCP Toolbox"
+    title="SCP Toolbox"
+    src="./figures/logo.png"
+    style="width: 400px; display: block; margin-left: auto; margin-right: auto;">
+
+***
+
+<p align="justify">
+The <b>SCP Toolbox</b> provides a parser-solver framework for sequential convex
+programming (SCP) algorithms for real-time generation of dynamically feasible
+trajectories of aerospace, robotic, and other systems. Under the hood, the
+algorithms rely on optimal control and convex numerical optimization theory.
+</p>
+
+<p align="justify">
+Clone this repository,
+[scp_new_problem](https://github.com/dmalyuta/scp_new_problem), and read the
+tutorial below to get started.
+</p>
+
+***
+
+<p align="center">
+  <a href="https://www.malyuta.name/optimization/tooling/2021/07/15/scp-tutorial.html"><b>Tutorial</b></a>
+</p>
+
+***
+
+## About
 
 Four algorithms are implemented, and can be found in the `solvers/` directory:
 - Lossless convexification ([LCvx](https://doi.org/10.2514/1.27553))
@@ -26,9 +55,7 @@ be found in the `examples/` director, and include:
 8. [Apollo transposition and docking maneuver with discrete
    logic](examples/src/rendezvous_3d)
 
-More documentation is on its way :books:
-
-# Citing
+## Citing
 
 If you use this code, kindly cite the following associated publication.
 
