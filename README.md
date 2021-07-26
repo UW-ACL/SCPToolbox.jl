@@ -1,13 +1,13 @@
-<h1 align="center">SCP Toolbox</h1>
+<p align="center">
+<img alt="SCP Toolbox"
+    title="SCP Toolbox"
+    src="./figures/logo.png"
+    width="400px" />
+</p>
 
 <p align="center">
   <a href="http://www.gnu.org/licenses/gpl-3.0.txt"><img src="https://img.shields.io/badge/license-GPL_3-green.svg" alt="License GPL 3" /></a>
 </p>
-
-<img alt="SCP Toolbox"
-    title="SCP Toolbox"
-    src="./figures/logo.png"
-    style="width: 200px; display: block; margin-left: auto; margin-right: auto;">
 
 ***
 
@@ -19,8 +19,7 @@ algorithms rely on optimal control and convex numerical optimization theory.
 </p>
 
 <p align="justify">
-Clone this repository,
-[scp_new_problem](https://github.com/dmalyuta/scp_new_problem), and read the
+  Clone this repository, <a href="https://github.com/dmalyuta/scp_new_problem">scp_new_problem</a>, and read the
 tutorial below to get started.
 </p>
 
