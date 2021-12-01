@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("basic_types.jl")
-end
-
 import Base: contains
 
 export Hyperrectangle
@@ -57,7 +53,7 @@ struct Hyperrectangle
         c = (u+l)/2
         H = new(n, l, u, s, c)
         return H
-    end # function
+    end
 
     """
         Hyperrectangle((l1, u1)[, (l2, u2) ....])
@@ -80,7 +76,7 @@ struct Hyperrectangle
         H = Hyperrectangle(l, u)
 
         return H
-    end # function
+    end
 
     """
         Hyperrectangle(offset, width, height, depth[, yaw, pitch, roll])
@@ -142,7 +138,7 @@ struct Hyperrectangle
         # Save hyperrectangle
         H = Hyperrectangle(l, u)
         return H
-    end # function
+    end
 end # struct
 
 """
@@ -159,4 +155,4 @@ Boolean true iff r∈H.
 """
 function contains(H::Hyperrectangle, r::RealVector)::Bool
     return all(H.l .<= r .<= H.u)
-end # function
+end

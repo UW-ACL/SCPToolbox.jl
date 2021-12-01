@@ -15,12 +15,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("parameters.jl")
-end
-
 using LinearAlgebra
 using Parser
 
@@ -44,14 +38,14 @@ function define_problem!(pbm::TrajectoryProblem,
     set_guess!(pbm)
 
     return nothing
-end # function
+end
 
 function set_dims!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_dims!(pbm, 6, 12, 1)
 
     return nothing
-end # function
+end
 
 function set_scale!(pbm::TrajectoryProblem)::Nothing
 
@@ -274,35 +268,35 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                 @add_constraint(
                     ocp, NONPOS, "thrust_absval_max",
                     (l1f_i,), begin
-                        local l1f, = arg #noerr
+                        local l1f, = arg
                         l1f[1]-veh.f_max
                     end)
 
                 @add_constraint(
                     ocp, NONPOS, "thrust_refval_max",
                     (fr_i,), begin
-                        local fr, = arg #noerr
+                        local fr, = arg
                         fr[1]-veh.f_max
                     end)
 
                 @add_constraint(
                     ocp, NONPOS, "thrust_refval_min",
                     (fr_i,), begin
-                        local fr, = arg #noerr
+                        local fr, = arg
                         -fr[1]-veh.f_max
                     end)
 
                 @add_constraint(
                     ocp, L1, "thrust_absval",
                     (l1f_i, f_i), begin
-                        local l1f, f = arg #noerr
+                        local l1f, f = arg
                         vcat(l1f, f)
                     end)
 
                 @add_constraint(
                     ocp, L1, "thrust_absval",
                     (l1feq_i, f_i, fr_i), begin
-                        local l1feq, f, fr = arg #noerr
+                        local l1feq, f, fr = arg
                         vcat(l1feq, f-fr)
                     end)
 
@@ -311,14 +305,14 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             @add_constraint(
                 ocp, NONPOS, "min_time_bound",
                 (tdil, ), begin
-                    local tdil, = arg #noerr
+                    local tdil, = arg
                     tdil[1]-traj.tf_max
                 end)
 
             @add_constraint(
                 ocp, NONPOS, "max_time_bound",
                 (tdil, ), begin
-                    local tdil, = arg #noerr
+                    local tdil, = arg
                     traj.tf_min-tdil[1]
                 end)
 

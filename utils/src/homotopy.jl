@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("basic_types.jl")
-end
-
 export Homotopy
 
 """ Homotopy (continuation) object. """
@@ -53,7 +49,7 @@ struct Homotopy
         h = new(ε, δ_min, δ_max, ρ)
 
         return h
-    end # function
+    end
 end # struct
 
 """
@@ -71,4 +67,4 @@ Interpolate the homotopy parameter value.
 function (hom::Homotopy)(x::RealTypes)::RealTypes
     h = log(1/hom.ε-1)/(hom.ρ^(x)*hom.δ_max)
     return h
-end # function
+end

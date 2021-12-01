@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("basic_types.jl")
-end
-
 export Ellipsoid, project, ∇
 
 """ Ellipsoid geometric object.
@@ -51,7 +47,7 @@ struct Ellipsoid
         end
         E = new(H, c)
         return E
-    end # function
+    end
 end # struct
 
 """
@@ -85,7 +81,7 @@ function project(E::Ellipsoid, ax::IntVector)::Ellipsoid
     E_prj = Ellipsoid(H_prj, c_prj)
 
     return E_prj
-end # function
+end
 
 """
     (E::Ellipsoid)(r)
@@ -103,7 +99,7 @@ Evaluate ellipsoid level set value at location. Acts like a functor [1].
 function (E::Ellipsoid)(r::RealVector)::Real
     y = norm(E.H*(r-E.c))
     return y
-end # function
+end
 
 """
     ∇(E, r)
@@ -119,4 +115,4 @@ Ellipsoid gradient at location.
 function ∇(E::Ellipsoid, r::RealVector)::RealVector
     g = (E.H'*E.H)*(r-E.c)/E(r)
     return g
-end # function
+end

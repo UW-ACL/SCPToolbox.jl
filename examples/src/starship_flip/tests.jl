@@ -20,17 +20,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-#nolint: Parser, Utils, Solvers
-#nolint: TrajectoryProblem
-#nolint: FOH, SCP_SOLVED
-#nolint: plot_convergence, test_heading
-#nolint: SCPSolution, SCPHistory
-
-if isdefined(@__MODULE__, :LanguageServer)
-    include("definition.jl")
-    include("plots.jl")
-end
-
 using ECOS
 using Printf
 using Test
@@ -70,7 +59,7 @@ function ptr()::Nothing
     test_single(mdl, pbm, pars)
 
     return nothing
-end # function
+end
 
 """
     test_single(pbm, pars)
@@ -109,4 +98,4 @@ function test_single(mdl::StarshipProblem,
     plot_gimbal(mdl, sol)
 
     return sol, history
-end # function
+end

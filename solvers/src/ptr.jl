@@ -15,25 +15,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("../../utils/src/Utils.jl")
-    include("../../parser/src/Parser.jl")
-
-    include("discretization.jl")
-    include("scp.jl")
-
-    using .Utils
-    using .Utils.Types: improvement_percent
-    using .Parser.ConicLinearProgram
-
-    import .Parser.ConicLinearProgram: ConicProgram, ConvexCone, SupportedCone
-    import .Parser.ConicLinearProgram: VariableArgumentBlock
-    import .Parser.ConicLinearProgram: ConstantArgumentBlock
-    import .Parser.ConicLinearProgram: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
-end
-
 using LinearAlgebra
 using JuMP
 using Printf
@@ -53,7 +34,7 @@ import ..add_dynamics!, ..add_convex_state_constraints!,
 import ..solve_subproblem!, ..solution_deviation, ..unsafe_solution,
     ..overhead!, ..save!, ..get_time
 
-const CLP = ConicLinearProgram #noerr
+const CLP = ConicLinearProgram
 const Variable = ST.Variable
 const Optional = ST.Optional
 const OptVarArgBlk = Optional{VarArgBlk}
@@ -194,7 +175,7 @@ function create(pars::Parameters,
     pbm = SCPProblem(pars, traj, table)
 
     return pbm
-end # function
+end
 
 #= Constructor for an empty convex optimization subproblem.
 
@@ -266,7 +247,7 @@ function Subproblem(pbm::SCPProblem, iter::Int,
                       x, u, p, vd, vs, vic, vtc, ηx, ηu, ηp, timing)
 
     return spbm
-end # function
+end
 
 #= Construct a subproblem solution from a discrete-time trajectory.
 
@@ -330,7 +311,7 @@ function SubproblemSolution(
     discretize!(subsol, pbm)
 
     return subsol
-end # function
+end
 
 #= Construct subproblem solution from a subproblem object.
 
@@ -375,7 +356,7 @@ function SubproblemSolution(spbm::Subproblem)::SubproblemSolution
     sol.ηp = value(spbm.ηp)[1]
 
     return sol
-end # function
+end
 
 """
     ptr_solve(pbm[, hot])
@@ -475,7 +456,7 @@ function solve(pbm::SCPProblem,
     sol = SCPSolution(history)
 
     return sol, history
-end # function
+end
 
 #= Compute the initial trajectory guess.
 
@@ -495,7 +476,7 @@ function generate_initial_guess(
     guess = SubproblemSolution(x, u, p, 0, pbm)
 
     return guess
-end # function
+end
 
 """
     warm_start(pbm, warm)
@@ -517,7 +498,7 @@ function warm_start(pbm::SCPProblem,
     guess = SubproblemSolution(x, u, p, 0, pbm)
 
     return guess
-end # function
+end
 
 #= Add trust region constraint to the subproblem.
 
@@ -548,7 +529,7 @@ function add_trust_region!(spbm::Subproblem)::Nothing
 
     @add_constraint(prg, cone, "parameter_trust_region",
                     (p, dp_lq), begin
-                        local p, dp_lq = arg #noerr
+                        local p, dp_lq = arg
                         local ph = scale.iSp*(p-scale.cp)
                         local dp = ph-ph_ref
                         vcat(dp_lq, dp)
@@ -558,18 +539,18 @@ function add_trust_region!(spbm::Subproblem)::Nothing
         wp = @new_variable(prg, "wp")
         @add_constraint(prg, SOC, "parameter_trust_region",
                         (wp, dp_lq), begin
-                            local wp, dp_lq = arg #noerr
+                            local wp, dp_lq = arg
                             vcat(wp, dp_lq)
                         end)
         @add_constraint(prg, GEOM, "parameter_trust_region",
                         (wp, ηp), begin
-                            local wp, ηp = arg #noerr
+                            local wp, ηp = arg
                             vcat(wp, ηp, 1)
                         end)
     else
         @add_constraint(prg, NONPOS, "parameter_trust_region",
                         (ηp, dp_lq), begin
-                            local ηp, dp_lq = arg #noerr
+                            local ηp, dp_lq = arg
                             dp_lq-ηp
                         end)
     end
@@ -580,7 +561,7 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     for k = 1:N
         @add_constraint(prg, cone, "state_trust_region",
                         (x[:, k], dx_lq[k]), begin
-                            local xk, dxk_lq = arg #noerr
+                            local xk, dxk_lq = arg
                             local xhk = scale.iSx*(xk-scale.cx)
                             local dxk = xhk-xh_ref[:, k]
                             vcat(dxk_lq, dxk)
@@ -590,19 +571,19 @@ function add_trust_region!(spbm::Subproblem)::Nothing
             wx = @new_variable(prg, "wx")
             @add_constraint(prg, SOC, "state_trust_region",
                             (wx, dx_lq[k]), begin
-                                local wx, dxk_lq = arg #noerr
+                                local wx, dxk_lq = arg
                                 vcat(wx, dxk_lq)
                             end)
             @add_constraint(prg, GEOM, "state_trust_region",
                             (wx, ηx[k]), begin
-                                local wx, ηxk = arg #noerr
+                                local wx, ηxk = arg
                                 vcat(wx, ηxk, 1)
                             end)
         else
             # State
             @add_constraint(prg, NONPOS, "state_trust_region",
                             (ηx[k], dx_lq[k]), begin
-                                local ηxk, dxk_lq = arg #noerr
+                                local ηxk, dxk_lq = arg
                                 dxk_lq-ηxk
                             end)
         end
@@ -614,7 +595,7 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     for k = 1:N
         @add_constraint(prg, cone, "input_trust_region",
                         (u[:, k], du_lq[k]), begin
-                            local uk, duk_lq = arg #noerr
+                            local uk, duk_lq = arg
                             local uhk = scale.iSu*(uk-scale.cu)
                             local duk = uhk-uh_ref[:, k]
                             vcat(duk_lq, duk)
@@ -623,25 +604,25 @@ function add_trust_region!(spbm::Subproblem)::Nothing
             wu = @new_variable(prg, "wu")
             @add_constraint(prg, SOC, "input_trust_region",
                             (wu, du_lq[k]), begin
-                                local wu, duk_lq = arg #noerr
+                                local wu, duk_lq = arg
                                 vcat(wu, duk_lq)
                             end)
             @add_constraint(prg, GEOM, "input_trust_region",
                             (wu, ηu[k]), begin
-                                local wu, ηuk = arg #noerr
+                                local wu, ηuk = arg
                                 vcat(wu, ηuk, 1)
                             end)
         else
             @add_constraint(prg, NONPOS, "input_trust_region",
                             (ηu[k], du_lq[k]), begin
-                                local ηuk, duk_lq = arg #noerr
+                                local ηuk, duk_lq = arg
                                 duk_lq-ηuk
                             end)
         end
     end
 
     return nothing
-end # function
+end
 
 #= Define the subproblem cost function.
 
@@ -657,7 +638,7 @@ function add_cost!(spbm::Subproblem)::Nothing
     spbm.J_aug = cost(spbm.prg)
 
     return nothing
-end # function
+end
 
 """
     original_cost(x, u, p, pbm)
@@ -687,9 +668,9 @@ function compute_original_cost!(spbm::Subproblem)::Nothing
 
     spbm.J = @add_cost(
         prg, (x_stages..., u_stages..., p), begin
-            local x = arg[1:N] #noerr
-            local u = arg[(1:N).+N] #noerr
-            local p = arg[end] #noerr
+            local x = arg[1:N]
+            local u = arg[(1:N).+N]
+            local p = arg[end]
 
             # Terminal cost
             local xf = x[end]
@@ -717,7 +698,7 @@ function compute_original_cost!(spbm::Subproblem)::Nothing
         end)
 
     return nothing
-end # function
+end
 
 #= Compute the subproblem cost trust region penalty term.
 
@@ -735,13 +716,13 @@ function compute_trust_region_penalty!(spbm::Subproblem)::Nothing
 
     spbm.J_tr = @add_cost(
         prg, (ηx, ηu, ηp), begin
-            local ηx, ηu, ηp = arg #noerr
+            local ηx, ηu, ηp = arg
             ηp = ηp[1]
             wtr*(trapz(ηx, t)+trapz(ηu, t)+ηp)
         end)
 
     return nothing
-end # function
+end
 
 #= Compute the subproblem cost virtual control penalty term.
 
@@ -768,13 +749,13 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
             if k<N
                 @add_constraint(prg, L1, "vd_vs_penalty",
                                 (P[k], vd[:, k], vs[:, k]), begin
-                                    local Pk, vdk, vsk = arg #noerr
+                                    local Pk, vdk, vsk = arg
                                     vcat(Pk, E[:, :, k]*vdk, vsk)
                                 end)
             else
                 @add_constraint(prg, L1, "vd_vs_penalty",
                                 (P[k], vs[:, k]), begin
-                                    local Pk, vsk = arg #noerr
+                                    local Pk, vsk = arg
                                     vcat(Pk, vsk)
                                 end)
             end
@@ -784,14 +765,14 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
             if k<N
                 @add_constraint(prg, L1, "vd_vs_penalty",
                                 (P[k], vd[:, k]), begin
-                                    local Pk, vdk = arg #noerr
+                                    local Pk, vdk = arg
                                     vcat(Pk, E[:, :, k]*vdk)
                                 end)
             else
                 @add_constraint(
                     prg, ZERO, "vd_vs_penalty",
                     (P[k],), begin
-                        local Pk, = arg #noerr
+                        local Pk, = arg
                         Pk
                     end)
             end
@@ -801,13 +782,13 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
     if !isnothing(vic)
         @add_constraint(prg, L1, "vic_penalty",
                         (Pf[1], vic), begin
-                            local Pf1, vic = arg #noerr
+                            local Pf1, vic = arg
                             vcat(Pf1, vic)
                         end)
     else
         @add_constraint(prg, ZERO, "vic_penalty",
                         (Pf[1]), begin
-                            local Pf1, = arg #noerr
+                            local Pf1, = arg
                             Pf1
                         end)
     end
@@ -815,25 +796,25 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
     if !isnothing(vtc)
         @add_constraint(prg, L1, "vtc_penalty",
                         (Pf[2], vtc), begin
-                            local Pf2, vtc = arg #noerr
+                            local Pf2, vtc = arg
                             vcat(Pf2, vtc)
                         end)
     else
         @add_constraint(prg, ZERO, "vtc_penalty",
                         (Pf[2]), begin
-                            local Pf2, = arg #noerr
+                            local Pf2, = arg
                             Pf2
                         end)
     end
 
     spbm.J_vc = @add_cost(
         prg, (P, Pf), begin
-            local P, Pf = arg #noerr
+            local P, Pf = arg
             wvc*(trapz(P, t)+sum(Pf))
         end)
 
     return nothing
-end # function
+end
 
 #= Check if stopping criterion is triggered.
 
@@ -864,7 +845,7 @@ function check_stopping_criterion!(spbm::Subproblem)::Bool
         (sol.feas && (abs(sol.improv_rel)<=ε_rel || sol.deviation<=ε_abs)))
 
     return stop
-end # function
+end
 
 #= Print command line info message.
 
@@ -932,4 +913,4 @@ function print_info(spbm::Subproblem,
     overhead!(spbm)
 
     return nothing
-end # function
+end

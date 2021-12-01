@@ -15,15 +15,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-#nolint: create_figure, darken_color, save_figure, setup_axis!
-#nolint: Red, Blue, Green
-
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("parameters.jl")
-end
-
 using PyPlot
 using Colors
 using Printf
@@ -174,4 +165,4 @@ function plot_trajectory(sol_lcvx::Solution,
     save_figure(@sprintf("double_integrator_%d.pdf", choice), "lcvx")
 
     return nothing
-end # function
+end

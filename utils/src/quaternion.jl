@@ -50,7 +50,7 @@ struct Quaternion
     function Quaternion()::Quaternion
         q = new(zeros(3), 1.0)
         return q
-    end # function
+    end
 
     """
         Quaternion(v, w)
@@ -73,7 +73,7 @@ struct Quaternion
         q = new(v, w)
 
         return q
-    end # function
+    end
 
     """
         Quaternion(v)
@@ -101,7 +101,7 @@ struct Quaternion
         end
 
         return q
-    end # function
+    end
 
     """
         Qaternion(α, a)
@@ -128,7 +128,7 @@ struct Quaternion
         q = Quaternion(v, w)
 
         return q
-    end # function
+    end
 
     """
         Quaternion(dcm)
@@ -150,7 +150,7 @@ struct Quaternion
         q = q_yaw*q_pitch*q_roll
 
         return q
-    end # function
+    end
 end # struct
 
 """
@@ -174,7 +174,7 @@ function getindex(q::Quaternion, i::Int)::RealTypes
     v = (i<=3) ? q.v[i] : q.w
 
     return v
-end # function
+end
 
 """
     skew(q[, side])
@@ -197,7 +197,7 @@ function skew(q::Quaternion, side::Symbol=:L)::RealMatrix
     S[4, 1:3] = -q.v
     S[4, 4] = q.w
     return S
-end # function
+end
 
 """
     *(q, p)
@@ -214,7 +214,7 @@ Quaternion multiplication.
 function *(q::Quaternion, p::Quaternion)::Quaternion
     r = Quaternion(skew(q)*vec(p))
     return r
-end # function
+end
 
 """
     *(q, p)
@@ -235,7 +235,7 @@ function *(q::Quaternion, p::RealVector)::Quaternion
     end
     r = q*Quaternion(p)
     return r
-end # function
+end
 
 function *(q::RealVector, p::Quaternion)::Quaternion
     if length(q)!=3
@@ -244,7 +244,7 @@ function *(q::RealVector, p::Quaternion)::Quaternion
     end
     r = Quaternion(q)*p
     return r
-end # function
+end
 
 """
     q'
@@ -260,7 +260,7 @@ Quaternion conjugate.
 function adjoint(q::Quaternion)::Quaternion
     p = Quaternion(-q.v, q.w)
     return p
-end # function
+end
 
 """
     Log(q)
@@ -282,7 +282,7 @@ function Log(q::Quaternion)::Tuple{Real, RealVector}
     α = 2*atan(nrm_qv, q.w)
     a = q.v/nrm_qv
     return α, a
-end # function
+end
 
 """
     rotate(v, q...)
@@ -363,7 +363,7 @@ function rotate(v::RealVector, q::Quaternion...)::RealVector
         w = rotate(w, q[1:end-1]...)
     end
     return w
-end # function
+end
 
 """
     dcm(q)
@@ -379,7 +379,7 @@ Compute the direction cosine matrix associated with a quaternion.
 function dcm(q::Quaternion)::RealMatrix
     R = (skew(q', :R)*skew(q))[1:3, 1:3]
     return R
-end # function
+end
 
 """
     rpy(q)
@@ -403,7 +403,7 @@ function rpy(q::Quaternion)::Tuple{Real, Real, Real}
     # pitch = asin(2*(q.w*q.v[2]-q.v[3]*q.v[1]))
     # roll = atan(2*(q.w*q.v[1]+q.v[2]*q.v[3]), 1-2*(q.v[1]^2+q.v[2]^2))
     return yaw, pitch, roll
-end # function
+end
 
 """
     rpy(dcm)
@@ -440,7 +440,7 @@ function rpy(R::RealMatrix)::Tuple{Real, Real, Real}
     roll = atan(R[3, 2], R[3, 3])
     yaw = atan(R[2, 1], R[1, 1])
     return yaw, pitch, roll
-end # function
+end
 
 """
     vec(q)
@@ -456,7 +456,7 @@ Convert quaternion to vector form.
 function vec(q::Quaternion)::RealVector
     q_vec = [q.v; q.w]
     return q_vec
-end # function
+end
 
 """
     slerp_interpolate(q0, q1, τ)
@@ -492,7 +492,7 @@ function slerp_interpolate(q0::Quaternion,
     Δq_t = Quaternion(τ*Δα, Δa)
     qt = q0*Δq_t
     return qt
-end # function
+end
 
 """
     ddq(q, a)
@@ -514,4 +514,4 @@ function ddq(q::Quaternion, a::RealVector)::RealMatrix
     J[:, 2:4] = dot(q.v, a)*I(3)+q.v*a'-a*q.v'-q.w*skew(a)
     J *= 2
     return J
-end # function
+end

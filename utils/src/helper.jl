@@ -16,12 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("Utils.jl")
-    import .Utils.Types
-    import .Utils.Types: Quaternion
-end
-
 using Printf
 
 export skew, get_interval, linterp, zohinterp, diracinterp,
@@ -55,7 +49,7 @@ function skew(v::RealVector)::RealMatrix
     S[1,2], S[1,3], S[2,3] = -v[3], v[2], -v[1]
     S[2,1], S[3,1], S[3,2] = -S[1,2], -S[1,3], -S[2,3]
     return S
-end # function
+end
 
 """
     get_interval(x, grid)
@@ -75,7 +69,7 @@ function get_interval(x::RealValue, grid::RealVector)::Int
 	k = 1
     end
     return k
-end # function
+end
 
 """
     linterp(t, f_cps, t_grid)
@@ -97,12 +91,12 @@ function linterp(t::RealValue,
                  t_grid::RealVector)::Union{
                      RealValue, RealArray}
     t = max(t_grid[1], min(t_grid[end], t)) # Saturate to time grid
-    k = get_interval(t, t_grid) #noinfo
+    k = get_interval(t, t_grid)
     c = (t_grid[k+1]-t)/(t_grid[k+1]-t_grid[k])
     dimfill = fill(:, ndims(f_cps)-1)
     f_t = c*f_cps[dimfill..., k]+(1-c)*f_cps[dimfill..., k+1]
     return f_t
-end # function
+end
 
 """
     zohinterp(t, f_cps, t_grid)
@@ -132,7 +126,7 @@ function zohinterp(t::RealValue,
     dimfill = fill(:, ndims(f_cps)-1)
     f_t = f_cps[dimfill..., k]
     return f_t
-end # function
+end
 
 """
     diracinterp(t, f_cps, t_grid)
@@ -168,7 +162,7 @@ function diracinterp(t::RealValue,
     dimfill = fill(:, ndims(f_cps)-1)
     f_t = f_cps[dimfill..., k]
     return f_t
-end # function
+end
 
 """
     straightline_interpolate(v0, vf, N)
@@ -204,7 +198,7 @@ function straightline_interpolate(
     end
 
     return v
-end # function
+end
 
 """
     c2d(A, B, p, Δt)
@@ -248,7 +242,7 @@ function c2d(A::RealMatrix,
     pd = M[1:n,n+m+1]
 
     return Ad, Bd, pd
-end # function
+end
 
 """
     golden(f, a, b[; tol])
@@ -288,7 +282,7 @@ function golden(f::Function, a::RealValue, b::RealValue;
         @printf("Golden search bracket:\n")
     end
 
-    for i = 1:n-1 #noinfo
+    for i = 1:n-1
 
         c = ρ*a+(1-ρ)*b
         yc = f(c)
@@ -338,7 +332,7 @@ function rk4(f::T.Func,
                      RealVector, RealMatrix}
     X = rk4_generic(f, x0; tspan=tspan, full=full, actions=actions)
     return X
-end # function
+end
 
 """
     rk4(f, x0, tf, h[; full, actions])
@@ -374,7 +368,7 @@ function rk4(f::T.Func,
     X = rk4_generic(F, x0; h=h, full=full, actions=actions)
 
     return X
-end # function
+end
 
 """
     rk4_core_step(f, x, t, tp)
@@ -406,7 +400,7 @@ function rk4_core_step(f::T.Func,
     xp = x+h/6*(k1+2*k2+2*k3+k4)
 
     return xp
-end # function
+end
 
 """
     rk4_generic(f, x0[; tspan, h, full, actions])
@@ -485,7 +479,7 @@ function rk4_generic(
     end
 
     return X
-end # function
+end
 
 """
     expm_diff(A, DA[, c][; resol])
@@ -526,7 +520,7 @@ function expm_diff(A::RealMatrix, DA::RealMatrix, c::RealValue=1.0;
     integ_grid = collect(LinRange(0, c, resol))
     DecA = reshape(rk4(integrand, zeros(length(A)), integ_grid), size(A))
     return DecA
-end # function
+end
 
 """
     trapz(f, grid)
@@ -548,7 +542,7 @@ function trapz(f::AbstractVector, grid::RealVector)
         F += 0.5*δ*(f[k+1]+f[k])
     end
     return F
-end # function
+end
 
 """
     ∇trapz(grid)
@@ -571,7 +565,7 @@ function ∇trapz(grid::RealVector)::RealVector
         ∇F[k] += 0.5*δ
     end
     return ∇F
-end # function
+end
 
 """
     logsumexp(f[, ∇f, ∇²f][; t])
@@ -633,7 +627,7 @@ function logsumexp(
         return L, ∇L
     end
     return L
-end # function
+end
 
 """
     sigmoid(value[, gradient, hessian][; κ])
@@ -684,7 +678,7 @@ function sigmoid(value::RealVector,
         return σ, ∇σ
     end
     return σ
-end # function
+end
 
 """
     indicator(value[, gradient, hessian][; κ, match])
@@ -733,7 +727,7 @@ function indicator(value::RealVector,
         return σ
     end
     return σ+Δσ
-end # function
+end
 
 """
     or(predicates[, gradient, hessian][; κ, match, normalize])
@@ -793,7 +787,7 @@ function or(predicates::RealVector,
                    κ=κ, match=match)
 
     return OR
-end # function
+end
 
 """
     squeeze(A)
@@ -810,7 +804,7 @@ function squeeze(A::AbstractArray)::AbstractArray
     singleton_dims = tuple((d for d in 1:ndims(A) if size(A, d) == 1)...)
     Ar = dropdims(A, dims=singleton_dims)
     return Ar
-end # function
+end
 
 """
     convert_units(x, orig, new)
@@ -831,7 +825,7 @@ function convert_units(x::RealValue, orig::Symbol, new::Symbol)::RealValue
     y = eval( :( $convert_func($x) ) )
 
     return y
-end # function
+end
 
 # Available converters
 _deg2rad(x) = deg2rad(x)        # degrees to radians
@@ -860,10 +854,10 @@ function outputs a matrix `T` such that, given a homogeneous vector `x` in the
 - `T`: the homogeneous transformation matrix.
 """
 function homtransf(q::Quaternion, r::RealVector)::RealMatrix
-    R = dcm(q) #noerr
+    R = dcm(q)
     T = [R r; zeros(1, 3) 1]
     return T
-end # function
+end
 
 """ Aliases for calling `homtrans` with pure rotation or displacement. """
 homtransf(q::Quaternion) = homtransf(q, zeros(3))
@@ -902,7 +896,7 @@ function homtransf(r::RealVector=zeros(3);
     q_yaw = Quaternion(yaw, [0; 0; 1])
     q = q_yaw*q_pitch*q_roll
     return homtransf(q, r)
-end # function
+end
 
 """ Convenience methods to extract rotation and displacement part of
 homogeneous transformation matrix. """
@@ -927,7 +921,7 @@ function hominv(T::RealMatrix)::RealMatrix
     iR = R' # Inverse rotation
     iT = [iR -iR*v; zeros(3)' 1]
     return iT
-end # function
+end
 
 """ Print a heading for the test. """
 test_heading(description) = printstyled(
@@ -948,7 +942,7 @@ Make an indent string prefix.
 function make_indent(io::IO)::String
     indent = " "^get(io, :indent, 0)
     return indent
-end # function
+end
 
 """
     printf_prefixed(io, prefix, fmt, data...)

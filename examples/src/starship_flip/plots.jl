@@ -20,20 +20,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-#nolint: Solvers, SCPHistory, SCPSolution
-#nolint: ContinuousTimeTrajectory
-#nolint: generate_colormap, create_figure, rgb2pyplot
-#nolint: plot_timeseries_bound!
-#nolint: sample
-#nolint: save_figure, set_axis_equal
-
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("parameters.jl")
-    include("definition.jl")
-end
-
 using PyPlot
 using Colors
 

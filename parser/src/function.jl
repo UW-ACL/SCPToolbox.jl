@@ -16,11 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("general.jl")
-    include("cone.jl")
-end
-
 import JuMP: value
 
 export jacobian, set_jacobian!
@@ -74,7 +69,7 @@ struct TypedFunction
         in = (in<:Tuple) ? in : Tuple{in}
         wrapper = new(f, in, out)
         return wrapper
-    end # function
+    end
 end # struct
 
 """
@@ -115,7 +110,7 @@ struct DifferentiableFunctionOutput
         fout = new(f, J)
 
         return fout
-    end # function
+    end
 end # struct
 
 const DFOut = DifferentiableFunctionOutput
@@ -187,7 +182,7 @@ mutable struct DifferentiableFunction
         DF = new(F, xargs, pargs, consts, out, evaluated)
 
         return DF
-    end # function
+    end
 end # struct
 
 const DiffblF = DifferentiableFunction
@@ -242,7 +237,7 @@ function (fw::TypedFunction)(args...)
     end
 
     return out
-end # function
+end
 
 """
     value(out[; scalar])
@@ -271,7 +266,7 @@ function value(out::DFOut; scalar::Bool=false)::FunctionValueOutputType
         value = value[1]
     end
     return value
-end # function
+end
 
 """
     jacobian(out, key[; permute])
@@ -316,7 +311,7 @@ function jacobian(out::DFOut, key::JacobianKeys;
     end
     J = out.J[key]
     return J
-end # function
+end
 
 """ Get the dictionary of all jacobians """
 all_jacobians(out::DFOut)::JacobianDictType = out.J
@@ -335,7 +330,7 @@ function set_jacobian!(out::DFOut, key::JacobianKeys,
                        J::JacobianValueType)::Nothing
     out.J[key] = J
     return nothing
-end # function
+end
 
 """
     DiffF(args...[; jacobians, scalar])
@@ -375,7 +370,7 @@ function (DiffF::DiffblF)(args::InputArgumentType...;
     DiffF.evaluated = true
     f_value = value(DiffF.out[], scalar=scalar)
     return f_value
-end # function
+end
 
 """
 Convenience methods that pass the calls down to `DifferentiableFunctionOutput`.

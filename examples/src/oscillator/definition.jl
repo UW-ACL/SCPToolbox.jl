@@ -15,12 +15,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("parameters.jl")
-end
-
 using LinearAlgebra
 using Parser
 
@@ -45,7 +39,7 @@ function define_problem!(pbm::TrajectoryProblem,
     set_guess!(pbm)
 
     return nothing
-end # function
+end
 
 function set_dims!(pbm::TrajectoryProblem)::Nothing
 
@@ -55,7 +49,7 @@ function set_dims!(pbm::TrajectoryProblem)::Nothing
     problem_set_dims!(pbm, 2, 4, np)
 
     return nothing
-end # function
+end
 
 function set_scale!(pbm::TrajectoryProblem)::Nothing
 
@@ -79,7 +73,7 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     advise!(pbm, :parameter, veh.id_l1r, (0.0, traj.r0))
 
     return nothing
-end # function
+end
 
 function set_guess!(pbm::TrajectoryProblem)::Nothing
 
@@ -122,7 +116,7 @@ function set_guess!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end # function
+end
 
 function set_cost!(pbm::TrajectoryProblem,
                    algo::Symbol)::Nothing
@@ -149,7 +143,7 @@ function set_cost!(pbm::TrajectoryProblem,
         end)
 
     return nothing
-end # function
+end
 
 
 """
@@ -168,11 +162,11 @@ Oscillator dynamics.
 # Returns
 - `f`: the time derivative of the state vector.
 """
-function dynamics(t::RealValue, #nowarn
-                  k::Int, #nowarn
+function dynamics(t::RealValue,
+                  k::Int,
                   x::RealVector,
                   u::RealVector,
-                  p::RealVector, #nowarn
+                  p::RealVector,
                   pbm::TrajectoryProblem)::RealVector
 
     impulse = k<0
@@ -197,7 +191,7 @@ function dynamics(t::RealValue, #nowarn
     end
 
     return f
-end # function
+end
 
 function set_dynamics!(pbm::TrajectoryProblem)::Nothing
 
@@ -240,7 +234,7 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
         end,)
 
     return nothing
-end # function
+end
 
 function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
@@ -255,7 +249,7 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
             @add_constraint(
                 ocp, L1, "abs_r", (r, l1r_k), begin # Value
-                    local r, l1r_k = arg #noerr
+                    local r, l1r_k = arg
                     vcat(l1r_k, r)
                 end, begin # Jacobians
                     if LangServer; local J = Dict(); end
@@ -277,7 +271,7 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             @add_constraint(
                 ocp, NONPOS, "accel_bounds",
                 (aa,), begin # Value
-                    local aa, = arg #noerr
+                    local aa, = arg
                     aa[1]-veh.a_max
                 end, begin # Jacobians
                     if LangServer; local J = Dict(); end
@@ -287,7 +281,7 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             @add_constraint(
                 ocp, NONPOS, "accel_bounds",
                 (aa,), begin # Value
-                    local aa, = arg #noerr
+                    local aa, = arg
                     -veh.a_max-aa[1]
                 end, begin # Jacobians
                     if LangServer; local J = Dict(); end
@@ -297,7 +291,7 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             @add_constraint(
                 ocp, NONPOS, "accel_bounds",
                 (ar,), begin # Value
-                    local ar, = arg #noerr
+                    local ar, = arg
                     ar[1]-veh.a_max
                 end, begin # Jacobians
                     if LangServer; local J = Dict(); end
@@ -307,7 +301,7 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             @add_constraint(
                 ocp, NONPOS, "accel_bounds",
                 (ar,), begin # Value
-                    local ar, = arg #noerr
+                    local ar, = arg
                     -veh.a_max-ar[1]
                 end, begin # Jacobians
                     if LangServer; local J = Dict(); end
@@ -317,7 +311,7 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             @add_constraint(
                 ocp, L1, "accel_bounds",
                 (l1aa, aa), begin # Value
-                    local l1aa, aa = arg #noerr
+                    local l1aa, aa = arg
                     vcat(l1aa, aa)
                 end, begin # Jacobians
                     if LangServer; local J = Dict(); end
@@ -328,7 +322,7 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             @add_constraint(
                 ocp, L1, "accel_bounds",
                 (l1adiff, aa, ar), begin # Value
-                    local l1adiff, aa, ar = arg #noerr
+                    local l1adiff, aa, ar = arg
                     vcat(l1adiff, aa-ar)
                 end, begin # Jacobians
                     if LangServer; local J = Dict(); end
@@ -339,7 +333,7 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end # function
+end
 
 function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                                     algo::Symbol)::Nothing
@@ -410,7 +404,7 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
         end)
 
     return nothing
-end # function
+end
 
 function set_bcs!(pbm::TrajectoryProblem)::Nothing
 
@@ -438,4 +432,4 @@ function set_bcs!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end # function
+end

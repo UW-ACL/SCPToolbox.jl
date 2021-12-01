@@ -24,11 +24,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("../../utils/src/Utils.jl")
-    using .Utils
-end
-
 using Utils
 
 export TrajectoryProblem
@@ -167,7 +162,7 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
                             table_cols)
 
     return pbm
-end # function
+end
 
 # ..:: Methods ::..
 
@@ -191,7 +186,7 @@ function problem_set_dims!(pbm::TrajectoryProblem,
     pbm.urg = fill(nothing, nu)
     pbm.prg = fill(nothing, np)
     return nothing
-end # function
+end
 
 """
     problem_advise_scale!(pbm, which, idx, rg)
@@ -221,7 +216,7 @@ function problem_advise_scale!(pbm::TrajectoryProblem,
         zrg[i] = rg
     end
     return nothing
-end # function
+end
 
 """
     problem_set_integration_action!(pbm, idx, action)
@@ -240,7 +235,7 @@ function problem_set_integration_action!(
     push!(pbm.integ_actions, (idx, (x) -> action(x, pbm)))
 
     return nothing
-end # function
+end
 
 """
     problem_set_guess!(pbm, guess)
@@ -255,7 +250,7 @@ function problem_set_guess!(pbm::TrajectoryProblem,
                             guess::Func)::Nothing
     pbm.guess = (N) -> guess(N, pbm)
     return nothing
-end # function
+end
 
 """
     problem_set_callback!(pbm, cb)
@@ -293,7 +288,7 @@ function problem_set_callback!(pbm::TrajectoryProblem,
                                        subproblem,
                                        pbm.mdl)
     return nothing
-end # function
+end
 
 """
     problem_set_terminal_cost!(pbm, φ)
@@ -308,7 +303,7 @@ function problem_set_terminal_cost!(pbm::TrajectoryProblem,
                                     φ::Func)::Nothing
     pbm.φ = (x, p) -> φ(x, p, pbm)
     return nothing
-end # function
+end
 
 """
     problem_set_running_cost!(pbm, algo, SΓ[, dSdp, ℓ, dℓdx,
@@ -361,7 +356,7 @@ function problem_set_running_cost!(pbm::TrajectoryProblem,
         pbm.g_cvx = isnothing(dgdx) && isnothing(dgdp)
     end
     return nothing
-end # function
+end
 
 """
     problem_set_dynamics!(pbm, f, A, B, F)
@@ -382,13 +377,13 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
                                F::Func)::Nothing
     pbm.f = (t, k, x, u, p) -> f(t, k, x, u, p, pbm)
     pbm.A = !isnothing(A) ? (t, k, x, u, p) -> A(t, k, x, u, p, pbm) :
-        (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx) #noinfo
+        (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx)
     pbm.B = !isnothing(A) ? (t, k, x, u, p) -> B(t, k, x, u, p, pbm) :
-        (t, k, x, u, p) -> zeros(pbm.nx, pbm.nu) #noinfo
+        (t, k, x, u, p) -> zeros(pbm.nx, pbm.nu)
     pbm.F = !isnothing(F) ? (t, k, x, u, p) -> F(t, k, x, u, p, pbm) :
-        (x, u, p) -> zeros(pbm.nx, pbm.nu) #noinfo
+        (x, u, p) -> zeros(pbm.nx, pbm.nu)
     return nothing
-end # function
+end
 
 """
     problem_set_dynamics!(pb, f, A, F)
@@ -416,9 +411,9 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
         _A = A(t, k, x, p, pbm)
         _A = _A[1]+sum(u[i]*_A[i+1] for i=1:pbm.nu)
         return _A
-    end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx) #noinfo
+    end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx)
 
-    pbm.B = (t, k, x, u, p) -> begin #noinfo
+    pbm.B = (t, k, x, u, p) -> begin
         _B = zeros(pbm.nx, pbm.nu)
         _f = f(t, k, x, p, pbm)
         for i = 1:pbm.nu
@@ -431,10 +426,10 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
         _F = F(t, k, x, p, pbm)
         _F = _F[1]+sum(u[i]*_F[i+1] for i=1:pbm.nu)
         return _F
-    end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx) #noinfo
+    end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx)
 
     return nothing
-end # function
+end
 
 """
     problem_set_X!(pbm, X)
@@ -449,7 +444,7 @@ function problem_set_X!(pbm::TrajectoryProblem,
                           X::Func)::Nothing
     pbm.X = (ocp, t, k, x, p) -> X(t, k, x, p, pbm, ocp)
     return nothing
-end # function
+end
 
 """
     problem_set_U!(pbm, U)
@@ -464,7 +459,7 @@ function problem_set_U!(pbm::TrajectoryProblem,
                         U::Func)::Nothing
     pbm.U = (ocp, t, k, u, p) -> U(t, k, u, p, pbm, ocp)
     return nothing
-end # function
+end
 
 """
     problem_set_s!(pbm, algo, s[, C, DG, G])
@@ -509,7 +504,7 @@ function problem_set_s!(pbm::TrajectoryProblem,
     end
 
     return nothing
-end # function
+end
 
 """
     problem_set_bc!(pbm, kind, g, H[, K])
@@ -544,7 +539,7 @@ function problem_set_bc!(pbm::TrajectoryProblem,
     end
 
     return nothing
-end # function
+end
 
 """
     problem_add_table_column!(pbm, id, header, format, width, value)
@@ -575,4 +570,4 @@ function problem_add_table_column!(pbm::TrajectoryProblem,
                                    col_value::Function)::Nothing
     push!(pbm.table_cols, (id, header, format, width, col_value))
     return nothing
-end # function
+end

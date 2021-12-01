@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("parameters.jl")
-end
-
 using Solvers
 using Colors
 
@@ -132,7 +128,7 @@ function plot_timeseries(mdl::OscillatorProblem,
     save_figure("oscillator_timeseries.pdf", algo)
 
     return nothing
-end # function
+end
 
 """
     plot_deadband(mdl, history)
@@ -210,4 +206,4 @@ function plot_deadband(mdl::OscillatorProblem,
     save_figure("oscillator_deadband.pdf", algo)
 
     return nothing
-end # function
+end

@@ -18,11 +18,6 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 module Solvers
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("../../utils/src/Utils.jl")
-    include("../../parser/src/Parser.jl")
-end
-
 # General (common) definitions
 include("general.jl")
 include("discretization.jl")

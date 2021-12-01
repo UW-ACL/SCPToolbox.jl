@@ -15,13 +15,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-#nolint: golden
-
-if isdefined(@__MODULE__, :LanguageServer)
-    include("definition.jl")
-    include("plots.jl")
-end
-
 using Printf
 using Test
 
@@ -54,4 +47,4 @@ function lcvx()::Nothing
     plot_position(rocket, pdg, sim)
 
     return nothing
-end # function
+end

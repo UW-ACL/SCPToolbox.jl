@@ -15,17 +15,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-#nolint: Parser, Utils, Solvers
-#nolint: TrajectoryProblem
-#nolint: IMPULSE, SCP_SOLVED
-#nolint: plot_convergence, test_heading
-#nolint: SCPSolution, SCPHistory
-
-if isdefined(@__MODULE__, :LanguageServer)
-    include("definition.jl")
-    include("plots.jl")
-end
-
 using ECOS
 using Printf
 using Test
@@ -68,7 +57,7 @@ function ptr()::Nothing
     test_homotopy_update(mdl, pbm, pars)
 
     return nothing
-end # function
+end
 
 """
     test_single(pbm, pars)
@@ -109,7 +98,7 @@ function test_single(mdl::RendezvousProblem,
     plot_cost_evolution(mdl, history)
 
     return sol, history
-end # function
+end
 
 """
     test_single(pbm, pars)
@@ -124,7 +113,7 @@ Run the algorithm several times and plot runtime statistics.
 # Returns
 - `history_list`: vector of iterate histories for each trial.
 """
-function test_runtime(mdl::RendezvousProblem, #nowarn
+function test_runtime(mdl::RendezvousProblem,
                       pbm::TrajectoryProblem,
                       pars::PTR.Parameters)::Vector{SCPHistory}
 
@@ -144,7 +133,7 @@ function test_runtime(mdl::RendezvousProblem, #nowarn
 
         # Suppress output
         real_stdout = stdout
-        (rd, wr) = redirect_stdout() #noinfo
+        (rd, wr) = redirect_stdout()
 
         # Run algorithm
         sol, history_list[trial] = PTR.solve(ptr_pbm)
@@ -159,7 +148,7 @@ function test_runtime(mdl::RendezvousProblem, #nowarn
                      horizontal=true)
 
     return history_list
-end # function
+end
 
 """
     test_homotopy_update(pbm, pars)
@@ -201,7 +190,7 @@ function test_homotopy_update(mdl::RendezvousProblem,
 
         # Suppress output
         real_stdout = stdout
-        (rd, wr) = redirect_stdout() #noinfo
+        (rd, wr) = redirect_stdout()
 
         # Run algorithm
         sol_list[i], _ = PTR.solve(ptr_pbm)
@@ -214,7 +203,7 @@ function test_homotopy_update(mdl::RendezvousProblem,
     plot_homotopy_threshold_sweep(mdl, β_sweep, sol_list)
 
     return β_sweep, sol_list
-end # function
+end
 
 """
     reset_homotopy(pbm)
@@ -227,4 +216,4 @@ Reset the homotopy value back to the initial one.
 function reset_homotopy(pbm::TrajectoryProblem)::Nothing
     pbm.mdl.traj.hom = pbm.mdl.traj.hom_grid[1] # Reset homotopy
     return nothing
-end # function
+end

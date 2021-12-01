@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("general.jl")
-end
-
 # ..:: Globals ::..
 
 # Constants to denote perturbationkind
@@ -55,7 +51,7 @@ struct Perturbation{N} <: AbstractRealArray{N}
         blk::AbstractArgumentBlock{T, N},
         kind::PerturbationKindArray,
         amount::Types.Optional{
-            RealArray}=nothing)::Perturbation{N} where { #nowarn
+            RealArray}=nothing)::Perturbation{N} where {
                 T<:AtomicArgument, N}
 
         if ndims(blk)>0
@@ -90,7 +86,7 @@ struct Perturbation{N} <: AbstractRealArray{N}
         perturbation = new{N}(kind, amount)
 
         return perturbation
-    end # function
+    end
 
     """
         Perturbation(pert, Id...)
@@ -112,7 +108,7 @@ struct Perturbation{N} <: AbstractRealArray{N}
         N = ndims(sliced_amount)
         sliced_pert = new{N}(sliced_kind, sliced_amount)
         return sliced_pert
-    end # function
+    end
 end # struct
 
 # ..:: Methods ::..

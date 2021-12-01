@@ -16,13 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("general.jl")
-    include("argument.jl")
-    include("function.jl")
-    include("cone.jl")
-end
-
 import JuMP: dual
 
 export value, name, dual, cone, lhs, jacobian, all_jacobians, kind,
@@ -86,7 +79,7 @@ struct ProgramFunction
         F = new(f, x, p, prog)
 
         return F
-    end # function
+    end
 end # struct
 
 """
@@ -143,7 +136,7 @@ struct ConicConstraint
         finK = new(f, K, constraint, prog, name)
 
         return finK
-    end # function
+    end
 end # struct
 
 const Constraints = Vector{ConicConstraint}
@@ -178,7 +171,7 @@ function (ProgFunc::ProgramFunction)(
                          scalar=scalar) # Core call
 
     return f_value
-end # function
+end
 
 """
 Convenience methods that pass the calls down to `DifferentiableFunction`.
@@ -231,9 +224,9 @@ function function_args_id(F::ProgramFunction, args::Symbol)::LocationIndices
     else
         return (1:nargs).+length(getfield(F, :x))
     end
-end # function
+end
 
 function function_args_id(F::ProgramFunction)::LocationIndices
     idx_map = [1:length(variables(F)); 1:length(parameters(F))]
     return idx_map
-end # function
+end

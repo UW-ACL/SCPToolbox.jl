@@ -18,10 +18,6 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 module Parser
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("../../utils/src/Utils.jl")
-end
-
 export ConicLinearProgram
 
 # User-facing problem definition

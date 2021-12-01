@@ -16,21 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("discretization.jl")
-
-    using .Utils: linterp
-    using .Utils.Types: sample
-    using .Parser.TrajectoryProblem
-    import .Parser.ConicLinearProgram: @add_constraint, @new_variable
-    import .Parser.ConicLinearProgram: @add_cost
-    import .Parser.ConicLinearProgram: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
-    import .Parser.ConicLinearProgram: QuadraticCost
-    import .Parser.ConicLinearProgram: solve!
-end
-
 using LinearAlgebra
 using JuMP
 using Printf
@@ -106,7 +91,7 @@ struct SCPProblem{T<:SCPParameters} <: AbstractSCPProblem
         pbm = new{typeof(pars)}(pars, traj, common)
 
         return pbm
-    end # function
+    end
 end # struct
 
 """ Overall trajectory solution.
@@ -164,7 +149,7 @@ function SCPProblem(
     pbm = SCPProblem(pars, traj, consts)
 
     return pbm
-end # function
+end
 
 """
     SCPSubproblemSolution(spbm)
@@ -190,7 +175,7 @@ function SCPSubproblemSolution(spbm::T)::Nothing where {T<:SCPSubproblem}
     spbm.timing[:discretize] = spbm.sol.dyn.timing
 
     return nothing
-end # function
+end
 
 """
     SCPSolution(history)
@@ -254,7 +239,7 @@ function SCPSolution(history::SCPHistory)::SCPSolution
     sol = SCPSolution(status, algo, num_iters, cost, td, xd, ud, p, xc, uc)
 
     return sol
-end # function
+end
 
 """
     SCPHistory()
@@ -268,7 +253,7 @@ function SCPHistory()::SCPHistory
     subproblems = Vector{SCPSubproblem}(undef, 0)
     history = SCPHistory(subproblems)
     return history
-end # function
+end
 
 """
     correct_convex!(x_ref, u_ref, p_ref, pbm, constructor)
@@ -343,7 +328,7 @@ function correct_convex!(
     end
 
     return nothing
-end # function
+end
 
 """
     compute_scaling(pars, traj, t)
@@ -433,7 +418,7 @@ function compute_scaling(
                     # Cost
                     minimize_cost = (j==1) ? 1 : -1
                     @add_cost(prg, (x, u, p), begin
-                                  local x, u, p = arg #noerr
+                                  local x, u, p = arg
                                   minimize_cost*def[:cost](x, u, p, i)
                               end)
                     # Solve
@@ -488,7 +473,7 @@ function compute_scaling(
     scale = SCPScaling(Sx, cx, Su, cu, Sp, cp, iSx, iSu, iSp)
 
     return scale
-end # function
+end
 
 """
     add_dynamics!(spbm[; relaxed])
@@ -520,7 +505,7 @@ function add_dynamics!(spbm::SCPSubproblem;
     end
 
     return nothing
-end # function
+end
 
 """
     add_convex_state_constraints!(spbm)
@@ -548,7 +533,7 @@ function add_convex_state_constraints!(
     end
 
     return nothing
-end # function
+end
 
 """
     add_convex_input_constraints!(spbm)
@@ -576,7 +561,7 @@ function add_convex_input_constraints!(
     end
 
     return nothing
-end # function
+end
 
 """
     add_nonconvex_constraints!(spbm)
@@ -622,7 +607,7 @@ function add_nonconvex_constraints!(
 
             @add_constraint(prg, NONPOS, "path_ncvx",
                             (xk, uk, p, vsk), begin
-                                local xk, uk, p, vsk = arg #noerr
+                                local xk, uk, p, vsk = arg
                                 local lhs = C*xk+D*uk+G*p+r
                                 lhs-vsk
                             end)
@@ -632,7 +617,7 @@ function add_nonconvex_constraints!(
     end
 
     return nothing
-end # function
+end
 
 """
     add_bcs!(spbm[; relaxed])
@@ -673,14 +658,14 @@ function add_bcs!(
             spbm.vic = @new_variable(prg, nic, "vic")
             @add_constraint(prg, ZERO, "initial_condition",
                             (x0, p, spbm.vic), begin
-                                local x0, p, vic = arg #noerr
+                                local x0, p, vic = arg
                                 local lhs = H0*x0+K0*p+ℓ0
                                 lhs+vic
                             end)
         else
             @add_constraint(prg, ZERO, "initial_condition",
                             (x0, p), begin
-                                local x0, p = arg #noerr
+                                local x0, p = arg
                                 local lhs = H0*x0+K0*p+ℓ0
                                 lhs
                             end)
@@ -699,14 +684,14 @@ function add_bcs!(
             spbm.vtc = @new_variable(prg, ntc, "vtc")
             @add_constraint(prg, ZERO, "terminal_condition",
                             (xf, p, spbm.vtc), begin
-                                local xf, p, vtc = arg #noerr
+                                local xf, p, vtc = arg
                                 local lhs = Hf*xf+Kf*p+ℓf
                                 lhs+vtc
                             end)
         else
             @add_constraint(prg, ZERO, "terminal_condition",
                             (xf, p), begin
-                                local xf, p = arg #noerr
+                                local xf, p = arg
                                 local lhs = Hf*xf+Kf*p+ℓf
                                 lhs
                             end)
@@ -714,7 +699,7 @@ function add_bcs!(
     end
 
     return nothing
-end # function
+end
 
 """
     solution_deviation(spbm)
@@ -750,7 +735,7 @@ function solution_deviation(spbm::T)::RealTypes where {T<:SCPSubproblem}
     deviation = dp+dx
 
     return deviation
-end # function
+end
 
 """
     solve_subproblem!(spbm)
@@ -768,7 +753,7 @@ function solve_subproblem!(spbm::T)::Nothing where {T<:SCPSubproblem}
     SCPSubproblemSolution(spbm)
 
     return nothing
-end # function
+end
 
 """
     unsafe_solution(sol)
@@ -797,7 +782,7 @@ function unsafe_solution(sol::Union{T, V})::Bool where {
     end
 
     return sol.unsafe
-end # function
+end
 
 """
     overhead!(spbm)
@@ -813,7 +798,7 @@ function overhead!(spbm::T)::Nothing where {T<:SCPSubproblem}
     spbm.timing[:total] = (get_time()-spbm.timing[:total])/1e9
     spbm.timing[:overhead] = spbm.timing[:total]-useful_time
     return nothing
-end # function
+end
 
 """
     save!(hist, spbm)
@@ -829,4 +814,4 @@ function save!(hist::SCPHistory,
     spbm.timing[:formulate] = (get_time()-spbm.timing[:formulate])/1e9
     push!(hist.subproblems, spbm)
     return nothing
-end # function
+end

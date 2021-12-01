@@ -16,12 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("general.jl")
-    include("perturbation.jl")
-    include("scaling.jl")
-end
-
 import JuMP: value, name
 
 export ArgumentBlock, scale, perturbation, name
@@ -105,7 +99,7 @@ struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArgumentBlock{T, N}
         set_perturbation!(blk, Inf; override=true)
 
         return blk
-    end # function
+    end
 
     """
         ArgumentBlock(block, Id...)
@@ -145,7 +139,7 @@ struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArgumentBlock{T, N}
                                  block.arg)
 
         return sliced_block
-    end # function
+    end
 end # struct
 
 # ..:: Methods ::..
@@ -175,7 +169,7 @@ function kind(::ArgumentBlock{T})::ArgumentKind where {T<:AtomicArgument}
     else
         return PARAMETER
     end
-end # function
+end
 
 """ Simple getters. """
 name(blk::ArgumentBlock)::String = blk.name
@@ -212,7 +206,7 @@ function apply_scaling!(blk::ArgumentBlock{T, N},
         blk.scale[].c .= offset(scale)
     end
     return nothing
-end # function
+end
 
 """
     apply_perturbation!(blk, perturb[; override])
@@ -238,7 +232,7 @@ function apply_perturbation!(blk::ArgumentBlock{T, N},
         blk.perturb[].amount .= amount(perturb)
     end
     return nothing
-end # function
+end
 
 """
     set_scale!(blk, dil, off)
@@ -262,7 +256,7 @@ function set_scale!(blk::ArgumentBlock,
     new_scaling = Scaling(blk, dil, off)
     apply_scaling!(blk, new_scaling)
     return nothing
-end # function
+end
 
 """
     set_perturbation!(blk, amount[, kind][; override])
@@ -312,7 +306,7 @@ function set_perturbation!(blk::ArgumentBlock,
     apply_perturbation!(blk, new_perturb; override=override)
 
     return nothing
-end # function
+end
 
 """
     hash(blk)
@@ -327,7 +321,7 @@ Hash number.
 """
 function Base.hash(blk::ArgumentBlock)::UInt64
     return hash(blk.name)
-end # function
+end
 
 """
     value(blk[; raw, unscaled])
@@ -369,7 +363,7 @@ function value(blk::ArgumentBlock{T};
     end
 
     return val
-end # function
+end
 
 """
     populate!(X, mdl[, sub][; name])
@@ -389,7 +383,7 @@ recursive function.
 function populate!(X, mdl::Model, sub::String=""; name::String="")::Nothing
     if length(X)==1
         full_name = isempty(sub) ? name : name*"["*sub[1:end-1]*"]"
-        X[1] = @variable(mdl, base_name=full_name) #noinfo
+        X[1] = @variable(mdl, base_name=full_name)
     else
         for i=1:size(X, 1)
             nsub = sub*string(i)*","
@@ -397,7 +391,7 @@ function populate!(X, mdl::Model, sub::String=""; name::String="")::Nothing
         end
     end
     return nothing
-end # function
+end
 
 # ..:: Macros ::..
 

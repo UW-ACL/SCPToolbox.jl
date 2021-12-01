@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("helper.jl")
-end
-
 using LinearAlgebra
 using Statistics
 using Printf
@@ -99,7 +95,7 @@ function plot_timeseries_bound!(ax::PyPlot.PyObject,
             dash_capstyle="round")
 
     return nothing
-end # function
+end
 
 """
     plot_ellipsoids!(ax, E[, axes][; label])
@@ -132,7 +128,7 @@ function plot_ellipsoids!(ax::PyPlot.PyObject,
                 label=(i==1) ? label : nothing)
     end
     return nothing
-end # function
+end
 
 """
     plot_prisms!(ax, H[, axes][; label])
@@ -165,7 +161,7 @@ function plot_prisms!(ax::PyPlot.PyObject,
                 label=(i==1) ? label : nothing)
     end
     return nothing
-end # function
+end
 
 """
     plot_convergence(history, name[; xlabel, options, horizontal])
@@ -326,7 +322,6 @@ function plot_convergence(history, name::String;
 
     ymax = maximum((av_formulate+av_discretize+av_solve+av_overhead))*1.1
 
-    #nolint: DarkBlue, Blue, Yellow, Red, Green
     for i = 1:2
         linew = (i==1) ? 0 : lw
         z = (i==1) ? 0 : -1
@@ -431,7 +426,7 @@ function plot_convergence(history, name::String;
     save_figure(@sprintf("%s_convergence.pdf", name), algo)
 
     return nothing
-end # function
+end
 
 """
     setup_axis!(ax, rows, cols, k, ijk[; xlabel, ylabel, clabel, tight,
@@ -515,7 +510,7 @@ function setup_axis!(ax::OptPyObject,
     end
 
     return ax
-end # function
+end
 
 """
     setup_axis!([; ...])
@@ -550,7 +545,7 @@ function setup_axis!(ax_or_gspec::PyPlot.PyObject; kwargs...)::PyPlot.PyObject
             rethrow(e)
         end
     end
-end # function
+end
 
 """
     setup_axis!([; ...])
@@ -562,7 +557,7 @@ of (rows, cols) subplots.
 function setup_axis!(rows::Int, cols::Int, k::Int;
                      kwargs...)::PyPlot.PyObject
     return setup_axis!(nothing, rows, cols, k, nothing; kwargs...)
-end # function
+end
 
 """
     setup_axis!([; ...])
@@ -573,7 +568,7 @@ of (i rows, j columns) subplots.
 """
 function setup_axis!(ijk::Int; kwargs...)::PyPlot.PyObject
     return setup_axis!(nothing, nothing, nothing, nothing, ijk; kwargs...)
-end # function
+end
 
 """
     generate_colormap([style][; minval, maxval, midval])
@@ -604,7 +599,7 @@ function generate_colormap(style::String="inferno_r";
     end
     cmap = matplotlib.cm.ScalarMappable(norm=nrm, cmap=cmap)
     return cmap
-end # function
+end
 
 """
     rgb(cmap, v)
@@ -621,7 +616,7 @@ Sample a colormap for an RGB color at given value.
 function rgb(cmap::PyPlot.PyObject, v::Types.RealTypes)::Tuple{Types.RealTypes, Types.RealTypes, Types.RealTypes}
     clr = cmap.to_rgba(v)[1:3]
     return clr
-end # function
+end
 
 """
     rgb2pyplot(c, a)
@@ -641,7 +636,7 @@ function rgb2pyplot(c::T; a::Real=1)::NTuple{4, Real} where {T<:RGB}
     t = (r, g, b, a)
 
     return t
-end # function
+end
 
 """
     darken_color(clr, amount)
@@ -661,7 +656,7 @@ function darken_color(clr::String, amount::Float64)::NTuple{4, Real}
     new_clr = weighted_color_mean(1-amount, parse(RGB, clr), dark_clr)
     rgba = rgb2pyplot(new_clr)
     return rgba
-end # function
+end
 
 """
     set_axis_equal(ax, lims)
@@ -702,7 +697,7 @@ function set_axis_equal(
     ax.set_ylim(ymin, ymax)
 
     return nothing
-end # function
+end
 
 """
     create_figure(size[; options])
@@ -744,7 +739,7 @@ function create_figure(size::Tuple{T, V};
     plt.clf()
 
     return fig
-end # function
+end
 
 """
     save_figure(filename[, algo][; tmp, path, tight_layout, facecolor, dpi])
@@ -809,4 +804,4 @@ function save_figure(filename::String, algo::String="";
     end
 
     return nothing
-end # function
+end

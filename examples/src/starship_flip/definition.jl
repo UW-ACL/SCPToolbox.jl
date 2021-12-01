@@ -20,22 +20,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-#nolint: TrajectoryProblem
-#nolint: ContinuousTimeTrajectory
-#nolint: problem_set_dims!, problem_advise_scale!, problem_set_guess!
-#nolint: problem_set_*
-#nolint: rk4, sample, trapz
-#nolint: Parser, ConicProgram, @new_variable, @add_constraint
-#nolint: @add_cost, @scale
-#nolint: solve!, value, arg, ZERO, NONPOS, GEOM, L1, SOC
-#nolint: SCPError, SCP_BAD_PROBLEM
-
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("parameters.jl")
-end
-
 using JuMP
 using ECOS
 using Printf
@@ -445,14 +429,14 @@ function starship_initial_guess(
     @printf(". done\n")
 
     return x_guess, u_guess, p_guess
-end # function
+end
 
 function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_guess!(pbm, starship_initial_guess)
 
     return nothing
-end # function
+end
 
 function _common__set_cost!(pbm::TrajectoryProblem)::Nothing
 
@@ -479,7 +463,7 @@ function _common__set_cost!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end # function
+end
 
 """
     dynamics(t, k, x, u, p, pbm[; no_aero_torques])
@@ -500,7 +484,7 @@ Returns:
 - `f`: the time derivative of the state vector.
 """
 function dynamics(t::RealValue,
-                  k::Int, #nowarn
+                  k::Int,
                   x::RealVector,
                   u::RealVector,
                   p::RealVector,
@@ -516,7 +500,7 @@ function dynamics(t::RealValue,
     v = x[veh.id_v]
     θ = x[veh.id_θ]
     ω = x[veh.id_ω]
-    m = x[veh.id_m] #noinfo
+    m = x[veh.id_m]
     δd = x[veh.id_δd]
     T = u[veh.id_T]
     δ = u[veh.id_δ]

@@ -15,24 +15,10 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-#nolint: create_figure, save_figure, generate_colormap, squeeze
-#nolint: setup_axis!, darken_color
-#nolint: Red, DarkBlue, Yellow, Green, Blue
-#nolint: or, set_axis_equal, rgb2pyplot
-#nolint: SCPSolution
-#nolint: sample
-
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("parameters.jl")
-    include("definition.jl")
-end
-
 using PyPlot
 using Colors
 
-using Solvers #noerr
+using Solvers
 
 # ..:: Globals ::..
 
@@ -68,7 +54,7 @@ Plot the final converged trajectory, projected onto 2D planes.
 """
 function plot_trajectory_2d(mdl::RendezvousProblem,
                             sol::SCPSolution;
-                            attitude::Bool=false)::Nothing #noerr
+                            attitude::Bool=false)::Nothing
 
     # Parameters
     algo = sol.algo
@@ -86,8 +72,8 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
     dt_res = length(sol.td)
     ct_τ = RealVector(LinRange(0, 1, ct_res))
     dt_pos = sol.xd[veh.id_r, :]
-    ct_pos = hcat([sample(sol.xc, τ)[veh.id_r] for τ in ct_τ]...) #noerr
-    ct_vel = hcat([sample(sol.xc, τ)[veh.id_v] for τ in ct_τ]...) #noerr
+    ct_pos = hcat([sample(sol.xc, τ)[veh.id_r] for τ in ct_τ]...)
+    ct_vel = hcat([sample(sol.xc, τ)[veh.id_v] for τ in ct_τ]...)
     ct_speed = squeeze(mapslices(norm, ct_vel, dims=(1)))
     n_rcs = length(veh.id_rcs)
     N = size(sol.ud, 2)
@@ -95,7 +81,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
     dir_rcs = [veh.csm.f_rcs[veh.csm.rcs_select[i]] for i=1:n_rcs]
     for k = 1:size(dt_thrust, 2)
         q = Quaternion(sol.xd[veh.id_q, k])
-        dir_rcs_iner = [rotate(dir_rcs[i], q) for i=1:n_rcs] #noerr
+        dir_rcs_iner = [rotate(dir_rcs[i], q) for i=1:n_rcs]
         dt_thrust[:, k] = sum(sol.ud[veh.id_rcs[i], k]*dir_rcs_iner[i]
                               for i=1:n_rcs)
     end
@@ -168,12 +154,12 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
         ytip = [0; 1]
         ax.plot([origin[1], origin[1]+xtip[1]*axis_inf_scale],
                 [origin[2], origin[2]+xtip[2]*axis_inf_scale],
-                color=DarkBlue, #noerr
+                color=DarkBlue,
                 linewidth=0.5,
                 solid_capstyle="round")
         ax.plot([origin[1], origin[1]+ytip[1]*axis_inf_scale],
                 [origin[2], origin[2]+ytip[2]*axis_inf_scale],
-                color=DarkBlue, #noerr
+                color=DarkBlue,
                 linewidth=0.5,
                 solid_capstyle="round")
 
@@ -194,7 +180,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
         # Plot the discrete-time trajectory
         ax.scatter(dt_pos_2d[1, :], dt_pos_2d[2, :],
                    marker="o",
-                   c=DarkBlue, #noerr
+                   c=DarkBlue,
                    s=5,
                    edgecolors="white",
                    linewidths=0.2,
@@ -247,7 +233,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
         end
         thrusts = PyPlot.matplotlib.collections.LineCollection(
             thrust_segs, zorder=15,
-            colors=Red, #noerr
+            colors=Red,
             linewidths=1.5)
         thrusts.set_capstyle("round")
         ax.add_collection(thrusts)
@@ -353,8 +339,8 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
         marker_darken_factor = 0.3
         outline_w = 1.5
 
-        y1_clr = Blue #noerr
-        y2_clr = Red #noerr
+        y1_clr = Blue
+        y2_clr = Red
         darker_y1_clr = darken_color(y1_clr, marker_darken_factor)
         darker_y2_clr = darken_color(y2_clr, marker_darken_factor)
 
@@ -364,13 +350,13 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
         ct_t = ct_τ*tf
         dt_t = dt_τ*tf
 
-        ct_r = hcat([sample(sol.xc, τ)[veh.id_r] for τ in ct_τ]...) #noerr
-        ct_q = hcat([sample(sol.xc, τ)[veh.id_q] for τ in ct_τ]...) #noerr
-        ct_rpy = mapslices(q->collect(rpy(Quaternion(q))), ct_q, dims=1) #noerr
-        ct_ω = hcat([sample(sol.xc, τ)[veh.id_ω] for τ in ct_τ]...) #noerr
+        ct_r = hcat([sample(sol.xc, τ)[veh.id_r] for τ in ct_τ]...)
+        ct_q = hcat([sample(sol.xc, τ)[veh.id_q] for τ in ct_τ]...)
+        ct_rpy = mapslices(q->collect(rpy(Quaternion(q))), ct_q, dims=1)
+        ct_ω = hcat([sample(sol.xc, τ)[veh.id_ω] for τ in ct_τ]...)
 
         dt_q = sol.xd[veh.id_q, :]
-        dt_rpy = mapslices(q->collect(rpy(Quaternion(q))), dt_q, dims=1) #noerr
+        dt_rpy = mapslices(q->collect(rpy(Quaternion(q))), dt_q, dims=1)
         dt_ω = sol.xd[veh.id_ω, :]
 
         ct_rpy = rad2deg.(ct_rpy)
@@ -436,7 +422,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
 
             # Continuous-time trajectory
             ax.plot(ct_t, y1_data_ct,
-                    color=y1_clr, #noerr
+                    color=y1_clr,
                     linewidth=2,
                     solid_joinstyle="round",
                     solid_capstyle="round",
@@ -444,7 +430,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
                     zorder=10)
 
             ax2.plot(ct_t, y2_data_ct,
-                     color=y2_clr, #noerr
+                     color=y2_clr,
                      linewidth=2,
                      solid_joinstyle="round",
                      solid_capstyle="round",
@@ -463,7 +449,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
                     linestyle="none",
                     marker="o",
                     markersize=3.5,
-                    markerfacecolor=darker_y1_clr, #noerr
+                    markerfacecolor=darker_y1_clr,
                     markeredgecolor="white",
                     markeredgewidth=0.2,
                     clip_on=false,
@@ -473,7 +459,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
                      linestyle="none",
                      marker="o",
                      markersize=3.5,
-                     markerfacecolor=darker_y2_clr, #noerr
+                     markerfacecolor=darker_y2_clr,
                      markeredgecolor="white",
                      markeredgewidth=0.2,
                      clip_on=false,
@@ -537,7 +523,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
     end
 
     return nothing
-end # function
+end
 
 """
     plot_state_timeseries(mdl, sol)
@@ -549,7 +535,7 @@ Plot the state component evolution as a function of time.
 - `sol`: the problem solution.
 """
 function plot_state_timeseries(mdl::RendezvousProblem,
-                               sol::SCPSolution)::Nothing #noerr
+                               sol::SCPSolution)::Nothing
 
     # Parameters
     algo = sol.algo
@@ -558,8 +544,8 @@ function plot_state_timeseries(mdl::RendezvousProblem,
     marker_darken_factor = 0.3
     outline_w = 1.5
 
-    y1_clr = Blue #noerr
-    y2_clr = Red #noerr
+    y1_clr = Blue
+    y2_clr = Red
     darker_y1_clr = darken_color(y1_clr, marker_darken_factor)
     darker_y2_clr = darken_color(y2_clr, marker_darken_factor)
 
@@ -571,16 +557,16 @@ function plot_state_timeseries(mdl::RendezvousProblem,
     ct_t = ct_τ*tf
     dt_t = dt_τ*tf
 
-    ct_r = hcat([sample(sol.xc, τ)[veh.id_r] for τ in ct_τ]...) #noerr
-    ct_v = hcat([sample(sol.xc, τ)[veh.id_v] for τ in ct_τ]...) #noerr
-    ct_q = hcat([sample(sol.xc, τ)[veh.id_q] for τ in ct_τ]...) #noerr
-    ct_rpy = mapslices(q->collect(rpy(Quaternion(q))), ct_q, dims=1) #noerr
-    ct_ω = hcat([sample(sol.xc, τ)[veh.id_ω] for τ in ct_τ]...) #noerr
+    ct_r = hcat([sample(sol.xc, τ)[veh.id_r] for τ in ct_τ]...)
+    ct_v = hcat([sample(sol.xc, τ)[veh.id_v] for τ in ct_τ]...)
+    ct_q = hcat([sample(sol.xc, τ)[veh.id_q] for τ in ct_τ]...)
+    ct_rpy = mapslices(q->collect(rpy(Quaternion(q))), ct_q, dims=1)
+    ct_ω = hcat([sample(sol.xc, τ)[veh.id_ω] for τ in ct_τ]...)
 
     dt_r = sol.xd[veh.id_r, :]
     dt_v = sol.xd[veh.id_v, :]
     dt_q = sol.xd[veh.id_q, :]
-    dt_rpy = mapslices(q->collect(rpy(Quaternion(q))), dt_q, dims=1) #noerr
+    dt_rpy = mapslices(q->collect(rpy(Quaternion(q))), dt_q, dims=1)
     dt_ω = sol.xd[veh.id_ω, :]
 
     ct_rpy = rad2deg.(ct_rpy)
@@ -678,7 +664,7 @@ function plot_state_timeseries(mdl::RendezvousProblem,
 
         # Continuous-time trajectory
         ax.plot(ct_t, y1_data_ct,
-                color=y1_clr, #noerr
+                color=y1_clr,
                 linewidth=2,
                 solid_joinstyle="round",
                 solid_capstyle="round",
@@ -686,7 +672,7 @@ function plot_state_timeseries(mdl::RendezvousProblem,
                 zorder=10)
 
         ax2.plot(ct_t, y2_data_ct,
-                 color=y2_clr, #noerr
+                 color=y2_clr,
                  linewidth=2,
                  solid_joinstyle="round",
                  solid_capstyle="round",
@@ -705,7 +691,7 @@ function plot_state_timeseries(mdl::RendezvousProblem,
                 linestyle="none",
                 marker="o",
                 markersize=3.5,
-                markerfacecolor=darker_y1_clr, #noerr
+                markerfacecolor=darker_y1_clr,
                 markeredgecolor="white",
                 markeredgewidth=0.2,
                 clip_on=false,
@@ -715,7 +701,7 @@ function plot_state_timeseries(mdl::RendezvousProblem,
                  linestyle="none",
                  marker="o",
                  markersize=3.5,
-                 markerfacecolor=darker_y2_clr, #noerr
+                 markerfacecolor=darker_y2_clr,
                  markeredgecolor="white",
                  markeredgewidth=0.2,
                  clip_on=false,
@@ -785,7 +771,7 @@ function plot_state_timeseries(mdl::RendezvousProblem,
     save_figure("rendezvous_3d_timeseries.pdf", algo)
 
     return nothing
-end # function
+end
 
 """
     plot_control(mdl, sol[; quad])
@@ -801,9 +787,9 @@ Plot the control inputs versus time.
 - `quad`: (optional): which quad in particular to plot the inputs for.
 """
 function plot_inputs(mdl::RendezvousProblem,
-                     sol::SCPSolution, #noerr
+                     sol::SCPSolution,
                      history::SCPHistory;
-                     quad::Types.Optional{String}=nothing)::Nothing #noerr
+                     quad::Types.Optional{String}=nothing)::Nothing
 
     # Parameters
     interm_sol = [spbm.sol for spbm in history.subproblems]
@@ -812,7 +798,7 @@ function plot_inputs(mdl::RendezvousProblem,
     veh = mdl.vehicle
     traj = mdl.traj
     spread = 0.4
-    stem_colors = [Red, Green, Blue, DarkBlue] #noerr
+    stem_colors = [Red, Green, Blue, DarkBlue]
     marker_darken_factor = 0.3
     padx=0.05
     polar_resol = 1000
@@ -999,7 +985,7 @@ function plot_inputs(mdl::RendezvousProblem,
 
         # Plot "zero" baseline
         ax.plot([xmin, xmax], [0, 0],
-                color=DarkBlue, #noerr
+                color=DarkBlue,
                 linewidth=0.5,
                 solid_capstyle="round",
                 zorder=10)
@@ -1139,7 +1125,7 @@ function plot_inputs(mdl::RendezvousProblem,
     save_figure(filename, algo, tight_layout=false)
 
     return nothing
-end # function
+end
 
 """
     plot_cost_evolution(mdl, sol)
@@ -1350,7 +1336,7 @@ function plot_cost_evolution(mdl::RendezvousProblem,
     save_figure("rendezvous_3d_cost.pdf", algo)
 
     return nothing
-end # function
+end
 
 """
     plot_homotopy_threshold_sweep(mdl, betas, sols)
@@ -1364,7 +1350,7 @@ and optimal cost.
 - `sols`: list of solutions for each beta value.
 """
 function plot_homotopy_threshold_sweep(
-    mdl::RendezvousProblem, #nowarn
+    mdl::RendezvousProblem,
     betas::RealVector,
     sols::Vector{SCPSolution})::Nothing
 
@@ -1373,7 +1359,7 @@ function plot_homotopy_threshold_sweep(
 
     # Values
     impulses = sol->sol.ud[mdl.vehicle.id_rcs, :]
-    J = map(sol->sol.cost, sols) #noinfo
+    J = map(sol->sol.cost, sols)
     fuel = map(sol->fuel_consumption(mdl, impulses(sol)), sols)
     iters = map(sol->sol.iterations, sols)
 
@@ -1467,4 +1453,4 @@ function plot_homotopy_threshold_sweep(
     save_figure("rendezvous_3d_homotopy_threshold.pdf", algo)
 
     return nothing
-end # function
+end

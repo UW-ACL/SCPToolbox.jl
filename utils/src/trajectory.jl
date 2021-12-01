@@ -16,11 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("basic_types.jl")
-    include("helper.jl")
-end
-
 import ..linterp, ..zohinterp, ..diracinterp
 
 export ContinuousTimeTrajectory, sample
@@ -60,7 +55,7 @@ struct ContinuousTimeTrajectory
         traj = new(t, x, interp)
 
         return traj
-    end # function
+    end
 end # struct
 
 """ Get the value of a continuous-time trajectory at time t.
@@ -84,4 +79,4 @@ function sample(traj::ContinuousTimeTrajectory,
     end
 
     return x
-end # function
+end

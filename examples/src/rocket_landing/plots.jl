@@ -15,15 +15,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-#nolint: squeeze, create_figure, setup_axis!, plot_timeseries_bound!
-#nolint: DarkBlue
-
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("definition.jl")
-end
-
 using PyPlot
 using Colors
 using Printf
@@ -179,7 +170,7 @@ function plot_thrust(rocket::Rocket, sol::Solution, sim::Solution)::Nothing
     save_figure("rocket_landing_thrust_z.pdf", "lcvx")
 
     return nothing
-end # function
+end
 
 """
     plot_mass(rocket, sol)
@@ -251,7 +242,7 @@ function plot_mass(rocket::Rocket, sol::Solution, sim::Solution)::Nothing
     save_figure("rocket_landing_mass.pdf", "lcvx")
 
     return nothing
-end # function
+end
 
 """
     plot_velocity(rocket, sol)
@@ -326,7 +317,7 @@ function plot_velocity(rocket::Rocket, sol::Solution,
     save_figure("rocket_landing_velocity.pdf", "lcvx")
 
     return nothing
-end # function
+end
 
 """
     plot_pointing_angle(rocket, sol)
@@ -405,7 +396,7 @@ function plot_pointing_angle(rocket::Rocket, sol::Solution,
     save_figure("rocket_landing_angle.pdf", "lcvx")
 
     return nothing
-end # function
+end
 
 """
     plot_position(rocket, sol)
@@ -484,7 +475,7 @@ function plot_position(rocket::Rocket, sol::Solution,
     ax.plot(r_xz_dt[1, :], r_xz_dt[2, :],
             linestyle="none",
             marker="o",
-            markerfacecolor=DarkBlue, #noerr
+            markerfacecolor=DarkBlue,
             markersize=3,
             markeredgecolor="white",
             markeredgewidth=0.2,
@@ -520,7 +511,6 @@ function plot_position(rocket::Rocket, sol::Solution,
     y_max = maximum(r_xz_ct[2, :])+0.25
     x_min = minimum(r_xz_ct[1, :])-0.5
     # x_max = maximum(r_xz_ct[1, :])+0.5
-    #nolint: set_axis_equal
     set_axis_equal(ax, (x_min, missing, y_min, y_max))
 
     # Plot the thrust vectors
@@ -540,7 +530,7 @@ function plot_position(rocket::Rocket, sol::Solution,
     thrusts = PyPlot.matplotlib.collections.LineCollection(
         thrust_segs,
         zorder=5,
-        colors=Green, #noerr
+        colors=Green,
         linewidths=T_lw,
         alpha=T_lw_alpha,
         capstyle="round")
@@ -635,7 +625,7 @@ function plot_position(rocket::Rocket, sol::Solution,
     ax.plot(r_yz_dt[1, :], r_yz_dt[2, :],
             linestyle="none",
             marker="o",
-            markerfacecolor=DarkBlue, #noerr
+            markerfacecolor=DarkBlue,
             markersize=3,
             markeredgecolor="white",
             markeredgewidth=0.2,
@@ -691,7 +681,7 @@ function plot_position(rocket::Rocket, sol::Solution,
     thrusts = PyPlot.matplotlib.collections.LineCollection(
         thrust_segs,
         zorder=5,
-        colors=Green, #noerr
+        colors=Green,
         linewidths=T_lw,
         alpha=T_lw_alpha,
         capstyle="round")
@@ -737,4 +727,4 @@ function plot_position(rocket::Rocket, sol::Solution,
     save_figure("rocket_landing_crossrange_altitude.pdf", "lcvx")
 
     return nothing
-end # function
+end

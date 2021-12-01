@@ -108,4 +108,4 @@ function OscillatorProblem(N::Int)::OscillatorProblem
     mdl = OscillatorProblem(oscillator, traj)
 
     return mdl
-end # function
+end

@@ -16,11 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("general.jl")
-    include("constraint.jl")
-end
-
 import JuMP: value
 
 export QuadraticCost
@@ -61,7 +56,7 @@ mutable struct FunctionLinearCombination
         f_comb = new(f_list, a_list)
 
         return f_comb
-    end # function
+    end
 end # struct
 
 """
@@ -105,7 +100,7 @@ mutable struct QuadraticCost
         end
 
         return cost
-    end # function
+    end
 end # struct
 
 # ..:: Methods ::..
@@ -126,7 +121,7 @@ function add!(F::FunctionLinearCombination,
     push!(F.f, f)
     push!(F.a, a)
     return nothing
-end # function
+end
 
 """ Get the number of functions in the linear combination. """
 Base.length(F::FunctionLinearCombination)::Int = length(F.f)
@@ -151,7 +146,7 @@ function value(F::FunctionLinearCombination;
         val += a*f
     end
     return val
-end # function
+end
 
 """
     jacobian(F, i, key)
@@ -170,7 +165,7 @@ function jacobian(F::FunctionLinearCombination, i::Int,
                   key::JacobianKeys)::JacobianValueType
     jac = F.a[i]*jacobian(F.f[i], key)
     return jac
-end # function
+end
 
 """
     all_jacobians(F)
@@ -193,7 +188,7 @@ function all_jacobians(F::FunctionLinearCombination)::Vector{JacobianDictType}
         end
     end
     return jacs
-end # function
+end
 
 """
     FuncLinComb([; jacobians, scalar])
@@ -216,7 +211,7 @@ function (FuncLinComb::FunctionLinearCombination)(
     end
 
     return value(FuncLinComb, scalar=scalar)
-end # function
+end
 
 """
     J([; jacobians, scalar])
@@ -227,7 +222,7 @@ Evaluate the cost function. This just passes the call to the underlying
 function (J::QuadraticCost)(;jacobians::Bool=false)::FunctionValueOutputType
     terms = core_terms(J)
     return terms(jacobians=jacobians, scalar=true)
-end # function
+end
 
 """
     add!(J, f[, a])
@@ -250,7 +245,7 @@ function add!(J::QuadraticCost,
     update_jump_cost!(J)
     new_term = term(J, 0)
     return new_term
-end # function
+end
 
 """
     update_jump_cost!(J)
@@ -267,7 +262,7 @@ function update_jump_cost!(J::QuadraticCost)::Nothing
     set_objective_function(mdl, J_value)
     set_objective_sense(mdl, MOI.MIN_SENSE)
     return nothing
-end # function
+end
 
 """ Get the parent JuMP optimization model. """
 jump_model(J::QuadraticCost)::Model = jump_model(J.prog[])
@@ -321,7 +316,7 @@ function value(J::QuadraticCost; raw::Bool=false)::FunctionValueOutputType
         val = value(val)
     end
     return val
-end # function
+end
 
 """ Get the current objective function jacobians. """
 jacobian(J::QuadraticCost, i::Int, key::JacobianKeys)::JacobianValueType =
@@ -341,7 +336,7 @@ A dummy function which represents a feasibility cost.
 - `J`: a constant-zero function representing the cost of a feasibility
   optimization problem.
 """
-function feasibility_cost(args...)::DifferentiableFunctionOutput #nowarn
+function feasibility_cost(args...)::DifferentiableFunctionOutput
     J = DifferentiableFunctionOutput(0.0)
     return J
-end # function
+end

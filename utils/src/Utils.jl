@@ -22,10 +22,10 @@ export Types
 
 include("globals.jl")
 
-function skew end # function
-function linterp end # function
-function zohinterp end # function
-function diracinterp end # function
+function skew end
+function linterp end
+function zohinterp end
+function diracinterp end
 
 module Types
 include("basic_types.jl")

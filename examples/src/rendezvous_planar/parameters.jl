@@ -143,4 +143,4 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     mdl = PlanarRendezvousProblem(sc, env, traj)
 
     return mdl
-end # function
+end

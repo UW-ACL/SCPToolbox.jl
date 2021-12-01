@@ -16,25 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("../../utils/src/Utils.jl")
-    include("../../parser/src/Parser.jl")
-
-    using .Utils
-    using .Parser
-
-    import .Utils.Types: sample
-
-    import .Parser: DiscretizationType, FOH, IMPULSE
-    import .Parser.ConicLinearProgram: ConicProgram
-    import .Parser.ConicLinearProgram: QuadraticCost
-    import .Parser.ConicLinearProgram: VariableArgumentBlock
-    import .Parser.ConicLinearProgram: ConstantArgumentBlock
-    import .Parser.ConicLinearProgram: @add_constraint, ZERO
-end
-
 using LinearAlgebra
 
 using Utils
@@ -72,4 +53,4 @@ The the current time in nanoseconds.
 """
 function get_time()::Int
     return Int(time_ns())
-end # function
+end

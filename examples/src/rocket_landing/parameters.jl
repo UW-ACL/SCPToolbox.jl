@@ -113,7 +113,7 @@ function Rocket()::Rocket
     # >> Continuous-time dynamics <<
     gₑ = 9.807 # Standard gravity
     α = 1/(Isp*gₑ*cos(φ))
-    ω_x = skew(ω) #noerr
+    ω_x = skew(ω)
     A_c = RealMatrix([zeros(3,3) I(3) zeros(3);
                       -(ω_x)^2 -2*ω_x zeros(3);
                       zeros(1,7)])
@@ -128,7 +128,7 @@ function Rocket()::Rocket
                     r0,v0,Δt,A_c,B_c,p_c,n,m)
 
     return rocket
-end # function
+end
 
 """
     FailedSolution()
@@ -155,4 +155,4 @@ function FailedSolution()::Solution
     sol = Solution(t,r,v,z,u,ξ,cost,T,T_nrm,m,γ)
 
     return sol
-end # function
+end

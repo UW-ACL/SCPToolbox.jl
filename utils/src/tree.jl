@@ -16,12 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("basic_types.jl")
-end
-
 using Printf
 
 export TreeCompatibilityTrait, IsTreeCompatible
@@ -117,7 +111,7 @@ mutable struct TreeNode{T} <: AbstractTreeNode
         end
 
         return node
-    end # function
+    end
 end # struct
 
 # ..:: Methods ::..
@@ -140,7 +134,7 @@ Add child(children) node(s) to the parent node.
 function add_child!(parent::TreeNode, node::TreeNode...)::Nothing
     push!(parent.children, node...)
     return nothing
-end # function
+end
 
 """
     remove_child!(parent, child)
@@ -154,7 +148,7 @@ Unlink child node from parent.
 function remove_child!(parent::TreeNode, child::TreeNode)::Nothing
     filter!(c->c!=child, parent.children)
     return nothing
-end # function
+end
 
 """
     set_parent!(node, parent)
@@ -168,7 +162,7 @@ Set a parent for the node.
 function set_parent!(node::TreeNode, parent::TreeNode)::Nothing
     node.parent = parent
     return nothing
-end # function
+end
 
 """
     traverse(action, node[, depth][; ignore])
@@ -202,7 +196,7 @@ function traverse(action::Function,
     end
 
     return nothing
-end # function
+end
 
 """
     findall(matcher, node[; ignore])
@@ -230,7 +224,7 @@ function Base.findall(matcher::Function,
         matcher(data) ? push!(match_list, data) : nothing
     end
     return match_list
-end # function
+end
 
 """
     find_common(A, B[; ignore])
@@ -266,4 +260,4 @@ function find_common(A::TreeNode, B::TreeNode;
     else
         return find_common(A.parent, B, ignore=TreeNode[A])
     end
-end # function
+end

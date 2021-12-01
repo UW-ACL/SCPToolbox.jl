@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("general.jl")
-end
-
 # ..:: Data structures ::..
 
 """
@@ -82,7 +78,7 @@ mutable struct Scaling{N} <: AbstractRealArray{N}
 
         scaling = new{N}(S, c)
         return scaling
-    end # function
+    end
 
     """
         Scaling(sc, Id...)
@@ -104,7 +100,7 @@ mutable struct Scaling{N} <: AbstractRealArray{N}
         N = ndims(sliced_S)
         sliced_scaling = new{N}(sliced_S, sliced_c)
         return sliced_scaling
-    end # function
+    end
 end # struct
 
 # ..:: Methods ::..
@@ -141,7 +137,7 @@ function scale(sc::Scaling, xh::AbstractArray)::AbstractArray
     x = (S.*xh).+c
     x = (x isa AbstractArray) ? x : fill(x)
     return x
-end # function
+end
 
 """
     filldims(A, B)
@@ -166,4 +162,4 @@ function filldims(A::AbstractArray, B::AbstractArray)::AbstractArray
         C = reshape(A, (size(A)..., ones(Int, extra_dims)...))
     end
     return C
-end # function
+end

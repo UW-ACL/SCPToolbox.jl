@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("general.jl")
-end
-
 import JuMP: dual
 
 export ConvexCone, add!, isfixed, isfree, dual, indicator!
@@ -151,7 +147,7 @@ struct ConvexCone{T<:MOI.AbstractSet}
         constraint = new{typeof(K)}(z, K, dim, kind)
 
         return constraint
-    end # function
+    end
 end # struct
 
 """ Get the kind of cone """
@@ -182,7 +178,7 @@ function add!(pbm::Model, cone::ConvexCone)::Types.Constraint
     end
 
     return constraint
-end # function
+end
 
 """
     add!(pbm, cones)
@@ -207,7 +203,7 @@ function add!(pbm::Model,
     end
 
     return constraints
-end # function
+end
 
 """
     isfixed(cone)
@@ -224,7 +220,7 @@ optimization).
 function isfixed(cone::ConvexCone)::Bool
     is_fixed = typeof(cone.z)<:Types.RealArray
     return is_fixed
-end # function
+end
 
 """ Find out whether the cone is all of ``\\reals^n``. """
 isfree(cone::ConvexCone)::Bool = kind(cone)==UNCONSTRAINED
@@ -303,4 +299,4 @@ function indicator!(pbm::Model, cone::ConvexCone)::Types.Variable
     end
 
     return q
-end # function
+end

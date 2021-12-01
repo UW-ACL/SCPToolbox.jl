@@ -15,16 +15,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-#nolint: Parser, ConicProgram, @new_variable, @add_constraint, @add_cost
-#nolint: solve!, value, arg, ZERO, NONPOS, GEOM, L1
-#nolint: rk4
-
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("parameters.jl")
-end
-
 using LinearAlgebra
 using JuMP
 using ECOS
@@ -121,10 +111,10 @@ function solve_lcvx(mdl::DoubleIntegratorParameters)::Solution
 
     t = collect(LinRange(0, T, N))
     sol = Solution(t, x, u)
-    cost = objective_value(ocp) #noinfo
+    cost = objective_value(ocp)
 
     return sol
-end # function
+end
 
 """
     solve_mp(mdl)
@@ -223,7 +213,7 @@ function solve_mp(mdl::DoubleIntegratorParameters)::Solution
     sol = Solution(t_mp, x_mp, u_mp)
 
     return sol
-end # function
+end
 
 """
     mp_input(p)
@@ -253,7 +243,7 @@ function mp_input(p::Float64)::Float64
     end
 
     return u
-end # function
+end
 
 """
     mp_sim(f, T, s, c, ts)
@@ -302,4 +292,4 @@ function mp_sim(f::Function, T::Real, s::Real, c::Real, ts::Real)::Dict
     out = Dict(:c=>c, :ts=>ts, :err=>err, :t=>t_grid, :x=>x);
 
     return out
-end # function
+end

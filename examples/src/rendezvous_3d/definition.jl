@@ -15,12 +15,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("parameters.jl")
-end
-
 using Printf
 
 using Parser
@@ -44,14 +38,14 @@ function define_problem!(pbm::TrajectoryProblem,
     set_guess!(pbm)
 
     return nothing
-end # function
+end
 
 function set_dims!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_dims!(pbm, 13, 33, 14)
 
     return nothing
-end # function
+end
 
 function set_scale!(pbm::TrajectoryProblem)::Nothing
 
@@ -88,7 +82,7 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
             (-traj.ωf_tol, traj.ωf_tol))
 
     return nothing
-end # function
+end
 
 function set_integration!(pbm::TrajectoryProblem)::Nothing
 
@@ -101,7 +95,7 @@ function set_integration!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end # function
+end
 
 function set_callback!(pbm::TrajectoryProblem)::Nothing
 
@@ -151,7 +145,7 @@ function set_callback!(pbm::TrajectoryProblem)::Nothing
         pbm, :homotopy, "hom", "%s", 10,
         bay->@sprintf("%.2e%s", bay[:hom], bay[:hom_updated] ? "*" : ""))
 
-end # function
+end
 
 function set_guess!(pbm::TrajectoryProblem)::Nothing
 
@@ -190,7 +184,7 @@ function set_guess!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end # function
+end
 
 function set_cost!(pbm::TrajectoryProblem,
                    algo::Symbol)::Nothing
@@ -211,7 +205,7 @@ function set_cost!(pbm::TrajectoryProblem,
         end)
 
     return nothing
-end # function
+end
 
 function set_dynamics!(pbm::TrajectoryProblem)::Nothing
 
@@ -337,7 +331,7 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end # function
+end
 
 function set_convex_constraints!(pbm::TrajectoryProblem,
                                  N::Int)::Nothing
@@ -362,28 +356,28 @@ function set_convex_constraints!(pbm::TrajectoryProblem,
                 @add_constraint(
                     ocp, LINF, "dock_pos_tol",
                     (Δrf,), begin
-                        local Δrf, = arg #noerr
+                        local Δrf, = arg
                         vcat(traj.rf_tol, Δrf)
                     end)
 
                 @add_constraint(
                     ocp, ZERO, "dock_pos_axial_exact",
                     (Δrf,), begin
-                        local Δrf, = arg #noerr
+                        local Δrf, = arg
                         dot(Δrf, xi)
                     end)
 
                 @add_constraint(
                     ocp, LINF, "dock_vel_tol",
                     (Δvf,), begin
-                        local Δvf, = arg #noerr
+                        local Δvf, = arg
                         vcat(traj.vf_tol, Δvf)
                     end)
 
                 @add_constraint(
                     ocp, NONPOS, "dock_att_tol",
                     (qf,), begin
-                        local qf, = arg #noerr
+                        local qf, = arg
                         qf_des = vec(traj.qf)
                         qerr_w = qf'*qf_des # Error quaternion scalar aprt
                         cos(traj.ang_tol/2)-qerr_w
@@ -392,7 +386,7 @@ function set_convex_constraints!(pbm::TrajectoryProblem,
                 @add_constraint(
                     ocp, LINF, "dock_ang_vel_tol",
                     (Δωf,), begin
-                        local Δωf, = arg #noerr
+                        local Δωf, = arg
                         vcat(traj.ωf_tol, Δωf)
                     end)
 
@@ -414,56 +408,56 @@ function set_convex_constraints!(pbm::TrajectoryProblem,
             @add_constraint(
                 ocp, NONPOS, "rcs_impulse_nonneg",
                 (f,), begin
-                    local f, = arg #noerr
+                    local f, = arg
                     -f
                 end)
 
             @add_constraint(
                 ocp, NONPOS, "rcs_impulse_ref_nonneg",
                 (fr,), begin
-                    local fr, = arg #noerr
+                    local fr, = arg
                     -fr
                 end)
 
             @add_constraint(
                 ocp, LINF, "rcs_impulse_max",
                 (f,), begin
-                    local f, = arg #noerr
+                    local f, = arg
                     vcat(veh.csm.imp_max, f)
                 end)
 
             @add_constraint(
                 ocp, LINF, "rcs_impulse_ref_max",
                 (fr,), begin
-                    local fr, = arg #noerr
+                    local fr, = arg
                     vcat(veh.csm.imp_max, fr)
                 end)
 
             @add_constraint(
                 ocp, L1, "rcs_impulse_ref_equality",
                 (f, fr, feq,), begin
-                    local f, fr, feq = arg #noerr
+                    local f, fr, feq = arg
                     vcat(feq, f-fr)
                 end)
 
             @add_constraint(
                 ocp, NONPOS, "min_time",
                 (tdil, ), begin
-                    local tdil, = arg #noerr
+                    local tdil, = arg
                     tdil[1]-traj.tf_max
                 end)
 
             @add_constraint(
                 ocp, NONPOS, "max_time",
                 (tdil, ), begin
-                    local tdil, = arg #noerr
+                    local tdil, = arg
                     traj.tf_min-tdil[1]
                 end)
 
         end)
 
     return nothing
-end # function
+end
 
 function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                                     algo::Symbol)::Nothing
@@ -646,7 +640,7 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
         end)
 
     return nothing
-end # function
+end
 
 function set_bcs!(pbm::TrajectoryProblem)::Nothing
 
@@ -707,4 +701,4 @@ function set_bcs!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end # function
+end

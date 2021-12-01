@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("block.jl")
-end
-
 export VariableArgumentBlock, ConstantArgumentBlock
 export value, name
 
@@ -60,7 +56,7 @@ mutable struct Argument{T<:AtomicArgument} <: AbstractArgument{T}
         arg = new{T}(blocks, numel, prog)
 
         return arg
-    end # function
+    end
 end # struct
 
 # ..:: Methods ::..
@@ -92,7 +88,7 @@ function Base.iterate(arg::Argument,
     else
         return arg.blocks[state], state+1
     end
-end # function
+end
 
 """ Get the underlying JuMP optimization model object """
 jump_model(arg::Argument)::Model = arg.prog[].mdl
@@ -123,7 +119,7 @@ function Base.push!(arg::Argument, name::String, shape::Int...)::ArgumentBlock
     arg.numel += length(block)
 
     return block
-end # function
+end
 
 """
     link!(arg, owner)
@@ -139,4 +135,4 @@ Link an argument to its parent program.
 function link!(arg::Argument, owner::AbstractConicProgram)::Nothing
     arg.prog[] = owner
     return nothing
-end # function
+end

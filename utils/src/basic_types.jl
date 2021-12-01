@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("globals.jl")
-end
-
 using LinearAlgebra
 using JuMP
 
@@ -81,7 +77,7 @@ The real array.
 """
 function (::Type{RealArray{n}})(args...)::Array{Float64, n} where n
     return Array{Float64, n}(args...)
-end # function
+end
 
 """
 #     VariableArray(x)
@@ -99,4 +95,4 @@ function (::Type{VariableArray})(
     X::Array{T, n})::Array{T, n} where {T<:Variable, n}
 
     return Array{T, n}(X)
-end # function
+end

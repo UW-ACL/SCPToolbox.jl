@@ -15,8 +15,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-#nolint: Utils, Types, rk4
-
 using Utils
 
 # ..:: Globals ::..
@@ -71,7 +69,7 @@ function DoubleIntegratorParameters(
     s = (choice==1) ? 47 : 30
 
     # Equations of motion
-    f = (t, x, u) -> [x[2]; u-g] #noinfo
+    f = (t, x, u) -> [x[2]; u-g]
 
     # First-order hold (FOH) temporal discretization
     n = 2
@@ -87,4 +85,4 @@ function DoubleIntegratorParameters(
     mdl = DoubleIntegratorParameters(n, m, N, T, f, A, Bm, Bp, w, g, s, choice)
 
     return mdl
-end # function
+end

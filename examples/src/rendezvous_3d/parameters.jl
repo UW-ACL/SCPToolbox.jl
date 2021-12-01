@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-#nolint: convert_units, linterp
-#nolint: Utils, Types
-#nolint: homtransf, hominv, homdisp, homrot
-
 using LinearAlgebra
 
 using Utils
@@ -237,7 +233,7 @@ struct ApolloCSM
                   imp_min, imp_max, Frcs, fuel_consum, rcs_select)
 
         return csm
-    end # function
+    end
 end # struct
 
 """ Chaser vehicle parameters. """
@@ -373,7 +369,7 @@ function RendezvousProblem()::RendezvousProblem
     γc = 1.0
     γg = 5.0
     hom_steps = 10 # Number of homotopy values to sweep through
-    hom_obj = Homotopy(1e-2; δ_max=10.0) #noerr
+    hom_obj = Homotopy(1e-2; δ_max=10.0)
     hom_grid = map(hom_obj, LinRange(0.0, 1.0, hom_steps))
     hom = hom_grid[1]
 
@@ -384,7 +380,7 @@ function RendezvousProblem()::RendezvousProblem
     mdl = RendezvousProblem(sc, env, traj)
 
     return mdl
-end # function
+end
 
 """
     fuel_consumption(mdl, impulses)
@@ -420,4 +416,4 @@ function fuel_consumption(mdl::RendezvousProblem,
     end
 
     return fuel
-end # function
+end

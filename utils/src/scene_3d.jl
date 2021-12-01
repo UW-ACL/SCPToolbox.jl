@@ -16,14 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("helper.jl")
-    include("plots.jl")
-    include("tree.jl")
-end
-
 using Statistics
 using PyPlot
 
@@ -38,7 +30,7 @@ export Local, Body, Intrinsic, Extrinsic
 abstract type AbstractObject3D end
 
 const IntMatrix = Matrix{Int}
-const RealTensor = Types.RealTensor #noerr
+const RealTensor = Types.RealTensor
 const OwnerNode{T} = Optional{TreeNode{T}}
 const MeshColorSpec = Union{String, Vector{String}}
 const MeshWidthSpec = Union{RealValue, RealVector}
@@ -187,7 +179,7 @@ function update_pose!(x, value::RealMatrix;
                       reset::Bool=false)::Nothing
     @assert size(value)==(4, 4)
     update_pose!(PoseTrait(x), x, value, frame, mode, reset)
-end # function
+end
 
 update_pose!(::NoPose, x::T, value, frame, mode, reset) where {T} = begin
     msg = @sprintf("The object %s does not have a pose", T)
@@ -209,7 +201,7 @@ function update_pose!(pose_trait::Union{HasGlobalPose, HasLocalPose},
         x.local_pose = H
     end
     return nothing
-end # function
+end
 
 # ..:: Data structures ::..
 
@@ -238,7 +230,7 @@ mutable struct SceneProperties{T<:AbstractObject3D}
         default_pose = homtransf()
         props = new{T}(name, no_owner, default_pose)
         return props
-    end # function
+    end
 end # struct
 
 """
@@ -298,7 +290,7 @@ mutable struct Mesh3D <: AbstractObject3D
                   default_local_pose, default_properties)
 
         return obj
-    end # function
+    end
 
     """
         Mesh3D(filepath[; name, face_color, edge_color, edge_width])
@@ -326,7 +318,7 @@ mutable struct Mesh3D <: AbstractObject3D
                      edge_color=edge_color, edge_width=edge_width)
 
         return obj
-    end # function
+    end
 end # struct
 
 # A mesh has a local pose
@@ -373,7 +365,7 @@ mutable struct Camera3D <: AbstractObject3D
                      default_properties)
 
         return camera
-    end # function
+    end
 end # struct
 
 # A camera has a local pose
@@ -419,7 +411,7 @@ mutable struct Axis3D <: AbstractObject3D
         axis = new(visible, axis_length, axis_width, default_properties)
 
         return axis
-    end # function
+    end
 end # struct
 
 """
@@ -457,7 +449,7 @@ mutable struct Light3D <: AbstractObject3D
         light = new(az, el, default_properties)
 
         return light
-    end # function
+    end
 end # struct
 
 """
@@ -494,7 +486,7 @@ mutable struct Scene3D
         scene = new(default_scene)
 
         return scene
-    end # function
+    end
 end # struct
 
 """
@@ -529,7 +521,7 @@ mutable struct BakedScene3D
         ew = RealVector(undef, 0)
         baked = new(tris, fc, ec, ew)
         return baked
-    end # function
+    end
 end # struct
 
 # ..:: Methods ::..
@@ -572,7 +564,7 @@ function MeshAxis3D(axis::Axis3D)::Mesh3D
     axis_mesh = Mesh3D(V, F, face_color=fc, edge_color="none", edge_width=0)
 
     return axis_mesh
-end # function
+end
 
 """
     Sphere3D(r[; az, el, name, face_color,
@@ -669,7 +661,7 @@ function Sphere3D(r::Real;
                     edge_width=edge_width)
 
     return sphere
-end # function
+end
 
 """
     Line3D(v1, v2[, nseg][; name, face_color,
@@ -726,7 +718,7 @@ function Line3D(v1::RealVector,
                   edge_width=edge_width)
 
     return line
-end # function
+end
 
 """
     make_x_axis_mesh([; thickness, length, resol])
@@ -819,7 +811,7 @@ function make_x_axis_mesh(thickness::RealValue,
     F = hcat(F...)
 
     return V, F
-end # function
+end
 
 """ Aliases to create homogeneous transformation matrices. """
 scene_roll(roll::RealValue; deg::Bool=true) = homtransf(roll=roll, deg=deg)
@@ -893,7 +885,7 @@ function add!(parent::Union{Scene3D, AbstractObject3D},
         end
     end
     return nothing
-end # function
+end
 
 """
     move!(obj[; frame, mode, kwargs...])
@@ -971,7 +963,7 @@ function move!(obj::AbstractObject3D;
     update_pose!(obj, H_update; frame=frame, mode=mode)
 
     return nothing
-end # function
+end
 
 """
     scale!(obj, amount[; relative])
@@ -999,7 +991,7 @@ function scale!(obj::Mesh3D, amount::RealValue;
         obj.V = (((obj.V).-centroid)*amount).+centroid
     end
     return nothing
-end # function
+end
 
 """ Normalize the mesh to maximum length 1 along each dimension. """
 normalize!(obj::Mesh3D) = scale!(obj, 1; relative=false)
@@ -1045,7 +1037,7 @@ function relative_pose(objA::AbstractObject3D,
     end
 
     return H_BA
-end # function
+end
 
 """
     relative_local_pose_linear(descendant, ancestor)
@@ -1087,7 +1079,7 @@ function relative_local_pose_linear(
     end
 
     return H
-end # function
+end
 
 """
     perspective(camera)
@@ -1105,7 +1097,7 @@ function perspective(camera::Camera3D)::RealMatrix
     w = h*camera.aspect
     P = frustum(-w, w, -h, h, camera.znear, camera.zfar)
     return P
-end # function
+end
 
 """
     frustrum(left, right, bottom, top, near, far)
@@ -1140,7 +1132,7 @@ function frustum(left::Real, right::Real, bottom::Real, top::Real,
     P[3, 4] = 2*near*far/(near-far)
     P[4, 3] = -1
     return P
-end # function
+end
 
 """
     load_wavefront(filepath)
@@ -1166,14 +1158,14 @@ function load_wavefront(filepath::String)::Tuple{RealMatrix,
         if startswith(line, "#")
             continue
         end
-        values = split(line) #noinfo
+        values = split(line)
         if isempty(values)
         elseif values[1]=="v"
             push!(V, [parse(Float64, x) for x in values[2:4]])
         elseif values[1]=="vn"
             push!(N, [parse(Float64, x) for x in values[2:4]])
         elseif values[1]=="f"
-            values = map(s->split(s, "//"), values[2:4]) #noinfo
+            values = map(s->split(s, "//"), values[2:4])
             vertices = map(v->v[1], values)
             if length(values[1])==2
                 # There is face normal information
@@ -1188,7 +1180,7 @@ function load_wavefront(filepath::String)::Tuple{RealMatrix,
     F = hcat(F...)
     N = isempty(N) ? nothing : hcat(N...)
     return V, F, N
-end # function
+end
 
 """
     render(scene[, camera, path][; canvas_size, canvas_xlim, canvas_ylim,
@@ -1279,7 +1271,7 @@ function render(scene::Scene3D,
                 facecolor=bg_color)
 
     return nothing
-end # function
+end
 
 """
     bake(scene, camera)
@@ -1442,7 +1434,7 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
     out = BakedScene3D(tris, fc, ec, ew)
 
     return out
-end # function
+end
 
 """
     find_light(obj)
@@ -1490,7 +1482,7 @@ function find_light(obj::AbstractObject3D)::Optional{Light3D}
             parent = parent.parent
         end
     end
-end # function
+end
 
 """
     show(io, obj)
@@ -1502,7 +1494,7 @@ Pretty print a 3D mesh object.
 - `obj`: an `Mesh3D` object.
 """
 function Base.show(io::IO, obj::Mesh3D)::Nothing
-    compact = get(io, :compact, false) #noinfo
+    compact = get(io, :compact, false)
     indent = make_indent(io)
 
     @preprintf(io, indent, "Mesh (%s)", name(obj))
@@ -1514,7 +1506,7 @@ function Base.show(io::IO, obj::Mesh3D)::Nothing
     end
 
     return nothing
-end # function
+end
 
 """
     show(io, scene)
@@ -1526,7 +1518,7 @@ Pretty print a scene.
 - `obj`: a `Scene3D` object.
 """
 function Base.show(io::IO, scene::Scene3D)::Nothing
-    compact = get(io, :compact, false) #noinfo
+    compact = get(io, :compact, false)
     indent = make_indent(io)
 
     # >> Print the object counts <<
@@ -1596,7 +1588,7 @@ function Base.show(io::IO, scene::Scene3D)::Nothing
     println(short_tree)
 
     return nothing
-end # function
+end
 
 """
     show(io, mime, obj)

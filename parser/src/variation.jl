@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("program.jl")
-end
-
 export jacobian, variation
 
 # ..:: Globals ::..
@@ -71,7 +67,7 @@ function jacobian(x::Symbol, F::ProgramFunction;
         Df = Df[:, reduce[x]]
     end
     return Df
-end # function
+end
 
 """
     jacobian(x, y, F[; reduce])
@@ -122,7 +118,7 @@ function jacobian(x::Symbol, y::Symbol, F::ProgramFunction;
         Df = Df[:, reduce[y], reduce[x]]
     end
     return Df
-end # function
+end
 
 """
     jacobian(x, J[; reduce])
@@ -141,7 +137,7 @@ function jacobian(x::Symbol, J::QuadraticCost;
     end
     Df = sum(Df_terms)
     return Df
-end # function
+end
 
 """
     jacobian(x, y, J)
@@ -161,7 +157,7 @@ function jacobian(x::Symbol, y::Symbol, J::QuadraticCost;
     end
     Df = sum(Df_terms)
     return Df
-end # function
+end
 
 """
     set_perturbation!(prg, x, dx)
@@ -189,14 +185,14 @@ function set_perturbation_constraint!(prg::ConicProgram,
             @add_constraint(
                 prg, ZERO, "perturb",
                 (δx,), begin
-                    local δx = arg[1] #noerr
+                    local δx = arg[1]
                     δx[1]-ε
                 end)
         elseif pert_kind[i]==ABSOLUTE
             @add_constraint(
                 prg, L1, "perturb",
                 (δx,), begin
-                    local δx = arg[1] #noerr
+                    local δx = arg[1]
                     vcat(ε, δx[1])
                 end)
         elseif pert_kind[i]==RELATIVE
@@ -211,14 +207,14 @@ function set_perturbation_constraint!(prg::ConicProgram,
             @add_constraint(
                 prg, L1, "perturb",
                 (δx,), begin
-                    local δx = arg[1] #noerr
+                    local δx = arg[1]
                     vcat(ε*abs_xref, δx[1])
                 end)
         end
     end
 
     return nothing
-end # function
+end
 
 """
     vary!(prg[; perturbation])
@@ -362,8 +358,8 @@ function variation(prg::ConicProgram;
             kkt, K, "primal_feas",
             (δx_blks..., δp_blks...),
             begin
-                local δx = vcat(arg[idcs_x]...) #noerr
-                local δp = vcat(arg[idcs_p]...) #noerr
+                local δx = vcat(arg[idcs_x]...)
+                local δp = vcat(arg[idcs_p]...)
                 f[i]+Dxf[i]*δx+Dpf[i]*δp
             end)
     end
@@ -375,7 +371,7 @@ function variation(prg::ConicProgram;
             kkt, dual(K), "dual_feas",
             (δλ[i],),
             begin
-                local δλ = arg[1] #noerr
+                local δλ = arg[1]
                 λ[i]+δλ
             end)
     end
@@ -399,10 +395,10 @@ function variation(prg::ConicProgram;
                 kkt, ZERO, "compl_slack",
                 (δx_blks..., δp_blks..., δλ[i], μ[i]),
                 begin
-                    local δx = vcat(arg[idcs_x]...) #noerr
-                    local δp = vcat(arg[idcs_p]...) #noerr
-                    local δλ = arg[end-1] #noerr
-                    local μ = arg[end] #noerr
+                    local δx = vcat(arg[idcs_x]...)
+                    local δp = vcat(arg[idcs_p]...)
+                    local δλ = arg[end-1]
+                    local μ = arg[end]
                     dot(f[i], δλ)+dot(Dxf[i]*δx+Dpf[i]*δp, λ[i])-μ[1]
                 end)
         end
@@ -421,9 +417,9 @@ function variation(prg::ConicProgram;
             kkt, ZERO, "stat",
             (δx_blks..., δp_blks..., δλ...),
             begin
-                local δx = vcat(arg[idcs_x]...) #noerr
-                local δp = vcat(arg[idcs_p]...) #noerr
-                local δλ = arg[(1:n_cones_red).+num_xp_blk] #noerr
+                local δx = vcat(arg[idcs_x]...)
+                local δp = vcat(arg[idcs_p]...)
+                local δλ = arg[(1:n_cones_red).+num_xp_blk]
                 local ∇L = DxxJ*δx+DpxJ*δp
                 if np>0
                     local Dxf_vary_p = (i)->sum(Dpxf[i][:, :, j]*δp[j]
@@ -458,10 +454,10 @@ function variation(prg::ConicProgram;
             kkt, ZERO, "kkt",
             (δx_blks..., δp_blks..., δλ..., μ),
             begin
-                local δx = vcat(arg[idcs_x]...) #noerr
-                local δp = vcat(arg[idcs_p]...) #noerr
-                local δλ = vcat(arg[(num_xp_blk+1):(end-1)]...) #noerr
-                local μ = arg[end] #noerr
+                local δx = vcat(arg[idcs_x]...)
+                local δp = vcat(arg[idcs_p]...)
+                local δλ = vcat(arg[(num_xp_blk+1):(end-1)]...)
+                local μ = arg[end]
                 local δZ = vcat(δx, δp, δλ)
                 local rhs = vcat(μ, zeros(length(kkt_rows)))
                 KKT*δZ-rhs
@@ -469,7 +465,7 @@ function variation(prg::ConicProgram;
     end
 
     # Set the perturbation constraints
-    for kind in [:x, :p] #noinfo
+    for kind in [:x, :p]
         z_blks = allowed_vars[kind]
         for z_blk in z_blks
             δz_blk = varmap[z_blk]
@@ -484,21 +480,21 @@ function variation(prg::ConicProgram;
         # Minimize complementary slackness relaxation
         l1μ = @new_variable(kkt, "l1μ")
         @add_constraint(kkt, L1, "l1μ", (l1μ, μ,), begin
-                            local l1μ, μ = arg #noerr
+                            local l1μ, μ = arg
                             vcat(l1μ, μ)
                         end)
 
         @add_cost(kkt, (l1μ,), begin
-                      local l1μ, = arg #noerr
+                      local l1μ, = arg
                       l1μ
                   end)
     else
         # Force zero relaxation
         @add_constraint(kkt, ZERO, "μ_zero", (μ,), begin
-                            local μ, = arg #noerr
+                            local μ, = arg
                             μ
                         end)
     end
 
     return varmap, kkt
-end # function
+end

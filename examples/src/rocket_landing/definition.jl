@@ -15,12 +15,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("parameters.jl")
-end
-
 using JuMP
 using ECOS
 
@@ -46,13 +40,12 @@ function solve_pdg_fft(rocket::Rocket, tf::RealValue)::Solution
     Δt = tf/(N-1)
     t = RealVector(0.0:Δt:tf)
 
-    A, B, p = c2d(rocket.A_c, rocket.B_c, rocket.p_c, Δt) #noerr
+    A, B, p = c2d(rocket.A_c, rocket.B_c, rocket.p_c, Δt)
 
     # >> Make the optimization problem <<
     mdl = Model(with_optimizer(ECOS.Optimizer, verbose=0))
 
     # (Scaled) variables
-    #nolint: r_s, v_s, z_s, u_s, ξ_s
     @variable(mdl, r_s[1:3, 1:N])
     @variable(mdl, v_s[1:3, 1:N])
     @variable(mdl, z_s[1:N])
@@ -84,7 +77,6 @@ function solve_pdg_fft(rocket::Rocket, tf::RealValue)::Solution
     ξ = S_ξ*ξ_s+repeat([s_ξ],N-1)
 
     # Cost function
-    #nolint: Min
     @objective(mdl, Min, Δt*sum(ξ))
 
     # Dynamics
@@ -154,7 +146,7 @@ function solve_pdg_fft(rocket::Rocket, tf::RealValue)::Solution
     sol = Solution(t,r,v,z,u,ξ,cost,T,T_nrm,m,γ)
 
     return sol
-end # function
+end
 
 """
     optimal_controller(t, x, sol)
@@ -194,7 +186,7 @@ function optimal_controller(t::RealValue,
     u = RealVector(vcat(T/m, norm(T, 2)/m))
 
     return u
-end # function
+end
 
 """
     simulate(rocket, control, tf)
@@ -221,7 +213,6 @@ function simulate(rocket::Rocket, sol::Solution)::Solution
     tf = sol.t[end]
     Δt = 1e-2
     t = collect(LinRange(0, tf, round(Int, tf/Δt)+1))
-    #nolint: rk4
     X = rk4(dynamics, x0, t; full=true)
     U = RealMatrix(hcat([control(t[k], X[:,k]) for k = 1:length(t)]...))
     N = length(t)
@@ -243,4 +234,4 @@ function simulate(rocket::Rocket, sol::Solution)::Solution
     sim = Solution(t,r,v,z,u,ξ,0.0,T,T_nrm,m,γ)
 
     return sim
-end # function
+end

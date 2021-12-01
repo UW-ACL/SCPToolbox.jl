@@ -15,11 +15,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("definition.jl")
-    include("plots.jl")
-end
-
 using ECOS
 using Test
 
@@ -80,4 +75,4 @@ function ptr()::Nothing
     plot_convergence(history, "rendezvous_planar")
 
     return nothing
-end # function
+end

@@ -16,15 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("general.jl")
-    include("cone.jl")
-    include("argument.jl")
-    include("function.jl")
-    include("constraint.jl")
-    include("cost.jl")
-end
-
 import Base: copy
 import JuMP: termination_status, solve_time, objective_value
 
@@ -109,7 +100,7 @@ mutable struct ConicProgram <: AbstractConicProgram
         add_cost!(prog, feasibility_cost, [], []; new=true)
 
         return prog
-    end # function
+    end
 end # struct
 
 # ..:: Methods ::..
@@ -143,7 +134,7 @@ function deconflict_name(new_name::String,
         new_name = @sprintf("%s%d", new_name, duplicate_count)
     end
     return new_name
-end # function
+end
 
 """
     push!(prog, kind, shape[; name])
@@ -191,13 +182,13 @@ end
 function variable!(prog::ConicProgram, shape::Int...;
                    name::Types.Optional{String}=nothing)::ArgumentBlock
     push!(prog, VARIABLE, shape...; blk_name=name)
-end # function
+end
 
 """ Specialize `push!` for parameters. """
 function parameter!(prog::ConicProgram, shape::Int...;
                     name::Types.Optional{String}=nothing)::ArgumentBlock
     push!(prog, PARAMETER, shape...; blk_name=name)
-end # function
+end
 
 """
     constraint!(prog, kind, f, x, p[; refname])
@@ -243,7 +234,7 @@ function constraint!(prog::ConicProgram,
     new_constraint = ConicConstraint(Axb, kind, prog; name=refname)
     push!(prog.constraints, new_constraint)
     return new_constraint
-end # function
+end
 
 """
     add_cost!(prog, J, x, p[, a][; new])
@@ -286,7 +277,7 @@ function add_cost!(prog::ConicProgram,
     end
 
     return new_term
-end # function
+end
 
 """
     new_argument(prog, shape, name, kind)
@@ -309,7 +300,7 @@ function new_argument(prog::ConicProgram,
     f = (kind==VARIABLE) ? variable! : parameter!
     shape = collect(shape)
     return f(prog, shape...; name=name)
-end # function
+end
 
 """ Check if this is a feasibility problem """
 is_feasibility(prog::ConicProgram)::Bool = prog._feasibility
@@ -349,7 +340,7 @@ function constraints(prg::ConicProgram,
             return prg.constraints
         end
     end
-end # function
+end
 
 """
     blocks(prg, kind[, ref])
@@ -391,7 +382,7 @@ function blocks(prg::ConicProgram, kind::Symbol,
             return z[:]
         end
     end
-end # function
+end
 
 """ Specialize `blocks` for variable and constant arguments. """
 variables(prg::ConicProgram, ref=-1) = blocks(prg, :x, ref)
@@ -416,7 +407,7 @@ function solve!(prg::ConicProgram)::MOI.TerminationStatusCode
     optimize!(mdl)
     status = termination_status(prg)
     return status
-end # function
+end
 
 """ Get the termination status of the underlying optimization problem. """
 termination_status(prog::ConicProgram)::MOI.TerminationStatusCode =
@@ -463,7 +454,7 @@ function copy(blk::ArgumentBlock{T},
     apply_scaling!(new_blk, scale(blk))
 
     return new_blk
-end # function
+end
 
 """
     adapt_macro_arguments(args)
@@ -502,7 +493,7 @@ function adapt_macro_arguments(args::NTuple{N, Expr})::NTuple{4, Expr} where N
         end
     end
     return x, p, f, J
-end # function
+end
 
 """
     generate_differentiable_function(f, J)
@@ -543,7 +534,7 @@ function generate_differentiable_function(feval::Expr, Jeval::Expr)::Expr
         end
     end
     return anon_func
-end # function
+end
 
 # ..:: Macros ::..
 

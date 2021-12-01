@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("basic_types.jl")
-end
-
 using Printf
 
 import Base: print, reset
@@ -75,7 +71,7 @@ mutable struct Table
         table = new(headings, sorting, fmt, row, head_print, colw)
 
         return table
-    end # function
+    end
 end # struct
 
 """
@@ -123,7 +119,7 @@ function add_table_column!(
     row = string(row, separator, "%-", col_width, "s")
 
     return row
-end # function
+end
 
 """
     print_hrule(table)
@@ -145,7 +141,7 @@ function print_hrule(table::Table)::Nothing
     println(hrule)
 
     return nothing
-end # function
+end
 
 """
     reset(table)
@@ -158,7 +154,7 @@ Reset table printing. This will make the column headings be printed again.
 function reset(table::Table)::Nothing
     table.__head_print = true
     return nothing
-end # function
+end
 
 """
     print(row, table)
@@ -190,7 +186,7 @@ function print(row::Dict{Symbol, T}, table::Table)::Nothing where {T}
     println()
 
     return nothing
-end # function
+end
 
 """
     improvement_percent(J_new, J_old)
@@ -220,4 +216,4 @@ function improvement_percent(J_new::RealTypes,
     end
 
     return ΔJ
-end # function
+end

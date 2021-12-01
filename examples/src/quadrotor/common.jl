@@ -186,7 +186,7 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
         end)
 
     return nothing
-end # function
+end
 
 function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 

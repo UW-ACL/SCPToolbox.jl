@@ -18,12 +18,6 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 module ScpTrajOpt
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("../utils/src/Utils.jl")
-    include("../parser/src/Parser.jl")
-    include("../solvers/src/Solvers.jl")
-end
-
 using Utils
 using Solvers
 using Parser

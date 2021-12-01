@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("program.jl")
-end
-
 """
     print_indices(id[, limit])
 
@@ -64,7 +60,7 @@ function print_indices(id::LocationIndices, limit::Int=3)::String
         ids = printarr(id)
     end
     return ids
-end # function
+end
 
 """
     print_array(io, z)
@@ -76,7 +72,7 @@ Print the value of an abstract array, which can be a variable vector.
 - `z`: the vector to be printed.
 """
 function print_array(io::IO, z::AbstractArray)::Nothing
-    compact = get(io, :compact, false) #noinfo
+    compact = get(io, :compact, false)
     io_value = IOBuffer()
     max_rows, max_cols = 10, 50
     indent = make_indent(io)
@@ -113,7 +109,7 @@ Pretty print the cone.
 - `z`: (optional) the string to use for the value constrained inside the cone.
 """
 function Base.show(io::IO, cone::ConvexCone; z::String="z")::Nothing
-    compact = get(io, :compact, false) #noinfo
+    compact = get(io, :compact, false)
 
     if kind(cone)==UNCONSTRAINED
         @printf(io, "Unconstrained %s\n", z)
@@ -140,7 +136,7 @@ function Base.show(io::IO, cone::ConvexCone; z::String="z")::Nothing
     end
 
     return nothing
-end # function
+end
 
 """
 Get string description of the kind of function this is.
@@ -150,7 +146,7 @@ function function_kind(F::ProgramFunction)::String
     quadratic_type = Union{Types.QExpr, AbstractArray{Types.QExpr}}
     kind = (value_type<:quadratic_type) ? "Quadratic" : "Affine"
     return kind
-end # function
+end
 
 
 """
@@ -161,7 +157,7 @@ function function_kind(F::FunctionLinearCombination)::String
     kinds = [function_kind(f) for f in F.f]
     kind = any(kinds.=="Quadratic") ? "Quadratic" : "Affine"
     return kind
-end # function
+end
 
 """
     show(io, F)
@@ -173,7 +169,7 @@ Pretty print an affine function.
 - `F`: the affine function.
 """
 function Base.show(io::IO, F::ProgramFunction)::Nothing
-    compact = get(io, :compact, false) #noinfo
+    compact = get(io, :compact, false)
     indent = make_indent(io)
 
     @printf(io, "%s%s function\n", indent, function_kind(F))
@@ -205,7 +201,7 @@ function Base.show(io::IO, F::ProgramFunction)::Nothing
     end
 
     return nothing
-end # function
+end
 
 """
     show(io, F)
@@ -217,7 +213,7 @@ Pretty print the cost function.
 - `cost`: the cost function.
 """
 function Base.show(io::IO, cost::QuadraticCost)::Nothing
-    compact = get(io, :compact, false) #noinfo
+    compact = get(io, :compact, false)
 
     @printf(io, "Cost function composed of %d terms\n", length(cost.terms))
 
@@ -232,7 +228,7 @@ function Base.show(io::IO, cost::QuadraticCost)::Nothing
     end
 
     return nothing
-end # function
+end
 
 """
     show(io, f)
@@ -244,7 +240,7 @@ Pretty print a differentiable function object.
 - `f`: the differentiable function object.
 """
 function Base.show(io::IO, f::DifferentiableFunction)::Nothing
-    compact = get(io, :compact, false) #noinfo
+    compact = get(io, :compact, false)
 
     @printf(io, "Differentiable function:\n")
     @printf(io, "  %d variable arguments\n", f.xargs)
@@ -261,7 +257,7 @@ function Base.show(io::IO, f::DifferentiableFunction)::Nothing
     end
 
     return nothing
-end # function
+end
 
 """
     show(io, cone)
@@ -273,7 +269,7 @@ Pretty print a conic constraint.
 - `cone`: the affine function.
 """
 function Base.show(io::IO, cone::ConicConstraint)::Nothing
-    compact = get(io, :compact, false) #noinfo
+    compact = get(io, :compact, false)
 
     @printf(io, "Name: %s\n", name(cone))
 
@@ -284,7 +280,7 @@ function Base.show(io::IO, cone::ConicConstraint)::Nothing
     show(io2, cone.f)
 
     return nothing
-end # function
+end
 
 """
     show(io, cone)
@@ -296,7 +292,7 @@ Pretty print a conic constraint.
 - `cone`: the affine function.
 """
 function Base.show(io::IO, constraints::Constraints)::Nothing
-    compact = get(io, :compact, false) #noinfo
+    compact = get(io, :compact, false)
     indent = make_indent(io)
 
     @printf(io, "%s%d constraints", indent, length(constraints))
@@ -308,9 +304,9 @@ function Base.show(io::IO, constraints::Constraints)::Nothing
         cone_count[kind(constraint)] += 1
     end
     # Print out
-    for cone in instances(SupportedCone) #noinfo
-        count = cone_count[cone] #noinfo
-        name = CONE_NAMES[cone] #noinfo
+    for cone in instances(SupportedCone)
+        count = cone_count[cone]
+        name = CONE_NAMES[cone]
         if count>0
             @printf(io, "\n%s  %d %s cones", indent, count, name)
         end
@@ -318,14 +314,14 @@ function Base.show(io::IO, constraints::Constraints)::Nothing
 
     if !compact
         @printf("\n\n")
-        for cone in constraints #noinfo
+        for cone in constraints
             show(io, cone)
             @printf(io, "\n")
         end
     end
 
     return nothing
-end # function
+end
 
 """
     show(io, sc)
@@ -337,7 +333,7 @@ Pretty print the argument block scaling.
 - `sc`: the scaling object.
 """
 function Base.show(io::IO, sc::Scaling)::Nothing
-    compact = get(io, :compact, false) #noinfo
+    compact = get(io, :compact, false)
     this_indent = get(io, :indent, 0)
     indent = make_indent(io)
 
@@ -375,7 +371,7 @@ function Base.show(io::IO, sc::Scaling)::Nothing
     end
 
     return nothing
-end # function
+end
 
 """
     show(io, pert)
@@ -387,7 +383,7 @@ Pretty print the argument block perturbation.
 - `pert`: the perturbation object.
 """
 function Base.show(io::IO, pert::Perturbation)::Nothing
-    compact = get(io, :compact, false) #noinfo
+    compact = get(io, :compact, false)
     this_indent = get(io, :indent, 0)
     indent = make_indent(io)
 
@@ -432,7 +428,7 @@ function Base.show(io::IO, pert::Perturbation)::Nothing
     end
 
     return nothing
-end # function
+end
 
 """
     show(io, arg)
@@ -444,7 +440,7 @@ Pretty print an argument block.
 - `blk`: the argument block.
 """
 function Base.show(io::IO, blk::ArgumentBlock{T})::Nothing where T
-    compact = get(io, :compact, false) #noinfo
+    compact = get(io, :compact, false)
 
     isvar = T==AtomicVariable
     dim = ndims(blk)
@@ -474,7 +470,7 @@ function Base.show(io::IO, blk::ArgumentBlock{T})::Nothing where T
     print_array(io2, blk.value)
 
     return nothing
-end # function
+end
 
 """
     show(io, arg)
@@ -486,7 +482,7 @@ Pretty print an argument.
 - `arg`: argument structure.
 """
 function Base.show(io::IO, arg::Argument{T})::Nothing where {T<:AtomicArgument}
-    compact = get(io, :compact, false) #noinfo
+    compact = get(io, :compact, false)
 
     isvar = T<:AtomicVariable
     kind = isvar ? "Variable" : "Parameter"
@@ -515,7 +511,7 @@ function Base.show(io::IO, arg::Argument{T})::Nothing where {T<:AtomicArgument}
     end
 
     return nothing
-end # function
+end
 
 """
     show(io, prog)
@@ -527,7 +523,7 @@ Pretty print the conic program.
 - `prog`: the conic program data structure.
 """
 function Base.show(io::IO, prog::ConicProgram)::Nothing
-    compact = get(io, :compact, false) #noinfo
+    compact = get(io, :compact, false)
 
     @printf(io, "Conic linear program\n\n")
     if is_feasibility(prog)
@@ -554,7 +550,7 @@ function Base.show(io::IO, prog::ConicProgram)::Nothing
     end
 
     return nothing
-end # function
+end
 
 """
     show(io, mime, obj)

@@ -16,12 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-LangServer = isdefined(@__MODULE__, :LanguageServer)
-
-if LangServer
-    include("general.jl")
-end
-
 # ..:: Data structures ::..
 
 """
@@ -81,7 +75,7 @@ mutable struct DLTV
         dyn = new(A, B, F, r, E, method, timing)
 
         return dyn
-    end # function
+    end
 end # struct
 
 """
@@ -141,7 +135,7 @@ struct DiscretizationIndices
         idcs = new(id_x, id_A, id_B, id_S, id_r, id_E, id_sz)
 
         return idcs
-    end # function
+    end
 end # struct
 
 # ..:: Methods ::..
@@ -216,7 +210,7 @@ function discretize!(
     ref.dyn.timing = (get_time()-ref.dyn.timing)/1e9
 
     return nothing
-end # function
+end
 
 """
     derivs_foh(t, V, k, pbm, ref)
@@ -246,7 +240,7 @@ function derivs_foh(t::RealTypes,
     # Get current values
     idcs = pbm.common.id
     x = V[idcs.x]
-    u = linterp(t, ref.ud[:, k:k+1], t_span) #noerr
+    u = linterp(t, ref.ud[:, k:k+1], t_span)
     p = ref.p
     Phi = reshape(V[idcs.A], (nx, nx))
     σ_m = (t_span[2]-t)/(t_span[2]-t_span[1])
@@ -276,7 +270,7 @@ function derivs_foh(t::RealTypes,
             vec(dFdt); drdt; vec(dEdt)]
 
     return dVdt
-end # function
+end
 
 """
     derivs_impulse(t, V, k, pbm, ref)
@@ -328,7 +322,7 @@ function derivs_impulse(t::RealTypes,
     dVdt = [f; vec(dPhidt); vec(dFdt); drdt; vec(dEdt)]
 
     return dVdt
-end # function
+end
 
 """
     set_update_matrices(ref, V, k, pbm)
@@ -391,7 +385,7 @@ function set_update_matrices(
     dyn.E[:, :, k] = E_k
 
     return nothing
-end # function
+end
 
 """
     state_update(k, x, u, p, v, dyn)
@@ -429,14 +423,14 @@ function state_update!(k::Int, x::VarArgBlk, u::VarArgBlk, p::VarArgBlk,
             @add_constraint(
                 prg, ZERO, "dynamics",
                 (xkp1, xk, uk, ukp1, p), begin # Value
-                    local xkp1, xk, uk, ukp1, p = arg #noerr
+                    local xkp1, xk, uk, ukp1, p = arg
                     xkp1-(A*xk+B[1]*uk+B[2]*ukp1+F*p+r)
                 end)
         else
             @add_constraint(
                 prg, ZERO, "dynamics",
                 (xkp1, xk, uk, ukp1, p, vdk), begin # Value
-                    local xkp1, xk, uk, ukp1, p, vdk = arg #noerr
+                    local xkp1, xk, uk, ukp1, p, vdk = arg
                     xkp1-(A*xk+B[1]*uk+B[2]*ukp1+F*p+r+E*vdk)
                 end)
         end
@@ -446,21 +440,21 @@ function state_update!(k::Int, x::VarArgBlk, u::VarArgBlk, p::VarArgBlk,
             @add_constraint(
                 prg, ZERO, "dynamics",
                 (xkp1, xk, uk, p), begin # Value
-                    local xkp1, xk, uk, p = arg #noerr
+                    local xkp1, xk, uk, p = arg
                     xkp1-(A*xk+B[1]*uk+F*p+r)
                 end)
         else
             @add_constraint(
                 prg, ZERO, "dynamics",
                 (xkp1, xk, uk, p, vdk), begin # Value
-                    local xkp1, xk, uk, p, vdk = arg #noerr
+                    local xkp1, xk, uk, p, vdk = arg
                     xkp1-(A*xk+B[1]*uk+F*p+r+E*vdk)
                 end)
         end
     end
 
     return nothing
-end # function
+end
 
 """
     propagate(sol, pbm[; res])
@@ -524,4 +518,4 @@ function propagate(sol::SCPSubproblemSolution,
     end
 
     return xc
-end # function
+end

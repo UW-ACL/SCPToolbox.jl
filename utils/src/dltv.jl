@@ -16,10 +16,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-if isdefined(@__MODULE__, :LanguageServer)
-    include("basic_types.jl")
-end
-
 export DLTV
 
 """ Discrete-time linear time-varying system, with virtual control. """
@@ -60,5 +56,5 @@ mutable struct DLTV
         dyn = new(A, Bm, Bp, F, r, E, timing)
 
         return dyn
-    end # function
+    end
 end # struct
