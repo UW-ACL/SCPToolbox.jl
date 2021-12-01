@@ -1,4 +1,4 @@
-#= PTR algorithm data structures and methods.
+""" PTR algorithm data structures and methods.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington)
@@ -13,7 +13,7 @@ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with
-this program.  If not, see <https://www.gnu.org/licenses/>. =#
+this program.  If not, see <https://www.gnu.org/licenses/>. """
 
 using LinearAlgebra
 using JuMP
@@ -41,7 +41,7 @@ const OptVarArgBlk = Optional{VarArgBlk}
 
 export Parameters, create, solve
 
-#= Structure holding the PTR algorithm parameters. =#
+""" Structure holding the PTR algorithm parameters. """
 mutable struct Parameters <: SCPParameters
     N::Int               # Number of temporal grid nodes
     Nsub::Int            # Number of subinterval integration time nodes
@@ -58,7 +58,7 @@ mutable struct Parameters <: SCPParameters
     solver_opts::Dict{String, Any} # Numerical solver options
 end # struct
 
-#= PTR subproblem solution. =#
+""" PTR subproblem solution. """
 mutable struct SubproblemSolution <: SCPSubproblemSolution
     iter::Int             # PTR iteration number
     # >> Discrete-time rajectory <<
@@ -89,7 +89,7 @@ mutable struct SubproblemSolution <: SCPSubproblemSolution
     bay::Dict             # Storage bay for user-set values during callback
 end # struct
 
-#= Subproblem definition in JuMP format for the convex numerical optimizer. =#
+""" Subproblem definition in JuMP format for the convex numerical optimizer. """
 mutable struct Subproblem <: SCPSubproblem
     iter::Int            # PTR iteration number
     prg::ConicProgram    # The optimization problem object
@@ -121,14 +121,18 @@ mutable struct Subproblem <: SCPSubproblem
     timing::Dict{Symbol, RealTypes} # Runtime profiling
 end # struct
 
-#= Construct the PTR problem definition.
+"""
+    create(pars, traj)
 
-Args:
-    pars: PTR algorithm parameters.
-    traj: the underlying trajectory optimization problem.
+Construct the PTR problem definition.
 
-Returns:
-    pbm: the problem structure ready for being solved by PTR. =#
+# Arguments
+- `pars`: PTR algorithm parameters.
+- `traj`: the underlying trajectory optimization problem.
+
+# Returns
+- `pbm`: the problem structure ready for being solved by PTR.
+"""
 function create(pars::Parameters,
                 traj::TrajectoryProblem)::SCPProblem
 
@@ -177,18 +181,22 @@ function create(pars::Parameters,
     return pbm
 end
 
-#= Constructor for an empty convex optimization subproblem.
+"""
+    Subproblem(pbm, iter[, ref])
+
+Constructor for an empty convex optimization subproblem.
 
 No cost or constraints. Just the decision variables and empty associated
 parameters.
 
-Args:
-    pbm: the PTR problem being solved.
-    iter: PTR iteration number.
-    ref: (optional) the reference trajectory.
+# Arguments
+- `pbm`: the PTR problem being solved.
+- `iter`: PTR iteration number.
+- `ref`: (optional) the reference trajectory.
 
-Returns:
-    spbm: the subproblem structure. =#
+# Returns
+- `spbm`: the subproblem structure.
+"""
 function Subproblem(pbm::SCPProblem, iter::Int,
                     ref::Union{SubproblemSolution,
                                Missing}=missing)::Subproblem
@@ -249,20 +257,24 @@ function Subproblem(pbm::SCPProblem, iter::Int,
     return spbm
 end
 
-#= Construct a subproblem solution from a discrete-time trajectory.
+"""
+    SubproblemSolution(x, u, p, iter, pbm)
+
+Construct a subproblem solution from a discrete-time trajectory.
 
 This leaves parameters of the solution other than the passed discrete-time
 trajectory unset.
 
-Args:
-    x: discrete-time state trajectory.
-    u: discrete-time input trajectory.
-    p: parameter vector.
-    iter: PTR iteration number.
-    pbm: the PTR problem definition.
+# Arguments
+- `x`: discrete-time state trajectory.
+- `u`: discrete-time input trajectory.
+- `p`: parameter vector.
+- `iter`: PTR iteration number.
+- `pbm`: the PTR problem definition.
 
-Returns:
-    subsol: subproblem solution structure. =#
+# Returns
+- `subsol`: subproblem solution structure.
+"""
 function SubproblemSolution(
     x::RealMatrix,
     u::RealMatrix,
@@ -313,16 +325,20 @@ function SubproblemSolution(
     return subsol
 end
 
-#= Construct subproblem solution from a subproblem object.
+"""
+    SubproblemSolution(spbm)
+
+Construct subproblem solution from a subproblem object.
 
 Expects that the subproblem argument is a solved subproblem (i.e. one to which
 numerical optimization has been applied).
 
-Args:
-    spbm: the subproblem structure.
+# Arguments
+- `spbm`: the subproblem structure.
 
-Returns:
-    sol: subproblem solution. =#
+# Returns
+- `sol`: subproblem solution.
+"""
 function SubproblemSolution(spbm::Subproblem)::SubproblemSolution
     # Extract the discrete-time trajectory
     x = value(spbm.x)
@@ -359,7 +375,7 @@ function SubproblemSolution(spbm::Subproblem)::SubproblemSolution
 end
 
 """
-    ptr_solve(pbm[, hot])
+    ptr_solve(pbm[, warm])
 
 Solve the optimal control problem using the penalized trust region (PTR)
 method.
@@ -458,16 +474,20 @@ function solve(pbm::SCPProblem,
     return sol, history
 end
 
-#= Compute the initial trajectory guess.
+"""
+    generate_initial_guess(pbm)
+
+Compute the initial trajectory guess.
 
 Construct the initial trajectory guess. Calls problem-specific initial guess
 generator, which is converted to an SubproblemSolution structure.
 
-Args:
-    pbm: the PTR problem structure.
+# Arguments
+- `pbm`: the PTR problem structure.
 
-Returns:
-    guess: the initial guess. =#
+# Returns
+- `guess`: the initial guess.
+"""
 function generate_initial_guess(
     pbm::SCPProblem)::SubproblemSolution
 
@@ -491,7 +511,7 @@ Create initial guess from a warm start solution.
 - `guess`: the initial guess for PTR.
 """
 function warm_start(pbm::SCPProblem,
-                          warm::SCPSolution)::SubproblemSolution
+                    warm::SCPSolution)::SubproblemSolution
 
     # Extract the warm-start trajectory
     x, u, p = warm.xd, warm.ud, warm.p
@@ -500,10 +520,14 @@ function warm_start(pbm::SCPProblem,
     return guess
 end
 
-#= Add trust region constraint to the subproblem.
+"""
+    add_trust_region!(spbm)
 
-Args:
-    spbm: the subproblem definition. =#
+Add trust region constraint to the subproblem.
+
+# Arguments
+- `spbm`: the subproblem definition.
+"""
 function add_trust_region!(spbm::Subproblem)::Nothing
 
     # Variables and parameters
@@ -624,10 +648,14 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     return nothing
 end
 
-#= Define the subproblem cost function.
+"""
+    add_cost!(spbm)
 
-Args:
-    spbm: the subproblem definition. =#
+Define the subproblem cost function.
+
+# Arguments
+- `spbm`: the subproblem definition.
+"""
 function add_cost!(spbm::Subproblem)::Nothing
 
     # Compute the cost components
@@ -641,7 +669,7 @@ function add_cost!(spbm::Subproblem)::Nothing
 end
 
 """
-    original_cost(x, u, p, pbm)
+    compute_original_cost!(spbm)
 
 Compute the original problem cost function.
 
@@ -700,10 +728,14 @@ function compute_original_cost!(spbm::Subproblem)::Nothing
     return nothing
 end
 
-#= Compute the subproblem cost trust region penalty term.
+"""
+    compute_trust_region_penalty!(spbm)
 
-Args:
-    spbm: the subproblem definition. =#
+Compute the subproblem cost trust region penalty term.
+
+# Arguments
+- `spbm`: the subproblem definition.
+"""
 function compute_trust_region_penalty!(spbm::Subproblem)::Nothing
 
     # Variables and parameters
@@ -724,10 +756,14 @@ function compute_trust_region_penalty!(spbm::Subproblem)::Nothing
     return nothing
 end
 
-#= Compute the subproblem cost virtual control penalty term.
+"""
+    compute_virtual_control_penalty!(spbm)
 
-Args:
-    spbm: the subproblem definition. =#
+Compute the subproblem cost virtual control penalty term.
+
+# Arguments
+- `spbm`: the subproblem definition.
+"""
 function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
 
     # Variables and parameters
@@ -816,13 +852,17 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
     return nothing
 end
 
-#= Check if stopping criterion is triggered.
+"""
+    check_stopping_criterion!(spbm)
 
-Args:
-    spbm: the subproblem definition.
+Check if stopping criterion is triggered.
 
-Returns:
-    stop: true if stopping criterion holds. =#
+# Arguments
+- `spbm`: the subproblem definition.
+
+# Returns
+- `stop`: true if stopping criterion holds.
+"""
 function check_stopping_criterion!(spbm::Subproblem)::Bool
 
     # Extract values
@@ -847,11 +887,15 @@ function check_stopping_criterion!(spbm::Subproblem)::Bool
     return stop
 end
 
-#= Print command line info message.
+"""
+    print_info(spbm[, err])
 
-Args:
-    spbm: the subproblem that was solved.
-    err: an PTR-specific error message. =#
+Print command line info message.
+
+# Arguments
+- `spbm`: the subproblem that was solved.
+- `err`: an PTR-specific error message.
+"""
 function print_info(spbm::Subproblem,
                     err::Union{Nothing, SCPError}=nothing)::Nothing
 

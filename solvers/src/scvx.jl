@@ -16,9 +16,14 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-include("scp.jl")
+using LinearAlgebra
+using JuMP
+using Printf
 
-""" Structure holding the SCvx algorithm parameters."""
+using Utils
+using Parser
+
+""" Structure holding the SCvx algorithm parameters. """
 struct SCvxParameters <: SCPParameters
     N::T_Int          # Number of temporal grid nodes
     Nsub::T_Int       # Number of subinterval integration time nodes
@@ -41,7 +46,7 @@ struct SCvxParameters <: SCPParameters
     solver_opts::Dict{T_String, Any} # Numerical solver options
 end
 
-""" SCvx subproblem solution."""
+""" SCvx subproblem solution. """
 mutable struct SCvxSubproblemSolution <: SCPSubproblemSolution
     iter::T_Int          # SCvx iteration number
     # >> Discrete-time rajectory <<
@@ -74,7 +79,7 @@ mutable struct SCvxSubproblemSolution <: SCPSubproblemSolution
     dyn::T_DLTV          # The dynamics
 end
 
-""" Subproblem definition in JuMP format for the convex numerical optimizer."""
+""" Subproblem definition in JuMP format for the convex numerical optimizer. """
 mutable struct SCvxSubproblem <: SCPSubproblem
     iter::T_Int          # SCvx iteration number
     mdl::Model           # The optimization problem handle
