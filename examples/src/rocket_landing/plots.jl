@@ -360,7 +360,7 @@ function plot_pointing_angle(rocket::Rocket, sol::Solution,
 
     ax = setup_axis!(111,
                      xlabel="Time [s]",
-                     ylabel="Mass [t]",
+                     ylabel="Pointing angle [\$^{\\circ}\$]",
                      tight="both")
 
     # Mass bounds
