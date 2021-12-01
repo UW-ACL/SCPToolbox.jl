@@ -3,3 +3,4 @@
 /.ipynb_checkpoints/*
 /sandbox/*
 !/figures/.gitkeep
+!/figures/logo.png
