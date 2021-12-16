@@ -23,40 +23,46 @@ include("double_integrator/parameters.jl")
 include("double_integrator/definition.jl")
 include("double_integrator/plots.jl")
 include("double_integrator/tests.jl")
-end # module
+end
 
 module RocketLanding
 include("rocket_landing/parameters.jl")
 include("rocket_landing/definition.jl")
 include("rocket_landing/plots.jl")
 include("rocket_landing/tests.jl")
-end # module
+end
+
+module Quadrotor
+include("quadrotor/parameters.jl")
+include("quadrotor/definition.jl")
+include("quadrotor/plots.jl")
+include("quadrotor/tests.jl")
+end
 
 module Oscillator
 include("oscillator/parameters.jl")
 include("oscillator/definition.jl")
 include("oscillator/plots.jl")
-include("oscillator/tests.jl")
-end # module
+end
 
 module RendezvousPlanar
 include("rendezvous_planar/parameters.jl")
 include("rendezvous_planar/definition.jl")
 include("rendezvous_planar/plots.jl")
-end # module
+end
 
 module Rendezvous3D
 include("rendezvous_3d/parameters.jl")
 include("rendezvous_3d/definition.jl")
 include("rendezvous_3d/plots.jl")
 include("rendezvous_3d/tests.jl")
-end #module
+end
 
 module Starship
 include("starship_flip/parameters.jl")
 include("starship_flip/definition.jl")
 include("starship_flip/plots.jl")
 include("starship_flip/tests.jl")
-end #module
+end
 
-end # module
+end

@@ -476,6 +476,32 @@ function compute_scaling(
 end
 
 """
+    warm_start(pbm, warm)
+
+Create initial guess from a warm start solution.
+
+# Arguments
+- `pbm`: the PTR problem structure.
+- `warm`: warm start solution.
+
+# Returns
+- `guess`: the initial guess for PTR.
+"""
+function warm_start(
+        pbm::SCPProblem,
+        warm::SCPSolution
+)::T where {
+        T<:SCPSubproblemSolution
+            }
+
+    # Extract the warm-start trajectory
+    x, u, p = warm.xd, warm.ud, warm.p
+    guess = SubproblemSolution(x, u, p, 0, pbm)
+
+    return guess
+end
+
+"""
     add_dynamics!(spbm[; relaxed])
 
 Add dynamics constraints to the problem.

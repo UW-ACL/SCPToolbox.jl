@@ -37,7 +37,7 @@ include("trajectory.jl")
 include("homotopy.jl")
 include("table.jl")
 include("tree.jl")
-end # module
+end
 
 using .Types
 export Quaternion, dcm, rpy, slerp_interpolate, rotate, Log, skew, ddq
@@ -52,4 +52,4 @@ include("helper.jl")
 include("plots.jl")
 include("scene_3d.jl")
 
-end # module
+end

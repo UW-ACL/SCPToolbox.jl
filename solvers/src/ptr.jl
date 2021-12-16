@@ -28,6 +28,7 @@ import ..ST, ..RealTypes, ..IntRange, ..RealVector, ..RealMatrix, ..Trajectory,
 import ..SCPParameters, ..SCPSubproblem, ..SCPSubproblemSolution, ..SCPProblem,
     ..SCPSolution, ..SCPHistory
 
+import ..warm_start
 import ..discretize!
 import ..add_dynamics!, ..add_convex_state_constraints!,
     ..add_convex_input_constraints!, ..add_nonconvex_constraints!, ..add_bcs!
@@ -89,7 +90,7 @@ mutable struct SubproblemSolution <: SCPSubproblemSolution
     bay::Dict             # Storage bay for user-set values during callback
 end # struct
 
-""" Subproblem definition in JuMP format for the convex numerical optimizer. """
+""" Subproblem definition for the convex numerical optimizer. """
 mutable struct Subproblem <: SCPSubproblem
     iter::Int            # PTR iteration number
     prg::ConicProgram    # The optimization problem object
@@ -224,6 +225,7 @@ function Subproblem(pbm::SCPProblem, iter::Int,
 
     sol = missing # No solution associated yet with the subproblem
 
+    # Cost
     J = missing
     J_tr = missing
     J_vc = missing
@@ -314,10 +316,11 @@ function SubproblemSolution(
     J_aug = NaN
     J_aug = NaN
 
-    subsol = SubproblemSolution(iter, x, u, p, vd, vs, vic, vtc, J,
-                                J_tr, J_vc, J_aug, ηx, ηu, ηp, status,
-                                feas, defect, deviation, improv_rel,
-                                unsafe, dyn, bay)
+    subsol = SubproblemSolution(
+        iter, x, u, p, vd, vs, vic, vtc, J, J_tr, J_vc, J_aug,
+        ηx, ηu, ηp, status, feas, defect, deviation, improv_rel,
+        unsafe, dyn, bay
+    )
 
     # Compute the DLTV dynamics around this solution
     discretize!(subsol, pbm)
@@ -499,28 +502,6 @@ function generate_initial_guess(
 end
 
 """
-    warm_start(pbm, warm)
-
-Create initial guess from a warm start solution.
-
-# Arguments
-- `pbm`: the PTR problem structure.
-- `warm`: warm start solution.
-
-# Returns
-- `guess`: the initial guess for PTR.
-"""
-function warm_start(pbm::SCPProblem,
-                    warm::SCPSolution)::SubproblemSolution
-
-    # Extract the warm-start trajectory
-    x, u, p = warm.xd, warm.ud, warm.p
-    guess = SubproblemSolution(x, u, p, 0, pbm)
-
-    return guess
-end
-
-"""
     add_trust_region!(spbm)
 
 Add trust region constraint to the subproblem.
@@ -695,7 +676,8 @@ function compute_original_cost!(spbm::Subproblem)::Nothing
     u_stages = [u[:, k] for k=1:N]
 
     spbm.J = @add_cost(
-        prg, (x_stages..., u_stages..., p), begin
+        prg, (x_stages..., u_stages..., p),
+        begin
             local x = arg[1:N]
             local u = arg[(1:N).+N]
             local p = arg[end]
@@ -723,7 +705,8 @@ function compute_original_cost!(spbm::Subproblem)::Nothing
             local integ_J_run = trapz(J_run, t)
 
             J_term+integ_J_run
-        end)
+        end
+    )
 
     return nothing
 end

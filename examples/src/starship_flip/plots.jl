@@ -1,4 +1,5 @@
-#= Starship landing plots.
+"""
+Starship landing plots.
 
 Disclaimer: the data in this example is obtained entirely from publicly
 available information, e.g. on reddit.com/r/spacex, nasaspaceflight.com, and
@@ -18,21 +19,27 @@ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with
-this program.  If not, see <https://www.gnu.org/licenses/>. =#
+this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
 
 using PyPlot
 using Colors
 
 using Solvers
 
-""" Plot the trajectory evolution through SCP iterations.
+"""
+    plot_trajectory_history(mdl, history)
+
+Plot the trajectory evolution through SCP iterations.
 
 Args:
-    mdl: the quadrotor problem parameters.
-    history: SCP iteration data history.
+- `mdl`: the quadrotor problem parameters.
+- `history`: SCP iteration data history.
 """
-function plot_trajectory_history(mdl::StarshipProblem,
-                                 history::SCPHistory)::Nothing
+function plot_trajectory_history(
+        mdl::StarshipProblem,
+        history::SCPHistory
+)::Nothing
 
     # Common values
     num_iter = length(history.subproblems)

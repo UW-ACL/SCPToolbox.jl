@@ -1,4 +1,5 @@
-#= Quadrotor obstacle avoidance data structures and custom methods.
+"""
+Quadrotor obstacle avoidance plots.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
@@ -14,131 +15,27 @@ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with
-this program.  If not, see <https://www.gnu.org/licenses/>. =#
-
-include("../core/scp.jl")
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-""" Quadrotor vehicle parameters. """
-struct QuadrotorParameters
-    id_r::T_IntRange # Position indices of the state vector
-    id_v::T_IntRange # Velocity indices of the state vector
-    id_u::T_IntRange # Indices of the thrust input vector
-    id_σ::T_Int      # Index of the slack input
-    id_t::T_Int      # Index of time dilation
-    u_max::T_Real    # [N] Maximum thrust
-    u_min::T_Real    # [N] Minimum thrust
-    tilt_max::T_Real # [rad] Maximum tilt
-end
-
-""" Quadrotor flight environment. """
-struct QuadrotorEnvironmentParameters
-    g::T_RealVector          # [m/s^2] Gravity vector
-    obs::Vector{T_Ellipsoid} # Obstacles (ellipsoids)
-    n_obs::T_Int             # Number of obstacles
-end
-
-""" Trajectory parameters. """
-struct QuadrotorTrajectoryParameters
-    r0::T_RealVector # Initial position
-    rf::T_RealVector # Terminal position
-    v0::T_RealVector # Initial velocity
-    vf::T_RealVector # Terminal velocity
-    tf_min::T_Real   # Minimum flight time
-    tf_max::T_Real   # Maximum flight time
-    γ::T_Real        # Minimum-time vs. minimum-energy tradeoff
-end
-
-""" Quadrotor trajectory optimization problem parameters all in one. """
-struct QuadrotorProblem
-    vehicle::QuadrotorParameters        # The ego-vehicle
-    env::QuadrotorEnvironmentParameters # The environment
-    traj::QuadrotorTrajectoryParameters # The trajectory
-end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-""" Constructor for the environment.
-
-# Arguments
-- `gnrm`: gravity vector norm.
-- `obs`: array of obstacles (ellipsoids).
-
-# Returns
-- `env`: the environment struct.
+this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-function QuadrotorEnvironmentParameters(
-    gnrm::T_Real,
-    obs::Vector{T_Ellipsoid})::QuadrotorEnvironmentParameters
 
-    # Derived values
-    g = zeros(3)
-    g[end] = -gnrm
-    n_obs = length(obs)
+using PyPlot
+using Colors
 
-    env = QuadrotorEnvironmentParameters(g, obs, n_obs)
+using Solvers
 
-    return env
-end
-
-""" Constructor for the quadrotor problem.
-
-# Returns
-- `mdl`: the quadrotor problem.
 """
-function QuadrotorProblem()::QuadrotorProblem
+    plot_trajectory_history(mdl, history)
 
-    # >> Quadrotor <<
-    id_r = 1:3
-    id_v = 4:6
-    id_u = 1:3
-    id_σ = 4
-    id_t = 1
-    u_max = 23.2
-    u_min = 0.6
-    tilt_max = deg2rad(60)
-    quad = QuadrotorParameters(id_r, id_v, id_u, id_σ, id_t,
-                               u_max, u_min, tilt_max)
-
-    # >> Environment <<
-    g = 9.81
-    obs = [T_Ellipsoid(diagm([2.0; 2.0; 0.0]), [1.0; 2.0; 0.0]),
-           T_Ellipsoid(diagm([1.5; 1.5; 0.0]), [2.0; 5.0; 0.0])]
-    env = QuadrotorEnvironmentParameters(g, obs)
-
-    # >> Trajectory <<
-    r0 = zeros(3)
-    rf = zeros(3)
-    rf[1:2] = [2.5; 6.0]
-    v0 = zeros(3)
-    vf = zeros(3)
-    tf_min = 0.0
-    tf_max = 2.5
-    γ = 0.0
-    traj = QuadrotorTrajectoryParameters(r0, rf, v0, vf, tf_min, tf_max, γ)
-
-    mdl = QuadrotorProblem(quad, env, traj)
-
-    return mdl
-end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-""" Plot the trajectory evolution through SCP iterations.
+Plot the trajectory evolution through SCP iterations.
 
 # Arguments
 - `mdl`: the quadrotor problem parameters.
 - `history`: SCP iteration data history.
 """
-function plot_trajectory_history(mdl::QuadrotorProblem,
-                                 history::SCPHistory)::Nothing
+function plot_trajectory_history(
+        mdl::QuadrotorProblem,
+        history::SCPHistory
+)::Nothing
 
     # Common values
     num_iter = length(history.subproblems)
@@ -208,20 +105,25 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
     return nothing
 end
 
-""" Plot the final converged trajectory.
+"""
+    plot_final_trajectory(mdl, sol)
+
+Plot the final converged trajectory.
 
 # Arguments
 - `mdl`: the quadrotor problem parameters.
 - `sol`: the trajectory solution.
 """
-function plot_final_trajectory(mdl::QuadrotorProblem,
-                               sol::SCPSolution)::Nothing
+function plot_final_trajectory(
+        mdl::QuadrotorProblem,
+        sol::SCPSolution
+)::Nothing
 
     # Common values
     algo = sol.algo
     dt_clr = get_colormap()(1.0)
     N = size(sol.xd, 2)
-    speed = [norm(@k(sol.xd[mdl.vehicle.id_v, :])) for k=1:N]
+    speed = [norm(sol.xd[mdl.vehicle.id_v, k]) for k=1:N]
     v_cmap = plt.get_cmap("inferno")
     v_nrm = matplotlib.colors.Normalize(vmin=minimum(speed),
                                         vmax=maximum(speed))
@@ -248,18 +150,18 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
     # ..:: Draw the final continuous-time position trajectory ::..
     # Collect the continuous-time trajectory data
     ct_res = 500
-    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
-    ct_pos = T_RealMatrix(undef, 2, ct_res)
-    ct_speed = T_RealVector(undef, ct_res)
+    ct_τ = RealArray(LinRange(0.0, 1.0, ct_res))
+    ct_pos = RealMatrix(undef, 2, ct_res)
+    ct_speed = RealVector(undef, ct_res)
     for k = 1:ct_res
-        xk = sample(sol.xc, @k(ct_τ))
-        @k(ct_pos) = xk[mdl.vehicle.id_r[1:2]]
-        @k(ct_speed) = norm(xk[mdl.vehicle.id_v])
+        xk = sample(sol.xc, ct_τ[k])
+        ct_pos[:, k] = xk[mdl.vehicle.id_r[1:2]]
+        ct_speed[k] = norm(xk[mdl.vehicle.id_v])
     end
 
     # Plot the trajectory
     for k = 1:ct_res-1
-        r, v = @k(ct_pos), @k(ct_speed)
+        r, v = ct_pos[:, k], ct_speed[k]
         x, y = r[1], r[2]
         ax.plot(x, y,
                 linestyle="none",
@@ -314,14 +216,19 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
     return nothing
 end
 
-""" Plot the acceleration input norm.
+"""
+    plot_input_norm(mdl, sol)
+
+Plot the acceleration input norm.
 
 # Arguments
-    mdl: the quadrotor problem parameters.
-    sol: the trajectory solution.
+- `mdl`: the quadrotor problem parameters.
+- `sol`: the trajectory solution.
 """
-function plot_input_norm(mdl::QuadrotorProblem,
-                         sol::SCPSolution)::Nothing
+function plot_input_norm(
+        mdl::QuadrotorProblem,
+        sol::SCPSolution
+)::Nothing
 
     # Common
     algo = sol.algo
@@ -349,10 +256,10 @@ function plot_input_norm(mdl::QuadrotorProblem,
 
     # ..:: Norm of acceleration vector (continuous-time) ::..
     ct_res = 500
-    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
+    ct_τ = RealArray(LinRange(0.0, 1.0, ct_res))
     ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
     ct_acc_vec = hcat([sample(sol.uc, τ)[mdl.vehicle.id_u] for τ in ct_τ]...)
-    ct_acc_nrm = T_RealVector([norm(@k(ct_acc_vec)) for k in 1:ct_res])
+    ct_acc_nrm = RealVector([norm(ct_acc_vec[:, k]) for k in 1:ct_res])
     ax.plot(ct_time, ct_acc_nrm,
             color=clr,
             linewidth=2)
@@ -360,7 +267,7 @@ function plot_input_norm(mdl::QuadrotorProblem,
     # ..:: Norm of acceleration vector (discrete-time) ::..
     time = sol.td*sol.p[mdl.vehicle.id_t]
     acc_vec = sol.ud[mdl.vehicle.id_u, :]
-    acc_nrm = T_RealVector([norm(@k(acc_vec)) for k in 1:size(acc_vec, 2)])
+    acc_nrm = RealVector([norm(acc_vec[:, k]) for k in 1:size(acc_vec, 2)])
     for visible in [true, false]
         ax.plot(visible ? time : [],
                 visible ? acc_nrm : [],
@@ -371,7 +278,7 @@ function plot_input_norm(mdl::QuadrotorProblem,
                 markersize=5,
                 markeredgewidth=0,
                 markerfacecolor=clr,
-                zorder=100-T_Int(!visible)*200,
+                zorder=100-Int(!visible)*200,
                 clip_on=!visible,
                 label=visible ? nothing : "\$\\|a\\|_2\$")
     end
@@ -401,14 +308,19 @@ function plot_input_norm(mdl::QuadrotorProblem,
     return nothing
 end
 
-""" Plot the acceleration input norm.
+"""
+    plot_tilt_angle(mdl, sol)
+
+Plot the acceleration input norm.
 
 # Arguments
     mdl: the quadrotor problem parameters.
     sol: the trajectory solution.
 """
-function plot_tilt_angle(mdl::QuadrotorProblem,
-                         sol::SCPSolution)::Nothing
+function plot_tilt_angle(
+        mdl::QuadrotorProblem,
+        sol::SCPSolution
+)::Nothing
 
     # Common
     algo = sol.algo
@@ -437,10 +349,10 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
 
     # ..:: Tilt angle (continuous-time) ::..
     ct_res = 500
-    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
+    ct_τ = RealArray(LinRange(0.0, 1.0, ct_res))
     ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
     _u = hcat([sample(sol.uc, τ)[mdl.vehicle.id_u] for τ in ct_τ]...)
-    ct_tilt = T_RealVector([acosd(@k(_u)[3]/norm(@k(_u))) for k in 1:ct_res])
+    ct_tilt = RealVector([acosd(_u[3, k]/norm(_u[:, k])) for k in 1:ct_res])
     ax.plot(ct_time, ct_tilt,
             color=clr,
             linewidth=2)
@@ -448,8 +360,7 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
     # ..:: Tilt angle (discrete-time) ::..
     time = sol.td*sol.p[mdl.vehicle.id_t]
     _u = sol.ud[mdl.vehicle.id_u, :]
-    tilt = T_RealVector([acosd(@k(_u)[3]/norm(@k(_u)))
-                         for k in 1:size(_u, 2)])
+    tilt = RealVector([acosd(_u[3, k]/norm(_u[:, k])) for k in 1:size(_u, 2)])
     ax.plot(time, tilt,
             linestyle="none",
             marker="o",

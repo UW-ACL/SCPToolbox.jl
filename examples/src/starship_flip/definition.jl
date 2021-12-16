@@ -30,31 +30,31 @@ using Parser
 
 const IntVector = Ty.IntRange
 
-# ..:: Method ::..
+# ..:: Methods ::..
 
 function define_problem!(pbm::TrajectoryProblem,
                          algo::Symbol)::Nothing
-    _common__set_dims!(pbm)
-    _common__set_scale!(pbm)
-    _common__set_cost!(pbm)
-    _common__set_dynamics!(pbm)
-    _common__set_convex_constraints!(pbm)
-    _common__set_nonconvex_constraints!(pbm, algo)
-    _common__set_bcs!(pbm)
+    set_dims!(pbm)
+    set_scale!(pbm)
+    set_cost!(pbm)
+    set_dynamics!(pbm)
+    set_convex_constraints!(pbm)
+    set_nonconvex_constraints!(pbm, algo)
+    set_bcs!(pbm)
 
-    _common__set_guess!(pbm)
+    set_guess!(pbm)
 
     return nothing
 end
 
-function _common__set_dims!(pbm::TrajectoryProblem)::Nothing
+function set_dims!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_dims!(pbm, 8, 3, 10)
 
     return nothing
 end
 
-function _common__set_scale!(pbm::TrajectoryProblem)::Nothing
+function set_scale!(pbm::TrajectoryProblem)::Nothing
 
     mdl = pbm.mdl
     veh = mdl.vehicle
@@ -431,14 +431,14 @@ function starship_initial_guess(
     return x_guess, u_guess, p_guess
 end
 
-function _common__set_guess!(pbm::TrajectoryProblem)::Nothing
+function set_guess!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_guess!(pbm, starship_initial_guess)
 
     return nothing
 end
 
-function _common__set_cost!(pbm::TrajectoryProblem)::Nothing
+function set_cost!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_terminal_cost!(
         pbm, (x, p, pbm) -> begin
@@ -536,7 +536,7 @@ function dynamics(t::RealValue,
     return f
 end
 
-function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
+function set_dynamics!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_dynamics!(
         pbm,
@@ -624,7 +624,7 @@ function _common__set_dynamics!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
+function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the state
     problem_set_X!(
@@ -691,11 +691,11 @@ function _common__set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
+function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                                              algo::Symbol)::Nothing
 
     # Return true if this is the temporal node where phase 1 ends
-    _common__phase_switch = (t, pbm) -> begin
+    phase_switch = (t, pbm) -> begin
         Δt = 1/(pbm.scp.N-1)
         τs = pbm.mdl.traj.τs
         tol = 1e-3
@@ -704,9 +704,9 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
     end
 
     # Return true if this is a phase 2 temporal node
-    _common__phase2 = (t, pbm) -> begin
+    phase2 = (t, pbm) -> begin
         τs = pbm.mdl.traj.τs
-        phase2 = _common__phase_switch(t, pbm) || t>τs
+        phase2 = phase_switch(t, pbm) || t>τs
         return phase2
     end
 
@@ -731,11 +731,11 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
             s[3] = δdot-veh.δdot_max
             s[4] = -veh.δdot_max-δdot
             s[5] = norm(r)*cos(traj.γ_gs)-dot(r, env.ey)
-            if _common__phase_switch(t, pbm)
+            if phase_switch(t, pbm)
                 s[(1:pbm.nx).+5] = p[veh.id_xs]-x
                 s[(1:pbm.nx).+(5+pbm.nx)] = x-p[veh.id_xs]
             end
-            if _common__phase2(t, pbm)
+            if phase2(t, pbm)
                 s[end-1] = θ-traj.θmax2
                 s[end] = -traj.θmax2-θ
             end
@@ -756,11 +756,11 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
             C[1, veh.id_δd] = -1.0
             C[2, veh.id_δd] = 1.0
             C[5, veh.id_r] = ∇nrm_r*cos(traj.γ_gs)-env.ey
-            if _common__phase_switch(t, pbm)
+            if phase_switch(t, pbm)
                 C[(1:pbm.nx).+5, :] = -I(pbm.nx)
                 C[(1:pbm.nx).+(5+pbm.nx), :] = I(pbm.nx)
             end
-            if _common__phase2(t, pbm)
+            if phase2(t, pbm)
                 C[end-1, veh.id_θ] = 1.0
                 C[end, veh.id_θ] = -1.0
             end
@@ -786,7 +786,7 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
             veh = pbm.mdl.vehicle
 
             G = zeros(_common_s_sz, pbm.np)
-            if _common__phase_switch(t, pbm)
+            if phase_switch(t, pbm)
                 G[(1:pbm.nx).+5, veh.id_xs] = I(pbm.nx)
                 G[(1:pbm.nx).+(5+pbm.nx), veh.id_xs] = -I(pbm.nx)
             end
@@ -797,7 +797,7 @@ function _common__set_nonconvex_constraints!(pbm::TrajectoryProblem,
     return nothing
 end
 
-function _common__set_bcs!(pbm::TrajectoryProblem)::Nothing
+function set_bcs!(pbm::TrajectoryProblem)::Nothing
 
     # Initial conditions
     problem_set_bc!(

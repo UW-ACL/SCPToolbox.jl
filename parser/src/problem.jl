@@ -1,4 +1,5 @@
-#= General trajectory problem data structures and methods.
+"""
+General trajectory problem data structures and methods.
 
 This acts as a "parser" interface to define a particular instance of the
 trajectory generation problem.
@@ -22,7 +23,8 @@ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with
-this program.  If not, see <https://www.gnu.org/licenses/>. =#
+this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
 
 using Utils
 

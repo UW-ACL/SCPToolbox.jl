@@ -20,7 +20,7 @@ using Printf
 using Test
 using Parser
 using Utils
-import Solvers
+using Solvers
 
 export ptr
 

@@ -66,7 +66,7 @@ Compute grid bin. Get which grid interval a real number belongs to.
 function get_interval(x::RealValue, grid::RealVector)::Int
     k = sum(x.>grid)
     if k==0
-	k = 1
+	    k = 1
     end
     return k
 end

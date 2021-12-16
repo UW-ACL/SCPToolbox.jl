@@ -24,16 +24,15 @@ include("discretization.jl")
 include("scp.jl")
 
 # ..:: SCvx algorithm ::..
-module PTR
+module SCvx
 include("scvx.jl")
-end # module
+end
 
 # ..:: GuSTO algorithm ::..
 # TODO
 
-# ..:: Penalized trust region algorithm ::..
 module PTR
 include("ptr.jl")
-end # module
+end
 
-end # module
+end
