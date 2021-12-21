@@ -30,7 +30,7 @@ import ..SCPParameters, ..SCPSubproblem, ..SCPSubproblemSolution, ..SCPProblem,
 
 import ..warm_start
 import ..discretize!
-import ..add_dynamics!, ..add_convex_state_constraints!,
+import ..compute_original_cost!, ..add_dynamics!, ..add_convex_state_constraints!,
     ..add_convex_input_constraints!, ..add_nonconvex_constraints!, ..add_bcs!
 import ..solve_subproblem!, ..solution_deviation, ..unsafe_solution,
     ..overhead!, ..save!, ..get_time
@@ -640,73 +640,11 @@ Define the subproblem cost function.
 function add_cost!(spbm::Subproblem)::Nothing
 
     # Compute the cost components
-    compute_original_cost!(spbm)
+    compute_original_cost!(spbm.J, spbm)
     compute_trust_region_penalty!(spbm)
     compute_virtual_control_penalty!(spbm)
 
     spbm.J_aug = cost(spbm.prg)
-
-    return nothing
-end
-
-"""
-    compute_original_cost!(spbm)
-
-Compute the original problem cost function.
-
-# Arguments
-- `spbm`: the subproblem definition.
-
-# Returns
-- `cost`: the original cost.
-"""
-function compute_original_cost!(spbm::Subproblem)::Nothing
-
-    # Variables and parameters
-    pbm = spbm.def
-    N = pbm.pars.N
-    t = pbm.common.t_grid
-    traj_pbm = pbm.traj
-    prg = spbm.prg
-    x = spbm.x
-    u = spbm.u
-    p = spbm.p
-
-    x_stages = [x[:, k] for k=1:N]
-    u_stages = [u[:, k] for k=1:N]
-
-    spbm.J = @add_cost(
-        prg, (x_stages..., u_stages..., p),
-        begin
-            local x = arg[1:N]
-            local u = arg[(1:N).+N]
-            local p = arg[end]
-
-            # Terminal cost
-            local xf = x[end]
-            local J_term = isnothing(traj_pbm.φ) ? 0.0 :
-                traj_pbm.φ(xf, p)
-
-            # Integrated running cost
-            local J_run = Vector{Objective}(undef, N)
-            local ∇J_run = Vector{Dict}(undef, N)
-            if !isnothing(traj_pbm.Γ)
-                for k = 1:N
-                    local out = traj_pbm.Γ(t[k], k, x[k], u[k], p)
-                    if out isa Tuple
-                        J_run[k], ∇J_run[k] = out
-                    else
-                        J_run[k] = out
-                    end
-                end
-            else
-                J_run[:] .= 0.0
-            end
-            local integ_J_run = trapz(J_run, t)
-
-            J_term+integ_J_run
-        end
-    )
 
     return nothing
 end
@@ -760,7 +698,7 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
     vic = spbm.vic
     vtc = spbm.vtc
 
-    # Compute virtual control penalty
+    # Virtual control penalty
     P = @new_variable(prg, N, "P")
     Pf = @new_variable(prg, 2, "Pf")
     if !isnothing(vs)
@@ -798,6 +736,7 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
         end
     end
 
+    # Initial condition relaxation penalty
     if !isnothing(vic)
         @add_constraint(prg, L1, "vic_penalty",
                         (Pf[1], vic), begin
@@ -812,6 +751,7 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
                         end)
     end
 
+    # Terminal condition relaxation penalty
     if !isnothing(vtc)
         @add_constraint(prg, L1, "vtc_penalty",
                         (Pf[2], vtc), begin

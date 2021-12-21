@@ -502,6 +502,67 @@ function warm_start(
 end
 
 """
+    compute_original_cost!(cost_term, spbm)
+
+Compute the original problem cost function.
+
+# Arguments
+- `spbm`: the subproblem definition.
+"""
+function compute_original_cost!(
+        cost_term::Objective,
+        spbm::SCPSubproblem
+)::Nothing
+
+    # Variables and parameters
+    pbm = spbm.def
+    N = pbm.pars.N
+    t = pbm.common.t_grid
+    traj_pbm = pbm.traj
+    prg = spbm.prg
+    x = spbm.x
+    u = spbm.u
+    p = spbm.p
+
+    x_stages = [x[:, k] for k=1:N]
+    u_stages = [u[:, k] for k=1:N]
+
+    cost_term = @add_cost(
+        prg, (x_stages..., u_stages..., p),
+        begin
+            local x = arg[1:N]
+            local u = arg[(1:N).+N]
+            local p = arg[end]
+
+            # Terminal cost
+            local xf = x[end]
+            local J_term = isnothing(traj_pbm.φ) ? 0.0 : traj_pbm.φ(xf, p)
+
+            # Integrated running cost
+            local J_run = Vector{Objective}(undef, N)
+            local ∇J_run = Vector{Dict}(undef, N)
+            if !isnothing(traj_pbm.Γ)
+                for k = 1:N
+                    local out = traj_pbm.Γ(t[k], k, x[k], u[k], p)
+                    if out isa Tuple
+                        J_run[k], ∇J_run[k] = out
+                    else
+                        J_run[k] = out
+                    end
+                end
+            else
+                J_run[:] .= 0.0
+            end
+            local integ_J_run = trapz(J_run, t)
+
+            J_term+integ_J_run
+        end
+    )
+
+    return nothing
+end
+
+"""
     add_dynamics!(spbm[; relaxed])
 
 Add dynamics constraints to the problem.

@@ -31,7 +31,7 @@ import ..SCPParameters, ..SCPSubproblem, ..SCPSubproblemSolution, ..SCPProblem,
 
 import ..warm_start
 import ..discretize!
-import ..add_dynamics!, ..add_convex_state_constraints!,
+import ..compute_original_cost!, ..add_dynamics!, ..add_convex_state_constraints!,
     ..add_convex_input_constraints!, ..add_nonconvex_constraints!, ..add_bcs!, ..correct_convex!
 import ..solve_subproblem!, ..solution_deviation, ..unsafe_solution,
     ..overhead!, ..save!, ..get_time
@@ -103,31 +103,31 @@ end
 
 """ Subproblem definition for the convex numerical optimizer. """
 mutable struct Subproblem <: SCPSubproblem
-    iter::Int        # SCvx iteration number
-    mdl::Model       # The optimization problem handle
-    algo::String     # SCP and convex algorithms used
+    iter::Int         # SCvx iteration number
+    prg::ConicProgram # The optimization problem object
+    algo::String      # SCP and convex algorithms used
     # >> Algorithm parameters <<
-    def::SCPProblem  # The SCvx problem definition
-    η::RealTypes     # Trust region radius
+    def::SCPProblem   # The SCvx problem definition
+    η::RealTypes      # Trust region radius
     # >> Reference and solution trajectories <<
     sol::Union{SubproblemSolution, Missing} # Solution trajectory
     ref::Union{SubproblemSolution, Missing} # Reference trajectory
     # >> Cost function <<
-    L::Objective     # The original convex cost function
-    L_pen::Objective # The virtual control penalty
-    L_aug::Objective # Overall cost function
+    L::Objective      # The original convex cost function
+    L_pen::Objective  # The virtual control penalty
+    L_aug::Objective  # Overall cost function
     # >> Physical variables <<
-    x::VarArgBlk     # Discrete-time states
-    u::VarArgBlk     # Discrete-time inputs
-    p::VarArgBlk     # Parameters
+    x::VarArgBlk      # Discrete-time states
+    u::VarArgBlk      # Discrete-time inputs
+    p::VarArgBlk      # Parameters
     # >> Virtual control (never scaled) <<
     vd::VarArgBlk     # Dynamics virtual control
     vs::OptVarArgBlk  # Nonconvex constraints virtual control
     vic::OptVarArgBlk # Initial conditions virtual control
     vtc::OptVarArgBlk # Terminal conditions virtual control
     # >> Other variables <<
-    P::VarArgBlk     # Virtual control penalty
-    Pf::VarArgBlk    # Boundary condition virtual control penalty
+    P::VarArgBlk      # Virtual control penalty
+    Pf::VarArgBlk     # Boundary condition virtual control penalty
     # >> Statistics <<
     timing::Dict{Symbol, RealTypes} # Runtime profiling
 end
@@ -266,8 +266,8 @@ function Subproblem(
     vtc = nothing
 
     # Other variables
-    P = @new_variable(prg, (N), "P")
-    Pf = @new_variable(prg, (2), "Pf")
+    P = @new_variable(prg, N, "P")
+    Pf = @new_variable(prg, 2, "Pf")
 
     spbm = Subproblem(
         iter, mdl, algo, pbm, η, sol, ref, L, L_pen,
@@ -533,7 +533,7 @@ Add trust region constraint to the subproblem.
 - `spbm`: the subproblem definition.
 """
 function add_trust_region!(
-        spbm::SCvxSubproblem
+        spbm::Subproblem
 )::Nothing
 
     # Variables and parameters
@@ -639,30 +639,21 @@ Define the subproblem cost function.
 - `spbm`: the subproblem definition.
 """
 function add_cost!(
-        spbm::SCvxSubproblem
+        spbm::Subproblem
 )::Nothing
 
-    # Variables and parameters
-    x = spbm.x
-    u = spbm.u
-    p = spbm.p
-
     # Compute the cost components
-    spbm.L = _scp__original_cost(x, u, p, spbm.def)
+    compute_original_cost!(spbm.L, spbm)
     compute_linear_cost_penalty!(spbm)
 
     # Overall cost
-    spbm.L_aug = spbm.L+spbm.L_pen
-
-    # Associate cost function with the model
-    set_objective_function(spbm.mdl, spbm.L_aug)
-    set_objective_sense(spbm.mdl, MOI.MIN_SENSE)
+    spbm.L_aug = cost(spbm.prg)
 
     return nothing
 end
 
 """
-    add_cost!(spbm)
+    check_stopping_criterion!(spbm)
 
 Check if stopping criterion is triggered.
 
@@ -684,7 +675,7 @@ function check_stopping_criterion!(
     ε_rel = pbm.pars.ε_rel
 
     # Compute solution deviation from reference
-    sol.deviation = _scp__solution_deviation(spbm)
+    sol.deviation = solution_deviation(spbm)
 
     # Check predicted cost improvement
     J_ref = solution_cost!(ref, :nonlinear, pbm)
@@ -775,14 +766,16 @@ Compute the subproblem cost virtual control penalty term.
 - `spbm`: the subproblem definition.
 """
 function compute_linear_cost_penalty!(
-        spbm::SCvxSubproblem
+        spbm::Subproblem
 )::Nothing
 
     # Variables and parameters
-    N = spbm.def.pars.N
-    λ = spbm.def.pars.λ
-    t = spbm.def.common.t_grid
+    pbm = spbm.def
+    N = pbm.pars.N
+    λ = pbm.pars.λ
+    t = pbm.common.t_grid
     E = spbm.ref.dyn.E
+    prg = spbm.prg
     P = spbm.P
     Pf = spbm.Pf
     vd = spbm.vd
@@ -790,20 +783,102 @@ function compute_linear_cost_penalty!(
     vic = spbm.vic
     vtc = spbm.vtc
 
-    # Compute virtual control penalty
-    C = T_ConvexConeConstraint
-    acc! = add_conic_constraint!
-    for k = 1:N
-        if k<N
-            tmp = vcat(@k(P), @k(E)*@k(vd), @k(vs))
-        else
-            tmp = vcat(@k(P), @k(vs))
+    # Virtual control penalty
+    if !isnothing(vs)
+        for k = 1:N
+            if k<N
+                @add_constraint(
+                    prg, L1, "vd_vs_penalty",
+                    (P[k], vd[:, k], vs[:, k]),
+                    begin
+                        local Pk, vdk, vsk = arg
+                        vcat(Pk, E[:, :, k]*vdk, vsk)
+                    end
+                )
+            else
+                @add_constraint(
+                    prg, L1, "vd_vs_penalty",
+                    (P[k], vs[:, k]),
+                    begin
+                        local Pk, vsk = arg
+                        vcat(Pk, vsk)
+                    end
+                )
+            end
         end
-        acc!(spbm.mdl, C(tmp, :l1))
+    else
+        for k = 1:N
+            if k<N
+                @add_constraint(
+                    prg, L1, "vd_vs_penalty",
+                    (P[k], vd[:, k]),
+                    begin
+                        local Pk, vdk = arg
+                        vcat(Pk, E[:, :, k]*vdk)
+                    end
+                )
+            else
+                @add_constraint(
+                    prg, ZERO, "vd_vs_penalty",
+                    (P[k],),
+                    begin
+                        local Pk, = arg
+                        return Pk
+                    end
+                )
+            end
+        end
     end
-    acc!(spbm.mdl, C(vcat(@first(Pf), vic), :l1))
-    acc!(spbm.mdl, C(vcat(@last(Pf), vtc), :l1))
-    spbm.L_pen = trapz(λ*P, t)+sum(λ*Pf)
+
+    # Initial condition relaxation penalty
+    if !isnothing(vic)
+        @add_constraint(
+            prg, L1, "vic_penalty",
+            (Pf[1], vic),
+            begin
+                local Pf1, vic = arg
+                vcat(Pf1, vic)
+            end
+        )
+    else
+        @add_constraint(
+            prg, ZERO, "vic_penalty",
+            (Pf[1]),
+            begin
+                local Pf1, = arg
+                Pf1
+            end
+        )
+    end
+
+    # Terminal condition relaxation penalty
+    if !isnothing(vtc)
+        @add_constraint(
+            prg, L1, "vtc_penalty",
+            (Pf[2], vtc),
+            begin
+                local Pf2, vtc = arg
+                vcat(Pf2, vtc)
+            end
+        )
+    else
+        @add_constraint(
+            prg, ZERO, "vtc_penalty",
+            (Pf[2]),
+            begin
+                local Pf2, = arg
+                Pf2
+            end
+        )
+    end
+
+    spbm.L_pen = @add_cost(
+        prg, (P, Pf),
+        begin
+            local P, Pf = arg
+            trapz(λ*P, t)+sum(λ*Pf)
+        end
+    )
 
     return nothing
 end
@@ -845,16 +920,16 @@ function actual_cost_penalty!(
 
     # Values from the solution
     δ = sol.defect
-    gic = pbm.traj.gic(@first(sol.xd), sol.p)
-    gtc = pbm.traj.gtc(@last(sol.xd), sol.p)
+    gic = pbm.traj.gic(sol.xd[:, 1], sol.p)
+    gtc = pbm.traj.gtc(sol.xd[:, end], sol.p)
 
     # Integrate the nonlinear penalty term
     P = RealVector(undef, N)
     for k = 1:N
-        δk = (k<N) ? @k(δ) : zeros(nx)
-        sk = pbm.traj.s(@k(t), k, @k(x), @k(u), sol.p)
+        δk = (k<N) ? δ[:, k] : zeros(nx)
+        sk = pbm.traj.s(t[k], k, x[:, k], u[:, k], sol.p)
         sk = isempty(sk) ? [0.0] : sk
-        @k(P) = λ*penalty_P(δk, max.(sk, 0.0))
+        P[k] = λ*penalty_P(δk, max.(sk, 0.0))
     end
     pen = trapz(P, t)+λ*(penalty_P([0.0], gic)+penalty_P([0.0], gtc))
 
@@ -881,7 +956,7 @@ function solution_cost!(
 )::RealTypes
 
     if isnan(sol.L)
-        sol.L = _scp__original_cost(sol.xd, sol.ud, sol.p, pbm)
+        sol.L = compute_original_cost!(sol.xd, sol.ud, sol.p, pbm)
     end
 
     if kind==:linear
