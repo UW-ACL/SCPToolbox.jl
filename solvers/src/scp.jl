@@ -504,7 +504,7 @@ end
 """
     compute_original_cost!(cost_term, spbm)
 
-Compute the original problem cost function.
+Compute the original problem cost function and assign it to the optimization problem.
 
 # Arguments
 - `spbm`: the subproblem definition.
@@ -535,7 +535,7 @@ function compute_original_cost!(
             local p = arg[end]
 
             # Terminal cost
-            local xf = x[end]
+            local xf = x[:, end]
             local J_term = isnothing(traj_pbm.φ) ? 0.0 : traj_pbm.φ(xf, p)
 
             # Integrated running cost
@@ -543,7 +543,7 @@ function compute_original_cost!(
             local ∇J_run = Vector{Dict}(undef, N)
             if !isnothing(traj_pbm.Γ)
                 for k = 1:N
-                    local out = traj_pbm.Γ(t[k], k, x[k], u[k], p)
+                    local out = traj_pbm.Γ(t[k], k, x[:, k], u[:, k], p)
                     if out isa Tuple
                         J_run[k], ∇J_run[k] = out
                     else
@@ -560,6 +560,47 @@ function compute_original_cost!(
     )
 
     return nothing
+end
+
+"""
+    compute_original_cost(x, u, p, pbm)
+
+Compute the original problem cost function for an existing trajectory.
+
+# Arguments
+- `x`: the discrete-time state trajectory.
+- `u`: the discrete-time input trajectory.
+- `p`: the parameter vector.
+- `pbm`: the SCP problem definition.
+
+# Returns
+- `cost`: the original cost.
+"""
+function compute_original_cost(
+    x::RealMatrix,
+    u::RealMatrix,
+    p::RealVector,
+    pbm::SCPProblem)::RealTypes
+
+    # Parameters
+    N = pbm.pars.N
+    t = pbm.common.t_grid
+    traj_pbm = pbm.traj
+
+    # Terminal cost
+    xf = x[:, end]
+    J_term = isnothing(traj_pbm.φ) ? 0.0 : traj_pbm.φ(xf, p)
+
+    # Integrated running cost
+    J_run = Vector{RealTypes}(undef, N)
+    for k = 1:N
+        J_run[k] = isnothing(traj_pbm.Γ) ? 0.0 : traj_pbm.Γ(x[:, k], u[:, k], p)
+    end
+    integ_J_run = trapz(J_run, t)
+
+    cost = J_term+integ_J_run
+
+    return cost
 end
 
 """

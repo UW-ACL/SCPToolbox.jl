@@ -31,8 +31,9 @@ import ..SCPParameters, ..SCPSubproblem, ..SCPSubproblemSolution, ..SCPProblem,
 
 import ..warm_start
 import ..discretize!
-import ..compute_original_cost!, ..add_dynamics!, ..add_convex_state_constraints!,
-    ..add_convex_input_constraints!, ..add_nonconvex_constraints!, ..add_bcs!, ..correct_convex!
+import ..compute_original_cost!, ..compute_original_cost, ..add_dynamics!,
+    ..add_convex_state_constraints!, ..add_convex_input_constraints!, ..add_nonconvex_constraints!,
+    ..add_bcs!, ..correct_convex!
 import ..solve_subproblem!, ..solution_deviation, ..unsafe_solution,
     ..overhead!, ..save!, ..get_time
 
@@ -737,8 +738,7 @@ Compute cost penalty at a particular instant.
 This is the integrand of the overall cost penalty term for dynamics and
 nonconvex constraint violation.
 
-Note: **this function must match the penalty implemented in
-add_cost!()**.
+Note: **this function must match the penalty implemented in compute_linear_cost_penalty!()**.
 
 # Arguments
 - `vd`: inconsistency in the dynamics ("defect").
@@ -956,7 +956,7 @@ function solution_cost!(
 )::RealTypes
 
     if isnan(sol.L)
-        sol.L = compute_original_cost!(sol.xd, sol.ud, sol.p, pbm)
+        sol.L = compute_original_cost(sol.xd, sol.ud, sol.p, pbm)
     end
 
     if kind==:linear
