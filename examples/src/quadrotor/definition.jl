@@ -254,8 +254,6 @@ function set_convex_constraints!(
                     local tdil, = arg
                     traj.tf_min-tdil[1]
                 end)
-
-            return U
         end)
 
     return nothing

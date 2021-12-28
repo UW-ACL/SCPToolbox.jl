@@ -258,7 +258,7 @@ end
 """
     correct_convex!(x_ref, u_ref, p_ref, pbm, constructor)
 
-Find closest trajectory that satisfies the convex path constraints.
+Finds the closest trajectory that satisfies the convex path constraints.
 
 Closeness is measured in an L1-norm sense.
 
@@ -270,55 +270,78 @@ Closeness is measured in an L1-norm sense.
 - `constructor`: the subproblem constructor function (as a symbol).
 """
 function correct_convex!(
-    x_ref::RealMatrix,
-    u_ref::RealMatrix,
-    p_ref::RealVector,
-    pbm::SCPProblem,
-    constructor::Symbol)::Nothing
+        x_ref::RealMatrix,
+        u_ref::RealMatrix,
+        p_ref::RealVector,
+        pbm::SCPProblem,
+        constructor
+)::Nothing
 
     # Parameters
     N = pbm.pars.N
     scale = pbm.common.scale
 
     # Initialize the problem
-    opti = eval(Expr(:call, constructor, pbm))
+    opti = constructor(pbm)
 
     # Add the convex path constraints
     add_convex_state_constraints!(opti)
     add_convex_input_constraints!(opti)
 
     # Add epigraph constraints to make a convex cost for JuMP
-    xh_ref = scale.iSx*(x_ref.-scale.cx)
-    uh_ref = scale.iSu*(u_ref.-scale.cu)
-    ph_ref = scale.iSp*(p_ref-scale.cp)
-    dx = opti.xh-xh_ref
-    du = opti.uh-uh_ref
-    dp = opti.ph-ph_ref
-    epi_x = @variable(opti.mdl, [1:N], base_name="τx")
-    epi_u = @variable(opti.mdl, [1:N], base_name="τu")
-    epi_p = @variable(opti.mdl, base_name="τp")
-    C = CLP.ConvexCone
-    add! = CLP.add!
+    x = opti.x
+    u = opti.u
+    p = opti.p
+    epi_x = @new_variable(opti.prg, N, "τx")
+    epi_u = @new_variable(opti.prg, N, "τu")
+    epi_p = @new_variable(opti.prg, "τp")
     for k = 1:N
-        add!(opti.mdl, C(vcat(epi_x[k], dx[:, k]), CLP.L1))
-        add!(opti.mdl, C(vcat(epi_u[k], du[:, k]), CLP.L1))
+        @add_constraint(
+            opti.prg, L1, "x_variation",
+            (epi_x[k], x[:, k]),
+            begin
+                local epi_x_k, x_k = arg
+                local dxh_k = scale.iSx*(x_k-x_ref[:, k])
+                vcat(epi_x_k, dxh_k)
+            end
+        )
+        @add_constraint(
+            opti.prg, L1, "u_variation",
+            (epi_u[k], u[:, k]),
+            begin
+                local epi_u_k, u_k = arg
+                local duh_k = scale.iSu*(u_k-u_ref[:, k])
+                vcat(epi_u_k, duh_k)
+            end
+        )
     end
-    add!(opti.mdl, C(vcat(epi_p, dp), CLP.L1))
+    @add_constraint(
+        opti.prg, L1, "p_variation",
+        (epi_p, p),
+        begin
+            local epi_p, p = arg
+            local dph = scale.iSp*(p-p_ref)
+            vcat(epi_p, dph)
+        end
+    )
 
     # Define the cost
-    cost = sum(epi_x)+sum(epi_u)+epi_p
-    set_objective_function(opti.mdl, cost)
-    set_objective_sense(opti.mdl, MOI.MIN_SENSE)
+    @add_cost(
+        opti.prg, (epi_x, epi_u, epi_p),
+        begin
+            local epi_x, epi_u, epi_p = arg
+            sum(epi_x)+sum(epi_u)+epi_p[1]
+        end
+    )
 
     # Solve
-    optimize!(opti.mdl)
+    status = solve!(opti.prg)
 
     # Save solution
-    status = termination_status(opti.mdl)
     if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
-        x_ref .= value.(opti.x)
-        u_ref .= value.(opti.u)
-        p_ref .= value.(opti.p)
+        x_ref .= value(opti.x)
+        u_ref .= value(opti.u)
+        p_ref .= value(opti.p)
     else
         msg = string("Solver failed to find the closest initial guess ",
                      "that satisfies the convex constraints (%s)")
@@ -508,11 +531,13 @@ Compute the original problem cost function and assign it to the optimization pro
 
 # Arguments
 - `spbm`: the subproblem definition.
+
+# Returns
+- `cost`: the original cost as an optimization object.
 """
 function compute_original_cost!(
-        cost_term::Objective,
         spbm::SCPSubproblem
-)::Nothing
+)::Objective
 
     # Variables and parameters
     pbm = spbm.def
@@ -527,7 +552,7 @@ function compute_original_cost!(
     x_stages = [x[:, k] for k=1:N]
     u_stages = [u[:, k] for k=1:N]
 
-    cost_term = @add_cost(
+    cost = @add_cost(
         prg, (x_stages..., u_stages..., p),
         begin
             local x = arg[1:N]
@@ -535,7 +560,7 @@ function compute_original_cost!(
             local p = arg[end]
 
             # Terminal cost
-            local xf = x[:, end]
+            local xf = x[end]
             local J_term = isnothing(traj_pbm.φ) ? 0.0 : traj_pbm.φ(xf, p)
 
             # Integrated running cost
@@ -543,7 +568,7 @@ function compute_original_cost!(
             local ∇J_run = Vector{Dict}(undef, N)
             if !isnothing(traj_pbm.Γ)
                 for k = 1:N
-                    local out = traj_pbm.Γ(t[k], k, x[:, k], u[:, k], p)
+                    local out = traj_pbm.Γ(t[k], k, x[k], u[k], p)
                     if out isa Tuple
                         J_run[k], ∇J_run[k] = out
                     else
@@ -559,7 +584,7 @@ function compute_original_cost!(
         end
     )
 
-    return nothing
+    return cost
 end
 
 """
@@ -594,7 +619,7 @@ function compute_original_cost(
     # Integrated running cost
     J_run = Vector{RealTypes}(undef, N)
     for k = 1:N
-        J_run[k] = isnothing(traj_pbm.Γ) ? 0.0 : traj_pbm.Γ(x[:, k], u[:, k], p)
+        J_run[k] = isnothing(traj_pbm.Γ) ? 0.0 : traj_pbm.Γ(t[k], k, x[:, k], u[:, k], p)
     end
     integ_J_run = trapz(J_run, t)
 

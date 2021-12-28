@@ -640,7 +640,7 @@ Define the subproblem cost function.
 function add_cost!(spbm::Subproblem)::Nothing
 
     # Compute the cost components
-    compute_original_cost!(spbm.J, spbm)
+    spbm.J = compute_original_cost!(spbm)
     compute_trust_region_penalty!(spbm)
     compute_virtual_control_penalty!(spbm)
 

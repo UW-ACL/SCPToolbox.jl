@@ -549,7 +549,7 @@ The following macros specialize `@new_argument` for creating variables.
 macro new_variable(prog, shape, name)
     var = QuoteNode(VARIABLE)
     :( new_argument($(esc.([prog, shape, name, var])...)) )
-end # macro
+end
 
 macro new_variable(prog, shape_or_name)
     var = QuoteNode(VARIABLE)
@@ -558,11 +558,11 @@ macro new_variable(prog, shape_or_name)
     else
         :( new_argument($(esc.([prog, shape_or_name, nothing, var])...)) )
     end
-end # macro
+end
 
 macro new_variable(prog)
     :( new_argument($(esc(prog)), 1, nothing, VARIABLE) )
-end # macro
+end
 
 """
     @new_parameter(prog, shape, name)
@@ -575,7 +575,7 @@ The following macros specialize `@new_argument` for creating parameters.
 macro new_parameter(prog, shape, name)
     var = QuoteNode(PARAMETER)
     :( new_argument($(esc.([prog, shape, name, var])...)) )
-end # macro
+end
 
 macro new_parameter(prog, shape_or_name)
     var = QuoteNode(PARAMETER)
@@ -584,11 +584,11 @@ macro new_parameter(prog, shape_or_name)
     else
         :( new_argument($(esc.([prog, shape_or_name, nothing, var])...)) )
     end
-end # macro
+end
 
 macro new_parameter(prog)
     :( new_argument($(esc(prog)), 1, nothing, PARAMETER) )
-end # macro
+end
 
 """
     @add_constraint(prog, kind, name, x, p, f, J)
@@ -660,7 +660,7 @@ macro add_constraint(prog, kind, args...)
         constraint!($(esc(prog)), $(esc(kind)), f, $(esc(x)), $(esc(p));
                     refname=$(esc(name)))
     end
-end # macro
+end
 
 """
     @set_cost(prog, x, p, f, J)
@@ -685,8 +685,8 @@ macro add_cost(prog, args...)
         f = $(esc(anon_func))
         add_cost!($(esc(prog)), f, $(esc(x)), $(esc(p)))
     end
-end # macro
+end
 
 macro set_feasibility(prog)
     :( add_cost!($(esc(prog)), feasibility_cost, [], []; new=true) )
-end # macro
+end

@@ -391,9 +391,9 @@ documentation.
 """
 macro value(f)
     :( DifferentiableFunctionOutput($(esc(f))) )
-end # macro
+end
 
 """ Simple wrapper of `set_jacobian!`, see its documentation. """
 macro jacobian(out, key, J)
     :( set_jacobian!($(esc.([out, key, J])...)) )
-end # macro
+end

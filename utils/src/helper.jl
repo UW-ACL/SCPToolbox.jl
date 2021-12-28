@@ -960,4 +960,4 @@ macro preprintf(io, prefix, fmt, data...)
     quote
         @printf($(esc(io)), $new_fmt, $(esc(prefix)), $(esc.(data)...))
     end
-end # macro
+end

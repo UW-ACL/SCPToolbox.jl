@@ -143,7 +143,7 @@ function plot_trajectory_history(mdl::QuadrotorProblem,
     # Common values
     num_iter = length(history.subproblems)
     algo = history.subproblems[1].algo
-    cmap = get_colormap()
+    cmap = generate_colormap()
     cmap_offset = 0.1
     alph_offset = 0.3
 
@@ -222,10 +222,11 @@ function plot_final_trajectory(mdl::QuadrotorProblem,
     dt_clr = get_colormap()(1.0)
     N = size(sol.xd, 2)
     speed = [norm(@k(sol.xd[mdl.vehicle.id_v, :])) for k=1:N]
-    v_cmap = plt.get_cmap("inferno")
-    v_nrm = matplotlib.colors.Normalize(vmin=minimum(speed),
-                                        vmax=maximum(speed))
-    v_cmap = matplotlib.cm.ScalarMappable(norm=v_nrm, cmap=v_cmap)
+    v_cmap = cmap(
+        "inferno";
+        minval=minimum(speed),
+        maxval=maximum(speed)
+    )
     u_scale = 0.2
 
     fig = create_figure((3.27, 4))
@@ -325,7 +326,7 @@ function plot_input_norm(mdl::QuadrotorProblem,
 
     # Common
     algo = sol.algo
-    clr = get_colormap()(1.0)
+    clr = generate_colormap()(1.0)
     tf = sol.p[mdl.vehicle.id_t]
     y_top = 25.0
     y_bot = 0.0
@@ -412,7 +413,7 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
 
     # Common
     algo = sol.algo
-    clr = get_colormap()(1.0)
+    clr = generate_colormap()(1.0)
     tf = sol.p[mdl.vehicle.id_t]
     y_top = 70.0
 

@@ -146,11 +146,11 @@ Construct the SCvx problem definition.
 - `pbm`: the problem structure ready for being solved by SCvx.
 """
 function create(
-        pars::SCvxParameters,
+        pars::Parameters,
         traj::TrajectoryProblem
 )::SCPProblem
 
-    table = [
+default_columns = [
         # Iteration count
         (:iter, "k", "%d", 2),
         # Solver status
@@ -271,7 +271,7 @@ function Subproblem(
     Pf = @new_variable(prg, 2, "Pf")
 
     spbm = Subproblem(
-        iter, mdl, algo, pbm, η, sol, ref, L, L_pen,
+        iter, prg, algo, pbm, η, sol, ref, L, L_pen,
         L_aug, x, u, p, vd, vs, vic, vtc, P, Pf, timing
     )
 
@@ -366,19 +366,19 @@ optimization has been applied).
 - `sol`: subproblem solution.
 """
 function SubproblemSolution(
-        spbm::SCvxSubproblem
+        spbm::Subproblem
 )::SubproblemSolution
 
     # Extract the discrete-time trajectory
-    x = value.(spbm.x)
-    u = value.(spbm.u)
-    p = value.(spbm.p)
+    x = value(spbm.x)
+    u = value(spbm.u)
+    p = value(spbm.p)
 
     # Form the partly uninitialized subproblem
     sol = SubproblemSolution(x, u, p, spbm.iter, spbm.def)
 
     # Save the virtual control values and penalty terms
-    sol.vd = value.(spbm.vd)
+    sol.vd = value(spbm.vd)
     if !isnothing(spbm.vs)
         sol.vs = value(spbm.vs)
     end
@@ -388,8 +388,8 @@ function SubproblemSolution(
     if !isnothing(spbm.vtc)
         sol.vtc = value(spbm.vtc)
     end
-    sol.P = value.(spbm.P)
-    sol.Pf = value.(spbm.Pf)
+    sol.P = value(spbm.P)
+    sol.Pf = value(spbm.Pf)
 
     # Save the optimal cost values
     sol.L = value(spbm.L)
@@ -519,7 +519,7 @@ function generate_initial_guess(
 
     # Construct the raw trajectory
     x, u, p = pbm.traj.guess(pbm.pars.N)
-    correct_convex!(x, u, p, pbm, :Subproblem)
+    correct_convex!(x, u, p, pbm, (pbm) -> Subproblem(pbm))
     guess = SubproblemSolution(x, u, p, 0, pbm)
 
     return guess
@@ -550,7 +550,7 @@ function add_trust_region!(
     uh_ref = scale.iSu*(spbm.ref.ud.-scale.cu)
     ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
 
-    q2cone = Dict(1 => :l1, 2 => :soc, 4 => :soc, Inf => :linf)
+    q2cone = Dict(1 => L1, 2 => SOC, 4 => SOC, Inf => LINF)
     cone = q2cone[q]
 
     # >> Parameter trust region <<
@@ -622,7 +622,7 @@ function add_trust_region!(
                 (dx_lq[k], du_lq[k], dp_lq),
                 begin
                     local dxk_lq, duk_lq, dp_lq = arg
-                    dxk_lq+duk_lq+dp_lq-η
+                    dxk_lq[1]+duk_lq[1]+dp_lq[1]-η
                 end
             )
         end
@@ -644,7 +644,7 @@ function add_cost!(
 )::Nothing
 
     # Compute the cost components
-    compute_original_cost!(spbm.L, spbm)
+    spbm.L = compute_original_cost!(spbm)
     compute_linear_cost_penalty!(spbm)
 
     # Overall cost
@@ -665,7 +665,7 @@ Check if stopping criterion is triggered.
 - `stop`: true if stopping criterion holds.
 """
 function check_stopping_criterion!(
-        spbm::SCvxSubproblem
+        spbm::Subproblem
 )::Bool
 
     # Extract values
@@ -707,7 +707,7 @@ next iteration's reference trajectory.
 - `next_η`: trust region radius for the next iteration.
 """
 function update_trust_region!(
-        spbm::SCvxSubproblem
+        spbm::Subproblem
 )::Tuple{SubproblemSolution,
          RealTypes}
 
@@ -988,7 +988,7 @@ solution.
 - `next_η`: trust region radius for the next iteration.
 """
 function update_rule(
-        spbm::SCvxSubproblem
+        spbm::Subproblem
 )::Tuple{SubproblemSolution,
          RealTypes}
     # Extract relevant data
@@ -1065,7 +1065,7 @@ Print command line info message.
 - `err`: an SCvx-specific error message.
 """
 function print_info(
-        spbm::SCvxSubproblem,
+        spbm::Subproblem,
         err::Union{Nothing, SCPError}=nothing
 )::Nothing
 
@@ -1076,7 +1076,7 @@ function print_info(
 
     if !isnothing(err)
         @printf "%s, exiting\n" err.msg
-    elseif _scp__unsafe_solution(sol)
+    elseif unsafe_solution(sol)
         @printf "unsafe solution (%s), exiting\n" sol.status
     else
         # Preprocess values
@@ -1116,7 +1116,7 @@ function print_info(
         print(assoc, table)
     end
 
-    _scp__overhead!(spbm)
+    overhead!(spbm)
 
     return nothing
 end

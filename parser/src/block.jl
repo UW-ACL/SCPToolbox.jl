@@ -418,11 +418,11 @@ implementation).
 """
 macro scale(blk, S, c)
     :( set_scale!($(esc.([blk, S, c])...)) )
-end # macro
+end
 
 macro scale(blk, S)
     :( set_scale!($(esc.([blk, S, nothing])...)) )
-end # macro
+end
 
 """
     @perturb_free(blk)
@@ -442,20 +442,20 @@ Set the perturbation amount for the block. These macros just wrap
 """
 macro perturb_free(blk)
     :( set_perturbation!($(esc(blk)), Inf) )
-end # macro
+end
 
 macro perturb_fix(blk)
     :( set_perturbation!($(esc(blk)), 0) )
-end # macro
+end
 
 macro perturb_fix(blk, amount)
     :( set_perturbation!($(esc(blk)), $(esc(amount)), FIXED) )
-end # macro
+end
 
 macro perturb_relative(blk, amount)
     :( set_perturbation!($(esc(blk)), $(esc(amount)), RELATIVE) )
-end # macro
+end
 
 macro perturb_absolute(blk, amount)
     :( set_perturbation!($(esc(blk)), $(esc(amount)), ABSOLUTE) )
-end # macro
+end

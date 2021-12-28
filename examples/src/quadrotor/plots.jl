@@ -40,7 +40,7 @@ function plot_trajectory_history(
     # Common values
     num_iter = length(history.subproblems)
     algo = history.subproblems[1].algo
-    cmap = get_colormap()
+    cmap = generate_colormap()
     cmap_offset = 0.1
     alph_offset = 0.3
 
@@ -69,7 +69,7 @@ function plot_trajectory_history(
             trj = history.subproblems[i].sol
             f = (off) -> (i-1)/(num_iter-1)*(1-off)+off
             alph = f(alph_offset)
-            clr = (cmap(f(cmap_offset))..., alph)
+            clr = (rgb(cmap, f(cmap_offset))..., alph)
             shp = "o"
         end
         pos = trj.xd[mdl.vehicle.id_r, :]
@@ -121,13 +121,14 @@ function plot_final_trajectory(
 
     # Common values
     algo = sol.algo
-    dt_clr = get_colormap()(1.0)
+    dt_clr = rgb(generate_colormap(), 1.0)
     N = size(sol.xd, 2)
     speed = [norm(sol.xd[mdl.vehicle.id_v, k]) for k=1:N]
-    v_cmap = plt.get_cmap("inferno")
-    v_nrm = matplotlib.colors.Normalize(vmin=minimum(speed),
-                                        vmax=maximum(speed))
-    v_cmap = matplotlib.cm.ScalarMappable(norm=v_nrm, cmap=v_cmap)
+    v_cmap = generate_colormap(
+        "inferno";
+        minval=minimum(speed),
+        maxval=maximum(speed)
+    )
     u_scale = 0.2
 
     fig = create_figure((3.27, 4))
@@ -150,7 +151,7 @@ function plot_final_trajectory(
     # ..:: Draw the final continuous-time position trajectory ::..
     # Collect the continuous-time trajectory data
     ct_res = 500
-    ct_τ = RealArray(LinRange(0.0, 1.0, ct_res))
+    ct_τ = RealVector(LinRange(0.0, 1.0, ct_res))
     ct_pos = RealMatrix(undef, 2, ct_res)
     ct_speed = RealVector(undef, ct_res)
     for k = 1:ct_res
@@ -232,7 +233,7 @@ function plot_input_norm(
 
     # Common
     algo = sol.algo
-    clr = get_colormap()(1.0)
+    clr = rgb(generate_colormap(), 1.0)
     tf = sol.p[mdl.vehicle.id_t]
     y_top = 25.0
     y_bot = 0.0
@@ -256,7 +257,7 @@ function plot_input_norm(
 
     # ..:: Norm of acceleration vector (continuous-time) ::..
     ct_res = 500
-    ct_τ = RealArray(LinRange(0.0, 1.0, ct_res))
+    ct_τ = RealVector(LinRange(0.0, 1.0, ct_res))
     ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
     ct_acc_vec = hcat([sample(sol.uc, τ)[mdl.vehicle.id_u] for τ in ct_τ]...)
     ct_acc_nrm = RealVector([norm(ct_acc_vec[:, k]) for k in 1:ct_res])
@@ -324,7 +325,7 @@ function plot_tilt_angle(
 
     # Common
     algo = sol.algo
-    clr = get_colormap()(1.0)
+    clr = rgb(generate_colormap(), 1.0)
     tf = sol.p[mdl.vehicle.id_t]
     y_top = 70.0
 
@@ -349,7 +350,7 @@ function plot_tilt_angle(
 
     # ..:: Tilt angle (continuous-time) ::..
     ct_res = 500
-    ct_τ = RealArray(LinRange(0.0, 1.0, ct_res))
+    ct_τ = RealVector(LinRange(0.0, 1.0, ct_res))
     ct_time = ct_τ*sol.p[mdl.vehicle.id_t]
     _u = hcat([sample(sol.uc, τ)[mdl.vehicle.id_u] for τ in ct_τ]...)
     ct_tilt = RealVector([acosd(_u[3, k]/norm(_u[:, k])) for k in 1:ct_res])
