@@ -1,4 +1,5 @@
-#= 6-Degree of Freedom free-flyer data structures and custom methods.
+"""
+6-Degree of Freedom free-flyer problem plots.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
@@ -14,168 +15,76 @@ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with
-this program.  If not, see <https://www.gnu.org/licenses/>. =#
+this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
 
-include("../core/scp.jl")
+using PyPlot
+using Colors
 
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Data structures ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+using Solvers
 
-""" Free-flyer vehicle parameters. """
-struct FreeFlyerParameters
-    id_r::T_IntRange # Position indices of the state vector
-    id_v::T_IntRange # Velocity indices of the state vector
-    id_q::T_IntRange # Quaternion indices of the state vector
-    id_ω::T_IntRange # Angular velocity indices of the state vector
-    id_T::T_IntRange # Thrust indices of the input vector
-    id_M::T_IntRange # Torque indicates of the input vector
-    id_t::T_Int      # Time dilation index of the parameter vector
-    id_δ::T_IntRange # Room SDF indices of the parameter vector
-    v_max::T_Real    # [m/s] Maximum velocity
-    ω_max::T_Real    # [rad/s] Maximum angular velocity
-    T_max::T_Real    # [N] Maximum thrust
-    M_max::T_Real    # [N*m] Maximum torque
-    m::T_Real        # [kg] Mass
-    J::T_RealMatrix  # [kg*m^2] Principle moments of inertia matrix
-end
+"""
+    signed_distance(r, mdl)
 
-""" Space station flight environment. """
-struct FreeFlyerEnvironmentParameters
-    obs::Vector{T_Ellipsoid}      # Obstacles (ellipsoids)
-    iss::Vector{T_Hyperrectangle} # Space station flight space
-    n_obs::T_Int                  # Number of obstacles
-    n_iss::T_Int                  # Number of space station rooms
-end
-
-""" Trajectory parameters. """
-mutable struct FreeFlyerTrajectoryParameters
-    r0::T_RealVector # Initial position
-    rf::T_RealVector # Terminal position
-    v0::T_RealVector # Initial velocity
-    vf::T_RealVector # Terminal velocity
-    q0::T_Quaternion # Initial attitude
-    qf::T_Quaternion # Terminal attitude
-    ω0::T_RealVector # Initial angular velocity
-    ωf::T_RealVector # Terminal angular velocity
-    tf_min::T_Real   # Minimum flight time
-    tf_max::T_Real   # Maximum flight time
-    γ::T_Real        # Tradeoff weight terminal vs. running cost
-    hom::T_Real      # Homotopy parameter for signed-distance function
-    ε_sdf::T_Real    # Tiny weight to tighten the room SDF lower bounds
-end
-
-""" Free-flyer trajectory optimization problem parameters all in one. """
-struct FreeFlyerProblem
-    vehicle::FreeFlyerParameters        # The ego-vehicle
-    env::FreeFlyerEnvironmentParameters # The environment
-    traj::FreeFlyerTrajectoryParameters # The trajectory
-end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Constructors :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-""" Constructor for the environment.
+Compute the signed distance function at the given position.
 
 # Arguments
-    iss: the space station flight corridors, defined as hyperrectangles.
-    obs: array of obstacles (ellipsoids).
+- `r`: the position vector.
+- `mdl`: the free-flyer problem parameters.
 
 # Returns
-    env: the environment struct.
+- `d`: the signed distance value.
 """
-function FreeFlyerEnvironmentParameters(
-    iss::Vector{T_Hyperrectangle},
-    obs::Vector{T_Ellipsoid})::FreeFlyerEnvironmentParameters
-
-    # Derived values
-    n_iss = length(iss)
-    n_obs = length(obs)
-
-    env = FreeFlyerEnvironmentParameters(obs, iss, n_obs, n_iss)
-
-    return env
+function signed_distance(
+        r::RealVector,
+        mdl::FreeFlyerProblem
+)::Real
+    room = mdl.env.iss
+    d = logsumexp([1-norm((r-room[i].c)./room[i].s, Inf)
+                   for i=1:mdl.env.n_iss]; t=mdl.traj.hom)
 end
 
 
-""" Constructor for the 6-DoF free-flyer problem.
-
-# Returns
-    mdl: the free-flyer problem.
 """
-function FreeFlyerProblem(N::T_Int)::FreeFlyerProblem
+    plot_zero_levelset(ax, mdl, z)
 
-    # >> Environment <<
-    obs_shape = diagm([1.0; 1.0; 1.0]/0.3)
-    z_iss = 4.75
-    obs = [T_Ellipsoid(copy(obs_shape), [8.5; -0.15; 5.0]),
-           T_Ellipsoid(copy(obs_shape), [11.2; 1.84; 5.0]),
-           T_Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8])]
-    iss_rooms = [T_Hyperrectangle([6.0; 0.0; z_iss],
-                                  1.0, 1.0, 1.5;
-                                  pitch=90.0),
-                 T_Hyperrectangle([7.5; 0.0; z_iss],
-                                  2.0, 2.0, 4.0;
-                                  pitch=90.0),
-                 T_Hyperrectangle([11.5; 0.0; z_iss],
-                                  1.25, 1.25, 0.5;
-                                  pitch=90.0),
-                 T_Hyperrectangle([10.75; -1.0; z_iss],
-                                  1.5, 1.5, 1.5;
-                                  yaw=-90.0, pitch=90.0),
-                 T_Hyperrectangle([10.75; 1.0; z_iss],
-                                  1.5, 1.5, 1.5;
-                                  yaw=90.0, pitch=90.0),
-                 T_Hyperrectangle([10.75; 2.5; z_iss],
-                                  2.5, 2.5, 4.5;
-                                  yaw=90.0, pitch=90.0)]
-    env = FreeFlyerEnvironmentParameters(iss_rooms, obs)
+Plot the signed distance function zero-level set.
 
-    # >> Free-flyer <<
-    id_r = 1:3
-    id_v = 4:6
-    id_q = 7:10
-    id_ω = 11:13
-    id_T = 1:3
-    id_M = 4:6
-    id_t = 1
-    id_δ = (1:(N*env.n_iss)).+1
-    v_max = 0.4
-    ω_max = deg2rad(1)
-    T_max = 20e-3
-    M_max = 1e-4
-    mass = 7.2
-    J = diagm([0.1083, 0.1083, 0.1083])
-    fflyer = FreeFlyerParameters(id_r, id_v, id_q, id_ω, id_T, id_M, id_t,
-                                 id_δ, v_max, ω_max, T_max, M_max, mass, J)
+This gives a view of the space station flight space boundary that is seen by
+the optimization, for a specific z-height.
 
-    # >> Trajectory <<
-    r0 = [6.5; -0.2; 5.0]
-    v0 = [0.035; 0.035; 0.0]
-    q0 = T_Quaternion(deg2rad(-40), [0.0; 1.0; 1.0])
-    ω0 = zeros(3)
-    rf = [11.3; 6.0; 4.5]
-    vf = zeros(3)
-    qf = T_Quaternion(deg2rad(0), [0.0; 0.0; 1.0])
-    ωf = zeros(3)
-    tf_min = 60.0
-    tf_max = 200.0
-    γ = 0.0
-    hom = 50.0
-    ε_sdf = 1e-4
-    traj = FreeFlyerTrajectoryParameters(r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min,
-                                         tf_max, γ, hom, ε_sdf)
+# Arguments
+    ax: the figure axis object.
+    mdl: the free-flyer problem parameters.
+    z: the z-coordinate at which to evaluate the signed distance function.
+"""
+function plot_zero_levelset(
+        ax::PyPlot.PyObject,
+        mdl::FreeFlyerProblem,
+        z::Real
+)::Nothing
 
-    mdl = FreeFlyerProblem(fflyer, env, traj)
+    # Parameters
+    xlims = (5.9, 12.1)
+    ylims = (-2.6, 7.1)
+    res = 100
 
-    return mdl
+    x = RealVector(LinRange(xlims..., res))
+    y = RealVector(LinRange(ylims..., res))
+    X = repeat(reshape(x, 1, :), length(y), 1)
+    Y = repeat(y, 1, length(x))
+    f = (x, y) -> signed_distance([x; y; z], mdl)
+    Z = map(f, X, Y)
+
+    cs = ax.contour(x, y, Z, [0.0],
+                    colors="#f1d46a",
+                    linewidths=1,
+                    linestyles="solid",
+                    zorder=10)
+    cs.collections[1].set_label("\$d_{\\mathrm{ss}}(r_{\\mathcal I})=0\$")
+
+    return nothing
 end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Public methods :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
 
 """ Plot the trajectory evolution through SCP iterations.
 
@@ -189,7 +98,7 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
     # Common values
     num_iter = length(history.subproblems)
     algo = history.subproblems[1].algo
-    cmap = get_colormap()
+    cmap = generate_colormap()
     cmap_offset = 0.1
     alph_offset = 0.3
 
@@ -209,8 +118,8 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
     plot_ellipsoids!(ax, mdl.env.obs; label="Obstacle")
 
     # ..:: Signed distance function zero-level set ::..
-    z_iss = @first(history.subproblems[end].sol.xd[mdl.vehicle.id_r, :])[3]
-    _freeflyer__plot_zero_levelset(ax, mdl, z_iss)
+    z_iss = history.subproblems[end].sol.xd[mdl.vehicle.id_r[end], 1]
+    plot_zero_levelset(ax, mdl, z_iss)
 
     # ..:: Draw the trajectories ::..
     for i = 0:num_iter
@@ -225,7 +134,7 @@ function plot_trajectory_history(mdl::FreeFlyerProblem,
             trj = history.subproblems[i].sol
             f = (off) -> (i-1)/(num_iter-1)*(1-off)+off
             alph = f(alph_offset)
-            clr = (cmap(f(cmap_offset))..., alph)
+            clr = (rgb(cmap, f(cmap_offset))..., alph)
             shp = "o"
         end
         pos = trj.xd[mdl.vehicle.id_r, :]
@@ -274,13 +183,13 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
 
     # Common values
     algo = sol.algo
-    dt_clr = get_colormap()(1.0)
+    dt_clr = rgb(generate_colormap(), 1.0)
     N = size(sol.xd, 2)
-    speed = [norm(@k(sol.xd[mdl.vehicle.id_v, :])) for k=1:N]
-    v_cmap = plt.get_cmap("inferno")
-    v_nrm = matplotlib.colors.Normalize(vmin=minimum(speed),
-                                        vmax=maximum(speed))
-    v_cmap = matplotlib.cm.ScalarMappable(norm=v_nrm, cmap=v_cmap)
+    speed = [norm(sol.xd[mdl.vehicle.id_v, k]) for k=1:N]
+    v_cmap = generate_colormap(
+        "inferno";
+        minval=minimum(speed),
+        maxval=maximum(speed))
     u_scale = 8e1
 
     fig = create_figure((3.8, 4))
@@ -306,18 +215,18 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
     # ..:: Draw the final continuous-time position trajectory ::..
     # Collect the continuous-time trajectory data
     ct_res = 500
-    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
-    ct_pos = T_RealMatrix(undef, 2, ct_res)
-    ct_speed = T_RealVector(undef, ct_res)
+    ct_τ = RealVector(LinRange(0.0, 1.0, ct_res))
+    ct_pos = RealMatrix(undef, 2, ct_res)
+    ct_speed = RealVector(undef, ct_res)
     for k = 1:ct_res
-        xk = sample(sol.xc, @k(ct_τ))
-        @k(ct_pos) = xk[mdl.vehicle.id_r[1:2]]
-        @k(ct_speed) = norm(xk[mdl.vehicle.id_v])
+        xk = sample(sol.xc, ct_τ[k])
+        ct_pos[:, k] = xk[mdl.vehicle.id_r[1:2]]
+        ct_speed[k] = norm(xk[mdl.vehicle.id_v])
     end
 
     # Plot the trajectory
     for k = 1:ct_res-1
-        r, v = @k(ct_pos), @k(ct_speed)
+        r, v = ct_pos[:, k], ct_speed[k]
         x, y = r[1], r[2]
         ax.plot(x, y,
                 linestyle="none",
@@ -360,8 +269,8 @@ function plot_final_trajectory(mdl::FreeFlyerProblem,
     end
 
     # ..:: Signed distance function zero-level set ::..
-    z_iss = @first(sol.xd[mdl.vehicle.id_r, :])[3]
-    _freeflyer__plot_zero_levelset(ax, mdl, z_iss)
+    z_iss = sol.xd[mdl.vehicle.id_r[end], 1]
+    plot_zero_levelset(ax, mdl, z_iss)
 
     handles, labels = ax.get_legend_handles_labels()
     order = [1,2,5,3,4]
@@ -390,11 +299,11 @@ function plot_timeseries(mdl::FreeFlyerProblem,
     algo = sol.algo
     veh = mdl.vehicle
     ct_res = 500
-    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
+    ct_τ = RealVector(LinRange(0.0, 1.0, ct_res))
     tf = sol.p[veh.id_t]
     dt_time = sol.td*tf
     ct_time = ct_τ*tf
-    clr = get_colormap()(1.0)
+    clr = rgb(generate_colormap(), 1.0)
     xyz_clrs = ["#db6245", "#5da9a1", "#356397"]
     marker_darken_factor = 0.2
     top_scale = 1.1
@@ -428,7 +337,7 @@ function plot_timeseries(mdl::FreeFlyerProblem,
                                  "\\mathcal{B}\\gets\\mathcal{I}}\$ as ZYX\n",
                                  "Euler angles [\$^\\circ\$]"),
                  :legend=>["\$\\varphi\$", "\$\\theta\$", "\$\\psi\$"],
-                 :scale=>(q)->rad2deg.(collect(rpy(T_Quaternion(q)))),
+                 :scale=>(q)->rad2deg.(collect(rpy(Quaternion(q)))),
                  :dt_y=>sol.xd,
                  :ct_y=>sol.xc,
                  :id=>veh.id_q),
@@ -498,14 +407,14 @@ function plot_timeseries(mdl::FreeFlyerProblem,
                         markeredgewidth=0.0,
                         markerfacecolor=rgb2pyplot(mark_clr),
                         clip_on=!visible,
-                        zorder=100-T_Int(!visible)*10,
+                        zorder=100-Int(!visible)*10,
                         label=visible ? nothing : data[i][:legend][j])
             end
         end
 
         # >> Continuous-time norm <<
         if !isnothing(y_max)
-            y_nrm = T_RealVector([norm(@k(yc)) for k in 1:ct_res])
+            y_nrm = RealVector([norm(yc[:, k]) for k in 1:ct_res])
             ax.plot(ct_time, y_nrm,
                     color=clr,
                     linewidth=2,
@@ -517,7 +426,7 @@ function plot_timeseries(mdl::FreeFlyerProblem,
 
         tf_max = round(tf, digits=5)
         ax.set_xlim((0.0, tf_max))
-        ax.set_xticks(round.(T_Int, LinRange(0, tf_max, 5)))
+        ax.set_xticks(round.(Int, LinRange(0, tf_max, 5)))
         ax.set_ylim((minimum(yc), isnothing(y_top) ? maximum(yc) : y_top))
 
         handles, labels = ax.get_legend_handles_labels()
@@ -548,11 +457,11 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
     veh = mdl.vehicle
     env = mdl.env
     ct_res = 500
-    ct_τ = T_RealArray(LinRange(0.0, 1.0, ct_res))
+    ct_τ = RealVector(LinRange(0.0, 1.0, ct_res))
     tf = sol.p[veh.id_t]
     dt_time = sol.td*tf
     ct_time = ct_τ*tf
-    cmap = get_colormap()
+    cmap = generate_colormap()
     xyz_clrs = ["#db6245", "#5da9a1", "#356397"]
     marker_darken_factor = 0.2
 
@@ -570,31 +479,31 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
     ax.set_ylabel("SDF \$\\tilde d_{\\mathrm{ss}}(r_{\\mathcal{I}})\$")
 
     # >> Continuous-time components <<
-    yc = T_RealVector([_freeflyer__signed_distance(
+    yc = RealVector([signed_distance(
         sample(sol.xc, τ)[veh.id_r], mdl) for τ in ct_τ])
     y_bot = min(-0.1, minimum(yc))
     plot_timeseries_bound!(ax, 0.0, tf, 0.0, y_bot)
 
     ax.plot(ct_time, yc,
-            color=cmap(1.0),
+            color=rgb(cmap, 1.0),
             linewidth=1)
 
     # >> Discrete-time components <<
     yd = sol.xd[veh.id_r, :]
-    yd = T_RealVector([_freeflyer__signed_distance(@k(yd), mdl)
+    yd = RealVector([signed_distance(yd[:, k], mdl)
                        for k=1:size(yd, 2)])
     ax.plot(dt_time, yd,
             linestyle="none",
             marker="o",
             markersize=3,
             markeredgewidth=0.0,
-            markerfacecolor=cmap(1.0),
+            markerfacecolor=rgb(cmap, 1.0),
             clip_on=false,
             zorder=100)
 
     tf_max = round(tf, digits=5)
     ax.set_xlim((0.0, tf_max))
-    ax.set_xticks(round.(T_Int, LinRange(0, tf_max, 5)))
+    ax.set_xticks(round.(Int, LinRange(0, tf_max, 5)))
     ax.set_ylim((y_bot, maximum(yc)))
 
     # ..:: Plot ellipsoid obstacle constraints ::..
@@ -616,11 +525,11 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
 
     # >> Continuous-time components <<
     for j = 1:env.n_obs
-        yc = T_RealVector([env.obs[j](sample(sol.xc, τ)[veh.id_r])
+        yc = RealVector([env.obs[j](sample(sol.xc, τ)[veh.id_r])
                            for τ in ct_τ])
 
         ax.plot(ct_time, yc,
-                color=cmap(cval(j)),
+                color=rgb(cmap, cval(j)),
                 linewidth=1)
     end
 
@@ -628,18 +537,18 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
     y_top = -Inf
     for j = env.n_obs:-1:1
         yd = sol.xd[veh.id_r, :]
-        yd = T_RealVector([env.obs[j](@k(yd)) for k=1:size(yd, 2)])
+        yd = RealVector([env.obs[j](yd[:, k]) for k=1:size(yd, 2)])
         y_top = max(y_top, maximum(yd))
 
         local mark_clr = weighted_color_mean(1-marker_darken_factor,
-                                             RGB(cmap(cval(j))...),
+                                             RGB(rgb(cmap, cval(j))...),
                                              colorant"black")
 
         for visible in [true, false]
             ax.plot(visible ? dt_time : [],
                     visible ? yd : [],
                     linestyle=visible ? "none" : "-",
-                    color=visible ? nothing : cmap(cval(j)),
+                    color=visible ? nothing : rgb(cmap, cval(j)),
                     linewidth=1,
                     solid_capstyle="round",
                     marker="o",
@@ -647,7 +556,7 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
                     markeredgewidth=0.0,
                     markerfacecolor=rgb2pyplot(mark_clr),
                     clip_on=!visible,
-                    zorder=100-T_Int(!visible)*101,
+                    zorder=100-Int(!visible)*101,
                     label=(visible ? nothing :
                            @sprintf("Obstacle \$j=%d\$", j)))
         end
@@ -655,7 +564,7 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
 
     tf_max = round(tf, digits=5)
     ax.set_xlim((0.0, tf_max))
-    ax.set_xticks(round.(T_Int, LinRange(0, tf_max, 5)))
+    ax.set_xticks(round.(Int, LinRange(0, tf_max, 5)))
     ax.set_ylim((0.0, y_top))
 
     handles, labels = ax.get_legend_handles_labels()
@@ -664,71 +573,6 @@ function plot_obstacle_constraints(mdl::FreeFlyerProblem,
     leg.set_zorder(200)
 
     save_figure("freeflyer_obstacles.pdf", algo)
-
-    return nothing
-end
-
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :: Private methods ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-
-"""
-    _freeflyer__signed_distance(r, mdl)
-
-Description.
-
-# Arguments
-- `r`: the position vector.
-- `mdl`: the free-flyer problem parameters.
-
-# Returns
-- `d`: the signed distance value.
-
-"""
-function _freeflyer__signed_distance(r::T_RealVector,
-                                     mdl::FreeFlyerProblem)::T_Real
-    room = mdl.env.iss
-    d = logsumexp([1-norm((r-room[i].c)./room[i].s, Inf)
-                   for i=1:mdl.env.n_iss]; t=mdl.traj.hom)
-end
-
-
-""" Plot the signed distance function zero-level set.
-
-This gives a view of the space station flight space boundary that is seen by
-the optimization, for a specific z-height.
-
-# Arguments
-    ax: the figure axis object.
-    mdl: the free-flyer problem parameters.
-    z: the z-coordinate at which to evaluate the signed distance function.
-"""
-function _freeflyer__plot_zero_levelset(ax::PyPlot.PyObject,
-                                        mdl::FreeFlyerProblem,
-                                        z::T_Real)::Nothing
-
-    # Parameters
-    env = mdl.env
-    traj = mdl.traj
-    room = env.iss
-    xlims = (5.9, 12.1)
-    ylims = (-2.6, 7.1)
-    res = 100
-
-    x = T_RealVector(LinRange(xlims..., res))
-    y = T_RealVector(LinRange(ylims..., res))
-    X = repeat(reshape(x, 1, :), length(y), 1)
-    Y = repeat(y, 1, length(x))
-    f = (x, y) -> _freeflyer__signed_distance([x; y; z], mdl)
-    Z = map(f, X, Y)
-
-    cs = ax.contour(x, y, Z, [0.0],
-                    colors="#f1d46a",
-                    linewidths=1,
-                    linestyles="solid",
-                    zorder=10)
-    cs.collections[1].set_label("\$d_{\\mathrm{ss}}(r_{\\mathcal I})=0\$")
 
     return nothing
 end

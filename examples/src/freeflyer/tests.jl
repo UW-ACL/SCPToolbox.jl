@@ -1,5 +1,5 @@
 """
-Tests for quadrotor obstacle avoidance.
+Tests for 6-Degree of Freedom free-flyer problem.
 
 Sequential convex programming algorithms for trajectory optimization.
 Copyright (C) 2021 Autonomous Controls Laboratory (University of Washington),
@@ -33,23 +33,25 @@ const SCvx = Solvers.SCvx
 function scvx()::Nothing
 
     # Problem definition
-    mdl = QuadrotorProblem()
+
+    N = 50
+
+    mdl = FreeFlyerProblem(N)
     pbm = TrajectoryProblem(mdl)
     define_problem!(pbm, :scvx)
 
     # SCvx algorithm parameters
-    N = 30
     Nsub = 15
     iter_max = 15
     disc_method = FOH
-    λ = 30.0
+    λ = 1e3
     ρ_0 = 0.0
     ρ_1 = 0.1
     ρ_2 = 0.7
     β_sh = 2.0
     β_gr = 2.0
     η_init = 1.0
-    η_lb = 1e-3
+    η_lb = 1e-6
     η_ub = 10.0
     ε_abs = 0#1e-5
     ε_rel = 0#0.01/100
@@ -89,11 +91,12 @@ function scvx()::Nothing
     history = history_list[end]
 
     # Make plots
+
     plot_trajectory_history(mdl, history)
     plot_final_trajectory(mdl, sol)
-    plot_input_norm(mdl, sol)
-    plot_tilt_angle(mdl, sol)
-    plot_convergence(history_list, "quadrotor")
+    plot_timeseries(mdl, sol)
+    plot_obstacle_constraints(mdl, sol)
+    plot_convergence(history_list, "freeflyer")
 
 end
 

@@ -127,8 +127,7 @@ function plot_final_trajectory(
     v_cmap = generate_colormap(
         "inferno";
         minval=minimum(speed),
-        maxval=maximum(speed)
-    )
+        maxval=maximum(speed))
     u_scale = 0.2
 
     fig = create_figure((3.27, 4))

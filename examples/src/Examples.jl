@@ -39,6 +39,13 @@ include("quadrotor/plots.jl")
 include("quadrotor/tests.jl")
 end
 
+module FreeFlyer
+include("freeflyer/parameters.jl")
+include("freeflyer/definition.jl")
+include("freeflyer/plots.jl")
+include("freeflyer/tests.jl")
+end
+
 module Oscillator
 include("oscillator/parameters.jl")
 include("oscillator/definition.jl")

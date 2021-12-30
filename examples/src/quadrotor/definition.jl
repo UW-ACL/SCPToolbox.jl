@@ -72,7 +72,8 @@ function set_guess!(
 )::Nothing
 
     problem_set_guess!(
-        pbm, (N, pbm) -> begin
+        pbm, (N, pbm) ->
+        begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
             g = pbm.mdl.env.g
@@ -214,43 +215,43 @@ function set_convex_constraints!(
             tdil = p[veh.id_t]
 
             @add_constraint(
-                ocp, NONPOS, "min_accel",
-                (σ,), begin
+                ocp, NONPOS, "min_accel", (σ,),
+                begin
                     local σ, = arg
                     veh.u_min-σ[1]
                 end)
 
             @add_constraint(
-                ocp, NONPOS, "max_accel",
-                (σ,), begin
+                ocp, NONPOS, "max_accel", (σ,),
+                begin
                     local σ, = arg
                     σ[1]-veh.u_max
                 end)
 
             @add_constraint(
-                ocp, SOC, "lcvx_equality",
-                (σ, a), begin
+                ocp, SOC, "lcvx_equality", (σ, a),
+                begin
                     local σ, a = arg
                     vcat(σ, a)
                 end)
 
             @add_constraint(
-                ocp, NONPOS, "max_tilt",
-                (σ, a), begin
+                ocp, NONPOS, "max_tilt", (σ, a),
+                begin
                     local σ, a = arg
                     σ[1]*cos(veh.tilt_max)-a[3]
                 end)
 
             @add_constraint(
-                ocp, NONPOS, "max_duration",
-                (tdil,), begin
+                ocp, NONPOS, "max_duration", (tdil,),
+                begin
                     local tdil, = arg
                     tdil[1]-traj.tf_max
                 end)
 
             @add_constraint(
-                ocp, NONPOS, "max_duration",
-                (tdil,), begin
+                ocp, NONPOS, "min_duration", (tdil,),
+                begin
                     local tdil, = arg
                     traj.tf_min-tdil[1]
                 end)
@@ -294,8 +295,8 @@ function set_nonconvex_constraints!(
     if algo==:scvx
         problem_set_s!(pbm, algo, _q__s, _q__C)
     else
-        _q___s = (t, k, x, u, p, pbm) -> _q__s(t, k, x, nothing, p, pbm)
-        _q___C = (t, k, x, u, p, pbm) -> _q__C(t, k, x, nothing, p, pbm)
+        _q___s = (t, k, x, p, pbm) -> _q__s(t, k, x, nothing, p, pbm)
+        _q___C = (t, k, x, p, pbm) -> _q__C(t, k, x, nothing, p, pbm)
         problem_set_s!(pbm, algo, _q___s, _q___C)
     end
 
