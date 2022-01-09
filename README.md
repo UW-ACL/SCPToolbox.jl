@@ -2,14 +2,14 @@
 <img alt="SCP Toolbox"
     title="SCP Toolbox"
     src="./figures/logo.png"
-    width="400px" />
+    width="300px" />
 </p>
 
 <p align="center">
     <a href="http://www.gnu.org/licenses/gpl-3.0.txt"><img src="https://img.shields.io/badge/license-GPL_3-green.svg" alt="License GPL 3" /></a>
 </p>
 
-<p>
+<p align="center">
     <a href="figures/logo/about.md">About the logo</a>
 </p>
 
