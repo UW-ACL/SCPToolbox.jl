@@ -1,3 +1,10 @@
+<p align="center">
+<img alt="SCP Toolbox"
+    title="SCP Toolbox"
+    src="../logo.png"
+    width="300px" />
+</p>
+
 The SCP Toolbox logo is composed of the following elements:
 
 - SCP: this is the core algorithmic framework of the toolbox, which stands for
