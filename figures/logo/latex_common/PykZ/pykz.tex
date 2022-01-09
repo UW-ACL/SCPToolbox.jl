@@ -1,0 +1,319 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% PykZ
+%
+% A package that combines the speed of Python for numerical calculation and the
+% drawing capabilities of TikZ, to make publication-quality drawing faster.
+%
+% Some conventions:
+%
+%   \@pik@<name> : PykZ internal key <name>
+%   \@piv@<name> : PykZ internal variable <name>
+%   \@pic@<name> : PykZ internal command <name>
+%   @pie@<name> : PykZ internal environment <name>
+%
+% Danylo Malyuta, 2020
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\makeatletter
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Load packages
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\usepackage{filecontents}
+\usepackage{fancyvrb}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% General functions
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\gdef\@piv@python@delay{0.5} % Startup wait for Python server
+
+\newcommand{\pykzinit}[1]{
+  % ---------------------------------------------------------
+  %
+  % Initialization of PykZ.
+  % Starts the Python background server process.
+  % Must be called before doing anything that uses PykZ.
+  %
+  % ---------------------------------------------------------
+  \xdef\@piv@relpath{#1}
+  % Start a background Python server
+\begin{@pie@shell}
+curdir=$(pwd) $() &&
+cd \@piv@relpath &&
+python server.py &
+\end{@pie@shell}
+  % Allow some start-up time for Python
+\begin{@pie@shell}
+sleep \@piv@python@delay
+\end{@pie@shell}
+  % Determine path to directory where latex_common resides
+  \pykzmathinline[@piv@pypath]{'\@piv@relpath'[:'\@piv@relpath'.find('latex_common')]}
+}
+
+\NewEnviron{@pie@shell}{%
+  \immediate\write18{\BODY}%
+}
+
+\newenvironment{pykzpicture}[1][]{%
+  % ---------------------------------------------------------
+  %
+  % A wrapper of the tikzpicture environment, which does all the PykZ
+  % initialization in the background
+  %
+  % Parameters
+  % ----------
+  % #1 : same options as you would pass tikzpicture
+  % #2 : relative location of PykZ directory
+  %
+  % ---------------------------------------------------------
+  %
+  % -------------------------------------
+  % Check if 3D required
+  % -------------------------------------
+  \edef\@threed{3d}%
+  \pykzmathinline[@use@threed]{'\@threed' in str('#1')}%
+  \pykzmathinline[@tikz@opts]{str('#1').replace('\@threed,','').
+    replace(',\@threed','').replace('\@threed','')}%
+  % -------------------------------------
+  % Start the tikzpicture
+  % -------------------------------------
+  \tikzset{%
+    apply style/.code={%
+      \tikzset{#1}%
+    }%
+  }%
+  \begin{tikzpicture}[
+    % Rounded line ends
+    line cap=round,
+    % Bevelled (non-sharp) polygon corners
+    line join=bevel,
+    % User commands
+    apply style/.expand once=\@tikz@opts]
+    %
+    % -------------------------------------
+    % Common styles
+    % -------------------------------------
+    \tikzset
+    {
+      % No default separation
+      every node/.append style=
+      {
+        inner sep=0,
+        outer sep=0
+      },
+      % Default arrow
+      arrow/.append style=
+      {
+        -latex
+      },
+      % Text labels
+      label/.append style=
+      {
+        outer sep=1
+      },
+      % Bezier curve controls style
+      bezier/.style={
+        postaction={
+          decoration={
+            show path construction,
+            curveto code={
+              \draw [blue]
+              (\tikzinputsegmentfirst) -- (\tikzinputsegmentsupporta)
+              (\tikzinputsegmentlast) -- (\tikzinputsegmentsupportb);
+              \fill [red, opacity=0.5]
+              (\tikzinputsegmentsupporta) circle [radius=.5ex]
+              (\tikzinputsegmentsupportb) circle [radius=.5ex];
+            }
+          },
+          decorate
+        }}
+    }%
+    %
+    % -------------------------------------
+    % Activate 3D plot
+    % -------------------------------------
+    \ifthenelse{\equal{\@use@threed}{True}}{
+      \xdef\@piv@td@main@alt{60}%
+      \xdef\@piv@td@main@azi{125}%
+      \tdplotsetmaincoords{\@piv@td@main@alt}{\@piv@td@main@azi}%
+      \pykzmathinline[@piv@td@R]{(np.eye(3)).tolist()}%
+    }{}
+    \pykzmathinline[@threed@cmd]{'tdplot_main_coords' if (\@use@threed) else ''}%
+    \begin{scope}[\@threed@cmd]%
+      %
+      % -------------------------------------
+      % User code
+      % -------------------------------------
+    }
+    % BODY
+    {
+    \end{scope}%
+  \end{tikzpicture}%
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Math library
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newcommand{\pykzexec}[1]{%
+  % ---------------------------------------------------------
+  %
+  % Call a function in pykz_custom.py, and store result in
+  % local variables of Python session.
+  %
+  % ---------------------------------------------------------
+\begin{@pie@shell}
+cd \@piv@relpath && ./client "<exec> #1"
+\end{@pie@shell}%
+}
+
+\newcommand{\pykzmathinline}[2][]{%
+  % ---------------------------------------------------------
+  %
+  % Send one-line math command to Python, and store result in \out.
+  %
+  % ---------------------------------------------------------
+\begin{@pie@shell}%
+curdir=$(pwd) $() &&
+cd \@piv@relpath &&
+./client "#2" &&
+mv result.tex $curdir $()
+\end{@pie@shell}%
+  \input{result.tex}%
+  \ifthenelse{\equal{\out}{PYKZ_FAIL}}{%
+    \PackageError{PykZ}{Python failed to process your command}{%
+      Is your command proper Python syntax?}%
+  }{}%
+  \ifthenelse{\equal{#1}{}}{}{\expandafter\xdef\csname #1\endcsname{\out}}%
+}
+
+\newenvironment{pykzmathblock}
+% ---------------------------------------------------------
+%
+% Save a block of Python code in a file accessible to PykZ
+% for later execution.
+%
+% ---------------------------------------------------------
+{\VerbatimOut{pykz_custom.py}}
+{\endVerbatimOut
+\begin{@pie@shell}
+mv pykz_custom.py \@piv@pypath
+\end{@pie@shell}
+}
+
+\newcommand{\pykzmathfunction}[1]{
+  % ---------------------------------------------------------
+  %
+  % Call a function in pykz_custom.py, and store result in
+  % local variables of Python session.
+  %
+  % ---------------------------------------------------------
+\begin{@pie@shell}
+cd \@piv@relpath && ./client "<function> #1"
+\end{@pie@shell}
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Drawing
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newcommand{\shift}[2]{%
+  %
+  % Shift a point #1 by amount #2.
+  %
+  ($(#1)+(#2)$)%
+}
+
+\renewcommand{\bezier}[2]{%
+  % ---------------------------------------------------------
+  %
+  % Bezier curve controls.
+  %
+  % Parameters
+  % ----------
+  % #1 : angle:radius for start point control
+  % #2 : angle:radius for end point control
+  %
+  % ---------------------------------------------------------
+  .. controls ++(#1) and ++(#2) ..}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Beamer tools
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newenvironment{pageplace}[1]
+{
+  \xdef\@pos@args{#1}
+  \pykzpicture[remember picture,
+  overlay,
+  shift={(current page.center)}]
+  \pykzmathinline[@arg@length]{len([\@pos@args])}
+  \ifthenelse{\equal{\@arg@length}{2}}{
+    % Direct position
+    \pykzmathinline[@pos@x]{str([\@pos@args][0]).replace(chr(39),'')}
+    \pykzmathinline[@pos@y]{str([\@pos@args][1]).replace(chr(39),'')}
+    \dimensionalize{\@pos@x,\@pos@y}
+  }{
+    % Position using grid
+    \tikzmath{
+      \@page@width = \paperwidth;
+      \@page@height = \paperheight;
+    }
+    \pykzmathinline[@pos@x]{(([\@pos@args][3]-0.5)/[\@pos@args][1]-0.5)*\@page@width}
+    \pykzmathinline[@pos@y]{(-([\@pos@args][2]-0.5)/[\@pos@args][0]+0.5)*\@page@height}
+    \dimensionalize{\@pos@x,\@pos@y}
+  }
+  \coordinate (loc) at (\@pos@x,\@pos@y);
+}{
+  \endpykzpicture
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Utilities
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\def\convertto#1#2{\strip@pt\dimexpr #2*65536/\number\dimexpr 1#1}
+\define@key{@pik@keys}{unit}{\def\@@@unit{#1}}
+\newcommand{\dimensionalize}[2][]{%
+  %
+  % Append to #1 the unit \@@@unit.
+  % Common use case is to append "pt" to a tikzmath output.
+  %
+  % -- Parameters
+  \setkeys{@pik@keys}{unit=pt,#1}%
+  % -- Function body
+  \foreach \@@var in {#2} {%
+    \ifthenelse{\equal{\@@@unit}{}}{%
+      \pykzmathinline{'\@@var'[:-2]}%
+      \expandafter\xdef\@@var{\out}%
+    }{%
+      \tikzmath{\@@@@value=\@@var;}% % to pt
+      \def\@pt@unit{pt}%
+      \xdef\@@@@tmp{\@@@@value\@pt@unit}% % append "pt" unit
+      \expandafter\xdef\@@var{\convertto{\@@@unit}{\@@@@tmp}\@@@unit}% % convert to target unit
+    }%
+  }%
+}
+
+\define@key{@pik@keys}{amount}{\def\@@amount{#1}}
+\newcommand{\counter@increment}[2][]{%
+  %
+  % Increments counter #2 by increment amount #1 (default: 1).
+  %
+  % -- Parameters
+  \setkeys{@pik@keys}{amount=1,#1}%
+  % -- Function body
+  \tikzmath{\@@counter@next=int(#2+\@@amount);}%
+  \xdef#2{\@@counter@next}%
+}
+
+\makeatother
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:

@@ -1,0 +1,202 @@
+% ..:: Logic/scripting ::..
+
+\usepackage{ifthen}
+\usepackage{pgffor}
+\usepackage{etoolbox}
+\usepackage{parselines}
+\usepackage{environ}
+\usepackage{keyval}
+\usepackage{listofitems}
+\usepackage{forloop}
+\usepackage{calc}
+\usepackage{xstring}
+\usepackage{changepage}
+\usepackage{scrextend}
+\usepackage{expl3}
+\usepackage{stackengine}
+
+% ..:: Math ::..
+
+\makeatletter
+\ifthenelse{\isundefined{\lefteqs}}{
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{mathtools}
+}{
+\usepackage[fleqn]{amsmath}
+\usepackage[fleqn]{mathtools}
+}
+\usepackage{amssymb}
+\@ifclassloaded{autart}{}{\usepackage{amsthm}}
+\makeatother
+\usepackage{thmtools}
+\usepackage{ar}
+\usepackage{empheq}
+\usepackage{mathrsfs}
+\usepackage{bm}
+\usepackage{sansmath}
+
+\makeatletter
+\let\ltxxlabel\ltx@label
+\makeatother
+
+% ..:: Colors ::..
+
+\usepackage{color}
+\makeatletter
+\@ifclassloaded{beamer}{}{
+\usepackage[table]{xcolor}}
+\makeatother
+
+% ..:: Figures ::..
+
+\usepackage{graphicx}
+\makeatletter
+\@ifclassloaded{uwthesis/uwthesis}{
+  \usepackage{subfig}
+}{
+  \@ifclassloaded{IEEEtran}{
+    % \usepackage[caption=false]{subfig}
+  }{
+    \usepackage{subcaption}
+  }
+}
+\@ifclassloaded{IEEEtran}{}{\usepackage{caption}}
+\makeatother
+\usepackage{dblfloatfix}
+
+% ..:: Tables ::..
+
+\usepackage{tabularx}
+\usepackage{adjustbox}
+\usepackage{multicol}
+\usepackage{diagbox} % \diagbox{rows}{columns} with slash in between
+\usepackage{varwidth} % V{max_width} variable-width cell type
+\usepackage{makecell} % \makecell[l|r|c]{line 1 \\ line 2}
+\usepackage{arydshln}
+
+% ..:: Drawing ::..
+
+\usepackage{tikz}
+\usepackage{tikz-3dplot}
+\usetikzlibrary{backgrounds}
+\usetikzlibrary{arrows}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{intersections}
+\usetikzlibrary{math}
+\usetikzlibrary{fpu}
+\usetikzlibrary{shapes}
+\usetikzlibrary{positioning}
+\usetikzlibrary{decorations.markings}
+\usetikzlibrary{decorations.pathreplacing}
+\usetikzlibrary{decorations.text}
+\usetikzlibrary{tikzmark}
+\usetikzlibrary{fadings}
+
+% ..:: Document elements ::..
+
+\makeatletter
+\@ifclassloaded{standalone}{}{\usepackage[tikz]{mdframed}}
+\@ifclassloaded{beamer}{}{
+  \@ifclassloaded{uwthesis/uwthesis}{}{
+    \@ifclassloaded{IEEEtran}{}{
+      \usepackage{tocloft}
+    }}}
+\usepackage{enumitem}
+\makeatother
+\usepackage{listings}
+\usepackage{lettrine}
+\usepackage{algorithm, algorithmicx}
+\ifthenelse{\isundefined{\algouseends}}{
+\usepackage[noend]{algpseudocode}}{
+\usepackage{algpseudocode}}
+\usepackage[many,magazine]{tcolorbox}
+\usepackage[binary-units=true]{siunitx}
+\usepackage{chemformula}
+\usepackage[normalem]{ulem}
+\usepackage{cancel}
+\usepackage{accents}
+\makeatletter
+\@ifclassloaded{beamer}{\usepackage{multimedia}}{}
+\makeatother
+\usepackage{lipsum}
+\usepackage{mfirstuc}
+\usepackage{import}
+\usepackage{nicematrix}
+
+\makeatletter
+\ifthenelse{\isundefined{\nobiblatex}}{
+  \usepackage{bibentry} % use \bibentry{...} for in-text citation
+  \newcommand{\usebiblatex}[1]{%
+    \usepackage[backend=biber,
+    style=#1,
+    sorting=none,
+    url=false,
+    sortcites=true,
+    defernumbers=true]{biblatex}}
+  \@ifclassloaded{beamer}{
+    \usebiblatex{authoryear}}{
+    \ifthenelse{\isundefined{\preprintcsm}}{%
+      \usebiblatex{numeric}}{%
+      \usebiblatex{ieee}}}
+}{}
+\makeatother
+
+\usepackage[outline]{contour}
+\usepackage{extdash}
+\usepackage{textcomp}
+
+% ..:: Layout ::..
+
+\usepackage{float}
+\usepackage{afterpage}
+\ifthenelse{\isundefined{\landscapemode}}{
+%\usepackage{lscape} % production (non-rotated PDF pages)
+%\usepackage{pdflscape} % writing (rotated PDF pages, don't need to twist head)
+\def\landscapemode{pdflscape}
+}{}
+\usepackage{\landscapemode} % writing (rotated PDF pages, don't need to twist head)
+\usepackage{varwidth}
+\usepackage{nomencl}
+\usepackage{longtable}
+\usepackage{marginnote}
+\makeatletter
+\@ifclassloaded{beamer}{}{
+\@ifclassloaded{autart}{}{
+\@ifclassloaded{standalone}{}{
+\@ifclassloaded{ieeeconf}{}{
+\usepackage[explicit]{titlesec}
+}}}}
+\makeatother
+\usepackage{soul}
+\usepackage{stackengine}
+\usepackage{scalerel}
+\usepackage{lastpage}
+\usepackage{fancyhdr}
+\usepackage{nameref}
+
+% ..:: Referencing ::..
+
+\makeatletter
+
+\ifthenelse{\isundefined{\preprintcsm}}{}{
+  \gdef\nohref{}}
+\@ifclassloaded{beamer}{%
+  \gdef\nohref{}}{}
+
+\ifthenelse{\isundefined{\nohref}}{
+  \usepackage[hypertexnames=false]{hyperref}}{}
+
+\makeatother
+
+\usepackage{xr}
+
+% ..:: General ::..
+
+\usepackage{xspace}
+\usepackage{setspace}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "../main"
+%%% End:

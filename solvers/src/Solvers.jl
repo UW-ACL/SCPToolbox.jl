@@ -29,7 +29,9 @@ include("scvx.jl")
 end
 
 # ..:: GuSTO algorithm ::..
-# TODO
+module GuSTO
+include("gusto.jl")
+end
 
 module PTR
 include("ptr.jl")

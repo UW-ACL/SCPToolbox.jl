@@ -1,0 +1,783 @@
+% ..:: Helper functions ::..
+
+\newcommand{\myappend}[1]{\ifthenelse{\equal{#1}{}}{}{,#1}}
+\newcommand{\myprepend}[1]{\ifthenelse{\equal{#1}{}}{}{#1,}}
+
+% ..:: Generic math ::..
+
+% Parentheses
+\ExplSyntaxOn
+\makeatletter
+\NewDocumentCommand{\parengen}{m m m m}
+{
+  % \group_begin: Makes the variables inside *local* to the group
+  % Source: https://www.alanshawn.com/latex3-tutorial/
+  \group_begin:
+  % Parameters
+  \tl_set:Nn \l_left_paren_tl {#1}
+  \tl_set:Nn \l_right_paren_tl {#2}
+  \tl_set:Nn \l_paren_sz_tl {#3}
+  % Logic
+  \ifthenelse{\equal{\l_paren_sz_tl}{}}{
+    \l_left_paren_tl #4 \l_right_paren_tl
+  }{
+    \ifthenelse{\equal{\l_paren_sz_tl}{auto}}{
+      \left\l_left_paren_tl #4 \right\l_right_paren_tl
+    }{
+      \csname \l_paren_sz_tl\endcsname\l_left_paren_tl
+      #4
+      \csname \l_paren_sz_tl\endcsname\l_right_paren_tl
+    }
+  }
+  \group_end:
+}
+
+\newcommand{\pare}[2][]{\parengen{(}{)}{#1}{#2}}
+\newcommand{\brak}[2][]{\parengen{[}{]}{#1}{#2}}
+\newcommand{\brac}[2][]{\parengen{\{}{\}}{#1}{#2}}
+\newcommand{\angl}[2][]{\parengen{\langle}{\rangle}{#1}{#2}}
+\newcommand{\abso}[2][]{\parengen{|}{|}{#1}{#2}}
+
+\newcommand{\@@normgen}[2][]{\parengen{\|}{\|}{#1}{#2}}
+
+\makeatother
+\ExplSyntaxOff
+
+\newcommand*{\bigs}[2]{\vcenter{\hbox{\scalebox{#1}{\ensuremath#2}}}}
+\let\oldbig\big
+\let\oldbigg\bigg
+\let\oldBig\Big
+\let\oldBigg\Bigg
+\renewcommand{\big}{\oldbig}
+\renewcommand{\bigg}{\bigs{1.3}}
+\newcommand{\biggg}{\oldBig}
+\renewcommand{\Big}{\oldbigg}
+\renewcommand{\Bigg}{\oldBigg}
+
+\makeatletter
+\newcommand{\fade}[2][1]{%
+  \edef\fade@amount{\the\numexpr 100-#1*30 \relax}%
+  {\color{black!\fade@amount!white}#2}}
+\makeatother
+
+% Ifthenelse based on a mathematical condition
+\newcommand{\ifelsemath}[3]{%
+  \pgfmathparse{#1 ? 1:0}%
+  \ifthenelse{\pgfmathresult>0}{#2}{#3}}
+
+\newcommand{\where}{:}
+\newcommand{\given}{\mid}
+\newcommand{\CC}[1]{\mathcal C^{#1}}
+\newcommand{\inv}[1][]{\ifthenelse{\equal{#1}{}}{^{-1}}{^{-#1}}}
+\newcommand{\invT}{^{-\transp}}
+\newcommand{\invsq}{^{-\frac{1}{2}}}
+\newcommand{\polar}{^{\circ}}
+\newcommand{\ortho}{^{\perp}}
+\newcommand{\powsq}{^{\frac{1}{2}}}
+\newcommand{\ceil}[1]{\left\lceil#1\right\rceil}
+\newcommand{\floor}[1]{\left\lfloor#1\right\rfloor}
+\newcommand{\sign}{\mathrm{sgn}}
+\ExplSyntaxOn
+\makeatletter
+% Sources inspiring the below:
+%   - Main: https://tex.stackexchange.com/a/326918/90535
+%   - Optional arg count (nargin): https://tex.stackexchange.com/a/395784/90535
+\NewDocumentCommand{\norm}{o m}
+{
+  \group_begin:
+  % split the input at commas
+  \IfNoValueTF{#1}{
+    \def\@nargin{0}
+  }{
+    \seq_set_split:Nnn \l_var_seq { , } { #1 }
+    \edef\@nargin{\seq_count:N \l_var_seq}
+  }
+  % set the item to variables
+  \seq_pop_left:NN \l_var_seq \l_norm_type_tl
+  \seq_pop_left:NN \l_var_seq \l_delimiter_size_tl
+  % Defaults
+  \pgfmathparse{\@nargin<=1 ? 1:0}
+  \ifthenelse{\pgfmathresult>0}{
+    \tl_set:Nn \l_delimiter_size_tl {}
+  }{}
+  \pgfmathparse{\@nargin==0 ? 1:0}
+  \ifthenelse{\pgfmathresult>0}{
+    \tl_set:Nn \l_norm_type_tl {}
+  }{}
+  % Print the text
+  % print; _ is not available here
+  \ifthenelse{\equal{\l_delimiter_size_tl}{auto}}{%
+    \@@normgen[auto]{#2}}{%
+    \ifthenelse{\equal{\l_delimiter_size_tl}{}}{
+      \@@normgen[]{#2}}{\@@normgen[\l_delimiter_size_tl]{#2}}}%
+  \c_math_subscript_token{\l_norm_type_tl}
+  \group_end:
+}
+\seq_new:N \l_var_seq
+\tl_new:N \l_norm_type_tl
+\tl_new:N \l_delimiter_size_tl
+\makeatother
+\ExplSyntaxOff
+
+\newcommand{\dualnorm}[2][]{\norm[#1]{#2}^*}
+\newcommand{\vertiii}[1]{{\left\vert\kern-0.25ex\left\vert\kern-0.25ex\left\vert #1
+        \right\vert\kern-0.25ex\right\vert\kern-0.25ex\right\vert}}
+\newcommand{\inorm}[2][]{\vertiii{#2}_{#1}}
+\newcommand{\seq}[1]{\{#1\}}
+\newcommand{\sgn}{\mbox{\textrm{sgn}}}
+\newlength{\dhatheight}
+\newcommand{\hhat}[1]{%
+  \settoheight{\dhatheight}{\ensuremath{\hat{#1}}}%
+  \addtolength{\dhatheight}{-0.35ex}%
+  \hat{\vphantom{\rule{1pt}{\dhatheight}}%
+    \smash{\hat{#1}}}}
+
+\makeatletter
+\define@key{projKeys}{set}{\def\set{#1}}
+\define@key{proxKeys}{t}{\def\t{#1}}
+\define@key{proxKeys}{f}{\def\f{#1}}
+\makeatother
+\DeclareMathOperator{\projecti}{proj}
+\DeclareMathOperator{\proj}{proj}
+\DeclareMathOperator{\proximal}{prox}
+\newcommand{\Proj}[2][]{%
+  \setkeys{projKeys}{set=,#1}%
+  \mathchoice{\underset{\set}{\projecti}}%
+  {\projecti_{\set}}{\projecti_{\set}}{\projecti_{\set}}%
+  \left(#2\right)%
+}
+\newcommand{\Prox}[2][]{%
+  \setkeys{proxKeys}{t=t,#1}%
+  \setkeys{proxKeys}{f=f,#1}%
+  \mathchoice{\underset{\t\f}{\proximal}}%
+  {\proximal_{\t\f}}{\proximal_{\t\f}}{\proximal_{\t\f}}%
+  \ifthenelse{\equal{#2}{}}{}{\left(#2\right)}%
+}
+\DeclareMathOperator{\distance}{dist}
+\newcommand{\dist}[2][]{%
+  \distance_{#1}\ifthenelse{\equal{#2}{}}{}{(#2)}
+}
+\newcommand{\gauge}[2][]{%
+  \gamma_{#1}\ifthenelse{\equal{#2}{}}{}{(#2)}
+}
+
+\newcommand{\Pre}{\mathop\text{Pre}}
+\newcommand{\PP}{$\mathcal{P}$\xspace}
+\newcommand{\NP}{$\mathcal{NP}$\xspace}
+\newcommand{\NPhard}{$\mathcal{NP}$-hard\xspace}
+\newcommand{\NPcomplete}{$\mathcal{NP}$-complete\xspace}
+\newcommand{\transp}{{\scriptscriptstyle\mathsf{T}}}
+\newcommand{\T}{^\transp}
+\newcommand{\innerproduct}[3][]{\langle#2,#3\rangle_{#1}}
+\newcommand{\inner}[2][]{\langle#2\rangle_{#1}}
+\newcommand{\dd}[1][]{#1\mathrm{d}}
+\newcommand{\dt}[1][]{\dd[#1]t}
+\newcommand{\sdd}{\dd[\,]}
+\newcommand{\sdt}{\dt[\,]}
+\newcommand{\fromabove}{\downarrow}
+\newcommand{\frombelow}{\uparrow}
+\newcommand{\fun}[2][1]{%
+  #2(%
+  \foreach \index in {1, ..., #1} {%
+    \ifthenelse{\equal{\index}{#1}}{%
+      \cdot%
+    }{%
+      \cdot,%
+    }%
+  })}
+\newcommand{\define}[1]{\textit{#1}}%
+\newcommand{\definedas}[1][tri]{%
+  \ifthenelse{\equal{#1}{tri}}{\triangleq}{\coloneqq}}
+\newcommand{\inlineint}{\textstyle\int}
+\newcommand{\inlinesum}{\textstyle\sum}
+\newcommand{\evalat}[2]{\left.#1\right|_{#2}}
+\newcommand{\epsmach}{\epsilon_{mach}}
+\renewcommand{\implies}{\Rightarrow}
+\renewcommand{\iff}{\Leftrightarrow}
+\newcommand{\mleq}{\preceq}
+\newcommand{\mgeq}{\succeq}
+\newcommand{\mle}{\prec}
+\newcommand{\mgr}{\succ}
+\DeclareMathOperator*{\exptx}{exp}
+\renewcommand{\exp}[2][exponent]{\ifthenelse{\equal{#1}{exponent}}{e^{#2}}{\exptx\left(#2\right)}}
+\DeclareMathOperator*{\expsf}{\mathsf{exp}}
+\newcommand{\expm}[2][exponent]{\ifthenelse{\equal{#1}{exponent}}{\mathsf{e}^{#2}}{\expsf\left(#2\right)}}
+\newcommand{\ttilde}[1]{\tilde{\raisebox{0pt}[0.85\height]{%
+      $\tilde{#1}$}}}
+\newcommand{\tttilde}[1]{\tilde{\raisebox{0pt}[0.88\height]{%
+      $\tilde{\raisebox{0pt}[0.85\height]{%
+          $\tilde{#1}$}}$}}}
+\newcommand{\overlline}[1]{\overline{\overline{#1}}}
+\newcommand{\bbar}[1]{\bar{\bar{#1}}}
+\newcommand{\prefix}[2][]{{}^{#1}_{#2}}
+
+\makeatletter
+\DeclareFontFamily{U}{tipa}{}
+\DeclareFontShape{U}{tipa}{m}{n}{<->tipa10}{}
+\newcommand{\arc@char}{{\usefont{U}{tipa}{m}{n}\symbol{62}}}%
+\renewcommand{\arc}[1]{\mathpalette\arc@arc{#1}}
+\newcommand{\arc@arc}[2]{%
+  \sbox0{$\m@th#1#2$}%
+  \vbox{
+    \hbox{\resizebox{\wd0}{\height}{\arc@char}}
+    \nointerlineskip
+    \box0
+  }%
+}
+\makeatother
+
+\makeatletter
+\newenvironment{taggedsubequations}[1]
+{%
+  % \end{subequations} will advance `equation`
+  \addtocounter{equation}{-1}%
+  \begin{subequations}%
+    % set the current label
+    \def\@currentlabel{#1}%
+    % redefine \theequation
+    \renewcommand{\theequation}{#1.\alph{equation}}%
+  }
+  {\end{subequations}}
+\makeatother %not \makeatletter
+
+\newcommand{\dash}{\Hyphdash}
+
+% \hfill equivalents inside math mode
+% Source: https://tex.stackexchange.com/a/83522/90535
+\makeatletter
+\newcommand{\pushright}[1]{%
+  \ifmeasuring@#1\else\omit\hfill$\displaystyle#1$\fi\ignorespaces}
+\newcommand{\pushleft}[1]{%
+  \ifmeasuring@#1\else\omit$\displaystyle#1$\hfill\fi\ignorespaces}
+\makeatother
+
+% ..:: Statistics ::..
+
+\DeclareMathOperator{\expectation}{\mathbf{E}}
+\newcommand{\EE}{\expectation}
+\DeclareMathOperator{\variance}{\mathbf{Var}}
+\newcommand{\Var}{\variance}
+\DeclareMathOperator{\prob}{\mathrm{prob}}
+
+% ..:: Sets ::..
+
+\newcommand{\powerSet}[1]{2^{#1}}
+\newcommand{\union}{\cup}
+\newcommand{\intersection}{\cap}
+\newcommand{\Union}{\bigcup}
+\newcommand{\Intersection}{\bigcap}
+\newcommand{\set}[1]{\mathcal #1}
+\newcommand{\setcomplement}[1]{#1^{\mathrm{c}}}
+\newcommand{\eucledian}[1][]{\ifthenelse{\equal{#1}{}}{\mathbb E}{\mathbb #1}}
+\DeclareMathOperator{\@convhull}{conv}
+\newcommand{\reals}[1][]{%
+  \ifthenelse{\equal{#1}{extended}}{\overline}{}{\mathbb R}%
+}
+\newcommand{\extendedreals}{\overline\reals} % DEPRECATED
+\newcommand{\real}{\mathbb R}
+\newcommand{\pos}[1][\reals]{#1_{++}}
+\newcommand{\nonneg}[1][\reals]{#1_{+}}
+\newcommand{\normball}[1][]{%
+  % {x : ||x||_#1 <= 1}
+  % #1: norm type
+  \mathbb B_{#1}}
+\newcommand{\integers}{\mathbb Z}
+\newcommand{\naturals}{\mathbb N}
+\newcommand{\binary}{\mathbb I}
+\newcommand{\quaternion}{\mathbb Q}
+\newcommand{\symm}{\mathbb S}  % symmetric matrices
+\newcommand{\psd}{\symm_{+}}
+\newcommand{\pd}{\symm_{++}}
+\DeclareMathOperator{\dom}{dom}
+\DeclareMathOperator{\epi}{epi}
+% \newcommand{\hypo}{\mathrm{hypo}}
+% \newcommand{\interior}[1]{\mathrm{int}(#1)}
+\DeclareMathOperator{\interior}{int}
+\DeclareMathOperator{\relint}{relint}
+\DeclareMathOperator{\aff}{aff}
+\DeclareMathOperator{\bd}{bd}
+\DeclareMathOperator{\closure}{cl}
+\newcommand{\compl}[1]{#1^\mathrm{c}}
+\DeclareMathOperator{\boundary}{\partial}
+% \newcommand{\relint}{\mathrm{relint}}
+\newcommand{\coni}[1]{\mathrm{coni}(#1)}
+\newcommand{\bdry}{\partial}
+\newcommand{\image}[1]{\mathrm{im}(#1)}
+\newcommand{\setHtwo}{\set{H}_2}
+\newcommand{\setLinfty}{\set{L}_\infty}
+\newcommand{\Ellipsoid}[1][]{\mathcal E_{#1}}
+\newcommand{\sequence}[3][k]{\{#2_{#1}\}_{#1=1}^{#3}}
+\newcommand{\minkowplus}{\oplus}
+\newcommand{\powerset}[1]{\mathscr{P}(#1)}
+\newcommand{\zeroset}{\{0\}}
+\DeclareMathOperator{\vol}{vol}
+\newcommand{\volume}[1]{\vol\left(#1\right)}
+\DeclareMathOperator{\vtcs}{\set V}
+\newcommand{\vertices}[1]{\vtcs\left(#1\right)}
+\DeclareMathOperator{\myfixedpointset}{fixed}
+\newcommand{\fixedpoint}[1]{\myfixedpointset\left(#1\right)}
+\DeclareMathOperator{\sublevelsetsymbol}{lev}
+\newcommand{\levelset}[2][]{\sublevelsetsymbol_{#1}#2}
+
+% ..:: Algorithms ::..
+
+\newcommand{\algvar}[1]{\text{\IfSubStr{#1}{_}{%
+    \StrSubstitute{#1}{_}{\textunderscore}}{#1}}}
+\newcommand{\true}{\algvar{true}\xspace}
+\newcommand{\false}{\algvar{false}\xspace}
+\newcommand{\bigO}[1]{O\left(#1\right)}
+\newcommand{\smallO}[1]{o\left(#1\right)}
+\newcommand{\bigOmega}[1]{\Omega\left(#1\right)}
+\newcommand{\bigTheta}[1]{\Theta\left(#1\right)}
+\newcommand{\kd}{$k$-d\xspace}
+
+% ..:: Computer science ::..
+
+\makeatletter
+\definecolor{listinggray}{gray}{0.9}
+\definecolor{lbcolor}{rgb}{0.9,0.9,0.9}
+\colorlet{Darkgreen}{green!60!black}
+\lstdefinelanguage{Julia}%
+{morekeywords={abstract,break,case,catch,const,continue,do,else,elseif,%
+    end,export,false,for,function,immutable,import,importall,if,in,%
+    macro,module,otherwise,quote,return,switch,true,try,type,typealias,%
+    using,while},%
+  sensitive=true,%
+  alsoother={\$},%\$
+  morecomment=[l]\#,%
+  morecomment=[n]{\#=}{=\#},%
+  morestring=[s]{"}{"},%
+  morestring=[m]{'}{'},%
+}[keywords,comments,strings]
+%
+\lstset{
+  basicstyle=\scriptsize,
+  backgroundcolor=\color{lbcolor},
+  tabsize=4,
+  aboveskip={1.5\baselineskip},
+  breaklines=true,
+  upquote=true,
+  prebreak = \raisebox{0ex}[0ex][0ex]{\ensuremath{\hookleftarrow}},
+  frame=single,
+  numbers=left,
+  showtabs=false,
+  showspaces=false,
+  showstringspaces=false,
+  identifierstyle=\ttfamily,
+  keywordstyle=\color[rgb]{0,0,1},
+  commentstyle=\color{Darkgreen},
+  stringstyle=\color{red},
+  numberstyle=\color[rgb]{0.205, 0.142, 0.73},
+}
+%
+\lstdefinestyle{listing@C++}{
+  language=[GNU]C++,
+}
+%
+\lstdefinestyle{listing@Julia}{%
+  language = Julia,
+}
+%
+\lstdefinestyle{listing@Python}{%
+  language = Python,
+}
+%
+\newcommand\langname@bash{}
+\def\langname@bash{bash}
+\newcommand\prompt@bash{\texttt{\$}\ } %\$
+\newcommand\addedToEveryPar@bash{}
+\lst@AddToHook{EveryPar}{\addedToEveryPar@bash}
+\lst@AddToHook{PreInit}{%
+  \ifx\lst@language\langname@bash%
+  \let\addedToEveryPar@bash\prompt@bash%
+  \fi
+}
+\lstdefinestyle{listingterminal}{%
+  language=bash,
+  backgroundcolor=\color{black!90!blue},
+  basicstyle=\color{white},
+  commentstyle=\color{yellow!50},
+  keywordstyle=\bfseries\color{orange},
+  breaklines,
+  escapechar=@
+}
+%
+\newcommand{\cppcode}[2][]{\lstinputlisting[style=listing@C++,#1]{#2}}
+\newcommand{\pythoncode}[2][]{\lstinputlisting[style=listing@Python,#1]{#2}}
+\newcommand{\juliacode}[2][]{\lstinputlisting[style=listing@Julia,#1]{#2}}
+\lstnewenvironment{terminalcode}[1][]{\lstset{style=listingterminal,#1}}{}
+\makeatother
+
+% ..:: Analysis ::..
+
+\newcommand{\Lone}[1]{\|#1\|_1}
+\newcommand{\Ltwo}[1]{\|#1\|_2}
+\newcommand{\FLinf}[2]{\|#1\|_{#2}}
+\newcommand{\converge}[1][]{\overset{#1}{\to}}
+
+% ..:: Numerical analysis ::..
+
+\renewcommand{\O}[1]{\mathcal O(#1)}
+
+% ..:: Calculus ::..
+
+\newcommand{\grad}{\nabla}
+\newcommand{\hess}{\nabla^2}
+\newcommand{\diff}[2]{\nabla_{#1}#2}
+\newcommand{\hot}{\textnormal{h.o.t.}}
+\newcommand{\ddx}{\frac{\dd}{\dd x}}
+
+% ..:: Convex analysis ::..
+
+\newcommand{\subdiff}[1][none]{%
+  \ifthenelse{\equal{#1}{none}}{%
+    \partial%
+  }{%
+    \partial_{#1}%
+  }%
+}
+\newcommand{\normalcone}[2]{\set{N}_{#1}(#2)}
+\DeclareMathOperator{\conehull}{cone}
+\makeatletter
+\DeclareMathOperator{\@convhull}{conv}
+\newcommand{\convhull}[1][]{%
+  \ifthenelse{\equal{#1}{closed}}{\overline}{}\@convhull%
+}
+\DeclareMathOperator{\@closed@convex@envelope}{\overline{co}}
+\newcommand{\cce}{\@closed@convex@envelope}
+\makeatother
+\DeclareMathOperator{\extreme}{ext}
+\newcommand{\indicator}[1]{\delta_{#1}}
+\newcommand{\support}[2][delta]{\ifthenelse{\equal{#1}{delta}}{%
+    \delta^*_{#2}%
+  }{\sigma_{#2}}}
+\newcommand{\conj}{^{*}}
+\newcommand{\conjj}{^{**}}
+\newcommand{\shuffle}{^{\uparrow}}
+
+% ..:: Functions ::..
+
+\newcommand{\heaviside}{\sigma}
+
+% ..:: Linear Algebra ::..
+
+\DeclareMathOperator{\nul}{null}
+\DeclareMathOperator{\rank}{rank}
+\DeclareMathOperator{\range}{range}
+\DeclareMathOperator{\gph}{gph}
+\DeclareMathOperator{\img}{img}
+\DeclareMathOperator{\linspan}{span}
+\DeclareMathOperator{\diag}{diag}
+\DeclareMathOperator{\spec}{spec}
+\DeclareMathOperator{\tr}{\mathbf{tr}}
+\DeclareMathOperator{\vectorize}{vec}
+\newcommand{\Spec}[1]{\spec\left(#1\right)}
+\newcommand{\rpinv}{^\dagger}
+\newcommand{\lpinv}{^\ddagger}
+\newcommand{\blkdiag}[1]{\mathrm{blkdiag}(#1)}
+\DeclareMathOperator{\trace}{\mathbf{tr}}
+\newcommand{\svmax}[1]{\bar\sigma(#1)}
+\newcommand{\Matrix}[2][]{%
+  \ifthenelse{\equal{#1}{}}{}{\setlength\arraycolsep{#1}}%
+  \begin{bmatrix}#2\end{bmatrix}}
+\renewcommand{\Array}[2][]{%
+  \ifthenelse{\equal{#1}{}}{}{\setlength\arraycolsep{#1}}%
+  \begin{matrix}#2\end{matrix}}
+\newcommand{\Mnl}{\protect\\} % protected newline
+\newcommand{\linmap}{\mathcal}
+\makeatletter
+\newcommand{\toset}{%
+  \def\arr@offset{0.15em}
+  \def\arr@len{0.7em}
+  \def\arr@height{0.3em}
+  \tikz[minimum height=0ex,outer sep=0,inner sep=0]
+  \path[-{Latex[length=0.8mm]}]
+  node (a) at (0,0) {}
+  node (b) at (0,\arr@height) {}
+  (a) edge ++(\arr@len,0)
+  (b) edge ++(\arr@len,0)
+  (a) edge[draw=none] ++(0,-\arr@offset);%
+}
+\makeatother
+\newcommand{\zeros}{\bm{0}}
+\newcommand{\ones}{\bm{1}}
+\renewcommand{\skew}[1][]{^{\myprepend{#1}\times}}
+\newcommand{\Krylov}[3][]{\mathcal K\pare[#1]{#3; #2}}
+
+% ..:: Geometry ::..
+
+\newcommand{\fr}[1]{\mathcal{F}_{\mathcal{#1}}}
+\DeclareMathOperator*{\Expquat}{\mathsf{Exp}}
+\DeclareMathOperator*{\Logquat}{\mathsf{Log}}
+\newcommand{\qconj}{^{*}}
+
+% ..:: Measure theory ::..
+
+\newcommand{\alev}[1]{\text{a.e. }#1}
+\newcommand{\gen}[1]{\text{gen. }#1}
+\newcommand{\ev}[3][c]{%
+  \ifthenelse{\equal{#1}{c}}{%
+    \ifthenelse{\equal{#2}{}}{\forall[0,#3]}{\forall[#2,#3]}%
+  }{%
+    \ifthenelse{\equal{#1}{o}}{%
+      \ifthenelse{\equal{#2}{}}{\forall(0,#3)}{\forall(#2,#3)}%
+    }{%
+      \ifthenelse{\equal{#1}{oc}}{%
+        \ifthenelse{\equal{#2}{}}{\forall(0,#3]}{\forall(#2,#3]}%
+      }{%
+        \ifthenelse{\equal{#2}{}}{\forall[0,#3)}{\forall[#2,#3)}%
+      }%
+    }%
+  }%
+}
+
+% ..:: Optimization ::..
+
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\DeclareMathOperator*{\minimize}{\mathrm{minimize}}
+\DeclareMathOperator*{\maximize}{\mathrm{maximize}}
+\DeclareMathOperator*{\find}{\mathrm{find}}
+\DeclareMathOperator{\val}{val}
+
+\newcommand{\optimal}[1]{#1^*}
+% Logsumexp/softmax
+\newcommand{\lse}[1][]{\mathsf{L}_{#1}}
+\newcommand*\softmax{\lse}
+
+% Get more optimization commands via \input{latex_common/optimization.tex}
+
+% ..:: Referencing ::..
+
+\def\SectionLabel{section}
+\def\SubsectionLabel{subsection}
+\def\SubsubsectionLabel{subsubsection}
+\def\ChapterLabel{chapter}
+\def\AppendixLabel{appendix}
+\def\FigureLabel{fig}
+\def\TableLabel{table}
+\def\FootnoteLabel{footnote}
+\def\AlgorithmLabel{alg}
+\def\ProblemLabel{problem}
+\def\PropertyLabel{property}
+\def\TheoremLabel{theorem}
+\def\CorollaryLabel{corollary}
+\def\ConditionLabel{condition}
+\def\AssumptionLabel{assumption}
+\def\PropositionLabel{proposition}
+\def\DefinitionLabel{definition}
+\def\LemmaLabel{lemma}
+\def\ExampleLabel{example}
+\def\ListingLabel{listing}
+\newcommand{\GetLabel}[1]{\expandafter\csname #1Label\endcsname}
+\makeatletter
+\define@key{printRefKeys}{otherLabel}{\def\otherLabel{#1}}
+\define@key{printRefKeys}{concatenate}{\def\concatenate{#1}}
+\makeatother
+\newcommand{\PrintRefs}[3][]{%
+  % \ifthenelse{{#1}{}}{}{\edef\MyModifiedLabel{#1}}%
+  \setkeys{printRefKeys}{otherLabel=,#1}%
+  \setkeys{printRefKeys}{concatenate=false,#1}%
+  % #2: Element
+  % #3: label
+  \xdef\MyModifiedLabel{#2}%
+  \ifthenelse{\equal{\otherLabel}{}}{}{\xdef\MyModifiedLabel{\otherLabel}}%
+  \xdef\MyRefCount{0}%
+  \foreach \i in {#3} {%
+    \tikzmath{\MyRefCount=int(\MyRefCount+1);}%
+    \xdef\MyRefCount{\MyRefCount}%
+  }%
+  \edef\OrigRefCount{\MyRefCount}%
+  \ifthenelse{\equal{\MyRefCount}{1}}{%
+    #2~\ref{\GetLabel{\MyModifiedLabel}:#3}%
+  }{%
+    \xdef\MyCounter{0}%
+    \ifthenelse{\equal{#2}{Corollary}}{%
+      Corollaries%
+    }{%
+      #2s%
+    }~%
+    \foreach \AlgRef in {#3} {%
+      \tikzmath{\MyCounter=int(\MyCounter+1);}%
+      \xdef\MyCounter{\MyCounter}%
+      \ifthenelse{\equal{\concatenate}{true}}{%
+        \pgfmathparse{\MyCounter==1 ? 1 : 0}%
+        \ifthenelse{\pgfmathresult>0}{%
+          \ref{\GetLabel{\MyModifiedLabel}:\AlgRef}-%
+        }{%
+          \pgfmathparse{\MyCounter==\MyRefCount ? 1 : 0}%
+          \ifthenelse{\pgfmathresult>0}{%
+            \ref{\GetLabel{\MyModifiedLabel}:\AlgRef}%
+          }{}%
+        }%
+      }{%
+        \pgfmathparse{\MyCounter<\MyRefCount-1 ? 1 : 0}%
+        \ifthenelse{\pgfmathresult>0}{%
+          \ref{\GetLabel{\MyModifiedLabel}:\AlgRef}, %
+        }{%
+          \pgfmathparse{\MyCounter<\MyRefCount ? 1 : 0}%
+          \ifthenelse{\pgfmathresult>0}{%
+            \ref{\GetLabel{\MyModifiedLabel}:\AlgRef}%
+            \pgfmathparse{\OrigRefCount==2 ? 1:0}%
+            \ifthenelse{\pgfmathresult>0}{ and }{, and }%
+          }{%
+            \ref{\GetLabel{\MyModifiedLabel}:\AlgRef}%
+          }%
+        }%
+      }%
+    }%
+  }%
+}
+% Document section references
+\newcommand{\sref}[1]{\PrintRefs{Section}{#1}}
+\newcommand{\ssref}[2][]{\PrintRefs[otherLabel=Subsection,#1]{Section}{#2}}
+\newcommand{\sssref}[2][]{\PrintRefs[otherLabel=Subsubsection,#1]{Section}{#2}}
+\newcommand{\cref}[1]{\PrintRefs{Chapter}{#1}}
+\newcommand{\appref}[1]{\PrintRefs{Appendix}{#1}}
+\newcommand{\figref}[1]{\PrintRefs{Figure}{#1}}
+\newcommand{\tabref}[2][]{\PrintRefs[#1]{Table}{#2}}
+\renewcommand{\footref}[1]{\PrintRefs{Footnote}{#1}}
+\makeatletter
+\define@key{algKeys}{start}{\def\startline{#1}}
+\define@key{algKeys}{end}{\def\endline{#1}}
+\define@key{algKeys}{show}{\def\showalg{#1}}
+\makeatother
+\renewcommand{\algref}[2][]{%
+  % Parameters%
+  \setkeys{algKeys}{start=,#1}%
+  \setkeys{algKeys}{end=,#1}%
+  \setkeys{algKeys}{show=true,#1}%
+  % Print%
+  \ifthenelse{\equal{\startline}{}}{}{line%
+    \ifthenelse{\equal{\endline}{}}{}{s}}%
+  \ifthenelse{\equal{\startline}{}}{}{~\ref{alg:#2:line:\startline}%
+    \ifthenelse{\equal{\endline}{}}{}{-\ref{alg:#2:line:\endline}} %
+    of }%
+  \ifthenelse{\equal{\showalg}{true}}{\PrintRefs{Algorithm}{#2}}{}%
+}
+% Mathematical element references
+\newcommand{\pref}[2][]{\PrintRefs[#1]{Problem}{#2}}
+\newcommand{\propref}[2][]{\PrintRefs[#1]{Property}{#2}}
+\newcommand{\tref}[2][]{\PrintRefs[#1]{Theorem}{#2}}
+\newcommand{\corref}[2][]{\PrintRefs[#1]{Corollary}{#2}}
+\newcommand{\conref}[2][]{\PrintRefs[#1]{Condition}{#2}}
+\newcommand{\aref}[2][]{\PrintRefs[#1]{Assumption}{#2}}
+\newcommand{\prref}[2][]{\PrintRefs[#1]{Proposition}{#2}}
+\newcommand{\dref}[2][]{\PrintRefs[#1]{Definition}{#2}}
+\newcommand{\lref}[2][]{\PrintRefs[#1]{Lemma}{#2}}
+\newcommand{\eref}[2][]{\PrintRefs[#1]{Example}{#2}}
+% Other references
+\newcommand{\lstref}[2][]{\PrintRefs[#1]{Listing}{#2}}
+
+\newcommand{\figlabel}[1]{\label{fig:#1}}
+\newcommand{\tablabel}[1]{\label{table:#1}}
+
+% Add an external file whose content we wish to reference
+% Source: https://www.overleaf.com/learn/how-to/Cross_referencing_with_the_xr_package_in_Overleaf
+\makeatletter
+\newcommand*{\addFileDependency}[1]{% argument=file name and extension
+  \typeout{(#1)}
+  \@addtofilelist{#1}
+  \IfFileExists{#1}{}{\typeout{No file #1.}}
+}
+\makeatother
+\newcommand*{\myexternaldocument}[1]{%
+    \externaldocument{#1}%
+    \addFileDependency{#1.tex}%
+    \addFileDependency{#1.aux}%
+}
+
+% ..:: Units ::..
+
+\DeclareSIUnit{\radian}{rad}
+\DeclareSIUnit\century{century}
+\DeclareSIUnit\year{yr}
+\DeclareSIUnit{\ton}{t}
+
+% ..:: Lists ::..
+
+\makeatletter
+
+% Add an item to a comma separated list
+\newcommand{\add@list@item}[2]{
+  \ifthenelse{\equal{#1}{}}{\xdef#1{{#2}}}{\xdef#1{#1,{#2}}}
+}
+
+% Create a new counter, or reset its value to zero if one already exists
+\def\providecounter#1{%
+  \@ifundefined{c@#1}%
+  {\newcounter{#1}}{\setcounter{#1}{0}}}
+
+% Make an indexable "array" from a comma-separated list
+% Arguments: #1 (list name), #2 (comma-separate value list)
+\newcommand{\makelist}[2]{
+  \xdef\@current@list@name{#1}
+  \xdef\@current@list@counter{#1@listcounter}
+  \providecounter{\@current@list@counter}
+  \edef\@tmp@list{{#2}}
+  \expandafter\forcsvlist\expandafter\list@saveitem\@tmp@list
+}
+
+% Atomic function that assign i-th list element to i-th array element
+\newcommand{\list@saveitem}[1]{%
+  \stepcounter{\@current@list@counter}%
+  \expandafter\def\csname\@current@list@name%
+  \arabic{\@current@list@counter}\endcsname{#1}
+}
+
+% Access the i-th array element
+% Arguments: #1 (list name), #2 (one-based index)
+\newcommand{\list@nth}[2]{\csname #1#2\endcsname}
+
+\makeatother
+
+% ..:: Miscellaneous ::..
+
+% Print message to the compilation .log file
+% Source: https://tex.stackexchange.com/a/335123/90535
+\newcommand{\echodebug}[1]{\typeout{debug> #1}}
+
+\newcommand{\mrm}[2][m]{\ifthenelse{\equal{#1}{m}}{\mathrm{#2}}
+  {\textnormal{#2}}}
+\newcommand{\PhD}{Ph.D.\xspace}
+\newcommand{\Behcet}{Beh\c{c}et}
+\newcommand{\Acikmese}{A\c{c}{\i}kme\c{s}e}
+\newcommand*\samethanks[1][\value{footnote}]{\footnotemark[#1]}
+\makeatletter
+\@ifclassloaded{beamer}{}{\newcommand{\alert}[1]{\textbf{#1}}}
+\makeatother
+\newcommand{\lcvx}{LCvx\xspace}
+\newcommand{\emphasize}[1]{\textit{#1}}
+\newcommand{\scvx}{SCvx\xspace}
+\newcommand{\textsub}[1]{_{\mathrm{#1}}}
+\newcommand{\defintext}[1]{\textbf{#1}}
+\newenvironment{qanswer}{\color{blue}}{}
+\newenvironment{unfinished}{\color{red}\itshape}{}
+\newcommand{\makeunderscoreletter}{\catcode`\_11}
+\newcommand{\makeunderscoreother}{\catcode`\_8}
+
+% Hypertarget with correct baseline (to not aim a line too low)
+\makeatletter
+\newcommand{\linkdest}[1]{\Hy@raisedlink{\hypertarget{#1}{}}}
+\makeatother
+
+% >> Optionally building parts of text according to flags <<
+
+\newcommand{\makeflag}[2]{%
+  \expandafter\newif\csname ifmake#1\endcsname
+  \csname make#1#2\endcsname
+  %
+}
+
+\NewEnviron{makeif}[2][]{%
+  \csname ifmake#2\endcsname
+  \BODY
+  \else
+  #1
+  \fi
+}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:

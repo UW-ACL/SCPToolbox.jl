@@ -5,3 +5,4 @@
 /sandbox/*
 !/figures/.gitkeep
 !/figures/logo.png
+!/figures/logo/
