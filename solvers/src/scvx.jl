@@ -272,8 +272,7 @@ function Subproblem(
 
     spbm = Subproblem(
         iter, prg, algo, pbm, η, sol, ref, L, L_pen,
-        L_aug, x, u, p, vd, vs, vic, vtc, P, Pf, timing
-    )
+        L_aug, x, u, p, vd, vs, vic, vtc, P, Pf, timing)
 
     return spbm
 end
@@ -340,8 +339,7 @@ function SubproblemSolution(
     subsol = SubproblemSolution(
         iter, x, u, p, vd, vs, vic, vtc, P, Pf, L, L_pen, L_aug,
         J_aug, act_improv, pre_improv, status, feas, defect,
-        deviation, unsafe, ρ, tr_update, reject, dyn, bay
-    )
+        deviation, unsafe, ρ, tr_update, reject, dyn, bay)
 
     # Compute the DLTV dynamics around this solution
     discretize!(subsol, pbm)
@@ -365,9 +363,7 @@ optimization has been applied).
 # Returns
 - `sol`: subproblem solution.
 """
-function SubproblemSolution(
-        spbm::Subproblem
-)::SubproblemSolution
+function SubproblemSolution(spbm::Subproblem)::SubproblemSolution
 
     # Extract the discrete-time trajectory
     x = value(spbm.x)

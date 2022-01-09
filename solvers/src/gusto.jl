@@ -16,97 +16,115 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
-include("scp.jl")
+using LinearAlgebra
+using JuMP
+using Printf
+
+using Utils
+using Parser
+
+import ..ST, ..RealTypes, ..IntRange, ..RealVector, ..RealMatrix, ..Trajectory,
+    ..Objective, ..VarArgBlk, ..CstArgBlk, ..DLTV
+
+import ..SCPParameters, ..SCPSubproblem, ..SCPSubproblemSolution, ..SCPProblem,
+    ..SCPSolution, ..SCPHistory
+
+import ..warm_start
+import ..discretize!
+import ..add_dynamics!, ..add_convex_state_constraints!, ..add_convex_input_constraints!,
+    ..add_nonconvex_constraints!, ..add_bcs!, ..correct_convex!
+import ..solve_subproblem!, ..solution_deviation, ..unsafe_solution,
+    ..overhead!, ..save!, ..get_time
+
+const CLP = ConicLinearProgram
+const Variable = ST.Variable
+const Optional = ST.Optional
+const OptVarArgBlk = Optional{VarArgBlk}
+
+export Parameters
 
 """ Structure holding the GuSTO algorithm parameters."""
-struct GuSTOParameters <: SCPParameters
-    N::T_Int          # Number of temporal grid nodes
-    Nsub::T_Int       # Number of subinterval integration time nodes
-    iter_max::T_Int   # Maximum number of iterations
-    λ_init::T_Real    # Initial soft penalty weight
-    λ_max::T_Real     # Maximum soft penalty weight
-    ρ_0::T_Real       # Trust region update threshold (lower, good solution)
-    ρ_1::T_Real       # Trust region update threshold (upper, bad solution)
-    β_sh::T_Real      # Trust region shrinkage factor
-    β_gr::T_Real      # Trust region growth factor
-    γ_fail::T_Real    # Soft penalty weight growth factor
-    η_init::T_Real    # Initial trust region radius
-    η_lb::T_Real      # Minimum trust region radius
-    η_ub::T_Real      # Maximum trust region radius
-    μ::T_Real         # Exponential shrink rate for trust region
-    iter_μ::T_Real    # Iteration at which to apply trust region shrink
-    ε_abs::T_Real     # Absolute convergence tolerance
-    ε_rel::T_Real     # Relative convergence tolerance
-    feas_tol::T_Real  # Dynamic feasibility tolerance
-    pen::T_Symbol     # Penalty type (:quad, :softplus)
-    hom::T_Real       # Homotopy parameter to use when pen==:softplus
-    q_tr::T_Real      # Trust region norm (possible: 1, 2, 4 (2^2), Inf)
-    q_exit::T_Real    # Stopping criterion norm
-    solver::Module    # The numerical solver to use for the subproblems
-    solver_opts::Dict{T_String, Any} # Numerical solver options
+struct Parameters <: SCPParameters
+    N::Int               # Number of temporal grid nodes
+    Nsub::Int            # Number of subinterval integration time nodes
+    iter_max::Int        # Maximum number of iterations
+    λ_init::RealTypes    # Initial soft penalty weight
+    λ_max::RealTypes     # Maximum soft penalty weight
+    ρ_0::RealTypes       # Trust region update threshold (lower, good solution)
+    ρ_1::RealTypes       # Trust region update threshold (upper, bad solution)
+    β_sh::RealTypes      # Trust region shrinkage factor
+    β_gr::RealTypes      # Trust region growth factor
+    γ_fail::RealTypes    # Soft penalty weight growth factor
+    η_init::RealTypes    # Initial trust region radius
+    η_lb::RealTypes      # Minimum trust region radius
+    η_ub::RealTypes      # Maximum trust region radius
+    μ::RealTypes         # Exponential shrink rate for trust region
+    iter_μ::RealTypes    # Iteration at which to apply trust region shrink
+    ε_abs::RealTypes     # Absolute convergence tolerance
+    ε_rel::RealTypes     # Relative convergence tolerance
+    feas_tol::RealTypes  # Dynamic feasibility tolerance
+    pen::Symbol          # Penalty type (:quad, :softplus)
+    hom::RealTypes       # Homotopy parameter to use when pen==:softplus
+    q_tr::RealTypes      # Trust region norm (possible: 1, 2, 4 (2^2), Inf)
+    q_exit::RealTypes    # Stopping criterion norm
+    solver::Module       # The numerical solver to use for the subproblems
+    solver_opts::Dict{String, Any} # Numerical solver options
 end
 
 """ GuSTO subproblem solution."""
-mutable struct GuSTOSubproblemSolution <: SCPSubproblemSolution
-    iter::T_Int          # GuSTO iteration number
+mutable struct SubproblemSolution <: SCPSubproblemSolution
+    iter::Int             # GuSTO iteration number
     # >> Discrete-time rajectory <<
-    xd::T_RealMatrix     # States
-    ud::T_RealMatrix     # Inputs
-    p::T_RealVector      # Parameter vector
+    xd::RealMatrix        # States
+    ud::RealMatrix        # Inputs
+    p::RealVector         # Parameter vector
     # >> Cost values <<
-    J::T_Real            # The original cost
-    J_st::T_Real         # The state constraint soft penalty
-    J_tr::T_Real         # The trust region soft penalty
-    J_aug::T_Real        # Overall nonlinear cost
-    L::T_Real            # J *linearized* about reference solution
-    L_st::T_Real         # J_st *linearized* about reference solution
-    L_aug::T_Real        # Overall convex cost
+    J::RealTypes          # The original cost
+    J_st::RealTypes       # The state constraint soft penalty
+    J_tr::RealTypes       # The trust region soft penalty
+    J_aug::RealTypes      # Overall nonlinear cost
+    L::RealTypes          # J *linearized* about reference solution
+    L_st::RealTypes       # J_st *linearized* about reference solution
+    L_aug::RealTypes      # Overall convex cost
     # >> Trajectory properties <<
-    status::T_ExitStatus # Numerical optimizer exit status
-    feas::T_Bool         # Dynamic feasibility flag
-    defect::T_RealMatrix # "Defect" linearization accuracy metric
-    deviation::T_Real    # Deviation from reference trajectory
-    unsafe::T_Bool       # Indicator that the solution is unsafe to use
-    cost_error::T_Real   # Cost error committed
-    dyn_error::T_Real    # Cumulative dynamics error committed
-    ρ::T_Real            # Convexification performance metric
-    tr_update::T_String  # Growth direction indicator for trust region
-    λ_update::T_String   # Growth direction indicator for soft penalty weight
-    reject::T_Bool       # Indicator whether GuSTO rejected this solution
-    dyn::T_DLTV          # The dynamics
+    status::ST.ExitStatus # Numerical optimizer exit status
+    feas::Bool            # Dynamic feasibility flag
+    defect::RealMatrix    # "Defect" linearization accuracy metric
+    deviation::RealTypes  # Deviation from reference trajectory
+    unsafe::Bool          # Indicator that the solution is unsafe to use
+    cost_error::RealTypes # Cost error committed
+    dyn_error::RealTypes  # Cumulative dynamics error committed
+    ρ::RealTypes          # Convexification performance metric
+    tr_update::String     # Growth direction indicator for trust region
+    λ_update::String      # Growth direction indicator for soft penalty weight
+    reject::Bool          # Indicator whether GuSTO rejected this solution
+    dyn::DLTV             # The dynamics
 end
-const T_GuSTOSubSol = GuSTOSubproblemSolution # Alias
 
-""" Subproblem definition in JuMP format for the convex numerical optimizer."""
-mutable struct GuSTOSubproblem <: SCPSubproblem
-    iter::T_Int                  # GuSTO iteration number
-    mdl::Model                   # The optimization problem handle
-    algo::T_String               # SCP and convex algorithms used
+""" Subproblem definition for the convex numerical optimizer. """
+mutable struct Subproblem <: SCPSubproblem
+    iter::Int                  # GuSTO iteration number
+    prg::ConicProgram          # The optimization problem handle
+    algo::String               # SCP and convex algorithms used
     # >> Algorithm parameters <<
-    def::SCPProblem              # The GuSTO algorithm definition
-    λ::T_Real                    # Soft penalty weight
-    η::T_Real                    # Trust region radius
-    κ::T_Real                    # Trust region shrinking multiplier
+    def::SCPProblem            # The GuSTO algorithm definition
+    λ::RealTypes               # Soft penalty weight
+    η::RealTypes               # Trust region radius
+    κ::RealTypes               # Trust region shrinking multiplier
     # >> Reference and solution trajectories <<
-    sol::Union{T_GuSTOSubSol, Missing} # Solution trajectory
-    ref::Union{T_GuSTOSubSol, Missing} # Reference trajectory
+    sol::Union{SubproblemSolution, Missing} # Solution trajectory
+    ref::Union{SubproblemSolution, Missing} # Reference trajectory
     # >> Cost function <<
-    L::T_Objective               # The original cost
-    L_st::T_Objective            # The state constraint soft penalty
-    L_tr::T_Objective            # The trust region soft penalty
-    L_aug::T_Objective           # Overall cost
-    # >> Scaled variables <<
-    xh::T_OptiVarMatrix          # Discrete-time states
-    uh::T_OptiVarMatrix          # Discrete-time inputs
-    ph::T_OptiVarVector          # Parameter
+    L::Objective       # The original cost
+    L_st::Objective    # The state constraint soft penalty
+    L_tr::Objective    # The trust region soft penalty
+    L_aug::Objective   # Overall cost
     # >> Physical variables <<
-    x::T_OptiVarMatrix           # Discrete-time states
-    u::T_OptiVarMatrix           # Discrete-time inputs
-    p::T_OptiVarVector           # Parameters
+    x::VarArgBlk       # Discrete-time states
+    u::VarArgBlk       # Discrete-time inputs
+    p::VarArgBlk       # Parameters
     # >> Statistics <<
-    nvar::T_Int                    # Total number of decision variables
-    ncons::Dict{T_Symbol, Any}     # Number of constraints
-    timing::Dict{T_Symbol, T_Real} # Runtime profiling
+    timing::Dict{Symbol, RealTypes} # Runtime profiling
 end
 
 """
@@ -121,10 +139,12 @@ Construct the GuSTO problem definition.
 # Returns
 - `pbm`: the problem structure ready for being solved by GuSTO.
 """
-function GuSTOProblem(pars::GuSTOParameters,
-                      traj::TrajectoryProblem)::SCPProblem
+function GuSTOProblem(
+        pars::Parameters,
+        traj::TrajectoryProblem
+)::SCPProblem
 
-    table = T_Table([
+    default_columns = [
         # Iteration count
         (:iter, "k", "%d", 2),
         # Solver status
@@ -152,7 +172,15 @@ function GuSTOProblem(pars::GuSTOParameters,
         # Update direction for soft penalty weight (grow? shrink?)
         (:dλ, "Δλ", "%s", 3),
         # Reject solution indicator
-        (:rej, "rej", "%s", 5)])
+        (:rej, "rej", "%s", 5)
+    ]
+
+    # User-defined extra columns
+    user_columns = [tuple(col[1:4]...) for col in traj.table_cols]
+
+    all_columns = [default_columns; user_columns]
+
+    table = ST.Table(all_columns)
 
     pbm = SCPProblem(pars, traj, table)
 
@@ -160,7 +188,7 @@ function GuSTOProblem(pars::GuSTOParameters,
 end
 
 """
-    GuSTOSubproblem(pbm[, iter, λ, η, ref])
+    Subproblem(pbm[, iter, λ, η, ref])
 
 Constructor for an empty convex optimization subproblem. No cost or
 constraints. Just the decision variables and empty associated parameters.
@@ -175,17 +203,16 @@ constraints. Just the decision variables and empty associated parameters.
 # Returns
 - `spbm`: the subproblem structure.
 """
-function GuSTOSubproblem(pbm::SCPProblem,
-                         iter::T_Int=0,
-                         λ::T_Real=1e4,
-                         η::T_Real=1.0,
-                         ref::Union{T_GuSTOSubSol,
-                                    Missing}=missing)::GuSTOSubproblem
+function Subproblem(
+        pbm::SCPProblem,
+        iter::Int=0,
+        λ::RealTypes=1e4,
+        η::RealTypes=1.0,
+        ref::Union{SubproblemSolution, Missing}=missing
+)::Subproblem
 
     # Statistics
-    timing = Dict(:formulate => time_ns(), :total => time_ns())
-    nvar = 0
-    ncons = Dict()
+    timing = Dict(:formulate => get_time(), :total => get_time())
 
     # Convenience values
     pars = pbm.pars
@@ -198,11 +225,11 @@ function GuSTOSubproblem(pbm::SCPProblem,
     # Optimization problem handle
     solver = pars.solver
     solver_opts = pars.solver_opts
-    mdl = Model()
-    set_optimizer(mdl, solver.Optimizer)
-    for (key,val) in solver_opts
-        set_optimizer_attribute(mdl, key, val)
-    end
+    prg = ConicProgram(
+        pbm.traj;
+        solver=solver.Optimizer,
+        solver_options=solver_opts
+    )
     cvx_algo = string(pars.solver)
     algo = @sprintf("GuSTO (backend: %s)", cvx_algo)
 
@@ -214,28 +241,29 @@ function GuSTOSubproblem(pbm::SCPProblem,
     L_tr = missing
     L_aug = missing
 
-    # Decision variables (scaled)
-    xh = @variable(mdl, [1:nx, 1:N], base_name="xh")
-    uh = @variable(mdl, [1:nu, 1:N], base_name="uh")
-    ph = @variable(mdl, [1:np], base_name="ph")
-
     # Physical decision variables
-    x = scale.Sx*xh.+scale.cx
-    u = scale.Su*uh.+scale.cu
-    p = scale.Sp*ph.+scale.cp
+    x = @new_variable(prg, (nx, N), "x")
+    u = @new_variable(prg, (nu, N), "u")
+    p = @new_variable(prg, np, "p")
+    Sx = diag(scale.Sx)
+    Su = diag(scale.Su)
+    Sp = diag(scale.Sp)
+    @scale(x, Sx, scale.cx)
+    @scale(u, Su, scale.cu)
+    @scale(p, Sp, scale.cp)
 
     # Trust region shrink factor
     κ = (iter < pars.iter_μ) ? 1.0 : pars.μ^(1+iter-pars.iter_μ)
 
-    spbm = GuSTOSubproblem(iter, mdl, algo, pbm, λ, η, κ, sol, ref, L, L_st,
-                           L_tr, L_aug, xh, uh, ph, x, u, p, nvar,
-                           ncons, timing)
+    spbm = Subproblem(
+        iter, mdl, algo, pbm, λ, η, κ, sol, ref, L, L_st,
+        L_tr, L_aug, x, u, p, timing)
 
     return spbm
 end
 
 """
-    GuSTOSubproblemSolution(x, u, p, iter, pbm)
+    SubproblemSolution(x, u, p, iter, pbm)
 
 Construct a subproblem solution from a discrete-time trajectory. This leaves
 parameters of the solution other than the passed discrete-time trajectory
@@ -251,12 +279,13 @@ unset.
 # Returns
 - `subsol`: subproblem solution structure.
 """
-function GuSTOSubproblemSolution(
-    x::T_RealMatrix,
-    u::T_RealMatrix,
-    p::T_RealVector,
-    iter::T_Int,
-    pbm::SCPProblem)::T_GuSTOSubSol
+function SubproblemSolution(
+        x::RealMatrix,
+        u::RealMatrix,
+        p::RealVector,
+        iter::Int,
+        pbm::SCPProblem
+)::SubproblemSolution
 
     # Parameters
     N = pbm.pars.N
@@ -277,7 +306,7 @@ function GuSTOSubproblemSolution(
     tr_update = ""
     λ_update = ""
     reject = false
-    dyn = T_DLTV(nx, nu, np, nv, N)
+    dyn = DLTV(nx, nu, np, nv, N)
 
     J = NaN
     J_st = NaN
@@ -287,20 +316,19 @@ function GuSTOSubproblemSolution(
     L_st = NaN
     L_aug = NaN
 
-    subsol = GuSTOSubproblemSolution(iter, x, u, p, J, J_st, J_tr,
-                                     J_aug, L, L_st, L_aug, status, feas,
-                                     defect, deviation, unsafe, cost_error,
-                                     dyn_error, ρ, tr_update, λ_update, reject,
-                                     dyn)
+    subsol = SubproblemSolution(
+        iter, x, u, p, J, J_st, J_tr, J_aug, L, L_st, L_aug, status, feas,
+        defect, deviation, unsafe, cost_error, dyn_error, ρ, tr_update,
+        λ_update, reject, dyn)
 
     # Compute the DLTV dynamics around this solution
-    _scp__discretize!(subsol, pbm)
+    discretize!(subsol, pbm)
 
     return subsol
 end
 
 """
-    GuSTOSubproblemSolution(spbms)
+    SubproblemSolution(spbms)
 
 Construct subproblem solution from a subproblem object. Expects that the
 subproblem argument is a solved subproblem (i.e. one to which numerical
@@ -312,23 +340,24 @@ optimization has been applied).
 # Returns
 - `sol`: subproblem solution.
 """
-function GuSTOSubproblemSolution(spbm::GuSTOSubproblem)::T_GuSTOSubSol
+function SubproblemSolution(spbm::Subproblem)::SubproblemSolution
+
     # Extract the discrete-time trajectory
-    x = value.(spbm.x)
-    u = value.(spbm.u)
-    p = value.(spbm.p)
+    x = value(spbm.x)
+    u = value(spbm.u)
+    p = value(spbm.p)
 
     # Form the partly uninitialized subproblem
-    sol = GuSTOSubproblemSolution(x, u, p, spbm.iter, spbm.def)
+    sol = SubproblemSolution(x, u, p, spbm.iter, spbm.def)
 
     # Save the optimal cost values
-    sol.J = _gusto__original_cost(x, u, p, spbm, :nonconvex)
-    sol.J_st = _gusto__state_penalty_cost(x, p, spbm, :nonconvex)
-    sol.J_tr = value.(spbm.L_tr)
+    sol.J = original_cost(x, u, p, spbm, :nonconvex)
+    sol.J_st = state_penalty_cost(x, p, spbm, :nonconvex)
+    sol.J_tr = value(spbm.L_tr)
     sol.J_aug = sol.J+sol.J_st+sol.J_tr
-    sol.L = value.(spbm.L)
-    sol.L_st = value.(spbm.L_st)
-    sol.L_aug = value.(spbm.L_aug)
+    sol.L = value(spbm.L)
+    sol.L_st = value(spbm.L_st)
+    sol.L_aug = value(spbm.L_aug)
 
     return sol
 end
@@ -345,59 +374,77 @@ Apply the GuSTO algorithm to solve the trajectory generation problem.
 - `sol`: the GuSTO solution structure.
 - `history`: GuSTO iteration data history.
 """
-function gusto_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution,
-                                                   T_GuSTOSubSol,
-                                                   Nothing},
-                                             SCPHistory}
+function solve(
+        pbm::SCPProblem,
+        warm::Union{Nothing, SCPSolution}=nothing
+)::Tuple{
+        Union{SCPSolution, SubproblemSolution, Nothing},
+        SCPHistory}
+
     # ..:: Initialize ::..
 
     λ = pbm.pars.λ_init
     η = pbm.pars.η_init
-    ref = _gusto__generate_initial_guess(pbm)
+    if isnothing(warm)
+        ref = generate_initial_guess(pbm)
+    else
+        ref = warm_start(pbm, warm)
+    end
 
     history = SCPHistory()
+
+    callback_fun! = pbm.traj.callback!
+    user_callback = !isnothing(callback_fun!)
 
     # ..:: Iterate ::..
 
     for k = 1:pbm.pars.iter_max
         # >> Construct the subproblem <<
-        spbm = GuSTOSubproblem(pbm, k, λ, η, ref)
+        spbm = Subproblem(pbm, k, λ, η, ref)
 
-        _gusto__add_cost!(spbm)
-        _scp__add_dynamics!(spbm; relaxed=false)
-        _scp__add_convex_input_constraints!(spbm)
-        _scp__add_bcs!(spbm; relaxed=false)
+        add_cost!(spbm)
+        add_dynamics!(spbm; relaxed=false)
+        add_convex_input_constraints!(spbm)
+        add_bcs!(spbm; relaxed=false)
 
-        _scp__save!(history, spbm)
+        save!(history, spbm)
 
         try
             # >> Solve the subproblem <<
-            _scp__solve_subproblem!(spbm)
+            solve_subproblem!(spbm)
 
             # "Emergency exit" the GuSTO loop if something bad happened
             # (e.g. numerical problems)
-            if _scp__unsafe_solution(spbm)
-                _gusto__print_info(spbm)
+            if unsafe_solution(spbm)
+                print_info(spbm)
                 break
             end
 
             # >> Check stopping criterion <<
-            stop = _gusto__check_stopping_criterion!(spbm)
-            if stop
-                _gusto__print_info(spbm)
+            stop = check_stopping_criterion!(spbm)
+
+            # Run a user-defined callback
+            if user_callback
+                user_acted = callback_fun!(spbm)
+            end
+
+            # Stop iterating if stopping criterion triggered **and** user did
+            # not modify anything in the callback
+            if stop && !(user_callback && user_acted)
+                print_info(spbm)
                 break
             end
 
-            # >> Update trust region <<
-            ref, η, λ = _gusto__update_trust_region!(spbm)
+            # Update trust region
+            ref, η, λ = update_trust_region!(spbm)
         catch e
             isa(e, SCPError) || rethrow(e)
-            _gusto__print_info(spbm, e)
+            print_info(spbm, e)
             break
         end
 
         # >> Print iteration info <<
-        _gusto__print_info(spbm)
+        print_info(spbm)
     end
 
     reset(pbm.common.table)
@@ -409,10 +456,10 @@ function gusto_solve(pbm::SCPProblem)::Tuple{Union{SCPSolution,
 end
 
 """
-    _gusto__generate_initial_guess(pbm)
+    generate_initial_guess(pbm)
 
 Construct the initial trajectory guess. Calls problem-specific initial guess
-generator, which is converted to a GuSTOSubproblemSolution structure.
+generator, which is converted to a SubproblemSolution structure.
 
 # Arguments
 - `pbm`: the GuSTO problem structure.
@@ -420,26 +467,25 @@ generator, which is converted to a GuSTOSubproblemSolution structure.
 # Returns
 - `guess`: the initial guess.
 """
-function _gusto__generate_initial_guess(
-    pbm::SCPProblem)::T_GuSTOSubSol
+function generate_initial_guess(pbm::SCPProblem)::SubproblemSolution
 
     # Construct the raw trajectory
     x, u, p = pbm.traj.guess(pbm.pars.N)
-    _scp__correct_convex!(x, u, p, pbm, :GuSTOSubproblem)
-    guess = GuSTOSubproblemSolution(x, u, p, 0, pbm)
+    correct_convex!(x, u, p, pbm, (pbm) -> Subproblem(pbm))
+    guess = SubproblemSolution(x, u, p, 0, pbm)
 
     return guess
 end
 
 """
-    _gusto__add_cost!(spbm)
+    add_cost!(spbm)
 
 Define the subproblem cost function.
 
 # Arguments
 - `spbm`: the subproblem definition.
 """
-function _gusto__add_cost!(spbm::GuSTOSubproblem)::Nothing
+function add_cost!(spbm::Subproblem)::Nothing
 
     # Variables and parameters
     x = spbm.x
@@ -447,12 +493,12 @@ function _gusto__add_cost!(spbm::GuSTOSubproblem)::Nothing
     p = spbm.p
 
     # Compute the cost components
-    spbm.L = _gusto__original_cost(x, u, p, spbm)
-    spbm.L_st = _gusto__state_penalty_cost(x, p, spbm)
-    spbm.L_tr = _gusto__trust_region_cost(x, p, spbm)
+    spbm.L = original_cost(x, u, p, spbm)
+    spbm.L_st = state_penalty_cost(x, p, spbm)
+    spbm.L_tr = trust_region_cost(x, p, spbm)
 
     # Overall cost
-    spbm.L_aug = spbm.L+spbm.L_st+spbm.L_tr
+    spbm.L_aug = cost(spbm.prg)
 
     # Associate cost function with the model
     set_objective_function(spbm.mdl, spbm.L_aug)
@@ -462,7 +508,7 @@ function _gusto__add_cost!(spbm::GuSTOSubproblem)::Nothing
 end
 
 """
-    _gusto__original_cost(x, u, p, spbm[, mode])
+    original_cost(x, u, p, spbm[, mode])
 
 Compute the original cost function. This function has two "modes": the
 (default) convex mode computes the convex version of the cost (where all
@@ -479,105 +525,137 @@ fully nonlinear cost.
 # Returns
 - `cost`: the original cost.
 """
-function _gusto__original_cost(x::T_OptiVarMatrix,
-                               u::T_OptiVarMatrix,
-                               p::T_OptiVarVector,
-                               spbm::GuSTOSubproblem,
-                               mode::T_Symbol=:convex)::T_Objective
+function compute_original_cost!(
+        x::VarArgBlk,
+        u::VarArgBlk,
+        p::VarArgBlk,
+        spbm::Subproblem,
+        mode::Symbol=:convex
+)::Objective
+
     # Parameters
     pars = spbm.def.pars
     traj = spbm.def.traj
     ref = spbm.ref
     N = pars.N
     t = spbm.def.common.t_grid
+    no_running_cost = isnothing(traj.S) && isnothing(traj.ℓ) && isnothing(traj.g)
+
     if mode==:convex
+
+        # Reference trajectory
         xb = ref.xd
         ub = ref.ud
         pb = ref.p
-    end
 
-    # Terminal cost
-    xf = @last(x)
-    cost_term = isnothing(traj.φ) ? 0.0 : traj.φ(xf, p)
+        x_stages = [x[:, k] for k=1:N]
+        u_stages = [u[:, k] for k=1:N]
 
-    # Integrated running cost
-    cost_run_integrand = Vector{T_Objective}(undef, N)
-    no_running_cost = (isnothing(traj.S) &&
-                       isnothing(traj.ℓ) &&
-                       isnothing(traj.g))
-    for k = 1:N
-        tkp = (@k(t), k, p)
-        tkxp = (@k(t), k, @k(x), p)
-        if no_running_cost
-            @k(cost_run_integrand) = 0.0
-        elseif mode==:convex
-            tkpb = (@k(t), k, pb)
-            tkxpb = (@k(t), k, @k(xb), pb)
-            Γk = 0.0
-            nz = !isnothing # "nonzero" alias
-            if nz(traj.S)
-                if traj.S_cvx
-                    Γk += @k(u)'*traj.S(tkp...)*@k(u)
-                else
-                    uSu = @k(ub)'*traj.S(tkpb...)*@k(ub)
-                    ∇u_uSu = 2*traj.S(tkpb...)*@k(ub)
-                    ∇p_S = traj.dSdp(pb)
-                    ∇p_uSu = [@k(ub)'*∇p_S[i]*@k(ub) for i=1:traj.np]
-                    du = @k(u)-@k(ub)
-                    dp = p-pb
-                    uSu1 = uSu+∇u_uSu'*du+∇p_uSu.*dp
-                    Γk += uSu1
+        cost = @add_cost(
+            prg, (x_stages..., u_stages..., p),
+            begin
+                local x = arg[1:N]
+                local u = arg[(1:N).+N]
+                local p = arg[end]
+
+                # Terminal cost
+                local xf = x[:, end]
+                local J_term = isnothing(traj.φ) ? 0.0 : traj.φ(xf, p)
+
+                # Integrated running cost
+                local J_run = Vector{Objective}(undef, N)
+                for k = 1:N
+                    tkp = (t[k], k, p)
+                    tkxp = (t[k], k, x[:, k], p)
+                    if no_running_cost
+                        J_run[k] = 0.0
+                    else
+                        tkpb = (t[k], k, pb)
+                        tkxpb = (t[k], k, xb[:, k], pb)
+                        Γk = 0.0
+                        if !isnothing(traj.S)
+                            if traj.S_cvx
+                                Γk += u[:, k]'*traj.S(tkp...)*u[:, k]
+                            else
+                                uSu = ub[:, k]'*traj.S(tkpb...)*ub[:, k]
+                                ∇u_uSu = 2*traj.S(tkpb...)*ub[:, k]
+                                ∇p_S = traj.dSdp(pb)
+                                ∇p_uSu = [ub[:, k]'*∇p_S[i]*ub[:, k] for i=1:traj.np]
+                                du = u[:, k]-ub[:, k]
+                                dp = p-pb
+                                uSu1 = uSu+∇u_uSu'*du+∇p_uSu.*dp
+                                Γk += uSu1
+                            end
+                        end
+                        if !isnothing(traj.ℓ)
+                            if traj.ℓ_cvx
+                                Γk += u[:, k]'*traj.ℓ(tkxp...)
+                            else
+                                uℓ = ub[:, k]'*traj.ℓ(tkxpb...)
+                                ∇u_uℓ = traj.ℓ(tkxpb...)
+                                ∇x_uℓ = !isnothing(traj.dℓdx) ? traj.dℓdx(tkxpb...)'*ub[:, k] :
+                                    zeros(traj.nx)
+                                ∇p_uℓ = !isnothing(traj.dℓdp) ? traj.dℓdp(tkxpb...)'*ub[:, k] :
+                                    zeros(traj.np)
+                                du = u[:, k]-ub[:, k]
+                                dx = x[:, k]-xb[:, k]
+                                dp = p-pb
+                                uℓ1 = uℓ+∇u_uℓ'*du+∇x_uℓ'*dx+∇p_uℓ'*dp
+                                Γk += uℓ1
+                            end
+                        end
+                        if !isnothing(traj.g)
+                            if traj.g_cvx
+                                Γk += traj.g(tkxp...)
+                            else
+                                g = traj.g(tkxpb...)
+                                ∇x_g = !isnothing(traj.dgdx) ? traj.dgdx(tkxpb...) : zeros(traj.nx)
+                                ∇p_g = !isnothing(traj.dgdp) ? traj.dgdp(tkxpb...) : zeros(traj.np)
+                                dx = x[:, k]-xb[:, k]
+                                dp = p-pb
+                                g1 = g+∇x_g'*dx+∇p_g'*dp
+                                Γk += g1
+                            end
+                        end
+                        cost_run_integrand[k] = Γk
+                    end
                 end
+                local integ_J_run = trapz(J_run, t)
+
+                J_term+integ_J_run
+            end)
+
+    else
+
+        # Terminal cost
+        xf = x[:, end]
+        J_term = isnothing(traj.φ) ? 0.0 : traj.φ(xf, p)
+
+        # Integrated running cost
+        J_run = Vector{Objective}(undef, N)
+        for k = 1:N
+            tkp = (t[k], k, p)
+            tkxp = (t[k], k, x[:, k], p)
+            if no_running_cost
+                cost_run_integrand[k] = 0.0
+            else
+                Γk = 0.0
+                Γk += !isnothing(traj.S) ? u[:, k]'*traj.S(tkp...)*u[:, k] : 0.0
+                Γk += !isnothing(traj.ℓ) ? u[:, k]'*traj.ℓ(tkxp...) : 0.0
+                Γk += !isnothing(traj.g) ? traj.g(tkxp...) : 0.0
+                J_run[k] = Γk
             end
-            if nz(traj.ℓ)
-                if traj.ℓ_cvx
-                    Γk += @k(u)'*traj.ℓ(tkxp...)
-                else
-                    uℓ = @k(ub)'*traj.ℓ(tkxpb...)
-                    ∇u_uℓ = traj.ℓ(tkxpb...)
-                    ∇x_uℓ = nz(traj.dℓdx) ? traj.dℓdx(tkxpb...)'*@k(ub) :
-                        zeros(traj.nx)
-                    ∇p_uℓ = nz(traj.dℓdp) ? traj.dℓdp(tkxpb...)'*@k(ub) :
-                        zeros(traj.np)
-                    du = @k(u)-@k(ub)
-                    dx = @k(x)-@k(xb)
-                    dp = p-pb
-                    uℓ1 = uℓ+∇u_uℓ'*du+∇x_uℓ'*dx+∇p_uℓ'*dp
-                    Γk += uℓ1
-                end
-            end
-            if nz(traj.g)
-                if traj.g_cvx
-                    Γk += traj.g(tkxp...)
-                else
-                    g = traj.g(tkxpb...)
-                    ∇x_g = nz(traj.dgdx) ? traj.dgdx(tkxpb...) : zeros(traj.nx)
-                    ∇p_g = nz(traj.dgdp) ? traj.dgdp(tkxpb...) : zeros(traj.np)
-                    dx = @k(x)-@k(xb)
-                    dp = p-pb
-                    g1 = g+∇x_g'*dx+∇p_g'*dp
-                    Γk += g1
-                end
-            end
-            @k(cost_run_integrand) = Γk
-        else
-            Γk = 0.0
-            Γk += !isnothing(traj.S) ? @k(u)'*traj.S(tkp...)*@k(u) : 0.0
-            Γk += !isnothing(traj.ℓ) ? @k(u)'*traj.ℓ(tkxp...) : 0.0
-            Γk += !isnothing(traj.g) ? traj.g(tkxp...) : 0.0
-            @k(cost_run_integrand) = Γk
         end
-    end
-    cost_run = trapz(cost_run_integrand, t)
+        integ_J_run = trapz(J_run, t)
 
-    # Overall original cost
-    cost = cost_term+cost_run
+        cost = cost_term+integ_J_run
+    end
 
     return cost
 end
 
 """
-    _gusto__state_penalty_cost(x, p, spbm[, mode])
+    state_penalty_cost(x, p, spbm[, mode])
 
 Compute a soft penalty cost on the state constraints. This includes the convex
 state constraints x∈X and the generally nonconvex path constraints s(x, u,
@@ -592,10 +670,12 @@ p)<=0.
 # Returns
 - `cost_st`: the original cost.
 """
-function _gusto__state_penalty_cost(x::T_OptiVarMatrix,
-                                    p::T_OptiVarVector,
-                                    spbm::GuSTOSubproblem,
-                                    mode::T_Symbol=:convex)::T_Objective
+function state_penalty_cost(
+        x::VarArgBlk,
+        p::VarArgBlk,
+        spbm::Subproblem,
+        mode::Symbol=:convex
+)::Objective
 
     # Parameters
     pbm = spbm.def
@@ -617,14 +697,14 @@ function _gusto__state_penalty_cost(x::T_OptiVarMatrix,
 
     # ..:: Convex state constraints ::..
     if !isnothing(traj.X)
-        cost_soft_X = Vector{T_Objective}(undef, N)
+        cost_soft_X = Vector{Objective}(undef, N)
         for k = 1:N
-            in_X = traj.X(@k(t), k, @k(x), p)
+            in_X = traj.X(t[k], k, x[:, k], p)
             cost_soft_X[k] = 0.0
             for cone in in_X
                 ρ = get_conic_constraint_indicator!(spbm.mdl, cone)
                 for ρi in ρ
-                    cost_soft_X[k] += _gusto__soft_penalty(spbm, ρi)
+                    cost_soft_X[k] += soft_penalty(spbm, ρi)
                 end
             end
         end
@@ -633,24 +713,24 @@ function _gusto__state_penalty_cost(x::T_OptiVarMatrix,
 
     # ..:: Nonconvex path constraints ::..
     if !isnothing(traj.s)
-        cost_soft_s = Vector{T_Objective}(undef, N)
+        cost_soft_s = Vector{Objective}(undef, N)
         for k = 1:N
             cost_soft_s[k] = 0.0
             if mode==:convex
-                tkxp = (@k(t), k, @k(xb), pb)
+                tkxp = (t[k], k, xb[:, k], pb)
                 s = traj.s(tkxp...)
                 ns = length(s)
                 dsdx = !isnothing(traj.C) ? traj.C(tkxp...) : zeros(ns, nx)
                 dsdp = !isnothing(traj.G) ? traj.G(tkxp...) : zeros(ns, np)
                 for i = 1:ns
-                    cost_soft_s[k] += _gusto__soft_penalty(
-                        spbm, s[i], dsdx[i, :], dsdp[i, :], @k(dx), dp)
+                    cost_soft_s[k] += soft_penalty(
+                        spbm, s[i], dsdx[i, :], dsdp[i, :], dx[:, k], dp)
                 end
             else
-                s = traj.s(@k(t), k, @k(x), p)
+                s = traj.s(t[k], k, x[:, k], p)
                 ns = length(s)
                 for i = 1:ns
-                    cost_soft_s[k] += _gusto__soft_penalty(spbm, s[i])
+                    cost_soft_s[k] += soft_penalty(spbm, s[i])
                 end
             end
         end
@@ -661,7 +741,7 @@ function _gusto__state_penalty_cost(x::T_OptiVarMatrix,
 end
 
 """
-    _gusto__soft_penalty(spbm, f[, dfdx, dfdp, dx, dp])
+    soft_penalty(spbm, f[, dfdx, dfdp, dx, dp])
 
 Compute a smooth, convex and nondecreasing penalization function. Basic idea:
 the penalty is zero if quantity f<0, else the penalty is positive (and grows as
@@ -680,13 +760,14 @@ d/dp) is zero, then you can pass `nothing` in its place.
 # Returns
 - `h`: penalization function value.
 """
-function _gusto__soft_penalty(
-    spbm::GuSTOSubproblem,
-    f::T_OptiVar,
-    dfdx::Union{T_OptiVar, Nothing}=nothing,
-    dfdp::Union{T_OptiVar, Nothing}=nothing,
-    dx::Union{T_OptiVar, Nothing}=nothing,
-    dp::Union{T_OptiVar, Nothing}=nothing)::T_Objective
+function soft_penalty(
+        spbm::Subproblem,
+        f::T_OptiVar,
+        dfdx::Union{T_OptiVar, Nothing}=nothing,
+        dfdp::Union{T_OptiVar, Nothing}=nothing,
+        dx::Union{T_OptiVar, Nothing}=nothing,
+        dp::Union{T_OptiVar, Nothing}=nothing
+)::Objective
 
     # Parameters
     pars = spbm.def.pars
@@ -695,9 +776,9 @@ function _gusto__soft_penalty(
     hom = pars.hom
     λ = spbm.λ
     linearized = !isnothing(dfdx) || !isnothing(dfdp)
-    mode = (typeof(f)!=T_Real ||
-            (linearized && (typeof(dx)!=T_RealVector ||
-                            typeof(dp)!=T_RealVector))) ? :jump : :numerical
+    mode = (typeof(f)!=RealTypes ||
+            (linearized && (typeof(dx)!=RealVector ||
+                            typeof(dp)!=RealVector))) ? :jump : :numerical
 
     # Get linearized version of the quantity being penalized, if applicable
     if linearized
@@ -746,7 +827,7 @@ function _gusto__soft_penalty(
 end
 
 """
-    _gusto__trust_region_cost(x, p, spbm[, mode; raw])
+    trust_region_cost(x, p, spbm[, mode; raw])
 
 Compute the trust region constraint soft penalty. This function has two
 "modes": the (default) convex mode computes the convex version of the cost
@@ -770,12 +851,13 @@ computes the fully nonlinear cost.
 - `tr`: if raw is true, the trust regions left-hand sides (which should all be
   <=0 if the trust region constraints are satisfied).
 """
-function _gusto__trust_region_cost(x::T_OptiVarMatrix,
-                                   p::T_OptiVarVector,
-                                   spbm::GuSTOSubproblem,
-                                   mode::T_Symbol=:convex;
-                                   raw::T_Bool=false)::Union{T_Objective,
-                                                             T_RealVector}
+function trust_region_cost(
+        x::VarArgBlk,
+        p::VarArgBlk,
+        spbm::Subproblem,
+        mode::Symbol=:convex;
+        raw::Bool=false
+)::Union{Objective, RealVector}
 
     # Parameters
     pars = spbm.def.pars
@@ -792,11 +874,11 @@ function _gusto__trust_region_cost(x::T_OptiVarMatrix,
     dx = xh-xh_ref
     dp = ph-ph_ref
     tr = (mode==:convex) ? @variable(spbm.mdl, [1:N], base_name="tr") :
-        T_RealVector(undef, N)
+        RealVector(undef, N)
 
     # Integrated running cost
     if !raw
-        cost_tr_integrand = Vector{T_Objective}(undef, N)
+        cost_tr_integrand = Vector{Objective}(undef, N)
     end
     q2cone = Dict(1 => :l1, 2 => :soc, 4 => :soc, Inf => :linf)
     cone = q2cone[q]
@@ -811,21 +893,21 @@ function _gusto__trust_region_cost(x::T_OptiVarMatrix,
     end
     for k = 1:N
         if mode==:convex
-            acc!(spbm.mdl, C(vcat(@k(dx_lq), @k(dx)), cone))
+            acc!(spbm.mdl, C(vcat(dx_lq[k], dx[:, k]), cone))
             if q==4
                 w = @variable(spbm.mdl, base_name="w")
-                acc!(spbm.mdl, C(vcat(w, @k(dx_lq), dp_lq), :soc))
-                acc!(spbm.mdl, C(vcat(w, η+@k(tr), 1), :geom))
+                acc!(spbm.mdl, C(vcat(w, dx_lq[k], dp_lq), :soc))
+                acc!(spbm.mdl, C(vcat(w, η+tr[k], 1), :geom))
             else
-                acc!(spbm.mdl, C(@k(dx_lq)+dp_lq-(η+@k(tr)), :nonpos))
+                acc!(spbm.mdl, C(dx_lq[k]+dp_lq-(η+tr[k]), :nonpos))
             end
         else
-            dx_lq = norm(@k(dx), q)
+            dx_lq = norm(dx[:, k], q)
             w = (q==4) ? 2 : 1
-            @k(tr) = dx_lq^w+dp_lq^w-η
+            tr[k] = dx_lq^w+dp_lq^w-η
         end
         if !raw
-            @k(cost_tr_integrand) = _gusto__soft_penalty(spbm, @k(tr))
+            cost_tr_integrand[k] = soft_penalty(spbm, tr[k])
         end
     end
     if !raw
@@ -836,7 +918,7 @@ function _gusto__trust_region_cost(x::T_OptiVarMatrix,
 end
 
 """
-    _gusto__check_stopping_criterion!(spbm)
+    check_stopping_criterion!(spbm)
 
 Check if stopping criterion is triggered.
 
@@ -846,7 +928,7 @@ Check if stopping criterion is triggered.
 # Returns
 - `stop`: true if stopping criterion holds.
 """
-function _gusto__check_stopping_criterion!(spbm::GuSTOSubproblem)::T_Bool
+function check_stopping_criterion!(spbm::Subproblem)::Bool
 
     # Extract values
     pbm = spbm.def
@@ -858,7 +940,7 @@ function _gusto__check_stopping_criterion!(spbm::GuSTOSubproblem)::T_Bool
     λ_max = pbm.pars.λ_max
 
     # Compute solution deviation from reference
-    sol.deviation = _scp__solution_deviation(spbm)
+    sol.deviation = solution_deviation(spbm)
 
     # Compute cost improvement
     ΔJ = abs(ref.J_aug-sol.J_aug)/abs(ref.J_aug)
@@ -875,7 +957,7 @@ function _gusto__check_stopping_criterion!(spbm::GuSTOSubproblem)::T_Bool
 end
 
 """
-    _gusto__update_trust_region!(spbm)
+    update_trust_region!(spbm)
 
 Compute the new reference, trust region, and soft penalty.
 
@@ -887,10 +969,10 @@ Compute the new reference, trust region, and soft penalty.
 - `next_η`: trust region radius for the next iteration.
 - `next_λ`: soft penalty weight for the next iteration.
 """
-function _gusto__update_trust_region!(
-    spbm::GuSTOSubproblem)::Tuple{GuSTOSubproblemSolution,
-                                  T_Real,
-                                  T_Real}
+function update_trust_region!(spbm::Subproblem)::Tuple{
+        SubproblemSolution,
+        RealTypes,
+        RealTypes}
 
     # Parameters
     pbm = spbm.def
@@ -912,18 +994,18 @@ function _gusto__update_trust_region!(
     cost_nrml = abs(L)
 
     # Dynamics error
-    Δf = T_RealVector(undef, N)
-    dxdt = T_RealVector(undef, N)
+    Δf = RealVector(undef, N)
+    dxdt = RealVector(undef, N)
     for k = 1:N
-        f = traj.f(@k(t), k, @k(xb), @k(ub), pb)
-        A = traj.A(@k(t), k, @k(xb), @k(ub), pb)
-        B = traj.B(@k(t), k, @k(xb), @k(ub), pb)
-        F = traj.F(@k(t), k, @k(xb), @k(ub), pb)
-        r = f-A*@k(xb)-B*@k(ub)-F*pb
-        f_lin = A*@k(x)+B*@k(u)+F*p+r
-        f_nl = traj.f(@k(t), k, @k(x), @k(u), p)
-        @k(Δf) = norm(f_nl-f_lin)
-        @k(dxdt) = norm(f_lin)
+        f = traj.f(t[k], k, xb[:, k], ub[:, k], pb)
+        A = traj.A(t[k], k, xb[:, k], ub[:, k], pb)
+        B = traj.B(t[k], k, xb[:, k], ub[:, k], pb)
+        F = traj.F(t[k], k, xb[:, k], ub[:, k], pb)
+        r = f-A*xb[:, k]-B*ub[:, k]-F*pb
+        f_lin = A*x[:, k]+B*u[:, k]+F*p+r
+        f_nl = traj.f(t[k], k, x[:, k], u[:, k], p)
+        Δf[k] = norm(f_nl-f_lin)
+        dxdt[k] = norm(f_lin)
     end
     sol.dyn_error = trapz(Δf, t)
     dynamics_nrml = trapz(dxdt, t)
@@ -933,13 +1015,13 @@ function _gusto__update_trust_region!(
     sol.ρ = (sol.cost_error+sol.dyn_error)/normalization_term
 
     # Apply update rule
-    next_ref, next_η, next_λ = _gusto__update_rule!(spbm)
+    next_ref, next_η, next_λ = update_rule!(spbm)
 
     return next_ref, next_η, next_λ
 end
 
 """
-    _gusto__update_rule!(spbm)
+    update_rule!(spbm)
 
 Apply the low-level GuSTO trust region update rule. Based on the obtained
 subproblem solution, this computes the new trust region value, soft penalty
@@ -953,10 +1035,10 @@ weight, and reference trajectory.
 - `next_η`: trust region radius for the next iteration.
 - `next_λ`: soft penalty weight for the next iteration.
 """
-function _gusto__update_rule!(
-    spbm::GuSTOSubproblem)::Tuple{GuSTOSubproblemSolution,
-                                  T_Real,
-                                  T_Real}
+function update_rule!(spbm::Subproblem)::Tuple{
+        SubproblemSolution,
+        RealTypes,
+        RealTypes}
 
     # Extract values and relevant data
     pars = spbm.def.pars
@@ -984,7 +1066,7 @@ function _gusto__update_rule!(
     c_buffer = 1e-3
 
     # Compute trust region constraint satisfaction
-    tr = _gusto__trust_region_cost(sol.xd, sol.p, spbm, :nonconvex; raw=true)
+    tr = trust_region_cost(sol.xd, sol.p, spbm, :nonconvex; raw=true)
     trust_viol = any(tr.>tr_buffer)
 
     # Compute state and nonlinear path constraint satisfaction
@@ -994,7 +1076,7 @@ function _gusto__update_rule!(
             # Check with respect to the convex state constraints
             if !isnothing(traj.X)
                 for k = 1:N
-                    in_X = traj.X(@k(t), k, @k(sol.xd), sol.p)
+                    in_X = traj.X(t[k], k, sol.xd[:, k], sol.p)
                     for cone in in_X
                         ind = get_conic_constraint_indicator!(spbm.mdl, cone)
                         if any(ind.>c_buffer)
@@ -1007,7 +1089,7 @@ function _gusto__update_rule!(
             # Check with respect to the nonconvex path constraints
             if !isnothing(traj.s)
                 for k = 1:N
-                    s = traj.s(@k(t), k, @k(sol.xd), sol.p)
+                    s = traj.s(t[k], k, sol.xd[:, k], sol.p)
                     if any(s.>c_buffer)
                         error("Nonconvex path constraint violated")
                     end
@@ -1076,7 +1158,7 @@ function _gusto__update_rule!(
 end
 
 """
-    _gusto__print_info(spbm[, err])
+    print_info(spbm[, err])
 
 Print command line info message.
 
@@ -1084,8 +1166,9 @@ Print command line info message.
 - `spbm`: the subproblem that was solved.
 - `err`: (optional) a GuSTO-specific error message.
 """
-function _gusto__print_info(spbm::GuSTOSubproblem,
-                            err::Union{Nothing, SCPError}=nothing)::Nothing
+function print_info(
+        spbm::Subproblem,
+        err::Union{Nothing, SCPError}=nothing)::Nothing
 
     # Convenience variables
     sol = spbm.sol
@@ -1094,7 +1177,7 @@ function _gusto__print_info(spbm::GuSTOSubproblem,
 
     if !isnothing(err)
         @printf "%s, exiting\n" err.msg
-    elseif _scp__unsafe_solution(sol)
+    elseif unsafe_solution(sol)
         @printf "unsafe solution (%s), exiting\n" sol.status
     else
         # Preprocess values
@@ -1134,7 +1217,7 @@ function _gusto__print_info(spbm::GuSTOSubproblem,
         print(assoc, table)
     end
 
-    _scp__overhead!(spbm)
+    overhead!(spbm)
 
     return nothing
 end
