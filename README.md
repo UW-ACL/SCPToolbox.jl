@@ -7,6 +7,8 @@
 
 <p align="center">
   <a href="http://www.gnu.org/licenses/gpl-3.0.txt"><img src="https://img.shields.io/badge/license-GPL_3-green.svg" alt="License GPL 3" /></a>
+
+  [About the logo](figures/logo/about.md)
 </p>
 
 ***
