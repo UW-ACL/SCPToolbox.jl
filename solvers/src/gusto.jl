@@ -536,7 +536,6 @@ function compute_original_cost!(
     # Parameters
     pars = spbm.def.pars
     traj = spbm.def.traj
-    ref = spbm.ref
     N = pars.N
     t = spbm.def.common.t_grid
     no_running_cost = isnothing(traj.S) && isnothing(traj.ℓ) && isnothing(traj.g)
@@ -544,6 +543,7 @@ function compute_original_cost!(
     if mode==:convex
 
         # Reference trajectory
+        ref = spbm.ref
         xb = ref.xd
         ub = ref.ud
         pb = ref.p
@@ -685,17 +685,96 @@ function state_penalty_cost(
     t = pbm.common.t_grid
     nx = traj.nx
     np = traj.np
+
     if mode==:convex
+
+        # Reference trajectory
         ref = spbm.ref
         xb = ref.xd
         pb = ref.p
-        dx = x-xb
-        dp = p-pb
+
+        x_stages = [x[:, k] for k=1:N]
+
+        cost_st = @add_cost(
+            prg, (x_stages..., p),
+            begin
+                local x = arg[1:N]
+                local p = arg[end]
+
+                local dx = x-xb
+                local dp = p-pb
+
+                local cost_st = convex_state_penalty(x, p, spbm)
+
+                # Nonconvex path constraints
+                if !isnothing(traj.s)
+                    cost_soft_s = Vector{Objective}(undef, N)
+                    for k = 1:N
+                        cost_soft_s[k] = 0.0
+                        tkxp = (t[k], k, xb[:, k], pb)
+                        s = traj.s(tkxp...)
+                        dsdx = !isnothing(traj.C) ? traj.C(tkxp...) : zeros(length(s), nx)
+                        dsdp = !isnothing(traj.G) ? traj.G(tkxp...) : zeros(length(s), np)
+                        for i = 1:length(s)
+                            cost_soft_s[k] += soft_penalty(
+                                spbm, s[i], dsdx[i, :], dsdp[i, :], dx[:, k], dp)
+                        end
+                    end
+                    cost_st += trapz(cost_soft_s, t)
+
+                    cost_st
+                end
+            end)
+
+    else
+
+        cost_st = convex_state_penalty(x, p, spbm)
+
+        # Nonconvex path constraints
+        if !isnothing(traj.s)
+            cost_soft_s = Vector{Objective}(undef, N)
+            for k = 1:N
+                cost_soft_s[k] = 0.0
+                s = traj.s(t[k], k, x[:, k], p)
+                for i = 1:length(s)
+                    cost_soft_s[k] += soft_penalty(spbm, s[i])
+                end
+            end
+            cost_st += trapz(cost_soft_s, t)
+        end
+
     end
 
-    cost_st = 0.0
+    return cost_st
+end
 
-    # ..:: Convex state constraints ::..
+"""
+    convex_state_penalty(x, p, spbm)
+
+Compute a penalty for convex state path constraints.
+
+# Arguments
+- `x`: the discrete-time state trajectory.
+- `p`: the parameter vector.
+- `spbm`: the subproblem structure.
+
+# Returns
+- `pen`: the penalty cost.
+"""
+function convex_state_penalty(
+        x::VarArgBlk,
+        p::VarArgBlk,
+        spbm::Subproblem,
+)::Objective
+
+    # Parameters
+    pbm = spbm.def
+    pars = pbm.pars
+    traj = pbm.traj
+    N = pars.N
+    t = pbm.common.t_grid
+
+    pen = 0.0
     if !isnothing(traj.X)
         cost_soft_X = Vector{Objective}(undef, N)
         for k = 1:N
@@ -708,36 +787,10 @@ function state_penalty_cost(
                 end
             end
         end
-        cost_st += trapz(cost_soft_X, t)
+        pen += trapz(cost_soft_X, t)
     end
 
-    # ..:: Nonconvex path constraints ::..
-    if !isnothing(traj.s)
-        cost_soft_s = Vector{Objective}(undef, N)
-        for k = 1:N
-            cost_soft_s[k] = 0.0
-            if mode==:convex
-                tkxp = (t[k], k, xb[:, k], pb)
-                s = traj.s(tkxp...)
-                ns = length(s)
-                dsdx = !isnothing(traj.C) ? traj.C(tkxp...) : zeros(ns, nx)
-                dsdp = !isnothing(traj.G) ? traj.G(tkxp...) : zeros(ns, np)
-                for i = 1:ns
-                    cost_soft_s[k] += soft_penalty(
-                        spbm, s[i], dsdx[i, :], dsdp[i, :], dx[:, k], dp)
-                end
-            else
-                s = traj.s(t[k], k, x[:, k], p)
-                ns = length(s)
-                for i = 1:ns
-                    cost_soft_s[k] += soft_penalty(spbm, s[i])
-                end
-            end
-        end
-        cost_st += trapz(cost_soft_s, t)
-    end
-
-    return cost_st
+    return pen
 end
 
 """
@@ -827,7 +880,7 @@ function soft_penalty(
 end
 
 """
-    trust_region_cost(x, p, spbm[, mode; raw])
+    trust_region_cost(x, p, spbm[, mode])
 
 Compute the trust region constraint soft penalty. This function has two
 "modes": the (default) convex mode computes the convex version of the cost
@@ -838,83 +891,123 @@ computes the fully nonlinear cost.
 - `x`: the discrete-time state trajectory.
 - `p`: the parameter vector.
 - `spbm`: the subproblem structure.
-- `mode`: (optional) either :convex (default) or :nonconvex.
-
-# Keywords
-- `raw`: (optional) the value false (default) means to integrate and return the
-  integrated penalty. Otherwise, if true, then return the actual trust region
-  left-hand sides (which should be <=0 if the trust region constraints are
+- `mode`: (optional) either :convex (default) or :nonconvex. In the convex mode the function
+  integrates and return the integrated penalty. In the nonconvex mode, it returns the actual
+  trust region left-hand sides (which should be <=0 if the trust region constraints are
   satisfied).
 
 # Returns
-- `cost_tr`: if raw is false, the trust region soft penalty cost; or
-- `tr`: if raw is true, the trust regions left-hand sides (which should all be
+- `cost_tr`: if :convex then return the trust region soft penalty cost; or
+- `tr`: if :nonconvex, return the trust regions left-hand sides (which should all be
   <=0 if the trust region constraints are satisfied).
 """
 function trust_region_cost(
         x::VarArgBlk,
         p::VarArgBlk,
         spbm::Subproblem,
-        mode::Symbol=:convex;
-        raw::Bool=false
+        mode::Symbol=:convex
 )::Union{Objective, RealVector}
 
     # Parameters
+    prg = spbm.prg
     pars = spbm.def.pars
     scale = spbm.def.common.scale
     q = pars.q_tr
     N = pars.N
     η = spbm.η
-    sqrt_η = sqrt(η)
     t = spbm.def.common.t_grid
-    xh = scale.iSx*(x.-scale.cx)
-    ph = scale.iSp*(p-scale.cp)
+
     xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
     ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
-    dx = xh-xh_ref
-    dp = ph-ph_ref
-    tr = (mode==:convex) ? @variable(spbm.mdl, [1:N], base_name="tr") :
-        RealVector(undef, N)
 
-    # Integrated running cost
-    if !raw
-        cost_tr_integrand = Vector{Objective}(undef, N)
-    end
     q2cone = Dict(1 => :l1, 2 => :soc, 4 => :soc, Inf => :linf)
     cone = q2cone[q]
+
     if mode==:convex
-        C = T_ConvexConeConstraint
-        acc! = add_conic_constraint!
-        dx_lq = @variable(spbm.mdl, [1:N], base_name="dx_lq")
-        dp_lq = @variable(spbm.mdl, base_name="dp_lq")
-        acc!(spbm.mdl, C(vcat(dp_lq, dp), cone))
-    else
-        dp_lq = norm(dp, q)
-    end
-    for k = 1:N
-        if mode==:convex
-            acc!(spbm.mdl, C(vcat(dx_lq[k], dx[:, k]), cone))
+
+        tr = @new_variable(prg, N, "tr")
+        dx_lq = @new_variable(prg, N, "dx_lq")
+        dp_lq = @new_variable(prg, "dp_lq")
+
+        # Parameter trust region
+        @add_constraint(
+            prg, cone, "parameter_trust_region", (p, dp_lq),
+            begin
+                local p, dp_lq = arg
+                local ph = scale.iSp*(p-scale.cp)
+                local dp = ph-ph_ref
+                vcat(dp_lq, dp)
+            end)
+
+        for k = 1:N
+
+            # State trust region
+            @add_constraint(
+                prg, cone, "state_trust_region", (x[:, k], dx_lq[k]),
+                begin
+                    local xk, dxk_lq = arg
+                    local xhk = scale.iSx*(xk-scale.cx)
+                    local dxk = xhk-xh_ref[:, k]
+                    vcat(dxk_lq, dxk)
+                end)
+
+            # Trust region bound
             if q==4
-                w = @variable(spbm.mdl, base_name="w")
-                acc!(spbm.mdl, C(vcat(w, dx_lq[k], dp_lq), :soc))
-                acc!(spbm.mdl, C(vcat(w, η+tr[k], 1), :geom))
+                w = @new_variable(prg, "w")
+                @add_constraint(
+                    prg, SOC, "trust_region_bound", (dx_lq[k], dp_lq, w),
+                    begin
+                        local dxk_lq, dp_lq, w = arg
+                        vcat(w, dxk_lq, dp_lq)
+                    end)
+                @add_constraint(
+                    prg, GEOM, "trust_region_bound", (w, η, tr[k]),
+                    begin
+                        local w, η, trk = arg
+                        vcat(w, η+trk[1], 1)
+                    end)
             else
-                acc!(spbm.mdl, C(dx_lq[k]+dp_lq-(η+tr[k]), :nonpos))
+                @add_constraint(
+                    prg, NONPOS, "trust_region_bound", (dx_lq[k], dp_lq, tr[k]),
+                    begin
+                        local dxk_lq, dp_lq, trk = arg
+                        dxk_lq[1]+dp_lq[1]-(η+trk[1])
+                    end)
             end
-        else
+
+        end
+
+        cost_tr = @add_cost(
+            prg, (tr,),
+            begin
+                local tr, = arg
+                local cost_tr_integrand = Vector{Objective}(undef, N)
+                for k=1:N
+                    cost_tr_integrand[k] = soft_penalty(spbm, tr[k])
+                end
+                trapz(cost_tr_integrand, t)
+            end)
+
+        return cost_tr
+    else
+
+        tr = RealVector(undef, N)
+
+        xh = scale.iSx*(x.-scale.cx)
+        ph = scale.iSp*(p-scale.cp)
+        dx = xh-xh_ref
+        dp = ph-ph_ref
+
+        dp_lq = norm(dp, q)
+        for k = 1:N
             dx_lq = norm(dx[:, k], q)
             w = (q==4) ? 2 : 1
             tr[k] = dx_lq^w+dp_lq^w-η
         end
-        if !raw
-            cost_tr_integrand[k] = soft_penalty(spbm, tr[k])
-        end
-    end
-    if !raw
-        cost_tr = trapz(cost_tr_integrand, t)
+
+        return tr
     end
 
-    return (raw) ? tr : cost_tr
 end
 
 """
@@ -1066,7 +1159,7 @@ function update_rule!(spbm::Subproblem)::Tuple{
     c_buffer = 1e-3
 
     # Compute trust region constraint satisfaction
-    tr = trust_region_cost(sol.xd, sol.p, spbm, :nonconvex; raw=true)
+    tr = trust_region_cost(sol.xd, sol.p, spbm, :nonconvex)
     trust_viol = any(tr.>tr_buffer)
 
     # Compute state and nonlinear path constraint satisfaction
