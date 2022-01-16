@@ -642,7 +642,7 @@ The newly created `ConicConstraint` object.
 """
 macro add_constraint(prog, kind, args...)
     # Get the constraint name
-    hasname = args[1] isa String
+    hasname = !(args[1] isa Expr && args[1].head == :tuple)
     if hasname
         name = args[1]
         args = args[2:end]

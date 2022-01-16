@@ -339,8 +339,9 @@ function set_convex_constraints!(
 
             # Individual space station room SDFs
             for i = 1:env.n_iss
+                desc = "room_sdf_$(i)"
                 @add_constraint(
-                    ocp, LINF, "room_sdf", (δ[i,k], r),
+                    ocp, LINF, desc, (δ[i,k], r),
                     begin
                         local δik, r = arg
                         vcat(1-δik[1], (r-room[i].c)./room[i].s)

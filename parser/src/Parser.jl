@@ -20,9 +20,6 @@ module Parser
 
 export ConicLinearProgram
 
-# User-facing problem definition
-include("problem.jl")
-
 # General optimization problem building
 module ConicLinearProgram
 include("general.jl")
@@ -59,5 +56,8 @@ export @new_variable, @new_parameter, @add_constraint,
     @add_cost, @set_feasibility, @scale, @perturb_free,
     @perturb_fix, @perturb_relative, @perturb_absolute,
     @value, @jacobian
+
+# User-facing problem definition
+include("problem.jl")
 
 end

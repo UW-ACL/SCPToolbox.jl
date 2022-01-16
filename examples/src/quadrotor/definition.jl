@@ -34,7 +34,7 @@ function define_problem!(
     set_scale!(pbm)
     set_cost!(pbm, algo)
     set_dynamics!(pbm)
-    set_convex_constraints!(pbm)
+    set_convex_constraints!(pbm, algo)
     set_nonconvex_constraints!(pbm, algo)
     set_bcs!(pbm)
 
@@ -201,7 +201,8 @@ function set_dynamics!(
 end
 
 function set_convex_constraints!(
-        pbm::TrajectoryProblem
+        pbm::TrajectoryProblem,
+        algo::Symbol
 )::Nothing
 
     # Convex path constraints on the input
@@ -214,47 +215,29 @@ function set_convex_constraints!(
             σ = u[veh.id_σ]
             tdil = p[veh.id_t]
 
-            @add_constraint(
-                ocp, NONPOS, "min_accel", (σ,),
-                begin
-                    local σ, = arg
-                    veh.u_min-σ[1]
-                end)
+            define_conic_constraint!(
+                pbm, ocp, algo, NONPOS, 1, "min_accel", (σ,),
+                (σ) -> veh.u_min-σ)
 
-            @add_constraint(
-                ocp, NONPOS, "max_accel", (σ,),
-                begin
-                    local σ, = arg
-                    σ[1]-veh.u_max
-                end)
+            define_conic_constraint!(
+                pbm, ocp, algo, NONPOS, 1, "max_accel", (σ,),
+                (σ) -> σ-veh.u_max)
 
-            @add_constraint(
-                ocp, SOC, "lcvx_equality", (σ, a),
-                begin
-                    local σ, a = arg
-                    vcat(σ, a)
-                end)
+            define_conic_constraint!(
+                pbm, ocp, algo, SOC, 2, "lcvx_equality", (σ, a),
+                (σ, a) -> vcat(σ, a))
 
-            @add_constraint(
-                ocp, NONPOS, "max_tilt", (σ, a),
-                begin
-                    local σ, a = arg
-                    σ[1]*cos(veh.tilt_max)-a[3]
-                end)
+            define_conic_constraint!(
+                pbm, ocp, algo, NONPOS, 1, "max_tilt", (σ, a),
+                (σ, a) -> σ*cos(veh.tilt_max)-a[3])
 
-            @add_constraint(
-                ocp, NONPOS, "max_duration", (tdil,),
-                begin
-                    local tdil, = arg
-                    tdil[1]-traj.tf_max
-                end)
+            define_conic_constraint!(
+                pbm, ocp, algo, NONPOS, 1, "max_duration", (tdil,),
+                (tdil) -> tdil-traj.tf_max)
 
-            @add_constraint(
-                ocp, NONPOS, "min_duration", (tdil,),
-                begin
-                    local tdil, = arg
-                    traj.tf_min-tdil[1]
-                end)
+            define_conic_constraint!(
+                pbm, ocp, algo, NONPOS, 1, "min_duration", (tdil,),
+                (tdil) -> traj.tf_min-tdil)
         end)
 
     return nothing

@@ -285,7 +285,7 @@ function correct_convex!(
     opti = constructor(pbm)
 
     # Add the convex path constraints
-    add_convex_state_constraints!(opti)
+    add_convex_state_constraints!(opti; force_hard=true)
     add_convex_input_constraints!(opti)
 
     # Add epigraph constraints to make a convex cost for JuMP
@@ -433,11 +433,14 @@ function compute_scaling(
                     u = @new_variable(prg, nu, "u")
                     p = @new_variable(prg, np, "p")
                     # Constraints
+                    # Make sure that cones are hard-enforced
+                    traj.force_hard = true
                     if !isnothing(def[:set])
                         for k = 1:length(t)
                             def[:setcall](prg, t[k], k, x, u, p)
                         end
                     end
+                    traj.force_hard = false
                     # Cost
                     minimize_cost = (j==1) ? 1 : -1
                     @add_cost(prg, (x, u, p), begin
@@ -661,15 +664,18 @@ function add_dynamics!(spbm::SCPSubproblem;
 end
 
 """
-    add_convex_state_constraints!(spbm)
+    add_convex_state_constraints!(spbm[; force_hard])
 
 Add convex state constraints.
 
 # Arguments
 - `spbm`: the subproblem definition.
+- `force_hard`: force state constraints to be hard-enforced, if they are not so already.
 """
 function add_convex_state_constraints!(
-    spbm::T)::Nothing where {T<:SCPSubproblem}
+        spbm::T;
+        force_hard::Bool = false
+)::Nothing where {T<:SCPSubproblem}
 
     # Variables and parameters
     N = spbm.def.pars.N
@@ -680,9 +686,11 @@ function add_convex_state_constraints!(
     p = spbm.p
 
     if !isnothing(traj_pbm.X)
+        traj_pbm.force_hard = force_hard
         for k = 1:N
             traj_pbm.X(prg, t[k], k, x[:, k], p)
         end
+        traj_pbm.force_hard = false
     end
 
     return nothing

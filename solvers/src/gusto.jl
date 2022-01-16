@@ -39,6 +39,7 @@ import ..solve_subproblem!, ..solution_deviation, ..unsafe_solution,
 const CLP = ConicLinearProgram
 const Variable = ST.Variable
 const Optional = ST.Optional
+const Func = ST.Func
 const OptVarArgBlk = Optional{VarArgBlk}
 
 export Parameters
@@ -48,6 +49,7 @@ struct Parameters <: SCPParameters
     N::Int               # Number of temporal grid nodes
     Nsub::Int            # Number of subinterval integration time nodes
     iter_max::Int        # Maximum number of iterations
+    disc_method::DiscretizationType # The discretization method
     λ_init::RealTypes    # Initial soft penalty weight
     λ_max::RealTypes     # Maximum soft penalty weight
     ρ_0::RealTypes       # Trust region update threshold (lower, good solution)
@@ -99,6 +101,7 @@ mutable struct SubproblemSolution <: SCPSubproblemSolution
     λ_update::String      # Growth direction indicator for soft penalty weight
     reject::Bool          # Indicator whether GuSTO rejected this solution
     dyn::DLTV             # The dynamics
+    bay::Dict             # Storage bay for user-set values during callback
 end
 
 """ Subproblem definition for the convex numerical optimizer. """
@@ -128,7 +131,7 @@ mutable struct Subproblem <: SCPSubproblem
 end
 
 """
-    GuSTOProblem(pars, traj)
+    create(pars, traj)
 
 Construct the GuSTO problem definition.
 
@@ -139,7 +142,7 @@ Construct the GuSTO problem definition.
 # Returns
 - `pbm`: the problem structure ready for being solved by GuSTO.
 """
-function GuSTOProblem(
+function create(
         pars::Parameters,
         traj::TrajectoryProblem
 )::SCPProblem
@@ -256,7 +259,7 @@ function Subproblem(
     κ = (iter < pars.iter_μ) ? 1.0 : pars.μ^(1+iter-pars.iter_μ)
 
     spbm = Subproblem(
-        iter, mdl, algo, pbm, λ, η, κ, sol, ref, L, L_st,
+        iter, prg, algo, pbm, λ, η, κ, sol, ref, L, L_st,
         L_tr, L_aug, x, u, p, timing)
 
     return spbm
@@ -293,6 +296,7 @@ function SubproblemSolution(
     nu = pbm.traj.nu
     np = pbm.traj.np
     nv = size(pbm.common.E, 2)
+    disc = pbm.pars.disc_method
 
     # Uninitialized parts
     status = MOI.OPTIMIZE_NOT_CALLED
@@ -306,7 +310,8 @@ function SubproblemSolution(
     tr_update = ""
     λ_update = ""
     reject = false
-    dyn = DLTV(nx, nu, np, nv, N)
+    dyn = DLTV(nx, nu, np, nv, N, disc)
+    bay = Dict()
 
     J = NaN
     J_st = NaN
@@ -319,7 +324,7 @@ function SubproblemSolution(
     subsol = SubproblemSolution(
         iter, x, u, p, J, J_st, J_tr, J_aug, L, L_st, L_aug, status, feas,
         defect, deviation, unsafe, cost_error, dyn_error, ρ, tr_update,
-        λ_update, reject, dyn)
+        λ_update, reject, dyn, bay)
 
     # Compute the DLTV dynamics around this solution
     discretize!(subsol, pbm)
@@ -377,9 +382,7 @@ Apply the GuSTO algorithm to solve the trajectory generation problem.
 function solve(
         pbm::SCPProblem,
         warm::Union{Nothing, SCPSolution}=nothing
-)::Tuple{
-        Union{SCPSolution, SubproblemSolution, Nothing},
-        SCPHistory}
+)::Tuple{Union{SCPSolution, SubproblemSolution, Nothing}, SCPHistory}
 
     # ..:: Initialize ::..
 
@@ -500,10 +503,6 @@ function add_cost!(spbm::Subproblem)::Nothing
     # Overall cost
     spbm.L_aug = cost(spbm.prg)
 
-    # Associate cost function with the model
-    set_objective_function(spbm.mdl, spbm.L_aug)
-    set_objective_sense(spbm.mdl, MOI.MIN_SENSE)
-
     return nothing
 end
 
@@ -525,10 +524,10 @@ fully nonlinear cost.
 # Returns
 - `cost`: the original cost.
 """
-function compute_original_cost!(
-        x::VarArgBlk,
-        u::VarArgBlk,
-        p::VarArgBlk,
+function original_cost(
+        x::Union{VarArgBlk, RealMatrix},
+        u::Union{VarArgBlk, RealMatrix},
+        p::Union{VarArgBlk, RealVector},
         spbm::Subproblem,
         mode::Symbol=:convex
 )::Objective
@@ -536,6 +535,7 @@ function compute_original_cost!(
     # Parameters
     pars = spbm.def.pars
     traj = spbm.def.traj
+    prg = spbm.prg
     N = pars.N
     t = spbm.def.common.t_grid
     no_running_cost = isnothing(traj.S) && isnothing(traj.ℓ) && isnothing(traj.g)
@@ -559,14 +559,14 @@ function compute_original_cost!(
                 local p = arg[end]
 
                 # Terminal cost
-                local xf = x[:, end]
+                local xf = x[end]
                 local J_term = isnothing(traj.φ) ? 0.0 : traj.φ(xf, p)
 
                 # Integrated running cost
                 local J_run = Vector{Objective}(undef, N)
                 for k = 1:N
                     tkp = (t[k], k, p)
-                    tkxp = (t[k], k, x[:, k], p)
+                    tkxp = (t[k], k, x[k], p)
                     if no_running_cost
                         J_run[k] = 0.0
                     else
@@ -575,13 +575,13 @@ function compute_original_cost!(
                         Γk = 0.0
                         if !isnothing(traj.S)
                             if traj.S_cvx
-                                Γk += u[:, k]'*traj.S(tkp...)*u[:, k]
+                                Γk += u[k]'*traj.S(tkp...)*u[k]
                             else
                                 uSu = ub[:, k]'*traj.S(tkpb...)*ub[:, k]
                                 ∇u_uSu = 2*traj.S(tkpb...)*ub[:, k]
                                 ∇p_S = traj.dSdp(pb)
                                 ∇p_uSu = [ub[:, k]'*∇p_S[i]*ub[:, k] for i=1:traj.np]
-                                du = u[:, k]-ub[:, k]
+                                du = u[k]-ub[:, k]
                                 dp = p-pb
                                 uSu1 = uSu+∇u_uSu'*du+∇p_uSu.*dp
                                 Γk += uSu1
@@ -589,7 +589,7 @@ function compute_original_cost!(
                         end
                         if !isnothing(traj.ℓ)
                             if traj.ℓ_cvx
-                                Γk += u[:, k]'*traj.ℓ(tkxp...)
+                                Γk += u[k]'*traj.ℓ(tkxp...)
                             else
                                 uℓ = ub[:, k]'*traj.ℓ(tkxpb...)
                                 ∇u_uℓ = traj.ℓ(tkxpb...)
@@ -597,8 +597,8 @@ function compute_original_cost!(
                                     zeros(traj.nx)
                                 ∇p_uℓ = !isnothing(traj.dℓdp) ? traj.dℓdp(tkxpb...)'*ub[:, k] :
                                     zeros(traj.np)
-                                du = u[:, k]-ub[:, k]
-                                dx = x[:, k]-xb[:, k]
+                                du = u[k]-ub[:, k]
+                                dx = x[k]-xb[:, k]
                                 dp = p-pb
                                 uℓ1 = uℓ+∇u_uℓ'*du+∇x_uℓ'*dx+∇p_uℓ'*dp
                                 Γk += uℓ1
@@ -611,13 +611,13 @@ function compute_original_cost!(
                                 g = traj.g(tkxpb...)
                                 ∇x_g = !isnothing(traj.dgdx) ? traj.dgdx(tkxpb...) : zeros(traj.nx)
                                 ∇p_g = !isnothing(traj.dgdp) ? traj.dgdp(tkxpb...) : zeros(traj.np)
-                                dx = x[:, k]-xb[:, k]
+                                dx = x[k]-xb[:, k]
                                 dp = p-pb
                                 g1 = g+∇x_g'*dx+∇p_g'*dp
                                 Γk += g1
                             end
                         end
-                        cost_run_integrand[k] = Γk
+                        J_run[k] = Γk
                     end
                 end
                 local integ_J_run = trapz(J_run, t)
@@ -648,7 +648,7 @@ function compute_original_cost!(
         end
         integ_J_run = trapz(J_run, t)
 
-        cost = cost_term+integ_J_run
+        cost = J_term+integ_J_run
     end
 
     return cost
@@ -671,8 +671,8 @@ p)<=0.
 - `cost_st`: the original cost.
 """
 function state_penalty_cost(
-        x::VarArgBlk,
-        p::VarArgBlk,
+        x::Union{VarArgBlk, RealMatrix},
+        p::Union{VarArgBlk, RealVector},
         spbm::Subproblem,
         mode::Symbol=:convex
 )::Objective
@@ -681,6 +681,7 @@ function state_penalty_cost(
     pbm = spbm.def
     pars = pbm.pars
     traj = pbm.traj
+    prg = spbm.prg
     N = pars.N
     t = pbm.common.t_grid
     nx = traj.nx
@@ -693,42 +694,93 @@ function state_penalty_cost(
         xb = ref.xd
         pb = ref.p
 
-        x_stages = [x[:, k] for k=1:N]
+        # Convex state constraints
+        # Flatten them with a map that relates the temporal index k to the flattened indices
+        cost_cvx_all = convex_state_penalty(x, p, spbm)
+        cost_cvx_var, cost_cvx_pen, cvx_k2j, j = [], [], Dict{Int, Vector{Int}}(), 1
+        for k = 1:length(cost_cvx_all)
+            cvx_k2j[k] = Int[]
+            for i = 1:length(cost_cvx_all[k])
+                push!(cost_cvx_var, cost_cvx_all[k][i][1])
+                push!(cost_cvx_pen, cost_cvx_all[k][i][2])
+                push!(cvx_k2j[k], j)
+                j += 1
+            end
+        end
+
+        # Nonconvex path constraints
+        cost_ncvx_all = []
+        if !isnothing(traj.s)
+            for k = 1:N
+                pen_k = []
+                tkxp = (t[k], k, xb[:, k], pb)
+                s = traj.s(tkxp...)
+                dsdx = !isnothing(traj.C) ? traj.C(tkxp...) : zeros(length(s), nx)
+                dsdp = !isnothing(traj.G) ? traj.G(tkxp...) : zeros(length(s), np)
+                for i = 1:length(s)
+                    push!(pen_k, soft_penalty(
+                        spbm, s[i], dsdx[i, :], dsdp[i, :], x[:, k], p, xb[:, k], pb))
+                end
+                push!(cost_ncvx_all, pen_k)
+            end
+        end
+        # Flatten the nonconvex constraints, with a map that relates the temporal index k to the
+        # flattened indices
+        cost_ncvx_var, cost_ncvx_pen, ncvx_k2j, j = [], [], Dict{Int, Vector{Int}}(), 1
+        for k = 1:length(cost_ncvx_all)
+            ncvx_k2j[k] = Int[]
+            for i = 1:length(cost_ncvx_all[k])
+                push!(cost_ncvx_var, cost_ncvx_all[k][i][1])
+                push!(cost_ncvx_pen, cost_ncvx_all[k][i][2])
+                push!(ncvx_k2j[k], j)
+                j += 1
+            end
+        end
 
         cost_st = @add_cost(
-            prg, (x_stages..., p),
+            prg, (cost_cvx_var..., cost_ncvx_var...),
             begin
-                local x = arg[1:N]
-                local p = arg[end]
+                local var_cvx = arg[1:length(cost_cvx_var)]
+                local var_ncvx = arg[(length(cost_cvx_var)+1):end]
 
-                local dx = x-xb
-                local dp = p-pb
+                local cost_st = 0.0 # The penalty cost
 
-                local cost_st = convex_state_penalty(x, p, spbm)
-
-                # Nonconvex path constraints
-                if !isnothing(traj.s)
-                    cost_soft_s = Vector{Objective}(undef, N)
-                    for k = 1:N
-                        cost_soft_s[k] = 0.0
-                        tkxp = (t[k], k, xb[:, k], pb)
-                        s = traj.s(tkxp...)
-                        dsdx = !isnothing(traj.C) ? traj.C(tkxp...) : zeros(length(s), nx)
-                        dsdp = !isnothing(traj.G) ? traj.G(tkxp...) : zeros(length(s), np)
-                        for i = 1:length(s)
-                            cost_soft_s[k] += soft_penalty(
-                                spbm, s[i], dsdx[i, :], dsdp[i, :], dx[:, k], dp)
+                # Penalty cost for convex state constraints
+                if length(var_cvx)>0
+                    local cost_soft_cvx = []
+                    for k in keys(cvx_k2j)
+                        push!(cost_soft_cvx, 0.0)
+                        for j in cvx_k2j[k]
+                            cost_soft_cvx[end] += cost_cvx_pen[j](var_cvx[j])
                         end
                     end
-                    cost_st += trapz(cost_soft_s, t)
-
-                    cost_st
+                    cost_st += trapz(cost_soft_cvx, t)
                 end
+
+                # Penalty cost for nonconvex path constraints
+                if length(var_ncvx)>0
+                    local cost_soft_ncvx = []
+                    for k in keys(ncvx_k2j)
+                        push!(cost_soft_ncvx, 0.0)
+                        for j in ncvx_k2j[k]
+                            cost_soft_ncvx[end] += cost_ncvx_pen[j](var_ncvx[j])
+                        end
+                    end
+                    cost_st += trapz(cost_soft_ncvx, t)
+                end
+
+                cost_st
             end)
 
     else
 
-        cost_st = convex_state_penalty(x, p, spbm)
+        # Convex state constraints
+        cost_st_all_time_nodes = convex_state_penalty(x, p, spbm)
+        if length(cost_st_all_time_nodes)>0
+            cost_st = trapz([sum(cost_st_k, init=0) for cost_st_k in cost_st_all_time_nodes], t)
+        else
+            cost_st = 0.0
+        end
 
         # Nonconvex path constraints
         if !isnothing(traj.s)
@@ -759,13 +811,14 @@ Compute a penalty for convex state path constraints.
 - `spbm`: the subproblem structure.
 
 # Returns
-- `pen`: the penalty cost.
+- `pen`: list of penalties per-time-step, where the element for each time step is a list of
+  penalties per (scalar) state constraint.
 """
 function convex_state_penalty(
-        x::VarArgBlk,
-        p::VarArgBlk,
+        x::Union{VarArgBlk, RealMatrix},
+        p::Union{VarArgBlk, RealVector},
         spbm::Subproblem,
-)::Objective
+)::Vector
 
     # Parameters
     pbm = spbm.def
@@ -774,20 +827,18 @@ function convex_state_penalty(
     N = pars.N
     t = pbm.common.t_grid
 
-    pen = 0.0
+    pen = []
     if !isnothing(traj.X)
-        cost_soft_X = Vector{Objective}(undef, N)
         for k = 1:N
-            in_X = traj.X(t[k], k, x[:, k], p)
-            cost_soft_X[k] = 0.0
-            for cone in in_X
-                ρ = get_conic_constraint_indicator!(spbm.mdl, cone)
-                for ρi in ρ
-                    cost_soft_X[k] += soft_penalty(spbm, ρi)
+            cone_indicators = traj.X(t[k], k, x[:, k], p)
+            pen_k = []
+            for ρ in cone_indicators
+                for i=1:length(ρ)
+                    push!(pen_k, soft_penalty(spbm, ρ[i]))
                 end
             end
+            push!(pen, pen_k)
         end
-        pen += trapz(cost_soft_X, t)
     end
 
     return pen
@@ -811,72 +862,110 @@ d/dp) is zero, then you can pass `nothing` in its place.
 - `dp`: (optional) parameter vector deviation from reference.
 
 # Returns
-- `h`: penalization function value.
+- Numerical mode: the penalization function value.
+- Optimization mode: a (variable, function) tuple where the function transforms the variable into
+  the penalization function value.
 """
 function soft_penalty(
         spbm::Subproblem,
-        f::T_OptiVar,
-        dfdx::Union{T_OptiVar, Nothing}=nothing,
-        dfdp::Union{T_OptiVar, Nothing}=nothing,
-        dx::Union{T_OptiVar, Nothing}=nothing,
-        dp::Union{T_OptiVar, Nothing}=nothing
-)::Objective
+        f::Union{RealTypes, VarArgBlk},
+        dfdx::Union{RealVector, Nothing}=nothing,
+        dfdp::Union{RealVector, Nothing}=nothing,
+        x::Union{VarArgBlk, Nothing}=nothing,
+        p::Union{VarArgBlk, Nothing}=nothing,
+        xb::Union{RealVector, Nothing}=nothing,
+        pb::Union{RealVector, Nothing}=nothing
+)::Union{RealTypes, Tuple{VarArgBlk, Func}}
 
     # Parameters
     pars = spbm.def.pars
     traj = spbm.def.traj
+    prg = spbm.prg
     penalty = pars.pen
     hom = pars.hom
     λ = spbm.λ
     linearized = !isnothing(dfdx) || !isnothing(dfdp)
-    mode = (typeof(f)!=RealTypes ||
-            (linearized && (typeof(dx)!=RealVector ||
-                            typeof(dp)!=RealVector))) ? :jump : :numerical
+    numerical_mode = f isa RealTypes && (
+        !linearized || (linearized && (x isa RealVector && p isa RealVector)))
 
     # Get linearized version of the quantity being penalized, if applicable
     if linearized
-        dfdx = !isnothing(dfdx) ? dfdx : zeros(traj.nx)
-        dfdp = !isnothing(dfdp) ? dfdp : zeros(traj.np)
-        dx = !isnothing(dx) ? dx : zeros(traj.nx)
-        dp = !isnothing(dp) ? dp : zeros(traj.np)
-        f = f+dfdx'*dx+dfdp'*dp
+        if numerical_mode
+            f = f+dfdx'*(x-xb)+dfdp'*(p-pb)
+        else
+            f_lin = (x, p) -> f+dfdx'*(x-xb)+dfdp'*(p-pb)
+        end
     end
 
     # Compute the function value
     # The possibilities are:
     #   (:quad)      h(f(x, p)) = λ*(max(0, f(x, p)))^2
     #   (:softplus)  h(f(x, p)) = λ*log(1+exp(hom*f(x, p)))/hom
-    acc! = add_conic_constraint!
-    Cone = T_ConvexConeConstraint
     if penalty==:quad
         # ..:: Quadratic penalty ::..
-        if mode==:numerical
-            h = (max(0.0, f))^2
+        if numerical_mode
+            return λ*(max(0.0, f))^2
         else
-            u = @variable(spbm.mdl, base_name="u")
-            v = @variable(spbm.mdl, base_name="v")
-            acc!(spbm.mdl, Cone(-u, :nonpos))
-            acc!(spbm.mdl, Cone(f+u-v, :nonpos))
-            h = v^2
+            u = @new_variable(prg, "u")
+            v = @new_variable(prg, "v")
+            @add_constraint(
+                prg, NONPOS, (u,),
+                begin
+                    local u, = arg
+                    -u[1]
+                end)
+            if linearized
+                @add_constraint(
+                    prg, NONPOS, (x, p, u, v), begin
+                        local x, p, u, v = arg
+                        f_lin(x, p)+u[1]-v[1]
+                    end)
+            else
+                @add_constraint(
+                    prg, NONPOS, (f, u, v), begin
+                        local f, u, v = arg
+                        f[1]+u[1]-v[1]
+                    end)
+            end
+            return v, (v) -> λ*v[1]^2
         end
     else
         # ..:: Log-sum-exp penalty ::..
-        if mode==:numerical
+        if numerical_mode
             F = [0, f]
-            h = logsumexp(F; t=hom)
+            return λ*logsumexp(F; t=hom)
         else
-            u = @variable(spbm.mdl, base_name="u")
-            v = @variable(spbm.mdl, base_name="v")
-            w = @variable(spbm.mdl, base_name="w")
-            acc!(spbm.mdl, Cone(vcat(-w, 1, u), :exp))
-            acc!(spbm.mdl, Cone(vcat(hom*f-w, 1, v), :exp))
-            acc!(spbm.mdl, Cone(u+v-1, :nonpos))
-            h = w/hom
+            u = @new_variable(prg, "u")
+            v = @new_variable(prg, "v")
+            w = @new_variable(prg, "w")
+            @add_constraint(
+                prg, EXP, (w, u),
+                begin
+                    local w, u = arg
+                    vcat(-w, 1, u)
+                end)
+            if linearized
+                @add_constraint(
+                    prg, EXP, (x, p, w, v), begin
+                        local x, p, w, v = arg
+                        vcat(hom*f_lin(x, p)-w[1], 1, v[1])
+                    end)
+            else
+                @add_constraint(
+                    prg, EXP, (f, w, v), begin
+                        local f, w, v = arg
+                        vcat(hom*f[1]-w[1], 1, v[1])
+                    end)
+            end
+            @add_constraint(
+                prg, NONPOS, (u, v),
+                begin
+                    local u, v = arg
+                    u[1]+v[1]-1
+                end)
+            return w, (w) -> λ*w[1]/hom
         end
     end
-    h *= λ
-
-    return h
 end
 
 """
@@ -902,8 +991,8 @@ computes the fully nonlinear cost.
   <=0 if the trust region constraints are satisfied).
 """
 function trust_region_cost(
-        x::VarArgBlk,
-        p::VarArgBlk,
+        x::Union{VarArgBlk, RealMatrix},
+        p::Union{VarArgBlk, RealVector},
         spbm::Subproblem,
         mode::Symbol=:convex
 )::Union{Objective, RealVector}
@@ -920,7 +1009,7 @@ function trust_region_cost(
     xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
     ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
 
-    q2cone = Dict(1 => :l1, 2 => :soc, 4 => :soc, Inf => :linf)
+    q2cone = Dict(1 => L1, 2 => SOC, 4 => SOC, Inf => LINF)
     cone = q2cone[q]
 
     if mode==:convex
@@ -977,13 +1066,17 @@ function trust_region_cost(
 
         end
 
+        # Compute the soft penalty terms for the cost function
+        pen_terms = [soft_penalty(spbm, tr[k]) for k=1:N]
+        pen_var = [pen[1] for pen in pen_terms]
+        pen_map = [pen[2] for pen in pen_terms]
+
         cost_tr = @add_cost(
-            prg, (tr,),
-            begin
-                local tr, = arg
-                local cost_tr_integrand = Vector{Objective}(undef, N)
+            prg, (pen_var...,), begin
+                local pen_var = arg[1:end]
+                local cost_tr_integrand = []
                 for k=1:N
-                    cost_tr_integrand[k] = soft_penalty(spbm, tr[k])
+                    push!(cost_tr_integrand, pen_map[k](pen_var[k]))
                 end
                 trapz(cost_tr_integrand, t)
             end)
@@ -1169,10 +1262,9 @@ function update_rule!(spbm::Subproblem)::Tuple{
             # Check with respect to the convex state constraints
             if !isnothing(traj.X)
                 for k = 1:N
-                    in_X = traj.X(t[k], k, sol.xd[:, k], sol.p)
-                    for cone in in_X
-                        ind = get_conic_constraint_indicator!(spbm.mdl, cone)
-                        if any(ind.>c_buffer)
+                    cone_indicators = traj.X(t[k], k, sol.xd[:, k], sol.p)
+                    for q in cone_indicators
+                        if any(q.>c_buffer)
                             error("Convex state constraint violated")
                         end
                     end
@@ -1251,6 +1343,38 @@ function update_rule!(spbm::Subproblem)::Tuple{
 end
 
 """
+    cost_improvement_percent(J_new, J_old)
+
+Compute the relative cost improvement (as a string to be put into a table).
+
+# Arguments
+- `J_new`: next cost.
+- `J_old`: old cost.
+
+# Returns
+- `ΔJ`: the relative cost improvement.
+"""
+function cost_improvement_percent(
+        J_new::RealTypes,
+        J_old::RealTypes
+)::String
+    if isnan(J_old)
+        ΔJ = ""
+    else
+        ΔJ = (J_old-J_new)/abs(J_old)*100
+        _ΔJ = @sprintf("%.2f", ΔJ)
+        if length(_ΔJ)>8
+            fmt = string("%.", (ΔJ>0) ? 2 : 1, "e")
+            ΔJ = @eval @sprintf($fmt, $ΔJ)
+        else
+            ΔJ = _ΔJ
+        end
+    end
+
+    return ΔJ
+end
+
+"""
     print_info(spbm[, err])
 
 Print command line info message.
@@ -1261,7 +1385,8 @@ Print command line info message.
 """
 function print_info(
         spbm::Subproblem,
-        err::Union{Nothing, SCPError}=nothing)::Nothing
+        err::Union{Nothing, SCPError}=nothing
+)::Nothing
 
     # Convenience variables
     sol = spbm.sol
