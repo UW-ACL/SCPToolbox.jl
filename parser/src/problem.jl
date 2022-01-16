@@ -26,6 +26,7 @@ You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+using LinearAlgebra
 using JuMP
 
 using Utils
@@ -602,7 +603,7 @@ function problem_add_table_column!(pbm::TrajectoryProblem,
 end
 
 """
-    define_conic_constraint!(pbm, prog, alg, cone, cone_dim, desc, varlist, definition)
+    define_conic_constraint!(pbm, prog, alg, cone, desc, varlist, definition)
 
 Define a conic constraint. This function abstracts away some complexity in cone constraint
 specification for the underlying SCP algorithms that will solve the problem downstream.
@@ -618,8 +619,6 @@ effectively, we have a bidirectional relationship: q<=0 if and only if x∈K.
 - `prog`: the optimization program with which to associate this constraint.
 - `alg`: the SCP algorithm name.
 - `cone`: the convex cone that the function value is to lie inside of.
-- `cone_dim`: the dimension of the cone, meaning the dimension of the ambient space that holds the
-  cone.
 - `desc`: the constraint name.
 - `varlist`: tuple of variables that the cone is constructed from.
 - `definition`: anonymous function that constructs the affine expression `z` that is to be
@@ -630,7 +629,6 @@ function define_conic_constraint!(
         prog::ConicProgram,
         alg::Symbol,
         cone::SupportedCone,
-        cone_dim::Int,
         desc::String,
         varlist::Union{
             NTuple{N, VariableArgumentBlock},
@@ -642,7 +640,7 @@ function define_conic_constraint!(
     mode = (varlist isa NTuple{N, VariableArgumentBlock}) ? :optimization : :numerical
 
     # Sanitize arguments so that scalars are actually scalars and not zero-dimensional arrays
-    scalarize = (z) -> (length(z) == 1) ? z[1] : z
+    scalarize = (z) -> (z isa Array && length(z)==1) ? scalarize(z[1]) : z
     scalarize_args = (args) -> [scalarize(arg) for arg in args]
 
     if pbm.force_hard || alg != :gusto
@@ -650,6 +648,8 @@ function define_conic_constraint!(
     else
         if mode==:optimization
             if cone in (ZERO, NONPOS)
+                _z = definition(scalarize_args(value.(varlist))...)
+                cone_dim = (_z isa Array) ? length(_z) : 1
                 q = @new_variable(prog, cone_dim, "q")
                 @add_constraint(
                     prog, NONPOS, desc, (varlist..., q), begin
@@ -701,20 +701,20 @@ function define_conic_constraint!(
             end
         else
             z = definition(scalarize_args(varlist)...)
-            if cone.kind==ZERO
+            if cone==ZERO
                 q = abs.(z)
-            elseif cone.kind==NONPOS
+            elseif cone==NONPOS
                 q = z
-            elseif cone.kind in (L1, SOC, LINF)
+            elseif cone in (L1, SOC, LINF)
                 t = z[1]
                 x = z[2:end]
                 nrm = Dict(L1 => 1, SOC => 2, LINF => Inf)
-                q = norm(x, nrm[cone.kind])-t
-            elseif cone.kind==GEOM
+                q = norm(x, nrm[cone])-t
+            elseif cone==GEOM
                 t, x = z[1], z[2:end]
                 dim = cone.dim-1
                 q = t-exp(1/dim*sum(log.(x)))
-            elseif cone.kind==EXP
+            elseif cone==EXP
                 x, y, w = z
                 q = y*exp(x/y)-w
             end

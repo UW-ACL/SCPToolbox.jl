@@ -824,13 +824,14 @@ function convex_state_penalty(
     pbm = spbm.def
     pars = pbm.pars
     traj = pbm.traj
+    prg = spbm.prg
     N = pars.N
     t = pbm.common.t_grid
 
     pen = []
     if !isnothing(traj.X)
         for k = 1:N
-            cone_indicators = traj.X(t[k], k, x[:, k], p)
+            cone_indicators = traj.X(prg, t[k], k, x[:, k], p)
             pen_k = []
             for ρ in cone_indicators
                 for i=1:length(ρ)
@@ -1229,6 +1230,7 @@ function update_rule!(spbm::Subproblem)::Tuple{
     # Extract values and relevant data
     pars = spbm.def.pars
     traj = spbm.def.traj
+    prg = spbm.prg
     t = spbm.def.common.t_grid
     sol = spbm.sol
     ref = spbm.ref
@@ -1262,7 +1264,7 @@ function update_rule!(spbm::Subproblem)::Tuple{
             # Check with respect to the convex state constraints
             if !isnothing(traj.X)
                 for k = 1:N
-                    cone_indicators = traj.X(t[k], k, sol.xd[:, k], sol.p)
+                    cone_indicators = traj.X(prg, t[k], k, sol.xd[:, k], sol.p)
                     for q in cone_indicators
                         if any(q.>c_buffer)
                             error("Convex state constraint violated")

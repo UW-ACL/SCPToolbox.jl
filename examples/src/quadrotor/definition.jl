@@ -210,33 +210,34 @@ function set_convex_constraints!(
         pbm, (t, k, u, p, pbm, ocp) -> begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
+            common = (pbm, ocp, algo)
 
             a = u[veh.id_u]
             σ = u[veh.id_σ]
             tdil = p[veh.id_t]
 
             define_conic_constraint!(
-                pbm, ocp, algo, NONPOS, 1, "min_accel", (σ,),
+                common..., NONPOS, "min_accel", (σ,),
                 (σ) -> veh.u_min-σ)
 
             define_conic_constraint!(
-                pbm, ocp, algo, NONPOS, 1, "max_accel", (σ,),
+                common..., NONPOS, "max_accel", (σ,),
                 (σ) -> σ-veh.u_max)
 
             define_conic_constraint!(
-                pbm, ocp, algo, SOC, 2, "lcvx_equality", (σ, a),
+                common..., SOC, "lcvx_equality", (σ, a),
                 (σ, a) -> vcat(σ, a))
 
             define_conic_constraint!(
-                pbm, ocp, algo, NONPOS, 1, "max_tilt", (σ, a),
+                common..., NONPOS, "max_tilt", (σ, a),
                 (σ, a) -> σ*cos(veh.tilt_max)-a[3])
 
             define_conic_constraint!(
-                pbm, ocp, algo, NONPOS, 1, "max_duration", (tdil,),
+                common..., NONPOS, "max_duration", (tdil,),
                 (tdil) -> tdil-traj.tf_max)
 
             define_conic_constraint!(
-                pbm, ocp, algo, NONPOS, 1, "min_duration", (tdil,),
+                common..., NONPOS, "min_duration", (tdil,),
                 (tdil) -> traj.tf_min-tdil)
         end)
 

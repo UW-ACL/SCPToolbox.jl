@@ -35,7 +35,7 @@ function define_problem!(
     set_integration!(pbm)
     set_cost!(pbm, algo)
     set_dynamics!(pbm)
-    set_convex_constraints!(pbm)
+    set_convex_constraints!(pbm, algo)
     set_nonconvex_constraints!(pbm, algo)
     set_bcs!(pbm)
 
@@ -292,7 +292,8 @@ function set_dynamics!(
 end
 
 function set_convex_constraints!(
-        pbm::TrajectoryProblem
+        pbm::TrajectoryProblem,
+        algo::Symbol
 )::Nothing
 
     # Convex path constraints on the state
@@ -302,6 +303,7 @@ function set_convex_constraints!(
             veh = pbm.mdl.vehicle
             env = pbm.mdl.env
             room = env.iss
+            common = (pbm, ocp, algo)
 
             r = x[veh.id_r]
             v = x[veh.id_v]
@@ -309,43 +311,28 @@ function set_convex_constraints!(
             tdil = p[veh.id_t]
             δ = reshape(p[veh.id_δ], env.n_iss, :)
 
-            @add_constraint(
-                ocp, SOC, "max_lin_vel", (v,),
-                begin
-                    local v, = arg
-                    vcat(veh.v_max, v)
-                end)
+            define_conic_constraint!(
+                common..., SOC, "max_lin_vel", (v,),
+                (v) -> vcat(veh.v_max, v))
 
-            @add_constraint(
-                ocp, SOC, "max_ang_vel", (ω,),
-                begin
-                    local ω, = arg
-                    vcat(veh.ω_max, ω)
-                end)
+            define_conic_constraint!(
+                common..., SOC, "max_ang_vel", (ω,),
+                (ω) -> vcat(veh.ω_max, ω))
 
-            @add_constraint(
-                ocp, NONPOS, "max_duration", (tdil,),
-                begin
-                    local tdil, = arg
-                    tdil[1]-traj.tf_max
-                end)
+            define_conic_constraint!(
+                common..., NONPOS, "max_duration", (tdil,),
+                (tdil) -> tdil-traj.tf_max)
 
-            @add_constraint(
-                ocp, NONPOS, "min_duration", (tdil,),
-                begin
-                    local tdil, = arg
-                    traj.tf_min-tdil[1]
-                end)
+            define_conic_constraint!(
+                common..., NONPOS, "min_duration", (tdil,),
+                (tdil) -> traj.tf_min-tdil)
 
             # Individual space station room SDFs
             for i = 1:env.n_iss
                 desc = "room_sdf_$(i)"
-                @add_constraint(
-                    ocp, LINF, desc, (δ[i,k], r),
-                    begin
-                        local δik, r = arg
-                        vcat(1-δik[1], (r-room[i].c)./room[i].s)
-                    end)
+                define_conic_constraint!(
+                    common..., LINF, desc, (δ[i,k], r),
+                    (δik, r) -> vcat(1-δik, (r-room[i].c)./room[i].s))
             end
         end)
 
@@ -353,23 +340,18 @@ function set_convex_constraints!(
     problem_set_U!(
         pbm, (t, k, u, p, pbm, ocp) -> begin
             veh = pbm.mdl.vehicle
+            common = (pbm, ocp, algo)
 
             T = u[veh.id_T]
             M = u[veh.id_M]
 
-            @add_constraint(
-                ocp, SOC, "max_thrust", (T,),
-                begin
-                    local T, = arg
-                    vcat(veh.T_max, T)
-                end)
+            define_conic_constraint!(
+                common..., SOC, "max_thrust", (T,),
+                (T) -> vcat(veh.T_max, T))
 
-            @add_constraint(
-                ocp, SOC, "max_torque", (M,),
-                begin
-                    local M, = arg
-                    vcat(veh.M_max, M)
-                end)
+            define_conic_constraint!(
+                common..., SOC, "max_torque", (M,),
+                (M) -> vcat(veh.M_max, M))
         end)
 
     return nothing
