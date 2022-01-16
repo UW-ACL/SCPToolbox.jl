@@ -24,27 +24,54 @@ test_heading(algo, description) = printstyled(
     @sprintf("(%s) %s\n", algo, description),
     color=:blue, bold=true)
 
-@testset "DoubleIntegrator" begin
-    test_heading("LCvx", "Double integrator")
-    Examples.DoubleIntegrator.lcvx()
-end
+# Number of trials if statistics are gathered
+const NUM_TRIALS = 3
 
-@testset "RocketLanding" begin
-    test_heading("LCvx", "Rocket landing")
-    Examples.RocketLanding.lcvx()
-end
+# @testset "DoubleIntegrator" begin
+#     test_heading("LCvx", "Double integrator")
+#     Examples.DoubleIntegrator.lcvx()
+# end
 
-@testset "Oscillator" begin
-    test_heading("PTR", "Oscillator")
-    Examples.Oscillator.ptr()
+# @testset "RocketLanding" begin
+#     test_heading("LCvx", "Rocket landing")
+#     Examples.RocketLanding.lcvx()
+# end
+
+# @testset "Oscillator" begin
+#     test_heading("PTR", "Oscillator")
+#     Examples.Oscillator.ptr()
+# end
+
+# @testset "Quadrotor" begin
+#     test_heading("SCvx", "Quadrotor")
+#     Examples.Quadrotor.scvx(NUM_TRIALS)
+
+#     test_heading("GuSTO", "Quadrotor")
+#     Examples.Quadrotor.gusto(NUM_TRIALS)
+# end
+
+# @testset "FreeFlyer" begin
+#     test_heading("SCvx", "FreeFlyer")
+#     Examples.FreeFlyer.scvx(NUM_TRIALS)
+
+#     test_heading("GuSTO", "FreeFlyer")
+#     Examples.FreeFlyer.gusto(NUM_TRIALS)
+# end
+
+# @testset "Starship" begin
+#     test_heading("PTR", "Starship flip")
+#     Examples.Starship.ptr()
+
+#     test_heading("SCvx", "Starship flip")
+#     Examples.Starship.scvx()
+# end
+
+@testset "RendezvousPlanar" begin
+    test_heading("PTR", "Planar rendezvous")
+    Examples.RendezvousPlanar.ptr()
 end
 
 @testset "Rendezvous3D" begin
     test_heading("PTR", "Apollo rendezvous")
     Examples.Rendezvous3D.ptr()
-end
-
-@testset "Starship" begin
-    test_heading("PTR", "Starship flip")
-    Examples.Starship.ptr()
 end

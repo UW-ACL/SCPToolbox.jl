@@ -211,7 +211,7 @@ function plot_thrusts(mdl::PlanarRendezvousProblem,
     # ..:: Thrust timeseries plots ::..
 
     for i in veh.id_f
-        ax = setup_axis!(gspec[i, 1];
+        ax = setup_axis!((gspec, i-1, 0);
                          xlabel="Time [s]",
                          ylabel=@sprintf("Thrust %s [N]", thruster_names[i]),
                          tight="x")
@@ -243,7 +243,7 @@ function plot_thrusts(mdl::PlanarRendezvousProblem,
     # ..:: Thrust polar plots (showing deadband) ::..
 
     for i=1:n_rcs
-        ax = setup_axis!(gspec[i, 2];
+        ax = setup_axis!((gspec, i-1, 1);
                          xlabel=@sprintf("Reference %s [N]",
                                          thruster_names[i]),
                          tight="both",

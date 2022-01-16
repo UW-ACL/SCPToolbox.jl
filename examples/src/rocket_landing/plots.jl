@@ -442,7 +442,7 @@ function plot_position(rocket::Rocket, sol::Solution,
     gspec = fig.add_gridspec(ncols=2, nrows=1,
                              width_ratios=[0.015, 1])
 
-    ax = setup_axis!(gspec[1, 2],
+    ax = setup_axis!(get(gspec, 0, 1),
                      xlabel="Downrange [km]",
                      ylabel="Altitude [km]",
                      tight="both",
@@ -574,7 +574,7 @@ function plot_position(rocket::Rocket, sol::Solution,
     leg.set_zorder(200)
 
     # Colorbar
-    cbar_ax = fig.add_subplot(gspec[1, 1])
+    cbar_ax = fig.add_subplot(get(gspec, 0, 0))
     fig.colorbar(v_cmap,
                  aspect=80,
                  label="Spped \$\\|v\\|_2\$ [km/h]",

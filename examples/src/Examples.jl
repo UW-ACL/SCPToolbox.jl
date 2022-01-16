@@ -50,12 +50,14 @@ module Oscillator
 include("oscillator/parameters.jl")
 include("oscillator/definition.jl")
 include("oscillator/plots.jl")
+include("oscillator/tests.jl")
 end
 
 module RendezvousPlanar
 include("rendezvous_planar/parameters.jl")
 include("rendezvous_planar/definition.jl")
 include("rendezvous_planar/plots.jl")
+include("rendezvous_planar/tests.jl")
 end
 
 module Rendezvous3D

@@ -31,6 +31,7 @@ function ptr()::Nothing
     N = 30
     Nsub = 10
     iter_max = 30
+    disc_method = FOH
     wvc = 5e2
     wtr = 3e-2
     ε_abs = -Inf#1e-5
@@ -41,7 +42,7 @@ function ptr()::Nothing
     solver = ECOS
     solver_options = Dict("verbose"=>0)
     pars = Solvers.PTR.Parameters(
-        N, Nsub, iter_max, wvc, wtr, ε_abs, ε_rel,
+        N, Nsub, iter_max, disc_method, wvc, wtr, ε_abs, ε_rel,
         feas_tol, q_tr, q_exit, solver, solver_options)
 
     # Homotopy parameters

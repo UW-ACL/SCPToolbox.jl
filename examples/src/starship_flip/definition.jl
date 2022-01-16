@@ -699,15 +699,15 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
         Δt = 1/(pbm.scp.N-1)
         τs = pbm.mdl.traj.τs
         tol = 1e-3
-        phase_switch = (τs-Δt)+tol<=t && t<=τs+tol
-        return phase_switch
+        local is_phase_switch = (τs-Δt)+tol<=t && t<=τs+tol
+        return is_phase_switch
     end
 
     # Return true if this is a phase 2 temporal node
     phase2 = (t, pbm) -> begin
         τs = pbm.mdl.traj.τs
-        phase2 = phase_switch(t, pbm) || t>τs
-        return phase2
+        local is_phase2 = phase_switch(t, pbm) || t>τs
+        return is_phase2
     end
 
     _common_s_sz = 7+2*pbm.nx

@@ -87,7 +87,7 @@ function test_single(mdl::RendezvousProblem,
     # Solve problem
     sol, history = PTR.solve(ptr)
 
-    @assert sol.status == @sprintf("%s", SCP_SOLVED)
+    @test sol.status == @sprintf("%s", SCP_SOLVED)
 
     # Make plots
     plot_trajectory_2d(mdl, sol)
@@ -138,7 +138,7 @@ function test_runtime(mdl::RendezvousProblem,
         # Run algorithm
         sol, history_list[trial] = PTR.solve(ptr_pbm)
 
-        @assert sol.status == @sprintf("%s", SCP_SOLVED)
+        @test sol.status == @sprintf("%s", SCP_SOLVED)
 
         redirect_stdout(real_stdout) # Revert to normal output
     end
@@ -195,7 +195,7 @@ function test_homotopy_update(mdl::RendezvousProblem,
         # Run algorithm
         sol_list[i], _ = PTR.solve(ptr_pbm)
 
-        @assert sol_list[i].status == @sprintf("%s", SCP_SOLVED)
+        @test sol_list[i].status == @sprintf("%s", SCP_SOLVED)
 
         redirect_stdout(real_stdout) # Revert to normal output
     end

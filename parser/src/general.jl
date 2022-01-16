@@ -18,9 +18,13 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 using LinearAlgebra
 using JuMP
+import JuMP.name
 using ECOS
 using Printf
 using Utils
+
+import Utils.add!
+import Utils.name
 
 const LocationIndices = Array{Int}
 const RealArray = Types.RealArray{N} where N

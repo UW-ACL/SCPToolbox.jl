@@ -43,7 +43,7 @@ function solve_pdg_fft(rocket::Rocket, tf::RealValue)::Solution
     A, B, p = c2d(rocket.A_c, rocket.B_c, rocket.p_c, Δt)
 
     # >> Make the optimization problem <<
-    mdl = Model(with_optimizer(ECOS.Optimizer, verbose=0))
+    mdl = Model(optimizer_with_attributes(ECOS.Optimizer, "verbose"=>0))
 
     # (Scaled) variables
     @variable(mdl, r_s[1:3, 1:N])

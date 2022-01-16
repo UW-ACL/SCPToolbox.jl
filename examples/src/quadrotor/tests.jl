@@ -26,12 +26,12 @@ using Utils
 using Solvers
 
 export scvx
-# export gusto
+export gusto
 
 const SCvx = Solvers.SCvx
-# const GuSTO = Solvers.GuSTO
+const GuSTO = Solvers.GuSTO
 
-function scvx()::Nothing
+function scvx(trials:: Int)::Nothing
 
     # Problem definition
     mdl = QuadrotorProblem()
@@ -65,11 +65,11 @@ function scvx()::Nothing
         solver_options)
 
     # Solve multiple times to gather statistics
-    run_trials(mdl, pbm, pars, SCvx)
+    run_trials(mdl, pbm, pars, SCvx; num_trials=trials)
 
 end
 
-function gusto()::Nothing
+function gusto(trials:: Int)::Nothing
 
     # Problem definition
     mdl = QuadrotorProblem()
@@ -108,37 +108,36 @@ function gusto()::Nothing
         q_tr, q_exit, solver, solver_options)
 
     # Solve multiple times to gather statistics
-    run_trials(mdl, pbm, pars, GuSTO)
+    run_trials(mdl, pbm, pars, GuSTO; num_trials=trials)
 
 end
 
 """
-    run_trials(mdl, pbm, pars)
+    run_trials(mdl, traj, pars, solver[; num_trials])
 
 Solves the same problem multiple times in order to gather realiable runtime statistics.
 
 # Parameters
 - `mdl`: problem-specific data.
-- `pbm`: the trajectory problem.
+- `traj`: the trajectory problem.
 - `pars`: solution algorithm parameters.
 - `solver`: the solver algorithm's module.
+- `num_trials`: number of trials. All trials will give the same solution, but we need
+  many to plot statistically meaningful timing results
 """
 function run_trials(
         mdl::QuadrotorProblem,
-        pbm::TrajectoryProblem,
+        traj::TrajectoryProblem,
         pars::T,
-        solver::Module
+        solver::Module;
+        num_trials::Int=100
 )::Nothing where {T<:Solvers.SCPParameters}
-
-    # Number of trials. All trials will give the same solution, but we need many to
-    # plot statistically meaningful timing results
-    num_trials = 100
 
     sol_list = Vector{SCPSolution}(undef, num_trials)
     history_list = Vector{SCPHistory}(undef, num_trials)
 
     for trial = 1:num_trials
-        local pbm = solver.create(pars, pbm)
+        local pbm = solver.create(pars, traj)
         @printf("Trial %d/%d\n", trial, num_trials)
         if trial>1
             # Suppress output
@@ -146,7 +145,7 @@ function run_trials(
             (rd, wr) = redirect_stdout()
         end
         sol_list[trial], history_list[trial] = solver.solve(pbm)
-        @assert sol_list[trial].status == @sprintf("%s", SCP_SOLVED)
+        @test sol_list[trial].status == @sprintf("%s", SCP_SOLVED)
         if trial>1
             redirect_stdout(real_stdout)
         end
@@ -163,5 +162,5 @@ function run_trials(
     plot_tilt_angle(mdl, sol)
     plot_convergence(history_list, "quadrotor")
 
-    return Nothing
+    return nothing
 end

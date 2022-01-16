@@ -28,8 +28,10 @@ using Utils
 import Solvers
 
 export ptr
+export scvx
 
 const PTR = Solvers.PTR
+const SCvx = Solvers.SCvx
 
 function ptr()::Nothing
 
@@ -56,39 +58,76 @@ function ptr()::Nothing
                           ε_rel, feas_tol, q_tr, q_exit, solver,
                           solver_options)
 
-    test_single(mdl, pbm, pars)
+    test_single(mdl, pbm, pars, PTR)
+
+    return nothing
+end
+
+function scvx()::Nothing
+
+    # Problem definition
+    mdl = StarshipProblem()
+    pbm = TrajectoryProblem(mdl)
+    define_problem!(pbm, :scvx)
+
+    # PTR algorithm parameters
+    N = 31
+    Nsub = 100
+    iter_max = 100
+    disc_method = FOH
+    λ = 5e2
+    ρ_0 = 0.0
+    ρ_1 = 0.1
+    ρ_2 = 0.7
+    β_sh = 2.0
+    β_gr = 2.0
+    η_init = 1.0
+    η_lb = 1e-8
+    η_ub = 10.0
+    ε_abs = 1e-5
+    ε_rel = 0.01/100
+    feas_tol = 5e-3
+    q_tr = Inf
+    q_exit = Inf
+    solver = ECOS
+    solver_options = Dict("verbose"=>0, "maxit"=>1000)
+    pars = SCvx.Parameters(
+        N, Nsub, iter_max, disc_method, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
+        η_init, η_lb, η_ub, ε_abs, ε_rel, feas_tol, q_tr, q_exit, solver,
+        solver_options)
+
+    test_single(mdl, pbm, pars, SCvx)
 
     return nothing
 end
 
 """
-    test_single(pbm, pars)
+    test_single(pbm, traj, pars, solver)
 
 Compute a single trajectory.
 
 # Arguments
 - `mdl`: the starship parameters.
-- `pbm`: the trajectory problem definition.
+- `traj`: the trajectory problem definition.
 - `pars`: the algorithm parameters.
-
-# Returns
-- `sol`: the trajectory solution.
-- `history`: the iterate history.
+- `solver`: the solver algorithm's module.
 """
-function test_single(mdl::StarshipProblem,
-                     pbm::TrajectoryProblem,
-                     pars::PTR.Parameters)::Tuple{SCPSolution,
-                                                  SCPHistory}
+function test_single(
+        mdl::StarshipProblem,
+        traj::TrajectoryProblem,
+        pars::T,
+        solver::Module
+)::Nothing where {T<:Solvers.SCPParameters}
 
     test_heading("Single trajectory")
 
     # Create problem
-    ptr = PTR.create(pars, pbm)
+    pbm = solver.create(pars, traj)
 
     # Solve problem
-    sol, history = PTR.solve(ptr)
+    sol, history = solver.solve(pbm)
 
-    @assert sol.status == @sprintf("%s", SCP_SOLVED)
+    @test sol.status == @sprintf("%s", SCP_SOLVED)
 
     # Make plots
     plot_trajectory_history(mdl, history)
@@ -97,5 +136,5 @@ function test_single(mdl::StarshipProblem,
     plot_thrust(mdl, sol)
     plot_gimbal(mdl, sol)
 
-    return sol, history
+    return nothing
 end

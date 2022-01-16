@@ -373,7 +373,7 @@ function plot_convergence(history, name::String;
 
     ax2.set_ylabel("Cumulative time [s]", color=ax2_clr)
     ax2.tick_params(axis="y", colors=ax2_clr)
-    ax2.spines["right"].set_edgecolor(ax2_clr)
+    ax2.spines."right".set_edgecolor(ax2_clr)
 
     # Plots average
     ax2.plot(iters, av_total,

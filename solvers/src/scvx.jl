@@ -420,7 +420,7 @@ function solve(
     if isnothing(warm)
         ref = generate_initial_guess(pbm)
     else
-        ref = warm_start(pbm, warm)
+        ref = warm_start(pbm, warm, SubproblemSolution)
     end
 
     history = SCPHistory()

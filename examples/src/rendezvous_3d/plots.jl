@@ -129,7 +129,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
         ax_x_name = data[i_plt][:x_name]
         ax_y_name = data[i_plt][:y_name]
 
-        ax = setup_axis!(gspec[i_plt+1, 1];
+        ax = setup_axis!((gspec, i_plt, 0);
                          xlabel=@sprintf("LVLH \$%s\$ position [m]",
                                          ax_x_name),
                          ylabel=@sprintf("LVLH \$%s\$ position [m]",
@@ -319,7 +319,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
     fig.align_ylabels(axes)
 
     # Colorbar
-    cbar_ax = fig.add_subplot(gspec[1, 1])
+    cbar_ax = fig.add_subplot((gspec, 0, 0))
     fig.colorbar(v_cmap,
                  aspect=40,
                  label="Velocity \$\\|v\\|_2\$ [m/s]",
@@ -400,7 +400,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
             y2_data_dt = data[i][:y2_dt]
             y2_data_ct = data[i][:y2_ct]
 
-            ax = setup_axis!(gspec[i+1, 3],
+            ax = setup_axis!((gspec, i, 2),
                              tight="both",
                              xlabel="Time [s]")
             ax2 = ax.twinx()
@@ -636,7 +636,7 @@ function plot_state_timeseries(mdl::RendezvousProblem,
         y2_data_ct = data[i][:y2_ct]
 
         j = id_splot[i]
-        ax = setup_axis!(gspec[j],
+        ax = setup_axis!((gspec, j-1),
                          tight="both")
         ax2 = ax.twinx()
 
@@ -920,7 +920,7 @@ function plot_inputs(mdl::RendezvousProblem,
 
         # >> Draw the timeseries plot <<
 
-        ax = setup_axis!(gspec[i_plt, 1],
+        ax = setup_axis!((gspec, i_plt-1, 0),
                          ylabel=data[i_plt][:ylabel])
         push!(axes, ax)
 
@@ -1060,7 +1060,7 @@ function plot_inputs(mdl::RendezvousProblem,
 
         # >> Draw the deadband polar plot <<
 
-        ax = setup_axis!(gspec[i_plt, 2];
+        ax = setup_axis!((gspec, i_plt-1, 1);
                          axis="square")
 
         ax.tick_params(axis="y", which="both", left=false, right=false,
