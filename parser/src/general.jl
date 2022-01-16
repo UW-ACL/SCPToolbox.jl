@@ -24,7 +24,6 @@ using Printf
 using Utils
 
 import Utils.add!
-import Utils.name
 
 const LocationIndices = Array{Int}
 const RealArray = Types.RealArray{N} where N

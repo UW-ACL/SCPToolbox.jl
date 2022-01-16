@@ -90,7 +90,7 @@ function plot_final_trajectory(mdl::PlanarRendezvousProblem,
             label="\$r\$",
             zorder=20)
 
-    y_min = -5
+    y_min = -20
     set_axis_equal(ax, (-1.5, traj.r0[1]+1.5, y_min, missing))
 
     save_figure("rendezvous_planar_traj.pdf", algo)
@@ -197,7 +197,8 @@ function plot_thrusts(mdl::PlanarRendezvousProblem,
     td = RealVector(LinRange(0.0, 1.0, N))*tf
     τc = RealVector(LinRange(0.0, 1.0, ct_res))
     tc = τc*tf
-    clr = rgb(generate_colormap(), 1.0)
+    clr = DarkBlue
+    marker_darken_factor = 0.3
     n_rcs = length(veh.id_f)
     thruster_names = [@sprintf("\$f_{%s}\$", sub) for sub in ["-", "+", "0"]]
 
@@ -211,30 +212,37 @@ function plot_thrusts(mdl::PlanarRendezvousProblem,
     # ..:: Thrust timeseries plots ::..
 
     for i in veh.id_f
-        ax = setup_axis!((gspec, i-1, 0);
+        ax = setup_axis!(get(gspec, (i-1, 0));
                          xlabel="Time [s]",
                          ylabel=@sprintf("Thrust %s [N]", thruster_names[i]),
                          tight="x")
         push!(axes, ax)
 
         fi_d = sol.ud[i, :]
-        fi_c = hcat([sample(sol.uc, τ)[i] for τ in τc]...)[:]
 
-        # >> Continuous-time signal <<
-        ax.plot(tc, fi_c,
-                color=clr,
-                linewidth=2,
-                zorder=10)
+        # Stem line
+        for k = 1:length(fi_d)
+            ax.plot([td[k], td[k]], [0, fi_d[k]],
+                    linewidth=1.5,
+                    color=clr,
+                    solid_capstyle="round",
+                    clip_on=false,
+                    zorder=20)
+        end
 
-        # >> Discrete-time thrust <<
+        # Stem tip/"flower"
+        darker_clr = darken_color(clr, marker_darken_factor)
         ax.plot(td, fi_d,
                 linestyle="none",
                 marker="o",
                 markersize=4,
-                markerfacecolor=clr,
-                markeredgewidth=0,
-                zorder=10,
-                clip_on=false)
+                markeredgecolor="white",
+                markeredgewidth=0.2,
+                markerfacecolor=darker_clr,
+                clip_on=false,
+                zorder=30)
+
+        ax.set_ylim(-veh.f_max, veh.f_max)
 
     end
 
@@ -243,7 +251,7 @@ function plot_thrusts(mdl::PlanarRendezvousProblem,
     # ..:: Thrust polar plots (showing deadband) ::..
 
     for i=1:n_rcs
-        ax = setup_axis!((gspec, i-1, 1);
+        ax = setup_axis!(get(gspec, (i-1, 1));
                          xlabel=@sprintf("Reference %s [N]",
                                          thruster_names[i]),
                          tight="both",
@@ -257,10 +265,10 @@ function plot_thrusts(mdl::PlanarRendezvousProblem,
         fr_rng = LinRange(-veh.f_max, veh.f_max, polar_resol)
         above_db = (fr)->fr-veh.f_db
         below_db = (fr)->-veh.f_db-fr
-        f_polar = map((fr)->or(above_db(fr), below_db(fr);
-                               κ1=traj.κ1, κ2=traj.κ2,
-                               minval=-veh.f_max-veh.f_db,
-                               maxval=veh.f_max+veh.f_db)*fr, fr_rng)
+        f_polar = map((fr)->or([above_db(fr), below_db(fr)];
+                               κ=traj.κ,
+                               match=[veh.f_max-veh.f_db, -veh.f_db-veh.f_max],
+                               normalize=veh.f_max+veh.f_db)*fr, fr_rng)
 
         # Without deadband
         ax.plot(fr_rng, fr_rng,

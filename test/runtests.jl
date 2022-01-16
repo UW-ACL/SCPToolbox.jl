@@ -27,44 +27,44 @@ test_heading(algo, description) = printstyled(
 # Number of trials if statistics are gathered
 const NUM_TRIALS = 3
 
-# @testset "DoubleIntegrator" begin
-#     test_heading("LCvx", "Double integrator")
-#     Examples.DoubleIntegrator.lcvx()
-# end
+@testset "DoubleIntegrator" begin
+    test_heading("LCvx", "Double integrator")
+    Examples.DoubleIntegrator.lcvx()
+end
 
-# @testset "RocketLanding" begin
-#     test_heading("LCvx", "Rocket landing")
-#     Examples.RocketLanding.lcvx()
-# end
+@testset "RocketLanding" begin
+    test_heading("LCvx", "Rocket landing")
+    Examples.RocketLanding.lcvx()
+end
 
-# @testset "Oscillator" begin
-#     test_heading("PTR", "Oscillator")
-#     Examples.Oscillator.ptr()
-# end
+@testset "Oscillator" begin
+    test_heading("PTR", "Oscillator")
+    Examples.Oscillator.ptr()
+end
 
-# @testset "Quadrotor" begin
-#     test_heading("SCvx", "Quadrotor")
-#     Examples.Quadrotor.scvx(NUM_TRIALS)
+@testset "Quadrotor" begin
+    test_heading("SCvx", "Quadrotor")
+    Examples.Quadrotor.scvx(NUM_TRIALS)
 
-#     test_heading("GuSTO", "Quadrotor")
-#     Examples.Quadrotor.gusto(NUM_TRIALS)
-# end
+    test_heading("GuSTO", "Quadrotor")
+    Examples.Quadrotor.gusto(NUM_TRIALS)
+end
 
-# @testset "FreeFlyer" begin
-#     test_heading("SCvx", "FreeFlyer")
-#     Examples.FreeFlyer.scvx(NUM_TRIALS)
+@testset "FreeFlyer" begin
+    test_heading("SCvx", "FreeFlyer")
+    Examples.FreeFlyer.scvx(NUM_TRIALS)
 
-#     test_heading("GuSTO", "FreeFlyer")
-#     Examples.FreeFlyer.gusto(NUM_TRIALS)
-# end
+    test_heading("GuSTO", "FreeFlyer")
+    Examples.FreeFlyer.gusto(NUM_TRIALS)
+end
 
-# @testset "Starship" begin
-#     test_heading("PTR", "Starship flip")
-#     Examples.Starship.ptr()
+@testset "Starship" begin
+    test_heading("PTR", "Starship flip")
+    Examples.Starship.ptr()
 
-#     test_heading("SCvx", "Starship flip")
-#     Examples.Starship.scvx()
-# end
+    test_heading("SCvx", "Starship flip")
+    Examples.Starship.scvx()
+end
 
 @testset "RendezvousPlanar" begin
     test_heading("PTR", "Planar rendezvous")
@@ -73,5 +73,6 @@ end
 
 @testset "Rendezvous3D" begin
     test_heading("PTR", "Apollo rendezvous")
-    Examples.Rendezvous3D.ptr()
+    homotopy_sweep_steps = 3
+    Examples.Rendezvous3D.ptr(NUM_TRIALS, homotopy_sweep_steps)
 end

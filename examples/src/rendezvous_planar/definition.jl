@@ -343,10 +343,11 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 f, fr = u[id_f], u[id_fr]
                 above_db = fr-veh.f_db
                 below_db = -veh.f_db-fr
-                OR = or(above_db, below_db;
-                        κ1=traj.κ1, κ2=traj.κ2,
-                        minval=-veh.f_max-veh.f_db,
-                        maxval=veh.f_max+veh.f_db)
+                OR = or(
+                    [above_db, below_db];
+                    κ=traj.κ,
+                    match=[veh.f_max-veh.f_db, -veh.f_db-veh.f_max],
+                    normalize=veh.f_max+veh.f_db)
                 s[2*(i-1)+1] = f-OR*fr
                 s[2*(i-1)+2] = OR*fr-f
             end
@@ -372,11 +373,12 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
                 ∇above_db = [1.0]
                 below_db = -veh.f_db-fr
                 ∇below_db = [-1.0]
-                OR, ∇OR = or((above_db, ∇above_db),
-                             (below_db, ∇below_db);
-                             κ1=traj.κ1, κ2=traj.κ2,
-                             minval=-veh.f_max-veh.f_db,
-                             maxval=veh.f_max+veh.f_db)
+                OR, ∇OR = or(
+                    [above_db, below_db],
+                    [∇above_db, ∇below_db];
+                    κ=traj.κ,
+                    match=[veh.f_max-veh.f_db, -veh.f_db-veh.f_max],
+                    normalize=veh.f_max+veh.f_db)
                 ∇ORfr = ∇OR[1]*fr+OR
                 D[2*(i-1)+1, id_f] = 1.0
                 D[2*(i-1)+1, id_fr] = -∇ORfr

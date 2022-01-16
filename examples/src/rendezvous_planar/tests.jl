@@ -31,7 +31,7 @@ function ptr()::Nothing
     N = 30
     Nsub = 10
     iter_max = 30
-    disc_method = FOH
+    disc_method = IMPULSE
     wvc = 5e2
     wtr = 3e-2
     ε_abs = -Inf#1e-5
@@ -47,17 +47,17 @@ function ptr()::Nothing
 
     # Homotopy parameters
     Nhom = 10
-    hom_κ1 = Homotopy(1e-3; δ_max=5.0)
+    hom_κ = Homotopy(1e-3; δ_max=5.0)
     hom_grid = LinRange(0.0, 1.0, Nhom)
 
     # Solve the trajectory generation problem
     ptr_pbm = Solvers.PTR.create(pars, pbm)
     sols, historys = [], []
     for i = 1:Nhom
-        mdl.traj.κ1 = hom_κ1(hom_grid[i])
+        mdl.traj.κ = hom_κ(hom_grid[i])
         local warm = (i==1) ? nothing : sols[end]
 
-        @printf("[%d/%d] Homotopy (κ=%.2e)\n", i, Nhom, mdl.traj.κ1)
+        @printf("[%d/%d] Homotopy (κ=%.2e)\n", i, Nhom, mdl.traj.κ)
 
         local sol_i, history_i = Solvers.PTR.solve(ptr_pbm, warm)
 

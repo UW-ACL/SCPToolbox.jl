@@ -129,7 +129,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
         ax_x_name = data[i_plt][:x_name]
         ax_y_name = data[i_plt][:y_name]
 
-        ax = setup_axis!((gspec, i_plt, 0);
+        ax = setup_axis!(get(gspec, (i_plt, 0));
                          xlabel=@sprintf("LVLH \$%s\$ position [m]",
                                          ax_x_name),
                          ylabel=@sprintf("LVLH \$%s\$ position [m]",
@@ -319,7 +319,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
     fig.align_ylabels(axes)
 
     # Colorbar
-    cbar_ax = fig.add_subplot((gspec, 0, 0))
+    cbar_ax = fig.add_subplot(get(gspec, (0, 0)))
     fig.colorbar(v_cmap,
                  aspect=40,
                  label="Velocity \$\\|v\\|_2\$ [m/s]",
@@ -400,7 +400,7 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
             y2_data_dt = data[i][:y2_dt]
             y2_data_ct = data[i][:y2_ct]
 
-            ax = setup_axis!((gspec, i, 2),
+            ax = setup_axis!(get(gspec, (i, 2)),
                              tight="both",
                              xlabel="Time [s]")
             ax2 = ax.twinx()
@@ -410,14 +410,14 @@ function plot_trajectory_2d(mdl::RendezvousProblem,
 
             ax.set_ylabel(data[i][:y1_label], color=y1_clr)
             ax.tick_params(axis="y", colors=y1_clr)
-            ax.spines["left"].set_edgecolor(y1_clr)
+            ax.spines."left".set_edgecolor(y1_clr)
 
             ax2.set_ylabel(data[i][:y2_label], color=y2_clr)
             ax2.tick_params(axis="y", colors=y2_clr)
-            ax2.spines["right"].set_edgecolor(y2_clr)
-            ax2.spines["top"].set_visible(false)
-            ax2.spines["bottom"].set_visible(false)
-            ax2.spines["left"].set_visible(false)
+            ax2.spines."right".set_edgecolor(y2_clr)
+            ax2.spines."top".set_visible(false)
+            ax2.spines."bottom".set_visible(false)
+            ax2.spines."left".set_visible(false)
             ax2.set_axisbelow(true)
 
             # Continuous-time trajectory
@@ -636,7 +636,7 @@ function plot_state_timeseries(mdl::RendezvousProblem,
         y2_data_ct = data[i][:y2_ct]
 
         j = id_splot[i]
-        ax = setup_axis!((gspec, j-1),
+        ax = setup_axis!(get(gspec, (j-1)),
                          tight="both")
         ax2 = ax.twinx()
 
@@ -652,14 +652,14 @@ function plot_state_timeseries(mdl::RendezvousProblem,
 
         ax.set_ylabel(data[i][:y1_label], color=y1_clr)
         ax.tick_params(axis="y", colors=y1_clr)
-        ax.spines["left"].set_edgecolor(y1_clr)
+        ax.spines."left".set_edgecolor(y1_clr)
 
         ax2.set_ylabel(data[i][:y2_label], color=y2_clr)
         ax2.tick_params(axis="y", colors=y2_clr)
-        ax2.spines["right"].set_edgecolor(y2_clr)
-        ax2.spines["top"].set_visible(false)
-        ax2.spines["bottom"].set_visible(false)
-        ax2.spines["left"].set_visible(false)
+        ax2.spines."right".set_edgecolor(y2_clr)
+        ax2.spines."top".set_visible(false)
+        ax2.spines."bottom".set_visible(false)
+        ax2.spines."left".set_visible(false)
         ax2.set_axisbelow(true)
 
         # Continuous-time trajectory
@@ -920,7 +920,7 @@ function plot_inputs(mdl::RendezvousProblem,
 
         # >> Draw the timeseries plot <<
 
-        ax = setup_axis!((gspec, i_plt-1, 0),
+        ax = setup_axis!(get(gspec, (i_plt-1, 0)),
                          ylabel=data[i_plt][:ylabel])
         push!(axes, ax)
 
@@ -1060,7 +1060,7 @@ function plot_inputs(mdl::RendezvousProblem,
 
         # >> Draw the deadband polar plot <<
 
-        ax = setup_axis!((gspec, i_plt-1, 1);
+        ax = setup_axis!(get(gspec, (i_plt-1, 1));
                          axis="square")
 
         ax.tick_params(axis="y", which="both", left=false, right=false,
@@ -1374,7 +1374,7 @@ function plot_homotopy_threshold_sweep(
     axJ.set_ylabel("Fuel consumption [\\si{\\kilo\\gram}]",
                    color=axJ_clr)
     axJ.tick_params(axis="y", colors=axJ_clr)
-    axJ.spines["right"].set_edgecolor(axJ_clr)
+    axJ.spines."right".set_edgecolor(axJ_clr)
 
     axJ.plot(betas, fuel,
              color=gray,
@@ -1415,7 +1415,7 @@ function plot_homotopy_threshold_sweep(
     outline_w = 1.5
     axN.set_ylabel("Number of PTR iterations", color=axN_clr)
     axN.tick_params(axis="y", colors=axN_clr)
-    axN.spines["right"].set_edgecolor(axN_clr)
+    axN.spines."right".set_edgecolor(axN_clr)
     axN.tick_params(axis="x", which="both", bottom=false, top=false,
                     labelbottom=false)
 

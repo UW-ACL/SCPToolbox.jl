@@ -26,7 +26,10 @@ export ptr
 
 const PTR = Solvers.PTR
 
-function ptr()::Nothing
+function ptr(
+        trials::Int,
+        hom_trials::Int
+)::Nothing
 
     # Problem definition
     N = 25
@@ -53,8 +56,8 @@ function ptr()::Nothing
         solver_options)
 
     test_single(mdl, pbm, pars)
-    test_runtime(mdl, pbm, pars)
-    test_homotopy_update(mdl, pbm, pars)
+    test_runtime(mdl, pbm, pars; num_trials=trials)
+    test_homotopy_update(mdl, pbm, pars; resol=hom_trials)
 
     return nothing
 end
@@ -101,7 +104,7 @@ function test_single(mdl::RendezvousProblem,
 end
 
 """
-    test_single(pbm, pars)
+    test_single(mdl, pbm, pars[; num_trials])
 
 Run the algorithm several times and plot runtime statistics.
 
@@ -109,17 +112,18 @@ Run the algorithm several times and plot runtime statistics.
 - `mdl`: the rendezvous problem definition.
 - `pbm`: the rendezvous trajectory problem.
 - `pars`: the rendezvous trajectory problem.
+- `num_trials`: number of trials. All trials will give the same solution, but we need
+  many to plot statistically meaningful timing results
 
 # Returns
 - `history_list`: vector of iterate histories for each trial.
 """
 function test_runtime(mdl::RendezvousProblem,
                       pbm::TrajectoryProblem,
-                      pars::PTR.Parameters)::Vector{SCPHistory}
+                      pars::PTR.Parameters;
+                      num_trials::Int=20)::Vector{SCPHistory}
 
     test_heading("Runtime statistics")
-
-    num_trials=20
 
     history_list = Vector{SCPHistory}(undef, num_trials)
 
@@ -159,6 +163,7 @@ Test a sweep of homotopy update thresholds.
 - `mdl`: the rendezvous problem definition.
 - `pbm`: the rendezvous trajectory problem.
 - `pars`: the rendezvous trajectory problem.
+- `resol`: the number of threshold parameters to test.
 
 # Returns
 - `β_sweep`: vector of homotopy update thresholds that were tested.
@@ -167,13 +172,13 @@ Test a sweep of homotopy update thresholds.
 """
 function test_homotopy_update(mdl::RendezvousProblem,
                               pbm::TrajectoryProblem,
-                              pars::PTR.Parameters)::Tuple{
+                              pars::PTR.Parameters;
+                              resol::Int=20)::Tuple{
                                   Vector{Float64},
                                   Vector{SCPSolution}}
 
     test_heading("Homotopy update sweep")
 
-    resol = 20
     β_sweep = collect(LinRange(0.1, 50, resol))/100
 
     sol_list = Vector{SCPSolution}(undef, resol)

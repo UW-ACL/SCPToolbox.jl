@@ -66,8 +66,7 @@ mutable struct PlanarRendezvousTrajectoryParameters
     vf::RealValue        # [m/s] Final approach speed
     tf_min::RealValue    # [s] Minimum flight time
     tf_max::RealValue    # [s] Maximum flight time
-    κ1::RealValue        # Sigmoid homotopy parameter
-    κ2::RealValue        # Normalization homotopy parameter
+    κ::RealValue         # Sigmoid homotopy parameter
     γ::RealValue         # Control weight for deadband relaxation
 end
 
@@ -134,11 +133,10 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     vf = 0.1
     tf_min = 100.0
     tf_max = 500.0
-    κ1 = NaN
-    κ2 = 1.0
+    κ = NaN
     γ = 3e-1
     traj = PlanarRendezvousTrajectoryParameters(
-        r0, v0, θ0, ω0, vf, tf_min, tf_max, κ1, κ2, γ)
+        r0, v0, θ0, ω0, vf, tf_min, tf_max, κ, γ)
 
     mdl = PlanarRendezvousProblem(sc, env, traj)
 

@@ -31,7 +31,7 @@ export gusto
 const SCvx = Solvers.SCvx
 const GuSTO = Solvers.GuSTO
 
-function scvx(trials:: Int)::Nothing
+function scvx(trials::Int)::Nothing
 
     # Problem definition
     mdl = QuadrotorProblem()
@@ -69,7 +69,7 @@ function scvx(trials:: Int)::Nothing
 
 end
 
-function gusto(trials:: Int)::Nothing
+function gusto(trials::Int)::Nothing
 
     # Problem definition
     mdl = QuadrotorProblem()

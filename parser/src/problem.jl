@@ -446,7 +446,8 @@ end
 """
     problem_set_X!(pbm, X)
 
-Define the convex state constraint set.
+Define the convex state constraint set. You must use `define_conic_constraint!()` inside the X
+function if you want to use the GuSTO solver.
 
 # Arguments
 - `pbm`: the trajectory problem structure.
@@ -613,6 +614,9 @@ cone indicator variable. Consider the cone K which defines the constraint x∈K.
 n-dimensional ambient space. Let q∈R^n be an n-dimensional indicator vector, such that q<=0 implies
 x∈K. Furthermore, we formulate q such that if x∈K, then it is feasible to set q<=0. Hence,
 effectively, we have a bidirectional relationship: q<=0 if and only if x∈K.
+
+Note: you **must** use this function to define convex state constraints if you want to use the GuSTO
+solver.
 
 # Arguments
 - `pbm`: the trajectory problem structure.
