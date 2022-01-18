@@ -1,3 +1,8 @@
+> :information_source: The repository name has changed to `SCPToolbox.jl` in
+> order to reflect the project's direction: to develop a general-purpose
+> trajectory optimization toolkit using sequential convex programming
+> algorithms.
+
 <p align="center">
 <img alt="SCP Toolbox"
     title="SCP Toolbox"
@@ -8,10 +13,6 @@
 <p align="center">
     <a href="http://www.gnu.org/licenses/gpl-3.0.txt"><img src="https://img.shields.io/badge/license-GPL_3-green.svg" alt="License GPL 3" /></a>
 </p>
-
-(!) The repository name has changed to `SCPToolbox.jl` in order to reflect the
-project's direction: to develop a general-purpose trajectory optimization
-toolkit using sequential convex programming algorithms.
 
 <p align="center">
     <a href="media/logo/about.md">About the logo</a>
