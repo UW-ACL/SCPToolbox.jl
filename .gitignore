@@ -1,8 +1,7 @@
 .juliahistory
 /.vscode/
-/figures/*
+/media/*
 /.ipynb_checkpoints/*
 /sandbox/*
-!/figures/.gitkeep
-!/figures/logo.png
-!/figures/logo/
+!/**/.gitkeep
+!/media/logo/

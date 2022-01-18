@@ -15,9 +15,11 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
+include("examples/examples.jl")
+
 using Printf
 using Test
-using Examples
+using .Examples
 
 """ Print a heading for the test set. """
 test_heading(algo, description) = printstyled(
