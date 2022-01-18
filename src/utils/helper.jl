@@ -18,10 +18,27 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 using Printf
 
-export skew, get_interval, linterp, zohinterp, diracinterp,
-    straightline_interpolate, rk4, trapz, ∇trapz, logsumexp, or, squeeze,
-    convert_units, homtransf, hominv, homdisp, homrot, make_indent,
-    golden, c2d, test_heading
+export skew,
+    get_interval,
+    linterp,
+    zohinterp,
+    diracinterp,
+    straightline_interpolate,
+    rk4,
+    trapz,
+    ∇trapz,
+    logsumexp,
+    or,
+    squeeze,
+    convert_units,
+    homtransf,
+    hominv,
+    homdisp,
+    homrot,
+    make_indent,
+    golden,
+    c2d,
+    test_heading
 
 export @preprintf
 
@@ -46,8 +63,8 @@ const Optional = Types.Optional
 """
 function skew(v::RealVector)::RealMatrix
     S = zeros(3, 3)
-    S[1,2], S[1,3], S[2,3] = -v[3], v[2], -v[1]
-    S[2,1], S[3,1], S[3,2] = -S[1,2], -S[1,3], -S[2,3]
+    S[1, 2], S[1, 3], S[2, 3] = -v[3], v[2], -v[1]
+    S[2, 1], S[3, 1], S[3, 2] = -S[1, 2], -S[1, 3], -S[2, 3]
     return S
 end
 
@@ -64,9 +81,9 @@ Compute grid bin. Get which grid interval a real number belongs to.
 - `k`: the interval of the grid the the real number is in.
 """
 function get_interval(x::RealValue, grid::RealVector)::Int
-    k = sum(x.>grid)
-    if k==0
-	    k = 1
+    k = sum(x .> grid)
+    if k == 0
+        k = 1
     end
     return k
 end
@@ -86,15 +103,16 @@ continuous and piecewise affine function.
 # Returns
 - `f_t`: the function value at time t.
 """
-function linterp(t::RealValue,
-                 f_cps::RealArray,
-                 t_grid::RealVector)::Union{
-                     RealValue, RealArray}
+function linterp(
+    t::RealValue,
+    f_cps::RealArray,
+    t_grid::RealVector,
+)::Union{RealValue,RealArray}
     t = max(t_grid[1], min(t_grid[end], t)) # Saturate to time grid
     k = get_interval(t, t_grid)
-    c = (t_grid[k+1]-t)/(t_grid[k+1]-t_grid[k])
-    dimfill = fill(:, ndims(f_cps)-1)
-    f_t = c*f_cps[dimfill..., k]+(1-c)*f_cps[dimfill..., k+1]
+    c = (t_grid[k+1] - t) / (t_grid[k+1] - t_grid[k])
+    dimfill = fill(:, ndims(f_cps) - 1)
+    f_t = c * f_cps[dimfill..., k] + (1 - c) * f_cps[dimfill..., k+1]
     return f_t
 end
 
@@ -113,17 +131,18 @@ point.
 # Returns
     f_t: the function value at time t.
 """
-function zohinterp(t::RealValue,
-                   f_cps::RealArray,
-                   t_grid::RealVector)::Union{
-                       RealValue, RealArray}
-    if t>=t_grid[end]
+function zohinterp(
+    t::RealValue,
+    f_cps::RealArray,
+    t_grid::RealVector,
+)::Union{RealValue,RealArray}
+    if t >= t_grid[end]
         k = length(t_grid)
     else
         t = max(t_grid[1], min(t_grid[end], t)) # Saturate to time grid
         k = get_interval(t, t_grid)
     end
-    dimfill = fill(:, ndims(f_cps)-1)
+    dimfill = fill(:, ndims(f_cps) - 1)
     f_t = f_cps[dimfill..., k]
     return f_t
 end
@@ -143,15 +162,16 @@ would multiply the unit area of a Dirac spike, if it is an impulse signal).
 # Returns
 - `f_t`: the function value at time t.
 """
-function diracinterp(t::RealValue,
-                     f_cps::RealArray,
-                     t_grid::RealVector)::Union{
-                         RealValue, RealArray}
-    if t>=t_grid[end]
+function diracinterp(
+    t::RealValue,
+    f_cps::RealArray,
+    t_grid::RealVector,
+)::Union{RealValue,RealArray}
+    if t >= t_grid[end]
         k = length(t_grid)
     else
         t = max(t_grid[1], min(t_grid[end], t)) # Saturate to time grid
-        k = findall(t_grid.==t)
+        k = findall(t_grid .== t)
         if isempty(k)
             f_t = zeros(size(f_cps)[1:end-1])
             return f_t
@@ -159,7 +179,7 @@ function diracinterp(t::RealValue,
             k = k[1]
         end
     end
-    dimfill = fill(:, ndims(f_cps)-1)
+    dimfill = fill(:, ndims(f_cps) - 1)
     f_t = f_cps[dimfill..., k]
     return f_t
 end
@@ -179,14 +199,11 @@ interpolation between an initial and a final vector, on a grid of N points.
 - `v`: the resulting interpolation (a matrix, k-th column is the k-th vector,
   k=1,...,N).
 """
-function straightline_interpolate(
-    v0::RealVector,
-    vf::RealVector,
-    N::Int)::RealMatrix
+function straightline_interpolate(v0::RealVector, vf::RealVector, N::Int)::RealMatrix
 
     # Initialize
     nv = length(v0)
-    v = zeros(nv,N)
+    v = zeros(nv, N)
 
     # Interpolation grid
     times = LinRange(0.0, 1.0, N)
@@ -227,19 +244,21 @@ x_{k+1} = A_d x_k+B_d u_k+p_d
 - `Bd`: the discrete-time input coefficient matrix.
 - `pd`: the discrete-time exogenous disturbance time step.
 """
-function c2d(A::RealMatrix,
-             B::RealMatrix,
-             p::RealVector,
-             Δt::RealValue)::Tuple{RealMatrix, RealMatrix, RealVector}
+function c2d(
+    A::RealMatrix,
+    B::RealMatrix,
+    p::RealVector,
+    Δt::RealValue,
+)::Tuple{RealMatrix,RealMatrix,RealVector}
 
     n = size(A, 1)
     m = size(B, 2)
 
-    M = exp(RealMatrix([A B p; zeros(m+1, n+m+1)])*Δt)
+    M = exp(RealMatrix([A B p; zeros(m + 1, n + m + 1)]) * Δt)
 
-    Ad = M[1:n,1:n]
-    Bd = M[1:n,n+1:n+m]
-    pd = M[1:n,n+m+1]
+    Ad = M[1:n, 1:n]
+    Bd = M[1:n, n+1:n+m]
+    pd = M[1:n, n+m+1]
 
     return Ad, Bd, pd
 end
@@ -268,14 +287,18 @@ Optimization. Cambridge, Massachusetts: The MIT Press, 2019.
 # Returns
 - `sol`: a tuple where `s[1]` is the argmin and `s[2]` is the min.
 """
-function golden(f::Function, a::RealValue, b::RealValue;
-                tol::RealValue=1e-3,
-                verbose::Bool=true)::Tuple{RealValue, RealValue}
+function golden(
+    f::Function,
+    a::RealValue,
+    b::RealValue;
+    tol::RealValue = 1e-3,
+    verbose::Bool = true,
+)::Tuple{RealValue,RealValue}
 
-    φ = (1+sqrt(5))/2
-    n = ceil(log((b-a)/tol)/log(φ)+1)
-    ρ = φ-1
-    d = ρ*b+(1-ρ)*a
+    φ = (1 + sqrt(5)) / 2
+    n = ceil(log((b - a) / tol) / log(φ) + 1)
+    ρ = φ - 1
+    d = ρ * b + (1 - ρ) * a
     yd = f(d)
 
     if verbose
@@ -284,16 +307,16 @@ function golden(f::Function, a::RealValue, b::RealValue;
 
     for i = 1:n-1
 
-        c = ρ*a+(1-ρ)*b
+        c = ρ * a + (1 - ρ) * b
         yc = f(c)
 
-        if yc<yd
-            b,d,yd = d,c,yc
+        if yc < yd
+            b, d, yd = d, c, yc
         else
-            a,b = b,c
+            a, b = b, c
         end
 
-        bracket = sort([a,b,c,d])
+        bracket = sort([a, b, c, d])
 
         if verbose
             @printf("%-10.3e | %-10.3e | %-10.3e | %-10.3e\n", bracket...)
@@ -323,14 +346,14 @@ Classic Runge-Kutta integration over a provided time grid.
 # Returns
 - `X`: the integrated trajectory (final point, or full).
 """
-function rk4(f::T.Func,
-             x0::RealVector,
-             tspan::RealVector;
-             full::Bool=false,
-             actions::T.SpecialIntegrationActions=
-                 T.SpecialIntegrationActions(undef, 0))::Union{
-                     RealVector, RealMatrix}
-    X = rk4_generic(f, x0; tspan=tspan, full=full, actions=actions)
+function rk4(
+    f::T.Func,
+    x0::RealVector,
+    tspan::RealVector;
+    full::Bool = false,
+    actions::T.SpecialIntegrationActions = T.SpecialIntegrationActions(undef, 0),
+)::Union{RealVector,RealMatrix}
+    X = rk4_generic(f, x0; tspan = tspan, full = full, actions = actions)
     return X
 end
 
@@ -352,20 +375,20 @@ Classic Runge-Kutta integration given a final time and time step.
 # Returns
 - `X`: the integrated trajectory (final point, or full).
 """
-function rk4(f::T.Func,
-             x0::RealVector,
-             tf::RealValue,
-             h::RealValue;
-             full::Bool=false,
-             actions::T.SpecialIntegrationActions=
-                 T.SpecialIntegrationActions(undef, 0))::Union{
-                     RealVector, RealMatrix}
+function rk4(
+    f::T.Func,
+    x0::RealVector,
+    tf::RealValue,
+    h::RealValue;
+    full::Bool = false,
+    actions::T.SpecialIntegrationActions = T.SpecialIntegrationActions(undef, 0),
+)::Union{RealVector,RealMatrix}
     # Define the scaled dynamics and time step
-    F = (τ, x) -> tf*f(tf*τ, x)
+    F = (τ, x) -> tf * f(tf * τ, x)
     h /= tf
 
     # Integrate
-    X = rk4_generic(F, x0; h=h, full=full, actions=actions)
+    X = rk4_generic(F, x0; h = h, full = full, actions = actions)
 
     return X
 end
@@ -384,20 +407,17 @@ Update the state using a single Runge-Kutta integration update.
 # Returns
 - `xp`: the next state.
 """
-function rk4_core_step(f::T.Func,
-                       x::RealVector,
-                       t::RealValue,
-                       tp::RealValue)::RealVector
+function rk4_core_step(f::T.Func, x::RealVector, t::RealValue, tp::RealValue)::RealVector
 
     # Time step length
-    h = tp-t
+    h = tp - t
 
     # The Runge-Kutta update
-    k1 = f(t,x)
-    k2 = f(t+h/2,x+h/2*k1)
-    k3 = f(t+h/2,x+h/2*k2)
-    k4 = f(t+h,x+h*k3)
-    xp = x+h/6*(k1+2*k2+2*k3+k4)
+    k1 = f(t, x)
+    k2 = f(t + h / 2, x + h / 2 * k1)
+    k3 = f(t + h / 2, x + h / 2 * k2)
+    k4 = f(t + h, x + h * k3)
+    xp = x + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
 
     return xp
 end
@@ -430,24 +450,22 @@ exclusive: one and exactly one of them must be provided.
 function rk4_generic(
     f::T.Func,
     x0::RealVector;
-    tspan::Union{RealVector, Nothing}=nothing,
-    h::Union{RealValue, Nothing}=nothing,
-    full::Bool=false,
-    actions::T.SpecialIntegrationActions=
-        T.SpecialIntegrationActions(undef, 0))::Union{
-            RealVector, RealMatrix}
+    tspan::Union{RealVector,Nothing} = nothing,
+    h::Union{RealValue,Nothing} = nothing,
+    full::Bool = false,
+    actions::T.SpecialIntegrationActions = T.SpecialIntegrationActions(undef, 0),
+)::Union{RealVector,RealMatrix}
 
     # Check that one and only one of the arguments tspan and h is passed
     if !xor(isnothing(tspan), isnothing(h))
-        err = ArgumentError(string("rk4 accepts one and only one",
-                                   " of tspan or h."))
+        err = ArgumentError(string("rk4 accepts one and only one", " of tspan or h."))
         throw(err)
     end
 
     if isnothing(tspan)
         # Construct a uniform tspan such that the time step is the largest
         # possible value <=h
-        N = ceil(Int, 1.0+1.0/h)
+        N = ceil(Int, 1.0 + 1.0 / h)
         tspan = LinRange(0.0, 1.0, N)
     end
 
@@ -510,10 +528,14 @@ in Quantum Physics". Journal of Mathematical Physics. 8 (4):
 # Returns
 - `DecA`: the value ``\\frac{d}{d\\lambda} e^{c A}``.
 """
-function expm_diff(A::RealMatrix, DA::RealMatrix, c::RealValue=1.0;
-                   resol::Int=1000)::RealMatrix
+function expm_diff(
+    A::RealMatrix,
+    DA::RealMatrix,
+    c::RealValue = 1.0;
+    resol::Int = 1000,
+)::RealMatrix
     integrand = (t, _) -> begin
-        dXdt = exp(t*A)*DA*exp((c-t)*A)
+        dXdt = exp(t * A) * DA * exp((c - t) * A)
         dXdt = vec(dXdt)
         return dXdt
     end
@@ -538,8 +560,8 @@ function trapz(f::AbstractVector, grid::RealVector)
     N = length(grid)
     F = 0.0
     for k = 1:N-1
-        δ = grid[k+1]-grid[k]
-        F += 0.5*δ*(f[k+1]+f[k])
+        δ = grid[k+1] - grid[k]
+        F += 0.5 * δ * (f[k+1] + f[k])
     end
     return F
 end
@@ -560,9 +582,9 @@ function ∇trapz(grid::RealVector)::RealVector
     N = length(grid)
     ∇F = zeros(N)
     for k = 1:N-1
-        δ = grid[k+1]-grid[k]
-        ∇F[k+1] += 0.5*δ
-        ∇F[k] += 0.5*δ
+        δ = grid[k+1] - grid[k]
+        ∇F[k+1] += 0.5 * δ
+        ∇F[k] += 0.5 * δ
     end
     return ∇F
 end
@@ -599,29 +621,27 @@ References:
 """
 function logsumexp(
     f::RealVector,
-    ∇f::Optional{Vector}=nothing,
-    ∇²f::Optional{Vector}=nothing;
-    t::RealValue=1.0)::Union{
-        Tuple{RealValue, RealVector, RealMatrix},
-        Tuple{RealValue, RealVector},
-        RealValue}
+    ∇f::Optional{Vector} = nothing,
+    ∇²f::Optional{Vector} = nothing;
+    t::RealValue = 1.0,
+)::Union{Tuple{RealValue,RealVector,RealMatrix},Tuple{RealValue,RealVector},RealValue}
 
     n = length(f)
     compute_gradient = !isnothing(∇f)
     compute_hessian = !isnothing(∇²f)
 
     # Value
-    a = maximum(t*f)
-    E = sum(exp(t*f[i]-a) for i=1:n)
-    logsumexp = a+log(E)
-    L = logsumexp/t
+    a = maximum(t * f)
+    E = sum(exp(t * f[i] - a) for i = 1:n)
+    logsumexp = a + log(E)
+    L = logsumexp / t
 
     if compute_gradient
-        Ei = [exp(t*f[i]-a)/E for i=1:n]
-        ∇L = sum(∇f[i]*Ei[i] for i=1:n)
+        Ei = [exp(t * f[i] - a) / E for i = 1:n]
+        ∇L = sum(∇f[i] * Ei[i] for i = 1:n)
         if compute_hessian
-            ∇a = t*∇f[argmax(f)]
-            ∇²L = sum((∇²f[i]+(∇f[i]-∇L)*(t*∇f[i]-∇a)')*Ei[i] for i=1:n)
+            ∇a = t * ∇f[argmax(f)]
+            ∇²L = sum((∇²f[i] + (∇f[i] - ∇L) * (t * ∇f[i] - ∇a)') * Ei[i] for i = 1:n)
             return L, ∇L, ∇²L
         end
         return L, ∇L
@@ -648,18 +668,17 @@ argument becomes more positive.
 - `σ`: the sigmoid function value (and its gradients and Hessians, depending on
   whether `gradient` and `hessian` are provided).
 """
-function sigmoid(value::RealVector,
-                 gradient::Optional{Vector}=nothing,
-                 hessian::Optional{Vector}=nothing;
-                 κ::RealValue=1.0)::Union{
-                     Tuple{RealValue, RealVector, RealMatrix},
-                     Tuple{RealValue, RealVector},
-                     RealValue}
+function sigmoid(
+    value::RealVector,
+    gradient::Optional{Vector} = nothing,
+    hessian::Optional{Vector} = nothing;
+    κ::RealValue = 1.0,
+)::Union{Tuple{RealValue,RealVector,RealMatrix},Tuple{RealValue,RealVector},RealValue}
 
     compute_gradient = !isnothing(gradient)
     compute_hessian = !isnothing(hessian)
 
-    L = logsumexp(value, gradient, hessian, t=κ)
+    L = logsumexp(value, gradient, hessian, t = κ)
 
     if compute_hessian
         L, ∇L, ∇²L = L
@@ -667,12 +686,12 @@ function sigmoid(value::RealVector,
         L, ∇L = L
     end
 
-    σ = 1-1/(1+exp(κ*L))
+    σ = 1 - 1 / (1 + exp(κ * L))
     if compute_gradient
-        c = exp(κ*L+2*log(1-σ))
-        ∇σ = κ*c*∇L
+        c = exp(κ * L + 2 * log(1 - σ))
+        ∇σ = κ * c * ∇L
         if compute_hessian
-            ∇²σ = κ*(1-2*σ)*∇L*∇σ'+κ*c*∇²L
+            ∇²σ = κ * (1 - 2 * σ) * ∇L * ∇σ' + κ * c * ∇²L
             return σ, ∇σ, ∇²σ
         end
         return σ, ∇σ
@@ -701,14 +720,13 @@ would be obtained for `κ=Inf`) at the value `match` of `value`.
 - `σ`: the sigmoid function value (and its gradients and Hessians, depending on
   whether `gradient` and `hessian` are provided).
 """
-function indicator(value::RealVector,
-                   gradient::Optional{Vector}=nothing,
-                   hessian::Optional{Vector}=nothing;
-                   κ::RealValue=1.0,
-                   match::Optional{RealVector}=nothing)::Union{
-                       Tuple{RealValue, RealVector, RealMatrix},
-                       Tuple{RealValue, RealVector},
-                       RealValue}
+function indicator(
+    value::RealVector,
+    gradient::Optional{Vector} = nothing,
+    hessian::Optional{Vector} = nothing;
+    κ::RealValue = 1.0,
+    match::Optional{RealVector} = nothing,
+)::Union{Tuple{RealValue,RealVector,RealMatrix},Tuple{RealValue,RealVector},RealValue}
 
     compute_gradient = !isnothing(gradient)
     match_value = !isnothing(match)
@@ -716,17 +734,17 @@ function indicator(value::RealVector,
     # Output value matching
     Δσ = 0
     if match_value
-        offset = sigmoid(match; κ=κ)
-        Δσ = 1-offset
+        offset = sigmoid(match; κ = κ)
+        Δσ = 1 - offset
     end
 
     # Compute sigmoid
-    σ = sigmoid(value, gradient, hessian, κ=κ)
+    σ = sigmoid(value, gradient, hessian, κ = κ)
     if compute_gradient
-        σ = (σ[1]+Δσ, σ[2:end]...)
+        σ = (σ[1] + Δσ, σ[2:end]...)
         return σ
     end
-    return σ+Δσ
+    return σ + Δσ
 end
 
 """
@@ -753,21 +771,20 @@ scaling of the predicates.
 - `OR`: the smooth OR value, together with its gradient and Hessian (if the
   gradients and hessians of the predicates are provided)
 """
-function or(predicates::RealVector,
-            gradient::Optional{Vector}=nothing,
-            hessian::Optional{Vector}=nothing;
-            κ::RealValue=1.0,
-            match::Optional{Union{RealValue, RealVector}}=nothing,
-            normalize::RealValue=1.0)::Union{
-                Tuple{RealValue, RealVector, RealMatrix},
-                Tuple{RealValue, RealVector},
-                RealValue}
+function or(
+    predicates::RealVector,
+    gradient::Optional{Vector} = nothing,
+    hessian::Optional{Vector} = nothing;
+    κ::RealValue = 1.0,
+    match::Optional{Union{RealValue,RealVector}} = nothing,
+    normalize::RealValue = 1.0,
+)::Union{Tuple{RealValue,RealVector,RealMatrix},Tuple{RealValue,RealVector},RealValue}
 
-    @assert normalize>0
-    @assert isnothing(match) || any(match.>0)
+    @assert normalize > 0
+    @assert isnothing(match) || any(match .> 0)
 
-    scale = p -> p/normalize
-    match = isnothing(match) ? match : match./normalize
+    scale = p -> p / normalize
+    match = isnothing(match) ? match : match ./ normalize
     if !isnothing(match) && !(match isa AbstractArray)
         match = [match]
     end
@@ -783,8 +800,7 @@ function or(predicates::RealVector,
         hessian = collect(map(scale, hessian))
     end
 
-    OR = indicator(predicates, gradient, hessian,
-                   κ=κ, match=match)
+    OR = indicator(predicates, gradient, hessian, κ = κ, match = match)
 
     return OR
 end
@@ -802,7 +818,7 @@ Remove all length-1 dimensions from the array `A`.
 """
 function squeeze(A::AbstractArray)::AbstractArray
     singleton_dims = tuple((d for d in 1:ndims(A) if size(A, d) == 1)...)
-    Ar = dropdims(A, dims=singleton_dims)
+    Ar = dropdims(A, dims = singleton_dims)
     return Ar
 end
 
@@ -821,20 +837,20 @@ Convert the units of `x`.
 """
 function convert_units(x::RealValue, orig::Symbol, new::Symbol)::RealValue
 
-    convert_func = Symbol("_"*string(orig)*"2"*string(new))
-    y = eval( :( $convert_func($x) ) )
+    convert_func = Symbol("_" * string(orig) * "2" * string(new))
+    y = eval(:($convert_func($x)))
 
     return y
 end
 
 # Available converters
 _deg2rad(x) = deg2rad(x)        # degrees to radians
-_in2m(x) = x*0.0254             # inches to meters
-_ft2m(x) = x*0.3048             # feet to meters
-_ftps2mps(x) = x*0.3048         # feet per second to meters per second
-_ft2slug2m2kg(x) = x*1.35581795 # slug*ft^2 to kg*m^2
-_lb2kg(x) = x*0.453592          # lb to kg
-_lbf2N(x) = x*4.448222          # lbf to N
+_in2m(x) = x * 0.0254             # inches to meters
+_ft2m(x) = x * 0.3048             # feet to meters
+_ftps2mps(x) = x * 0.3048         # feet per second to meters per second
+_ft2slug2m2kg(x) = x * 1.35581795 # slug*ft^2 to kg*m^2
+_lb2kg(x) = x * 0.453592          # lb to kg
+_lbf2N(x) = x * 4.448222          # lbf to N
 
 """
     homtransf(q, r)
@@ -881,11 +897,13 @@ convention. See the `rpy` function in `quaternion.jl` for more information.
 # Returns
 - `T`: the homogeneous transformation matrix.
 """
-function homtransf(r::RealVector=zeros(3);
-                   roll::RealValue=0,
-                   pitch::RealValue=0,
-                   yaw::RealValue=0,
-                   deg::Bool=true)::RealMatrix
+function homtransf(
+    r::RealVector = zeros(3);
+    roll::RealValue = 0,
+    pitch::RealValue = 0,
+    yaw::RealValue = 0,
+    deg::Bool = true,
+)::RealMatrix
     if deg
         roll = deg2rad(roll)
         pitch = deg2rad(pitch)
@@ -894,7 +912,7 @@ function homtransf(r::RealVector=zeros(3);
     q_roll = Quaternion(roll, [1; 0; 0])
     q_pitch = Quaternion(pitch, [0; 1; 0])
     q_yaw = Quaternion(yaw, [0; 0; 1])
-    q = q_yaw*q_pitch*q_roll
+    q = q_yaw * q_pitch * q_roll
     return homtransf(q, r)
 end
 
@@ -951,7 +969,7 @@ Same as `@printf` macro, except insert a prefix at the start of the string.
 - `data...`: the data to be printed according to the format specifier.
 """
 macro preprintf(io, prefix, fmt, data...)
-    new_fmt = "%s"*fmt
+    new_fmt = "%s" * fmt
     quote
         @printf($(esc(io)), $new_fmt, $(esc(prefix)), $(esc.(data)...))
     end
@@ -966,6 +984,5 @@ Print a heading for the test set.
 - `algo`: algorithm name.
 - `description`: test description.
 """
-test_heading(algo, description) = printstyled(
-    @sprintf("(%s) %s\n", algo, description),
-    color=:blue, bold=true)
+test_heading(algo, description) =
+    printstyled(@sprintf("(%s) %s\n", algo, description), color = :blue, bold = true)

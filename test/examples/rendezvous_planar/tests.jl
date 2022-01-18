@@ -35,19 +35,31 @@ function ptr()::Nothing
     wvc = 5e2
     wtr = 3e-2
     ε_abs = -Inf#1e-5
-    ε_rel = 1e-3/100
+    ε_rel = 1e-3 / 100
     feas_tol = 5e-3
     q_tr = Inf
     q_exit = Inf
     solver = ECOS
-    solver_options = Dict("verbose"=>0)
+    solver_options = Dict("verbose" => 0)
     pars = PTR.Parameters(
-        N, Nsub, iter_max, disc_method, wvc, wtr, ε_abs, ε_rel,
-        feas_tol, q_tr, q_exit, solver, solver_options)
+        N,
+        Nsub,
+        iter_max,
+        disc_method,
+        wvc,
+        wtr,
+        ε_abs,
+        ε_rel,
+        feas_tol,
+        q_tr,
+        q_exit,
+        solver,
+        solver_options,
+    )
 
     # Homotopy parameters
     Nhom = 10
-    hom_κ = Homotopy(1e-3; δ_max=5.0)
+    hom_κ = Homotopy(1e-3; δ_max = 5.0)
     hom_grid = LinRange(0.0, 1.0, Nhom)
 
     # Solve the trajectory generation problem
@@ -55,7 +67,7 @@ function ptr()::Nothing
     sols, historys = [], []
     for i = 1:Nhom
         mdl.traj.κ = hom_κ(hom_grid[i])
-        local warm = (i==1) ? nothing : sols[end]
+        local warm = (i == 1) ? nothing : sols[end]
 
         @printf("[%d/%d] Homotopy (κ=%.2e)\n", i, Nhom, mdl.traj.κ)
 

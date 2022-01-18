@@ -30,10 +30,9 @@ const FunctionAtomicValueType = Types.Variable
 const InputArgumentType = Types.VariableAbstractArray
 const FunctionValueType = Types.VariableAbstractArray
 const JacobianValueType = Types.VariableAbstractArray
-const JacobianKeys = Union{Int, Tuple{Int, Int}}
-const JacobianDictType = Dict{JacobianKeys, JacobianValueType}
-const FunctionValueOutputType = Union{FunctionAtomicValueType,
-                                      FunctionValueType}
+const JacobianKeys = Union{Int,Tuple{Int,Int}}
+const JacobianDictType = Dict{JacobianKeys,JacobianValueType}
+const FunctionValueOutputType = Union{FunctionAtomicValueType,FunctionValueType}
 
 # ..:: Data structures ::..
 
@@ -68,7 +67,7 @@ struct TypedFunction
     - `wrapper`: the wrapper.
     """
     function TypedFunction(f::Function, in::Type, out::Type)::TypedFunction
-        in = (in<:Tuple) ? in : Tuple{in}
+        in = (in <: Tuple) ? in : Tuple{in}
         wrapper = new(f, in, out)
         return wrapper
     end
@@ -95,15 +94,15 @@ struct DifferentiableFunctionOutput
     # Returns
     - `fout`: the function output structure.
     """
-    function DifferentiableFunctionOutput(f::T)::DFOut where T
+    function DifferentiableFunctionOutput(f::T)::DFOut where {T}
 
         # Convert to array
-        if !(T<:AbstractArray)
+        if !(T <: AbstractArray)
             f = [f]
         end
 
         # Make sure the array is at least 1-dimensional
-        if ndims(f)<1
+        if ndims(f) < 1
             f = reshape(f, 1)
         end
 
@@ -168,11 +167,11 @@ mutable struct DifferentiableFunction
         f::Function,
         xargs::Int,
         pargs::Int,
-        other)::DifferentiableFunction
+        other,
+    )::DifferentiableFunction
 
         # Make the core function typesafe
-        in_type = Tuple{fill(InputArgumentType, xargs+pargs)...,
-                        typeof(other), Bool}
+        in_type = Tuple{fill(InputArgumentType, xargs + pargs)...,typeof(other),Bool}
         out_type = DifferentiableFunctionOutput
         F = TypedFunction(f, in_type, out_type)
 
@@ -205,7 +204,7 @@ Throw a type error because `args...` is not the expected type for the function.
 - `SCP_BAD_ARGUMENT`: if there is a type mismatch.
 """
 function throw_type_error(fw::TypedFunction, which::String, args)
-    expected_type = (which=="input") ? fw.input_type : fw.output_type
+    expected_type = (which == "input") ? fw.input_type : fw.output_type
     msg = @sprintf("bad %s argument type.", which)
     msg *= @sprintf(" Expected %s", expected_type)
     msg *= @sprintf(" but got %s", typeof(args))
@@ -227,14 +226,14 @@ Evaluate the function, type safely.
 function (fw::TypedFunction)(args...)
 
     # Check the input type
-    if !( typeof(args)<:fw.input_type )
+    if !(typeof(args) <: fw.input_type)
         throw_type_error(fw, "input", args)
     end
 
     out = fw.f(args...) # Core wrapped function call
 
     # Check the return value type
-    if !( typeof(out)<:fw.output_type )
+    if !(typeof(out) <: fw.output_type)
         throw_type_error(fw, "output", out)
     end
 
@@ -256,12 +255,11 @@ to return a scalar, then pass in `scalar=true`.
 # Returns
 - `value`: the function value.
 """
-function value(out::DFOut; scalar::Bool=false)::FunctionValueOutputType
+function value(out::DFOut; scalar::Bool = false)::FunctionValueOutputType
     value = out.value
     if scalar
-        if length(value)>1
-            msg = @sprintf("Cannot convert a value of size %s to a scalar",
-                           size(value))
+        if length(value) > 1
+            msg = @sprintf("Cannot convert a value of size %s to a scalar", size(value))
             err = SCPError(0, SCP_BAD_ARGUMENT, msg)
             throw(err)
         end
@@ -296,18 +294,16 @@ permutation is successful, the transposed Jacobian is returned.
 - `J`: the Jacobian value. Most generally a tensor, which happens when ``f`` is
   a matrix-value function being differentiated with respect to a vector.
 """
-function jacobian(out::DFOut, key::JacobianKeys;
-                  permute::Bool=true)::JacobianValueType
-    tuple_key = length(key)>1
+function jacobian(out::DFOut, key::JacobianKeys; permute::Bool = true)::JacobianValueType
+    tuple_key = length(key) > 1
     if !haskey(out.J, key)
         if permute && tuple_key
             # Try permuting the key
             key = reverse(key)
-            return transpose(jacobian(out, key; permute=false))
+            return transpose(jacobian(out, key; permute = false))
         end
         plural = tuple_key ? "s" : ""
-        msg = @sprintf("Jacobian with respect to argument%s %s not defined",
-                       plural, key)
+        msg = @sprintf("Jacobian with respect to argument%s %s not defined", plural, key)
         err = SCPError(0, SCP_BAD_ARGUMENT, msg)
         throw(err)
     end
@@ -328,8 +324,7 @@ Set the Jacobian value. For more information see the docstring of `jacobian`.
 - `key`: which Jacobian to set.
 - `J`: the Jacobian value.
 """
-function set_jacobian!(out::DFOut, key::JacobianKeys,
-                       J::JacobianValueType)::Nothing
+function set_jacobian!(out::DFOut, key::JacobianKeys, J::JacobianValueType)::Nothing
     out.J[key] = J
     return nothing
 end
@@ -355,32 +350,34 @@ this is not met.
 # Returns
 - `f_value`: the function value from the call.
 """
-function (DiffF::DiffblF)(args::InputArgumentType...;
-                          jacobians::Bool=false,
-                          scalar::Bool=false)::FunctionValueOutputType
+function (DiffF::DiffblF)(
+    args::InputArgumentType...;
+    jacobians::Bool = false,
+    scalar::Bool = false,
+)::FunctionValueOutputType
     nargin = length(args)
-    narg_expected = DiffF.xargs+DiffF.pargs
-    if nargin!=narg_expected
-        msg = string("argument count mismatch for the function call ",
-                     @sprintf("(expected %d but got %d arguments)",
-                              narg_expected, nargin))
+    narg_expected = DiffF.xargs + DiffF.pargs
+    if nargin != narg_expected
+        msg = string(
+            "argument count mismatch for the function call ",
+            @sprintf("(expected %d but got %d arguments)", narg_expected, nargin)
+        )
         err = SCPError(0, SCP_BAD_ARGUMENT, msg)
         throw(err)
     end
     # Make the call to the core function
     DiffF.out[] = DiffF.f(args..., DiffF.consts[], jacobians)
     DiffF.evaluated = true
-    f_value = value(DiffF.out[], scalar=scalar)
+    f_value = value(DiffF.out[], scalar = scalar)
     return f_value
 end
 
 """
 Convenience methods that pass the calls down to `DifferentiableFunctionOutput`.
 """
-value(F::DiffblF; scalar::Bool=false)::FunctionValueOutputType =
-    value(F.out[], scalar=scalar)
-jacobian(F::DiffblF, key::JacobianKeys)::JacobianValueType =
-    jacobian(F.out[], key)
+value(F::DiffblF; scalar::Bool = false)::FunctionValueOutputType =
+    value(F.out[], scalar = scalar)
+jacobian(F::DiffblF, key::JacobianKeys)::JacobianValueType = jacobian(F.out[], key)
 all_jacobians(F::DiffblF)::JacobianDictType = all_jacobians(F.out[])
 
 # ..:: Macros ::..
@@ -390,10 +387,10 @@ Simple wrapper of `DifferentiableFunctionOutput` constructor, see its
 documentation.
 """
 macro value(f)
-    :( DifferentiableFunctionOutput($(esc(f))) )
+    :(DifferentiableFunctionOutput($(esc(f))))
 end
 
 """ Simple wrapper of `set_jacobian!`, see its documentation. """
 macro jacobian(out, key, J)
-    :( set_jacobian!($(esc.([out, key, J])...)) )
+    :(set_jacobian!($(esc.([out, key, J])...)))
 end

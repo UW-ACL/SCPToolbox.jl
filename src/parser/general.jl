@@ -26,15 +26,14 @@ using ...Utils
 import ...Utils: add!
 
 const LocationIndices = Array{Int}
-const RealArray = Types.RealArray{N} where N
-const AbstractRealArray = AbstractArray{Float64, N} where N
+const RealArray = Types.RealArray{N} where {N}
+const AbstractRealArray = AbstractArray{Float64,N} where {N}
 
 const AtomicVariable = Types.AExpr
 const AtomicConstant = Float64
-const AtomicArgument = Union{AtomicVariable, AtomicConstant}
+const AtomicArgument = Union{AtomicVariable,AtomicConstant}
 
 abstract type AbstractConicProgram end
 
-abstract type AbstractArgumentBlock{T<:AtomicArgument, N} <:
-    AbstractArray{T, N} end
+abstract type AbstractArgumentBlock{T<:AtomicArgument,N} <: AbstractArray{T,N} end
 abstract type AbstractArgument{T<:AtomicArgument} end

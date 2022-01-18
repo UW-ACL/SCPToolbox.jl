@@ -45,12 +45,12 @@ mutable struct DLTV
     - `dyn`: the dynamics, with empty (undefined) matrices.
     """
     function DLTV(nx::Int, nu::Int, np::Int, nv::Int, N::Int)::DLTV
-        A = RealTensor(undef, nx, nx, N-1)
-        Bm = RealTensor(undef, nx, nu, N-1)
-        Bp = RealTensor(undef, nx, nu, N-1)
-        F = RealTensor(undef, nx, np, N-1)
-        r = RealMatrix(undef, nx, N-1)
-        E = RealTensor(undef, nx, nv, N-1)
+        A = RealTensor(undef, nx, nx, N - 1)
+        Bm = RealTensor(undef, nx, nu, N - 1)
+        Bp = RealTensor(undef, nx, nu, N - 1)
+        F = RealTensor(undef, nx, np, N - 1)
+        r = RealMatrix(undef, nx, N - 1)
+        E = RealTensor(undef, nx, nv, N - 1)
         timing = 0.0
 
         dyn = new(A, Bm, Bp, F, r, E, timing)

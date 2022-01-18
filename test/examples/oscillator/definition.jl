@@ -19,8 +19,7 @@ using LinearAlgebra
 
 # ..:: Methods ::..
 
-function define_problem!(pbm::TrajectoryProblem,
-                         algo::Symbol)::Nothing
+function define_problem!(pbm::TrajectoryProblem, algo::Symbol)::Nothing
 
     set_dims!(pbm)
     set_scale!(pbm)
@@ -61,7 +60,7 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     advise!(pbm, :input, veh.id_aa, (-veh.a_max, veh.a_max))
     advise!(pbm, :input, veh.id_ar, (-veh.a_max, veh.a_max))
     advise!(pbm, :input, veh.id_l1aa, (0.0, veh.a_max))
-    advise!(pbm, :input, veh.id_l1adiff, (0.0, 2*veh.a_max))
+    advise!(pbm, :input, veh.id_l1adiff, (0.0, 2 * veh.a_max))
 
     # Parameters
     advise!(pbm, :parameter, veh.id_l1r, (0.0, traj.r0))
@@ -72,7 +71,8 @@ end
 function set_guess!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_guess!(
-        pbm, (N, pbm) -> begin
+        pbm,
+        (N, pbm) -> begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
 
@@ -85,14 +85,14 @@ function set_guess!(pbm::TrajectoryProblem)::Nothing
             τ_grid = RealVector(LinRange(0.0, 1.0, N))
 
             F = (t, x) -> begin
-                k = max(floor(Int, t/(N-1))+1, N)
+                k = max(floor(Int, t / (N - 1)) + 1, N)
                 u = zeros(pbm.nu)
                 p = zeros(pbm.np)
                 dxdt = dynamics(t, k, x, u, p, pbm)
                 return dxdt
             end
 
-            X = rk4(F, x0, t_grid; full=true)
+            X = rk4(F, x0, t_grid; full = true)
             Xc = ContinuousTimeTrajectory(t_grid, X, :linear)
             x = hcat([sample(Xc, τ) for τ in τ_grid]...)
 
@@ -107,16 +107,17 @@ function set_guess!(pbm::TrajectoryProblem)::Nothing
             end
 
             return x, u, p
-        end)
+        end,
+    )
 
     return nothing
 end
 
-function set_cost!(pbm::TrajectoryProblem,
-                   algo::Symbol)::Nothing
+function set_cost!(pbm::TrajectoryProblem, algo::Symbol)::Nothing
 
     problem_set_running_cost!(
-        pbm, algo,
+        pbm,
+        algo,
         (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
@@ -129,12 +130,13 @@ function set_cost!(pbm::TrajectoryProblem,
             a_nrml = veh.a_max
 
             # Compute value
-            f = l1r/r_nrml
-            f += traj.α*l1aa/a_nrml
-            f += traj.γ*l1adiff/a_nrml
+            f = l1r / r_nrml
+            f += traj.α * l1aa / a_nrml
+            f += traj.γ * l1adiff / a_nrml
 
             return f
-        end)
+        end,
+    )
 
     return nothing
 end
@@ -156,14 +158,16 @@ Oscillator dynamics.
 # Returns
 - `f`: the time derivative of the state vector.
 """
-function dynamics(t::RealValue,
-                  k::Int,
-                  x::RealVector,
-                  u::RealVector,
-                  p::RealVector,
-                  pbm::TrajectoryProblem)::RealVector
+function dynamics(
+    t::RealValue,
+    k::Int,
+    x::RealVector,
+    u::RealVector,
+    p::RealVector,
+    pbm::TrajectoryProblem,
+)::RealVector
 
-    impulse = k<0
+    impulse = k < 0
 
     # Parameters
     veh = pbm.mdl.vehicle
@@ -179,7 +183,7 @@ function dynamics(t::RealValue,
     f[veh.id_v] = aa
     if !impulse
         f[veh.id_r] = v
-        f[veh.id_v] += -veh.ω0^2*r-2*veh.ζ*veh.ω0*v
+        f[veh.id_v] += -veh.ω0^2 * r - 2 * veh.ζ * veh.ω0 * v
         # Scale for absolute time
         f *= traj.tf
     end
@@ -203,7 +207,7 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             A = zeros(pbm.nx, pbm.nx)
             A[veh.id_r, veh.id_v] = 1.0
             A[veh.id_v, veh.id_r] = -veh.ω0^2
-            A[veh.id_v, veh.id_v] = -2*veh.ζ*veh.ω0
+            A[veh.id_v, veh.id_v] = -2 * veh.ζ * veh.ω0
             # Scale for absolute time
             A *= traj.tf
             return A
@@ -212,7 +216,7 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
         (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
-            impulse = k<0
+            impulse = k < 0
             B = zeros(pbm.nx, pbm.nu)
             B[veh.id_v, veh.id_aa] = 1.0
             if !impulse
@@ -225,7 +229,8 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
         (t, k, x, u, p, pbm) -> begin
             F = zeros(pbm.nx, pbm.np)
             return F
-        end,)
+        end,
+    )
 
     return nothing
 end
@@ -234,7 +239,8 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the state
     problem_set_X!(
-        pbm, (t, k, x, p, pbm, ocp) -> begin
+        pbm,
+        (t, k, x, p, pbm, ocp) -> begin
             veh = pbm.mdl.vehicle
             N = pbm.scp.N
 
@@ -242,19 +248,29 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             l1r_k = (p[veh.id_l1r])[k]
 
             @add_constraint(
-                ocp, L1, "abs_r", (r, l1r_k), begin # Value
+                ocp,
+                L1,
+                "abs_r",
+                (r, l1r_k),
+                begin # Value
                     local r, l1r_k = arg
                     vcat(l1r_k, r)
-                end, begin # Jacobians
-                    if LangServer; local J = Dict(); end
+                end,
+                begin # Jacobians
+                    if LangServer
+                        local J = Dict()
+                    end
                     J[1] = vcat(zeros(length(r))', I(length(r)))
                     J[2] = vcat(1, zeros(length(r)))
-                end)
-        end)
+                end
+            )
+        end,
+    )
 
     # Convex path constraints on the input
     problem_set_U!(
-        pbm, (t, k, u, p, pbm, ocp) -> begin
+        pbm,
+        (t, k, u, p, pbm, ocp) -> begin
             veh = pbm.mdl.vehicle
 
             aa = u[veh.id_aa]
@@ -263,79 +279,122 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             l1adiff = u[veh.id_l1adiff]
 
             @add_constraint(
-                ocp, NONPOS, "accel_bounds",
-                (aa,), begin # Value
+                ocp,
+                NONPOS,
+                "accel_bounds",
+                (aa,),
+                begin # Value
                     local aa, = arg
-                    aa[1]-veh.a_max
-                end, begin # Jacobians
-                    if LangServer; local J = Dict(); end
+                    aa[1] - veh.a_max
+                end,
+                begin # Jacobians
+                    if LangServer
+                        local J = Dict()
+                    end
                     J[1] = [1]
-                end)
+                end
+            )
 
             @add_constraint(
-                ocp, NONPOS, "accel_bounds",
-                (aa,), begin # Value
+                ocp,
+                NONPOS,
+                "accel_bounds",
+                (aa,),
+                begin # Value
                     local aa, = arg
-                    -veh.a_max-aa[1]
-                end, begin # Jacobians
-                    if LangServer; local J = Dict(); end
+                    -veh.a_max - aa[1]
+                end,
+                begin # Jacobians
+                    if LangServer
+                        local J = Dict()
+                    end
                     J[1] = [-1]
-                end)
+                end
+            )
 
             @add_constraint(
-                ocp, NONPOS, "accel_bounds",
-                (ar,), begin # Value
+                ocp,
+                NONPOS,
+                "accel_bounds",
+                (ar,),
+                begin # Value
                     local ar, = arg
-                    ar[1]-veh.a_max
-                end, begin # Jacobians
-                    if LangServer; local J = Dict(); end
+                    ar[1] - veh.a_max
+                end,
+                begin # Jacobians
+                    if LangServer
+                        local J = Dict()
+                    end
                     J[1] = [1]
-                end)
+                end
+            )
 
             @add_constraint(
-                ocp, NONPOS, "accel_bounds",
-                (ar,), begin # Value
+                ocp,
+                NONPOS,
+                "accel_bounds",
+                (ar,),
+                begin # Value
                     local ar, = arg
-                    -veh.a_max-ar[1]
-                end, begin # Jacobians
-                    if LangServer; local J = Dict(); end
+                    -veh.a_max - ar[1]
+                end,
+                begin # Jacobians
+                    if LangServer
+                        local J = Dict()
+                    end
                     J[1] = [-1]
-                end)
+                end
+            )
 
             @add_constraint(
-                ocp, L1, "accel_bounds",
-                (l1aa, aa), begin # Value
+                ocp,
+                L1,
+                "accel_bounds",
+                (l1aa, aa),
+                begin # Value
                     local l1aa, aa = arg
                     vcat(l1aa, aa)
-                end, begin # Jacobians
-                    if LangServer; local J = Dict(); end
+                end,
+                begin # Jacobians
+                    if LangServer
+                        local J = Dict()
+                    end
                     J[1] = [1; 0]
                     J[2] = [0; 1]
-                end)
+                end
+            )
 
             @add_constraint(
-                ocp, L1, "accel_bounds",
-                (l1adiff, aa, ar), begin # Value
+                ocp,
+                L1,
+                "accel_bounds",
+                (l1adiff, aa, ar),
+                begin # Value
                     local l1adiff, aa, ar = arg
-                    vcat(l1adiff, aa-ar)
-                end, begin # Jacobians
-                    if LangServer; local J = Dict(); end
+                    vcat(l1adiff, aa - ar)
+                end,
+                begin # Jacobians
+                    if LangServer
+                        local J = Dict()
+                    end
                     J[1] = [1; 0]
                     J[2] = [0; 1]
                     J[3] = [0; -1]
-                end)
-        end)
+                end
+            )
+        end,
+    )
 
     return nothing
 end
 
-function set_nonconvex_constraints!(pbm::TrajectoryProblem,
-                                    algo::Symbol)::Nothing
+function set_nonconvex_constraints!(pbm::TrajectoryProblem, algo::Symbol)::Nothing
 
     _common_s_sz = 2
 
     problem_set_s!(
-        pbm, algo,
+        pbm,
+        algo,
         # Constraint s
         (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
@@ -344,17 +403,19 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
             aa = u[veh.id_aa]
             ar = u[veh.id_ar]
 
-            above_db = ar-veh.a_db
-            below_db = -veh.a_db-ar
-            OR = or([above_db; below_db],
-                    κ=traj.κ1,
-                    match=veh.a_max-veh.a_db,
-                    normalize=veh.a_max-veh.a_db)
+            above_db = ar - veh.a_db
+            below_db = -veh.a_db - ar
+            OR = or(
+                [above_db; below_db],
+                κ = traj.κ1,
+                match = veh.a_max - veh.a_db,
+                normalize = veh.a_max - veh.a_db,
+            )
 
             s = zeros(_common_s_sz)
 
-            s[1] = aa-OR*ar
-            s[2] = OR*ar-aa
+            s[1] = aa - OR * ar
+            s[2] = OR * ar - aa
 
             return s
         end,
@@ -371,16 +432,18 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
             aa = u[veh.id_aa]
             ar = u[veh.id_ar]
 
-            above_db = ar-veh.a_db
+            above_db = ar - veh.a_db
             ∇above_db = [1.0]
-            below_db = -veh.a_db-ar
+            below_db = -veh.a_db - ar
             ∇below_db = [-1.0]
-            OR, ∇OR = or([above_db; below_db],
-                         [∇above_db, ∇below_db],
-                         κ=traj.κ1,
-                         match=veh.a_max-veh.a_db,
-                         normalize=veh.a_max-veh.a_db)
-            ∇ORar = ∇OR[1]*ar+OR
+            OR, ∇OR = or(
+                [above_db; below_db],
+                [∇above_db, ∇below_db],
+                κ = traj.κ1,
+                match = veh.a_max - veh.a_db,
+                normalize = veh.a_max - veh.a_db,
+            )
+            ∇ORar = ∇OR[1] * ar + OR
 
             D = zeros(_common_s_sz, pbm.nu)
 
@@ -395,7 +458,8 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
         (t, k, x, u, p, pbm) -> begin
             G = zeros(_common_s_sz, pbm.np)
             return G
-        end)
+        end,
+    )
 
     return nothing
 end
@@ -404,7 +468,8 @@ function set_bcs!(pbm::TrajectoryProblem)::Nothing
 
     # Initial conditions
     problem_set_bc!(
-        pbm, :ic,
+        pbm,
+        :ic,
         # Constraint g
         (x, p, pbm) -> begin
             veh = pbm.mdl.vehicle
@@ -412,8 +477,7 @@ function set_bcs!(pbm::TrajectoryProblem)::Nothing
             rhs = zeros(2)
             rhs[1] = traj.r0
             rhs[2] = traj.v0
-            g = x[vcat(veh.id_r,
-                       veh.id_v)]-rhs
+            g = x[vcat(veh.id_r, veh.id_v)] - rhs
             return g
         end,
         # Jacobian dg/dx
@@ -423,7 +487,8 @@ function set_bcs!(pbm::TrajectoryProblem)::Nothing
             H[1, veh.id_r] = 1.0
             H[2, veh.id_v] = 1.0
             return H
-        end)
+        end,
+    )
 
     return nothing
 end

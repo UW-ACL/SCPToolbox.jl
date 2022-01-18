@@ -22,8 +22,7 @@ export TreeCompatibilityTrait, IsTreeCompatible
 export owner
 
 export TreeNode
-export is_root, is_leaf, set_parent!, traverse, find_common,
-    add_child!, remove_child!
+export is_root, is_leaf, set_parent!, traverse, find_common, add_child!, remove_child!
 
 # ..:: Globals ::..
 
@@ -95,7 +94,7 @@ mutable struct TreeNode{T} <: AbstractTreeNode
     # Returns
     - `node`: the newly created node.
     """
-    function TreeNode(data, parent::Optional{TreeNode}=nothing)::TreeNode
+    function TreeNode(data, parent::Optional{TreeNode} = nothing)::TreeNode
 
         if !tree_compatible(data)
             T = typeof(data)
@@ -146,7 +145,7 @@ Unlink child node from parent.
 - `child`: the child node.
 """
 function remove_child!(parent::TreeNode, child::TreeNode)::Nothing
-    filter!(c->c!=child, parent.children)
+    filter!(c -> c != child, parent.children)
     return nothing
 end
 
@@ -180,10 +179,12 @@ Traverse the tree starting from `node` and perform `action` on every node.
 - `ignore`: (optional) a list of nodes (and all their children) to ignore in
   the search.
 """
-function traverse(action::Function,
-                  node::TreeNode,
-                  depth::Int=0;
-                  ignore::Vector{TreeNode}=TreeNode[])::Nothing
+function traverse(
+    action::Function,
+    node::TreeNode,
+    depth::Int = 0;
+    ignore::Vector{TreeNode} = TreeNode[],
+)::Nothing
 
     if node in ignore
         return nothing
@@ -192,7 +193,7 @@ function traverse(action::Function,
     action(node.data, depth)
 
     for child in node.children
-        traverse(action, child, depth+1; ignore=ignore)
+        traverse(action, child, depth + 1; ignore = ignore)
     end
 
     return nothing
@@ -216,11 +217,13 @@ Find all matches in the tree starting from `node`.
 # Returns
 - `match_list`: a list of matching node data.
 """
-function Base.findall(matcher::Function,
-                      node::TreeNode;
-                      ignore::Vector{TreeNode}=TreeNode[])::Vector
+function Base.findall(
+    matcher::Function,
+    node::TreeNode;
+    ignore::Vector{TreeNode} = TreeNode[],
+)::Vector
     match_list = []
-    traverse(node, ignore=ignore) do data, _
+    traverse(node, ignore = ignore) do data, _
         matcher(data) ? push!(match_list, data) : nothing
     end
     return match_list
@@ -248,16 +251,19 @@ outcomes:
 # Returns
 - `C`: the common ancestor node of `A` and `B`.
 """
-function find_common(A::TreeNode, B::TreeNode;
-                     ignore::Vector{TreeNode}=TreeNode[])::TreeNode
+function find_common(
+    A::TreeNode,
+    B::TreeNode;
+    ignore::Vector{TreeNode} = TreeNode[],
+)::TreeNode
 
-    matches = findall(A, ignore=ignore) do x
-        owner(x)==B
+    matches = findall(A, ignore = ignore) do x
+        owner(x) == B
     end
 
     if !isempty(matches)
         return A
     else
-        return find_common(A.parent, B, ignore=TreeNode[A])
+        return find_common(A.parent, B, ignore = TreeNode[A])
     end
 end

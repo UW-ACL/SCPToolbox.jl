@@ -22,19 +22,32 @@ using Printf
 using ..Utils
 using ..Parser
 
-import ..ST, ..RealTypes, ..IntRange, ..RealVector, ..RealMatrix, ..Trajectory,
-    ..Objective, ..VarArgBlk, ..CstArgBlk, ..DLTV
+import ..ST,
+    ..RealTypes,
+    ..IntRange,
+    ..RealVector,
+    ..RealMatrix,
+    ..Trajectory,
+    ..Objective,
+    ..VarArgBlk,
+    ..CstArgBlk,
+    ..DLTV
 
-import ..SCPParameters, ..SCPSubproblem, ..SCPSubproblemSolution, ..SCPProblem,
-    ..SCPSolution, ..SCPHistory
+import ..SCPParameters,
+    ..SCPSubproblem, ..SCPSubproblemSolution, ..SCPProblem, ..SCPSolution, ..SCPHistory
 
 import ..warm_start
 import ..discretize!
-import ..compute_original_cost!, ..compute_original_cost, ..add_dynamics!,
-    ..add_convex_state_constraints!, ..add_convex_input_constraints!, ..add_nonconvex_constraints!,
-    ..add_bcs!, ..correct_convex!
-import ..solve_subproblem!, ..solution_deviation, ..unsafe_solution,
-    ..overhead!, ..save!, ..get_time
+import ..compute_original_cost!,
+    ..compute_original_cost,
+    ..add_dynamics!,
+    ..add_convex_state_constraints!,
+    ..add_convex_input_constraints!,
+    ..add_nonconvex_constraints!,
+    ..add_bcs!,
+    ..correct_convex!
+import ..solve_subproblem!,
+    ..solution_deviation, ..unsafe_solution, ..overhead!, ..save!, ..get_time
 
 const CLP = ConicLinearProgram
 const Variable = ST.Variable
@@ -64,7 +77,7 @@ struct Parameters <: SCPParameters
     q_tr::RealTypes     # Trust region norm (possible: 1, 2, 4 (2^2), Inf)
     q_exit::RealTypes   # Stopping criterion norm
     solver::Module      # The numerical solver to use for the subproblems
-    solver_opts::Dict{String, Any} # Numerical solver options
+    solver_opts::Dict{String,Any} # Numerical solver options
 end
 
 """ SCvx subproblem solution. """
@@ -110,8 +123,8 @@ mutable struct Subproblem <: SCPSubproblem
     def::SCPProblem   # The SCvx problem definition
     η::RealTypes      # Trust region radius
     # >> Reference and solution trajectories <<
-    sol::Union{SubproblemSolution, Missing} # Solution trajectory
-    ref::Union{SubproblemSolution, Missing} # Reference trajectory
+    sol::Union{SubproblemSolution,Missing} # Solution trajectory
+    ref::Union{SubproblemSolution,Missing} # Reference trajectory
     # >> Cost function <<
     L::Objective      # The original convex cost function
     L_pen::Objective  # The virtual control penalty
@@ -129,7 +142,7 @@ mutable struct Subproblem <: SCPSubproblem
     P::VarArgBlk      # Virtual control penalty
     Pf::VarArgBlk     # Boundary condition virtual control penalty
     # >> Statistics <<
-    timing::Dict{Symbol, RealTypes} # Runtime profiling
+    timing::Dict{Symbol,RealTypes} # Runtime profiling
 end
 
 """
@@ -144,10 +157,7 @@ Construct the SCvx problem definition.
 # Returns
 - `pbm`: the problem structure ready for being solved by SCvx.
 """
-function create(
-        pars::Parameters,
-        traj::TrajectoryProblem
-)::SCPProblem
+function create(pars::Parameters, traj::TrajectoryProblem)::SCPProblem
 
     default_columns = [
         # Iteration count
@@ -181,12 +191,12 @@ function create(
         # Update direction for trust region radius (grow? shrink?)
         (:dtr, "Δη", "%s", 3),
         # Reject solution indicator
-        (:rej, "rej", "%s", 5)
+        (:rej, "rej", "%s", 5),
     ]
 
     # User-defined extra columns
-    user_columns = Tuple{Symbol, String, String, Int}[
-        tuple(col[1:4]...) for col in traj.table_cols]
+    user_columns =
+        Tuple{Symbol,String,String,Int}[tuple(col[1:4]...) for col in traj.table_cols]
 
     all_columns = [default_columns; user_columns]
 
@@ -213,10 +223,10 @@ constraints. Just the decision variables and empty associated parameters.
 - `spbm`: the subproblem structure.
 """
 function Subproblem(
-        pbm::SCPProblem,
-        iter::Int=0,
-        η::RealTypes=1.0,
-        ref::Union{SubproblemSolution, Missing}=missing
+    pbm::SCPProblem,
+    iter::Int = 0,
+    η::RealTypes = 1.0,
+    ref::Union{SubproblemSolution,Missing} = missing,
 )::Subproblem
 
     # Statistics
@@ -234,11 +244,7 @@ function Subproblem(
     # Optimization problem handle
     solver = pars.solver
     solver_opts = pars.solver_opts
-    prg = ConicProgram(
-        pbm.traj;
-        solver=solver.Optimizer,
-        solver_options=solver_opts
-    )
+    prg = ConicProgram(pbm.traj; solver = solver.Optimizer, solver_options = solver_opts)
     cvx_algo = string(pars.solver)
     algo = @sprintf("SCvx (backend: %s)", cvx_algo)
 
@@ -261,7 +267,7 @@ function Subproblem(
     @scale(p, Sp, scale.cp)
 
     # Physical decision variables
-    vd = @new_variable(prg, (size(_E, 2), N-1), "vd")
+    vd = @new_variable(prg, (size(_E, 2), N - 1), "vd")
     vs = nothing
     vic = nothing
     vtc = nothing
@@ -271,8 +277,27 @@ function Subproblem(
     Pf = @new_variable(prg, 2, "Pf")
 
     spbm = Subproblem(
-        iter, prg, algo, pbm, η, sol, ref, L, L_pen,
-        L_aug, x, u, p, vd, vs, vic, vtc, P, Pf, timing)
+        iter,
+        prg,
+        algo,
+        pbm,
+        η,
+        sol,
+        ref,
+        L,
+        L_pen,
+        L_aug,
+        x,
+        u,
+        p,
+        vd,
+        vs,
+        vic,
+        vtc,
+        P,
+        Pf,
+        timing,
+    )
 
     return spbm
 end
@@ -295,11 +320,11 @@ unset.
 - `subsol`: subproblem solution structure.
 """
 function SubproblemSolution(
-        x::RealMatrix,
-        u::RealMatrix,
-        p::RealVector,
-        iter::Int,
-        pbm::SCPProblem
+    x::RealMatrix,
+    u::RealMatrix,
+    p::RealVector,
+    iter::Int,
+    pbm::SCPProblem,
 )::SubproblemSolution
 
     # Parameters
@@ -313,7 +338,7 @@ function SubproblemSolution(
     # Uninitialized parts
     status = MOI.OPTIMIZE_NOT_CALLED
     feas = false
-    defect = fill(NaN, nx, N-1)
+    defect = fill(NaN, nx, N - 1)
     deviation = NaN
     unsafe = false
     ρ = NaN
@@ -337,9 +362,33 @@ function SubproblemSolution(
     pre_improv = NaN
 
     subsol = SubproblemSolution(
-        iter, x, u, p, vd, vs, vic, vtc, P, Pf, L, L_pen, L_aug,
-        J_aug, act_improv, pre_improv, status, feas, defect,
-        deviation, unsafe, ρ, tr_update, reject, dyn, bay)
+        iter,
+        x,
+        u,
+        p,
+        vd,
+        vs,
+        vic,
+        vtc,
+        P,
+        Pf,
+        L,
+        L_pen,
+        L_aug,
+        J_aug,
+        act_improv,
+        pre_improv,
+        status,
+        feas,
+        defect,
+        deviation,
+        unsafe,
+        ρ,
+        tr_update,
+        reject,
+        dyn,
+        bay,
+    )
 
     # Compute the DLTV dynamics around this solution
     discretize!(subsol, pbm)
@@ -409,10 +458,9 @@ Apply the SCvx algorithm to solve the trajectory generation problem.
 - `history`: SCvx iteration data history.
 """
 function solve(
-        pbm::SCPProblem,
-        warm::Union{Nothing, SCPSolution}=nothing
-)::Tuple{Union{SCPSolution, Nothing},
-         SCPHistory}
+    pbm::SCPProblem,
+    warm::Union{Nothing,SCPSolution} = nothing,
+)::Tuple{Union{SCPSolution,Nothing},SCPHistory}
 
     # ..:: Initialize ::..
 
@@ -484,7 +532,7 @@ function solve(
 
         # Stop at maximum iterations
         k += 1
-        if k>pbm.pars.iter_max
+        if k > pbm.pars.iter_max
             break
         end
     end
@@ -509,9 +557,7 @@ generator, which is converted to an SubproblemSolution structure.
 # Returns
 - `guess`: the initial guess.
 """
-function generate_initial_guess(
-        pbm::SCPProblem
-)::SubproblemSolution
+function generate_initial_guess(pbm::SCPProblem)::SubproblemSolution
 
     # Construct the raw trajectory
     x, u, p = pbm.traj.guess(pbm.pars.N)
@@ -529,9 +575,7 @@ Add trust region constraint to the subproblem.
 # Arguments
 - `spbm`: the subproblem definition.
 """
-function add_trust_region!(
-        spbm::Subproblem
-)::Nothing
+function add_trust_region!(spbm::Subproblem)::Nothing
 
     # Variables and parameters
     N = spbm.def.pars.N
@@ -542,9 +586,9 @@ function add_trust_region!(
     x = spbm.x
     u = spbm.u
     p = spbm.p
-    xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
-    uh_ref = scale.iSu*(spbm.ref.ud.-scale.cu)
-    ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
+    xh_ref = scale.iSx * (spbm.ref.xd .- scale.cx)
+    uh_ref = scale.iSu * (spbm.ref.ud .- scale.cu)
+    ph_ref = scale.iSp * (spbm.ref.p - scale.cp)
 
     q2cone = Dict(1 => L1, 2 => SOC, 4 => SOC, Inf => LINF)
     cone = q2cone[q]
@@ -552,12 +596,14 @@ function add_trust_region!(
     # >> Parameter trust region <<
     dp_lq = @new_variable(prg, "dp_lq")
     @add_constraint(
-        prg, cone, "parameter_trust_region",
+        prg,
+        cone,
+        "parameter_trust_region",
         (p, dp_lq),
         begin
             local p, dp_lq = arg
-            local ph = scale.iSp*(p-scale.cp)
-            local dp = ph-ph_ref
+            local ph = scale.iSp * (p - scale.cp)
+            local dp = ph - ph_ref
             vcat(dp_lq, dp)
         end
     )
@@ -566,12 +612,14 @@ function add_trust_region!(
     dx_lq = @new_variable(prg, N, "dx_lq")
     for k = 1:N
         @add_constraint(
-            prg, cone, "state_trust_region",
+            prg,
+            cone,
+            "state_trust_region",
             (x[:, k], dx_lq[k]),
             begin
                 local xk, dxk_lq = arg
-                local xhk = scale.iSx*(xk-scale.cx)
-                local dxk = xhk-xh_ref[:, k]
+                local xhk = scale.iSx * (xk - scale.cx)
+                local dxk = xhk - xh_ref[:, k]
                 vcat(dxk_lq, dxk)
             end
         )
@@ -581,12 +629,14 @@ function add_trust_region!(
     du_lq = @new_variable(prg, N, "du_lq")
     for k = 1:N
         @add_constraint(
-            prg, cone, "input_trust_region",
+            prg,
+            cone,
+            "input_trust_region",
             (u[:, k], du_lq[k]),
             begin
                 local uk, duk_lq = arg
-                local uhk = scale.iSu*(uk-scale.cu)
-                local duk = uhk-uh_ref[:, k]
+                local uhk = scale.iSu * (uk - scale.cu)
+                local duk = uhk - uh_ref[:, k]
                 vcat(duk_lq, duk)
             end
         )
@@ -594,31 +644,31 @@ function add_trust_region!(
 
     # Trust region bound
     for k = 1:N
-        if q==4
+        if q == 4
             w = @new_variable(prg, "w")
             @add_constraint(
-                prg, SOC, "trust_region_bound",
+                prg,
+                SOC,
+                "trust_region_bound",
                 (dx_lq[k], du_lq[k], dp_lq, w),
                 begin
                     local dxk_lq, duk_lq, dp_lq, w = arg
                     vcat(w, dxk_lq, duk_lq, dp_lq)
                 end
             )
-            @add_constraint(
-                prg, GEOM, "trust_region_bound",
-                (w, η),
-                begin
-                    local w, η = arg
-                    vcat(w, η, 1)
-                end
-            )
+            @add_constraint(prg, GEOM, "trust_region_bound", (w, η), begin
+                local w, η = arg
+                vcat(w, η, 1)
+            end)
         else
             @add_constraint(
-                prg, NONPOS, "trust_region_bound",
+                prg,
+                NONPOS,
+                "trust_region_bound",
                 (dx_lq[k], du_lq[k], dp_lq),
                 begin
                     local dxk_lq, duk_lq, dp_lq = arg
-                    dxk_lq[1]+duk_lq[1]+dp_lq[1]-η
+                    dxk_lq[1] + duk_lq[1] + dp_lq[1] - η
                 end
             )
         end
@@ -635,9 +685,7 @@ Define the subproblem cost function.
 # Arguments
 - `spbm`: the subproblem definition.
 """
-function add_cost!(
-        spbm::Subproblem
-)::Nothing
+function add_cost!(spbm::Subproblem)::Nothing
 
     # Compute the cost components
     spbm.L = compute_original_cost!(spbm)
@@ -660,9 +708,7 @@ Check if stopping criterion is triggered.
 # Returns
 - `stop`: true if stopping criterion holds.
 """
-function check_stopping_criterion!(
-        spbm::Subproblem
-)::Bool
+function check_stopping_criterion!(spbm::Subproblem)::Bool
 
     # Extract values
     pbm = spbm.def
@@ -677,12 +723,12 @@ function check_stopping_criterion!(
     # Check predicted cost improvement
     J_ref = solution_cost!(ref, :nonlinear, pbm)
     L_sol = solution_cost!(sol, :linear, pbm)
-    sol.pre_improv = J_ref-L_sol
-    pre_improv_rel = sol.pre_improv/abs(J_ref)
+    sol.pre_improv = J_ref - L_sol
+    pre_improv_rel = sol.pre_improv / abs(J_ref)
 
     # Compute stopping criterion
-    stop = (spbm.iter>1 &&
-            (sol.feas && (pre_improv_rel<=ε_rel || sol.deviation<=ε_abs)))
+    stop =
+        (spbm.iter > 1 && (sol.feas && (pre_improv_rel <= ε_rel || sol.deviation <= ε_abs)))
 
     return stop
 end
@@ -702,10 +748,7 @@ next iteration's reference trajectory.
 - `next_ref`: reference trajectory for the next iteration.
 - `next_η`: trust region radius for the next iteration.
 """
-function update_trust_region!(
-        spbm::Subproblem
-)::Tuple{SubproblemSolution,
-         RealTypes}
+function update_trust_region!(spbm::Subproblem)::Tuple{SubproblemSolution,RealTypes}
 
     # Parameters
     pbm = spbm.def
@@ -715,10 +758,10 @@ function update_trust_region!(
     # Compute the actual cost improvement
     J_ref = solution_cost!(ref, :nonlinear, pbm)
     J_sol = solution_cost!(sol, :nonlinear, pbm)
-    sol.act_improv = J_ref-J_sol
+    sol.act_improv = J_ref - J_sol
 
     # Convexification performance metric
-    sol.ρ = sol.act_improv/sol.pre_improv
+    sol.ρ = sol.act_improv / sol.pre_improv
 
     # Apply update rule
     next_ref, next_η = update_rule(spbm)
@@ -743,12 +786,9 @@ Note: **this function must match the penalty implemented in compute_linear_cost_
 # Returns
 - `P`: the penalty value.
 """
-function penalty_P(
-        vd::RealVector,
-        vs::RealVector
-)::RealTypes
+function penalty_P(vd::RealVector, vs::RealVector)::RealTypes
 
-    P = norm(vd, 1)+norm(vs, 1)
+    P = norm(vd, 1) + norm(vs, 1)
 
     return P
 end
@@ -761,9 +801,7 @@ Compute the subproblem cost virtual control penalty term.
 # Arguments
 - `spbm`: the subproblem definition.
 """
-function compute_linear_cost_penalty!(
-        spbm::Subproblem
-)::Nothing
+function compute_linear_cost_penalty!(spbm::Subproblem)::Nothing
 
     # Variables and parameters
     pbm = spbm.def
@@ -782,18 +820,22 @@ function compute_linear_cost_penalty!(
     # Virtual control penalty
     if !isnothing(vs)
         for k = 1:N
-            if k<N
+            if k < N
                 @add_constraint(
-                    prg, L1, "vd_vs_penalty",
+                    prg,
+                    L1,
+                    "vd_vs_penalty",
                     (P[k], vd[:, k], vs[:, k]),
                     begin
                         local Pk, vdk, vsk = arg
-                        vcat(Pk, E[:, :, k]*vdk, vsk)
+                        vcat(Pk, E[:, :, k] * vdk, vsk)
                     end
                 )
             else
                 @add_constraint(
-                    prg, L1, "vd_vs_penalty",
+                    prg,
+                    L1,
+                    "vd_vs_penalty",
                     (P[k], vs[:, k]),
                     begin
                         local Pk, vsk = arg
@@ -804,77 +846,56 @@ function compute_linear_cost_penalty!(
         end
     else
         for k = 1:N
-            if k<N
+            if k < N
                 @add_constraint(
-                    prg, L1, "vd_vs_penalty",
+                    prg,
+                    L1,
+                    "vd_vs_penalty",
                     (P[k], vd[:, k]),
                     begin
                         local Pk, vdk = arg
-                        vcat(Pk, E[:, :, k]*vdk)
+                        vcat(Pk, E[:, :, k] * vdk)
                     end
                 )
             else
-                @add_constraint(
-                    prg, ZERO, "vd_vs_penalty",
-                    (P[k],),
-                    begin
-                        local Pk, = arg
-                        return Pk
-                    end
-                )
+                @add_constraint(prg, ZERO, "vd_vs_penalty", (P[k],), begin
+                    local Pk, = arg
+                    return Pk
+                end)
             end
         end
     end
 
     # Initial condition relaxation penalty
     if !isnothing(vic)
-        @add_constraint(
-            prg, L1, "vic_penalty",
-            (Pf[1], vic),
-            begin
-                local Pf1, vic = arg
-                vcat(Pf1, vic)
-            end
-        )
+        @add_constraint(prg, L1, "vic_penalty", (Pf[1], vic), begin
+            local Pf1, vic = arg
+            vcat(Pf1, vic)
+        end)
     else
-        @add_constraint(
-            prg, ZERO, "vic_penalty",
-            (Pf[1]),
-            begin
-                local Pf1, = arg
-                Pf1
-            end
-        )
+        @add_constraint(prg, ZERO, "vic_penalty", (Pf[1]), begin
+            local Pf1, = arg
+            Pf1
+        end)
     end
 
     # Terminal condition relaxation penalty
     if !isnothing(vtc)
-        @add_constraint(
-            prg, L1, "vtc_penalty",
-            (Pf[2], vtc),
-            begin
-                local Pf2, vtc = arg
-                vcat(Pf2, vtc)
-            end
-        )
+        @add_constraint(prg, L1, "vtc_penalty", (Pf[2], vtc), begin
+            local Pf2, vtc = arg
+            vcat(Pf2, vtc)
+        end)
     else
-        @add_constraint(
-            prg, ZERO, "vtc_penalty",
-            (Pf[2]),
-            begin
-                local Pf2, = arg
-                Pf2
-            end
-        )
+        @add_constraint(prg, ZERO, "vtc_penalty", (Pf[2]), begin
+            local Pf2, = arg
+            Pf2
+        end)
     end
 
-    spbm.L_pen = @add_cost(
-        prg, (P, Pf),
-        begin
-            local P, Pf = arg
-            trapz(λ*P, t)+sum(λ*Pf)
-        end
-    )
+    spbm.L_pen = @add_cost(prg, (P, Pf), begin
+        local P, Pf = arg
+        trapz(λ * P, t) + sum(λ * Pf)
+    end)
 
     return nothing
 end
@@ -900,10 +921,7 @@ re-computation is skipped and the already computed value is returned.
 # Returns
 - `pen`: the nonlinear cost penalty term.
 """
-function actual_cost_penalty!(
-        sol::SubproblemSolution,
-        pbm::SCPProblem
-)::RealTypes
+function actual_cost_penalty!(sol::SubproblemSolution, pbm::SCPProblem)::RealTypes
 
     # Values and parameters from the solution
     N = pbm.pars.N
@@ -922,12 +940,12 @@ function actual_cost_penalty!(
     # Integrate the nonlinear penalty term
     P = RealVector(undef, N)
     for k = 1:N
-        δk = (k<N) ? δ[:, k] : zeros(nx)
+        δk = (k < N) ? δ[:, k] : zeros(nx)
         sk = pbm.traj.s(t[k], k, x[:, k], u[:, k], sol.p)
         sk = isempty(sk) ? [0.0] : sk
-        P[k] = λ*penalty_P(δk, max.(sk, 0.0))
+        P[k] = λ * penalty_P(δk, max.(sk, 0.0))
     end
-    pen = trapz(P, t)+λ*(penalty_P([0.0], gic)+penalty_P([0.0], gtc))
+    pen = trapz(P, t) + λ * (penalty_P([0.0], gic) + penalty_P([0.0], gtc))
 
     return pen
 end
@@ -945,23 +963,19 @@ Compute the linear or nonlinear overall associated with a solution.
 # Returns
 - `cost`: the optimal cost associated with this solution.
 """
-function solution_cost!(
-        sol::SubproblemSolution,
-        kind::Symbol,
-        pbm::SCPProblem
-)::RealTypes
+function solution_cost!(sol::SubproblemSolution, kind::Symbol, pbm::SCPProblem)::RealTypes
 
     if isnan(sol.L)
         sol.L = compute_original_cost(sol.xd, sol.ud, sol.p, pbm)
     end
 
-    if kind==:linear
+    if kind == :linear
         cost = sol.L
     else
         if isnan(sol.J_aug)
             J_orig = sol.L
             J_pen = actual_cost_penalty!(sol, pbm)
-            sol.J_aug = J_orig+J_pen
+            sol.J_aug = J_orig + J_pen
         end
         cost = sol.J_aug
     end
@@ -983,10 +997,7 @@ solution.
 - `next_ref`: reference trajectory for the next iteration.
 - `next_η`: trust region radius for the next iteration.
 """
-function update_rule(
-        spbm::Subproblem
-)::Tuple{SubproblemSolution,
-         RealTypes}
+function update_rule(spbm::Subproblem)::Tuple{SubproblemSolution,RealTypes}
     # Extract relevant data
     pars = spbm.def.pars
     sol = spbm.sol
@@ -1004,19 +1015,19 @@ function update_rule(
     # Apply update logic
     # Prediction below means "prediction of cost improvement by the linearized
     # model"
-    if ρ<ρ0
+    if ρ < ρ0
         # Very poor prediction
-        next_η = max(η_lb, η/β_sh)
+        next_η = max(η_lb, η / β_sh)
         next_ref = ref
         sol.tr_update = "S"
         sol.reject = true
-    elseif ρ0<=ρ && ρ<ρ1
+    elseif ρ0 <= ρ && ρ < ρ1
         # Mediocre prediction
-        next_η = max(η_lb, η/β_sh)
+        next_η = max(η_lb, η / β_sh)
         next_ref = sol
         sol.tr_update = "S"
         sol.reject = false
-    elseif ρ1<=ρ && ρ<ρ2
+    elseif ρ1 <= ρ && ρ < ρ2
         # Good prediction
         next_η = η
         next_ref = sol
@@ -1024,7 +1035,7 @@ function update_rule(
         sol.reject = false
     else
         # Excellent prediction
-        next_η = min(η_ub, β_gr*η)
+        next_η = min(η_ub, β_gr * η)
         next_ref = sol
         sol.tr_update = "G"
         sol.reject = false
@@ -1042,10 +1053,7 @@ Mark a solution as unsafe to use.
 - `sol`: subproblem solution.
 - `err`: the SCvx error that occurred.
 """
-function mark_unsafe!(
-        sol::SubproblemSolution,
-        err::SCPError
-)::Nothing
+function mark_unsafe!(sol::SubproblemSolution, err::SCPError)::Nothing
     sol.status = err.status
     sol.unsafe = true
     return nothing
@@ -1060,10 +1068,7 @@ Print command line info message.
 - `spbm`: the subproblem that was solved.
 - `err`: an SCvx-specific error message.
 """
-function print_info(
-        spbm::Subproblem,
-        err::Union{Nothing, SCPError}=nothing
-)::Nothing
+function print_info(spbm::Subproblem, err::Union{Nothing,SCPError} = nothing)::Nothing
 
     # Convenience variables
     sol = spbm.sol
@@ -1077,37 +1082,39 @@ function print_info(
     else
         # Preprocess values
         scale = spbm.def.common.scale
-        xh = scale.iSx*(sol.xd.-scale.cx)
-        uh = scale.iSu*(sol.ud.-scale.cu)
-        ph = scale.iSp*(sol.p-scale.cp)
-        xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
-        uh_ref = scale.iSu*(spbm.ref.ud.-scale.cu)
-        ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
-        max_dxh = norm(xh-xh_ref, Inf)
-        max_duh = norm(uh-uh_ref, Inf)
-        max_dph = norm(ph-ph_ref, Inf)
+        xh = scale.iSx * (sol.xd .- scale.cx)
+        uh = scale.iSu * (sol.ud .- scale.cu)
+        ph = scale.iSp * (sol.p - scale.cp)
+        xh_ref = scale.iSx * (spbm.ref.xd .- scale.cx)
+        uh_ref = scale.iSu * (spbm.ref.ud .- scale.cu)
+        ph_ref = scale.iSp * (spbm.ref.p - scale.cp)
+        max_dxh = norm(xh - xh_ref, Inf)
+        max_duh = norm(uh - uh_ref, Inf)
+        max_dph = norm(ph - ph_ref, Inf)
         status = @sprintf "%s" sol.status
         status = status[1:min(8, length(status))]
         ρ = !isnan(sol.ρ) ? @sprintf("%.2f", sol.ρ) : ""
-        ρ = (length(ρ)>8) ? @sprintf("%.1e", sol.ρ) : ρ
+        ρ = (length(ρ) > 8) ? @sprintf("%.1e", sol.ρ) : ρ
 
         # Associate values with columns
-        assoc = Dict(:iter => spbm.iter,
-                     :status => status,
-                     :maxvd => norm(sol.vd, Inf),
-                     :maxvs => norm(sol.vs, Inf),
-                     :maxvbc => norm([sol.vic; sol.vtc], Inf),
-                     :cost => sol.J_aug,
-                     :dx => max_dxh,
-                     :du => max_duh,
-                     :dp => max_dph,
-                     :dynfeas => sol.feas ? "T" : "F",
-                     :δ => sol.deviation,
-                     :ρ => ρ,
-                     :pre_improv => sol.pre_improv/abs(ref.J_aug)*100,
-                     :dtr => sol.tr_update,
-                     :rej => sol.reject ? "x" : "",
-                     :tr => spbm.η)
+        assoc = Dict(
+            :iter => spbm.iter,
+            :status => status,
+            :maxvd => norm(sol.vd, Inf),
+            :maxvs => norm(sol.vs, Inf),
+            :maxvbc => norm([sol.vic; sol.vtc], Inf),
+            :cost => sol.J_aug,
+            :dx => max_dxh,
+            :du => max_duh,
+            :dp => max_dph,
+            :dynfeas => sol.feas ? "T" : "F",
+            :δ => sol.deviation,
+            :ρ => ρ,
+            :pre_improv => sol.pre_improv / abs(ref.J_aug) * 100,
+            :dtr => sol.tr_update,
+            :rej => sol.reject ? "x" : "",
+            :tr => spbm.η,
+        )
 
         print(assoc, table)
     end

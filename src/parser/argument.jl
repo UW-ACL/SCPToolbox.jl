@@ -24,7 +24,7 @@ export value, name
 # Specialize argument blocks to variables and parameters
 const VariableArgumentBlock = ArgumentBlock{AtomicVariable}
 const ConstantArgumentBlock = ArgumentBlock{AtomicConstant}
-const ArgumentBlocks = Vector{ArgumentBlock{T}} where T
+const ArgumentBlocks = Vector{ArgumentBlock{T}} where {T}
 
 # ..:: Data structures ::..
 
@@ -80,13 +80,14 @@ Iterate over the blocks of an argument.
 # Returns
 The current block and the next state, or `nothing` if at the end.
 """
-function Base.iterate(arg::Argument,
-                      state::Int=1)::Union{
-                          Nothing, Tuple{ArgumentBlock, Int}}
+function Base.iterate(
+    arg::Argument,
+    state::Int = 1,
+)::Union{Nothing,Tuple{ArgumentBlock,Int}}
     if state > length(arg)
         return nothing
     else
-        return arg.blocks[state], state+1
+        return arg.blocks[state], state + 1
     end
 end
 
@@ -110,8 +111,8 @@ Append a new block to the end of the argument.
 function Base.push!(arg::Argument, name::String, shape::Int...)::ArgumentBlock
 
     # Create the new block
-    blid = length(arg)+1
-    elid1 = numel(arg)+1
+    blid = length(arg) + 1
+    elid1 = numel(arg) + 1
     block = ArgumentBlock(arg, shape, blid, elid1, name)
 
     # Update the arguemnt

@@ -38,24 +38,47 @@ end
 
 using .ConicLinearProgram
 
-export ConicProgram, numel, constraints, variables, parameters, cost,
-    solve!, jump_model
-export value, name, dual, cone, lhs, jacobian, all_jacobians, kind,
-    variables, parameters, objective_value
+export ConicProgram, numel, constraints, variables, parameters, cost, solve!, jump_model
+export value,
+    name,
+    dual,
+    cone,
+    lhs,
+    jacobian,
+    all_jacobians,
+    kind,
+    variables,
+    parameters,
+    objective_value
 export ConvexCone, add!, isfixed, isfree, dual, indicator!
 export jacobian, set_jacobian!
 export SupportedCone, UNCONSTRAINED, ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
-export SupportedDualCone, UNCONSTRAINED_DUAL, ZERO_DUAL, NONPOS_DUAL, L1_DUAL,
-    SOC_DUAL, LINF_DUAL, GEOM_DUAL, EXP_DUAL
+export SupportedDualCone,
+    UNCONSTRAINED_DUAL,
+    ZERO_DUAL,
+    NONPOS_DUAL,
+    L1_DUAL,
+    SOC_DUAL,
+    LINF_DUAL,
+    GEOM_DUAL,
+    EXP_DUAL
 export ArgumentBlock, VariableArgumentBlock, ConstantArgumentBlock
 export scale, perturbation
 export QuadraticCost
 export variation
 
-export @new_variable, @new_parameter, @add_constraint,
-    @add_cost, @set_feasibility, @scale, @perturb_free,
-    @perturb_fix, @perturb_relative, @perturb_absolute,
-    @value, @jacobian
+export @new_variable,
+    @new_parameter,
+    @add_constraint,
+    @add_cost,
+    @set_feasibility,
+    @scale,
+    @perturb_free,
+    @perturb_fix,
+    @perturb_relative,
+    @perturb_absolute,
+    @value,
+    @jacobian
 
 # User-facing problem definition
 include("problem.jl")

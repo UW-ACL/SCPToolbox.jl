@@ -20,19 +20,26 @@ using Printf
 
 import Base: showerror
 
-export SCPStatus, SCP_SOLVED, SCP_FAILED, SCP_SCALING_FAILED,
-    SCP_GUESS_PROJECTION_FAILED, SCP_BAD_ARGUMENT, SCP_BAD_PROBLEM
+export SCPStatus,
+    SCP_SOLVED,
+    SCP_FAILED,
+    SCP_SCALING_FAILED,
+    SCP_GUESS_PROJECTION_FAILED,
+    SCP_BAD_ARGUMENT,
+    SCP_BAD_PROBLEM
 export SCPError
 export Yellow, Red, Blue, DarkBlue, Green
 
 # List of possible SCP statuses/errors
-@enum(SCPStatus,
-      SCP_SOLVED,
-      SCP_FAILED,
-      SCP_SCALING_FAILED,
-      SCP_GUESS_PROJECTION_FAILED,
-      SCP_BAD_ARGUMENT,
-      SCP_BAD_PROBLEM)
+@enum(
+    SCPStatus,
+    SCP_SOLVED,
+    SCP_FAILED,
+    SCP_SCALING_FAILED,
+    SCP_GUESS_PROJECTION_FAILED,
+    SCP_BAD_ARGUMENT,
+    SCP_BAD_PROBLEM
+)
 
 # Colors
 const Yellow = "#f1d46a"

@@ -87,8 +87,18 @@ function OscillatorProblem(N::Int)::OscillatorProblem
     a_max = 0.3
 
     oscillator = OscillatorParameters(
-        id_r, id_v, id_aa, id_ar, id_l1aa, id_l1adiff, id_l1r,
-        ζ, ω0, a_db, a_max)
+        id_r,
+        id_v,
+        id_aa,
+        id_ar,
+        id_l1aa,
+        id_l1adiff,
+        id_l1r,
+        ζ,
+        ω0,
+        a_db,
+        a_max,
+    )
 
     # ..:: Trajectory ::..
     r0 = 1.0

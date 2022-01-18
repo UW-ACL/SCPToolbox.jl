@@ -45,11 +45,13 @@ function solve_lcvx(mdl::DoubleIntegratorParameters)::Solution
     Bp = mdl.Bp
     w = mdl.w
     s = mdl.s
-    dt = T/(N-1)
+    dt = T / (N - 1)
 
-    ocp = ConicProgram(nothing;
-                       solver=ECOS.Optimizer,
-                       solver_options=Dict("verbose"=>0))
+    ocp = ConicProgram(
+        nothing;
+        solver = ECOS.Optimizer,
+        solver_options = Dict("verbose" => 0),
+    )
 
     x = @new_variable(ocp, (2, N), "x")
     u = @new_variable(ocp, (1, N), "u")
@@ -57,49 +59,54 @@ function solve_lcvx(mdl::DoubleIntegratorParameters)::Solution
     σ² = @new_variable(ocp, (1, N), "σ²")
 
     @add_constraint(ocp, ZERO, "initial_condition", (x[:, 1],), begin
-                        local x0 = arg[1]
-                        x0
-                    end)
+        local x0 = arg[1]
+        x0
+    end)
 
     @add_constraint(ocp, ZERO, "final_condition", (x[:, end],), begin
-                        local xf = arg[1]
-                        xf-[s; 0]
-                    end)
+        local xf = arg[1]
+        xf - [s; 0]
+    end)
 
     for k = 1:N
         @add_constraint(ocp, NONPOS, "sigma_ub", (σ[k],), begin
-                            local σk = arg[1][1]
-                            σk-2
-                        end)
+            local σk = arg[1][1]
+            σk - 2
+        end)
         @add_constraint(ocp, NONPOS, "sigma_lb", (σ[k],), begin
-                            local σk = arg[1][1]
-                            1-σk
-                        end)
+            local σk = arg[1][1]
+            1 - σk
+        end)
         @add_constraint(ocp, L1, "lcvx_equality", (u[k], σ[k]), begin
-                            local uk, σk = arg
-                            vcat(σk, uk)
-                        end)
+            local uk, σk = arg
+            vcat(σk, uk)
+        end)
         @add_constraint(ocp, GEOM, "slack_squared", (σ[k], σ²[k]), begin
-                            local σk, σ²k = arg
-                            vcat(σk, σ²k, 1)
-                        end)
-        if k<N
-            @add_constraint(ocp, ZERO, "dynamics",
-                            (x[:, k+1], x[:, k], u[:, k], u[:, k+1]), begin
-                                local xn, x, u, un = arg
-                                xn-(A*x+Bm.*u+Bp.*un+w)
-                            end)
+            local σk, σ²k = arg
+            vcat(σk, σ²k, 1)
+        end)
+        if k < N
+            @add_constraint(
+                ocp,
+                ZERO,
+                "dynamics",
+                (x[:, k+1], x[:, k], u[:, k], u[:, k+1]),
+                begin
+                    local xn, x, u, un = arg
+                    xn - (A * x + Bm .* u + Bp .* un + w)
+                end
+            )
         end
     end
 
     @add_cost(ocp, (σ²,), begin
-                  local σ² = arg[1]
-                  sum(σ²)*dt
-              end)
+        local σ² = arg[1]
+        sum(σ²) * dt
+    end)
 
     status = solve!(ocp)
 
-    if status!=MOI.OPTIMAL
+    if status != MOI.OPTIMAL
         msg = @sprintf("Numerical solution error (%s)", status)
         throw(ErrorException(msg))
     end
@@ -137,11 +144,11 @@ function solve_mp(mdl::DoubleIntegratorParameters)::Solution
     f = mdl.f
     T = mdl.T
     s = mdl.s
-    runsim = (c,ts) -> mp_sim(f, T, s, c, ts)
+    runsim = (c, ts) -> mp_sim(f, T, s, c, ts)
     N_grid = 25
     tol_err = 1e-2
     max_iter = 10
-    if mdl.choice==1
+    if mdl.choice == 1
         c_range = [-3; -1]
         ts_range = [4.5; 5.5]
     else
@@ -163,7 +170,7 @@ function solve_mp(mdl::DoubleIntegratorParameters)::Solution
         # Evaluate errors for current grid of (c, ts)
         for j = 1:N_grid
             for i = 1:N_grid
-                out = runsim(c_grid[i, j], ts_grid[i, j]);
+                out = runsim(c_grid[i, j], ts_grid[i, j])
                 err_grid[i, j] = out[:err]
             end
         end
@@ -175,7 +182,7 @@ function solve_mp(mdl::DoubleIntegratorParameters)::Solution
         err_idx = argmin(err_grid_padded[:])
         err_min = err_grid_padded[err_idx]
         @printf("MP terminal error = %.3e\n", err_min)
-        if err_min<=tol_err
+        if err_min <= tol_err
             # Solution found
             c = c_grid_padded[err_idx]
             ts = ts_grid_padded[err_idx]
@@ -183,30 +190,30 @@ function solve_mp(mdl::DoubleIntegratorParameters)::Solution
         end
 
         # Set grid to neighborhood of current best (c, ts) values
-        ij = CartesianIndices((N_grid-2, N_grid-2))[err_idx]
+        ij = CartesianIndices((N_grid - 2, N_grid - 2))[err_idx]
         i, j = ij[1], ij[2]
         i += 1 # convert padded->not padded row index
         j += 1 # convert padded->not padded column index
         c_grid = LinRange(c_grid[i, j-1], c_grid[i, j+1], N_grid)
-        ts_grid = LinRange(ts_grid[i-1,j], ts_grid[i+1,j], N_grid)
+        ts_grid = LinRange(ts_grid[i-1, j], ts_grid[i+1, j], N_grid)
         c_grid = c_grid' .* ones(N_grid)
         ts_grid = ones(N_grid)' .* ts_grid
 
         # Update iteration counter
         iter += 1
-        if iter>max_iter
+        if iter > max_iter
             throw(ErrorException("failed to find a solution"))
         end
     end
 
     # Store the analytical optimal solution
-    out = runsim(c, ts);
-    t_mp = out[:t];
-    x_mp = out[:x];
-    p = c*(out[:t].-ts);
-    u_mp = fill(NaN, 1, length(t_mp));
+    out = runsim(c, ts)
+    t_mp = out[:t]
+    x_mp = out[:x]
+    p = c * (out[:t] .- ts)
+    u_mp = fill(NaN, 1, length(t_mp))
     for k = 1:length(t_mp)
-        u_mp[k] = mp_input(p[k]);
+        u_mp[k] = mp_input(p[k])
     end
     sol = Solution(t_mp, x_mp, u_mp)
 
@@ -226,16 +233,16 @@ Optimal control according to the maximum principle.
 """
 function mp_input(p::Float64)::Float64
 
-    if p>4
+    if p > 4
         u = 2
-    elseif p>=2 && p<=4
-        u = p/2
-    elseif p>=0 && p<2
+    elseif p >= 2 && p <= 4
+        u = p / 2
+    elseif p >= 0 && p < 2
         u = 1
-    elseif p>=-2 && p<0
+    elseif p >= -2 && p < 0
         u = -1
-    elseif p>=-4 && p<-2
-        u = p/2
+    elseif p >= -4 && p < -2
+        u = p / 2
     else
         u = -2
     end
@@ -261,21 +268,20 @@ Simulate the dynamics using a guess for the adjoint variable trajectory.
 function mp_sim(f::Function, T::Real, s::Real, c::Real, ts::Real)::Dict
 
     # Adjoint variable trajectory
-    p = t -> c*(t-ts)
+    p = t -> c * (t - ts)
 
     # Time intervals between input switches
-    t_crit = [ts+a/c for a in [4, 2, 0, -2, -4]]
-    filter!(τ->τ>=0 && τ<=T, t_crit)
+    t_crit = [ts + a / c for a in [4, 2, 0, -2, -4]]
+    filter!(τ -> τ >= 0 && τ <= T, t_crit)
     pushfirst!(t_crit, 0)
     push!(t_crit, T)
-    t_grid = [collect(LinRange(t_crit[i:i+1]..., 100))
-              for i=1:length(t_crit)-1]
+    t_grid = [collect(LinRange(t_crit[i:i+1]..., 100)) for i = 1:length(t_crit)-1]
 
     # Integrate for each time interval
     x = Matrix[]
     for i = 1:length(t_grid)
-        x0 = (i==1) ? zeros(2) : x[i-1][:, end]
-        push!(x, rk4((t, x)->f(t, x, mp_input(p(t))), x0, t_grid[i]; full=true))
+        x0 = (i == 1) ? zeros(2) : x[i-1][:, end]
+        push!(x, rk4((t, x) -> f(t, x, mp_input(p(t))), x0, t_grid[i]; full = true))
     end
 
     # Combine all into a single trajectory
@@ -284,9 +290,9 @@ function mp_sim(f::Function, T::Real, s::Real, c::Real, ts::Real)::Dict
 
     # Extract error at final time
     xf = x[:, end]
-    err = norm(xf-[s; 0]);
+    err = norm(xf - [s; 0])
 
-    out = Dict(:c=>c, :ts=>ts, :err=>err, :t=>t_grid, :x=>x);
+    out = Dict(:c => c, :ts => ts, :err => err, :t => t_grid, :x => x)
 
     return out
 end

@@ -18,8 +18,7 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 import JuMP: dual
 
-export value, name, dual, cone, lhs, jacobian, all_jacobians, kind,
-    variables, parameters
+export value, name, dual, cone, lhs, jacobian, all_jacobians, kind, variables, parameters
 
 # ..:: Globals ::..
 
@@ -68,7 +67,8 @@ struct ProgramFunction
         prog::AbstractConicProgram,
         x::VariableArgumentBlocks,
         p::ConstantArgumentBlocks,
-        f::Function)::ProgramFunction
+        f::Function,
+    )::ProgramFunction
 
         # Create the differentiable function wrapper
         xargs = length(x)
@@ -117,11 +117,12 @@ struct ConicConstraint
     # Returns
     - `finK`: the conic constraint.
     """
-    function ConicConstraint(f::ProgramFunction,
-                             kind::Union{SupportedCone, SupportedDualCone},
-                             prog::AbstractConicProgram;
-                             name::Types.Optional{
-                                 String}=nothing)::ConicConstraint
+    function ConicConstraint(
+        f::ProgramFunction,
+        kind::Union{SupportedCone,SupportedDualCone},
+        prog::AbstractConicProgram;
+        name::Types.Optional{String} = nothing,
+    )::ConicConstraint
 
         # Create the underlying JuMP constraint
         f_value = f()
@@ -158,17 +159,17 @@ data to the underlying `DifferentiableFunction`, which handles the computation.
 - `f`: the function value. The Jacobians can be queried later by using the
   `jacobian` function.
 """
-function (ProgFunc::ProgramFunction)(
-    ;jacobians::Bool=false,
-    scalar::Bool=false)::FunctionValueOutputType
+function (ProgFunc::ProgramFunction)(;
+    jacobians::Bool = false,
+    scalar::Bool = false,
+)::FunctionValueOutputType
 
     # Compute the input argument values
     x_input = [value(blk) for blk in ProgFunc.x]
     p_input = [value(blk) for blk in ProgFunc.p]
     args = vcat(x_input, p_input)
 
-    f_value = ProgFunc.f(args...; jacobians=jacobians,
-                         scalar=scalar) # Core call
+    f_value = ProgFunc.f(args...; jacobians = jacobians, scalar = scalar) # Core call
 
     return f_value
 end
@@ -176,9 +177,8 @@ end
 """
 Convenience methods that pass the calls down to `DifferentiableFunction`.
 """
-value(F::ProgramFunction; scalar::Bool=false) = value(F.f; scalar=scalar)
-jacobian(F::ProgramFunction,
-         key::JacobianKeys)::JacobianValueType = jacobian(F.f, key)
+value(F::ProgramFunction; scalar::Bool = false) = value(F.f; scalar = scalar)
+jacobian(F::ProgramFunction, key::JacobianKeys)::JacobianValueType = jacobian(F.f, key)
 all_jacobians(F::ProgramFunction)::JacobianDictType = all_jacobians(F.f)
 
 """ Convenience getters. """
@@ -219,10 +219,10 @@ The index numbers of the arguments.
 """
 function function_args_id(F::ProgramFunction, args::Symbol)::LocationIndices
     nargs = length(getfield(F, args))
-    if args==:x
+    if args == :x
         return 1:nargs
     else
-        return (1:nargs).+length(getfield(F, :x))
+        return (1:nargs) .+ length(getfield(F, :x))
     end
 end
 

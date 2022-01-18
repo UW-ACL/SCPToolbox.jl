@@ -45,7 +45,8 @@ mutable struct FunctionLinearCombination
     """
     function FunctionLinearCombination(
         f::ProgramFunction,
-        a::Types.RealTypes=1.0)::FunctionLinearCombination
+        a::Types.RealTypes = 1.0,
+    )::FunctionLinearCombination
 
         f_list = Vector{ProgramFunction}(undef, 1)
         a_list = Types.RealVector(undef, 1)
@@ -85,10 +86,12 @@ mutable struct QuadraticCost
     # Returns
     - `cost`: the newly created cost function object.
     """
-    function QuadraticCost(J::ProgramFunction,
-                           prog::AbstractConicProgram,
-                           a::Types.RealTypes=1.0;
-                           noupdate::Bool=false)::QuadraticCost
+    function QuadraticCost(
+        J::ProgramFunction,
+        prog::AbstractConicProgram,
+        a::Types.RealTypes = 1.0;
+        noupdate::Bool = false,
+    )::QuadraticCost
 
         # Initialize the function combination
         terms = FunctionLinearCombination(J, a)
@@ -115,9 +118,11 @@ Add a new function to the linear combination.
 - `f`: the new function to be added.
 - `a`: (optional) the coefficient multiplying this function. Default is 1.
 """
-function add!(F::FunctionLinearCombination,
-              f::ProgramFunction,
-              a::Types.RealTypes=1.0)::Nothing
+function add!(
+    F::FunctionLinearCombination,
+    f::ProgramFunction,
+    a::Types.RealTypes = 1.0,
+)::Nothing
     push!(F.f, f)
     push!(F.a, a)
     return nothing
@@ -138,12 +143,11 @@ Get the value of the function linear combination.
 # Returns
 - `val`: the function value.
 """
-function value(F::FunctionLinearCombination;
-               scalar::Bool=false)::FunctionValueOutputType
+function value(F::FunctionLinearCombination; scalar::Bool = false)::FunctionValueOutputType
     val = 0.0
     for i = 1:length(F)
-        a, f = F.a[i], value(F.f[i], scalar=scalar)
-        val += a*f
+        a, f = F.a[i], value(F.f[i], scalar = scalar)
+        val += a * f
     end
     return val
 end
@@ -161,9 +165,12 @@ Get the Jacobian `key` of the i-th term of the linear combination.
 # Returns
 - `jac`: the Jacobian.
 """
-function jacobian(F::FunctionLinearCombination, i::Int,
-                  key::JacobianKeys)::JacobianValueType
-    jac = F.a[i]*jacobian(F.f[i], key)
+function jacobian(
+    F::FunctionLinearCombination,
+    i::Int,
+    key::JacobianKeys,
+)::JacobianValueType
+    jac = F.a[i] * jacobian(F.f[i], key)
     return jac
 end
 
@@ -184,7 +191,7 @@ function all_jacobians(F::FunctionLinearCombination)::Vector{JacobianDictType}
     for i = 1:length(F)
         jacs[i] = copy(all_jacobians(F.f[i]))
         for (key, val) in jacs[i]
-            jacs[i][key] = F.a[i]*val
+            jacs[i][key] = F.a[i] * val
         end
     end
     return jacs
@@ -202,15 +209,16 @@ Evaluate the function linear combination. This calls the underlying
 # Returns
 - `bar`: description.
 """
-function (FuncLinComb::FunctionLinearCombination)(
-    ;jacobians::Bool=false,
-    scalar::Bool=false)::FunctionValueOutputType
+function (FuncLinComb::FunctionLinearCombination)(;
+    jacobians::Bool = false,
+    scalar::Bool = false,
+)::FunctionValueOutputType
 
     for i = 1:length(FuncLinComb)
-        FuncLinComb.f[i](jacobians=jacobians, scalar=scalar)
+        FuncLinComb.f[i](jacobians = jacobians, scalar = scalar)
     end
 
-    return value(FuncLinComb, scalar=scalar)
+    return value(FuncLinComb, scalar = scalar)
 end
 
 """
@@ -219,9 +227,9 @@ end
 Evaluate the cost function. This just passes the call to the underlying
 `FunctionLinearCombination`, so see its documentation.
 """
-function (J::QuadraticCost)(;jacobians::Bool=false)::FunctionValueOutputType
+function (J::QuadraticCost)(; jacobians::Bool = false)::FunctionValueOutputType
     terms = core_terms(J)
-    return terms(jacobians=jacobians, scalar=true)
+    return terms(jacobians = jacobians, scalar = true)
 end
 
 """
@@ -238,9 +246,7 @@ function for the associated `FunctionLinearCombination`.
 # Returns
 - `new_term`: the newly added quadratic cost term.
 """
-function add!(J::QuadraticCost,
-              f::ProgramFunction,
-              a::Types.RealTypes=1.0)::QuadraticCost
+function add!(J::QuadraticCost, f::ProgramFunction, a::Types.RealTypes = 1.0)::QuadraticCost
     add!(core_terms(J), f, a)
     update_jump_cost!(J)
     new_term = term(J, 0)
@@ -258,7 +264,7 @@ Update the underlying JuMP cost.
 function update_jump_cost!(J::QuadraticCost)::Nothing
     terms = core_terms(J)
     mdl = jump_model(J)
-    J_value = terms(scalar=true)
+    J_value = terms(scalar = true)
     set_objective_function(mdl, J_value)
     set_objective_sense(mdl, MOI.MIN_SENSE)
     return nothing
@@ -285,12 +291,12 @@ Get the i-th term of the cost. If zero or negative, count from the last term.
 """
 term(J::QuadraticCost, i::Int)::QuadraticCost = begin
     terms = core_terms(J)
-    if i>0
+    if i > 0
         f, a = terms.f[i], terms.a[i]
     else
         f, a = terms.f[end-i], terms.a[end-i]
     end
-    return QuadraticCost(f, J.prog[], a, noupdate=true)
+    return QuadraticCost(f, J.prog[], a, noupdate = true)
 end
 
 """
@@ -310,9 +316,9 @@ problem has been solved, return the cost value.
 - `val`: the cost value (a variable expression is not yet solved, or the
   optimal cost value if already solved).
 """
-function value(J::QuadraticCost; raw::Bool=false)::FunctionValueOutputType
-    val = value(core_terms(J); scalar=true)
-    if !raw && termination_status(jump_model(J))!=MOI.OPTIMIZE_NOT_CALLED
+function value(J::QuadraticCost; raw::Bool = false)::FunctionValueOutputType
+    val = value(core_terms(J); scalar = true)
+    if !raw && termination_status(jump_model(J)) != MOI.OPTIMIZE_NOT_CALLED
         val = value(val)
     end
     return val
@@ -321,8 +327,7 @@ end
 """ Get the current objective function jacobians. """
 jacobian(J::QuadraticCost, i::Int, key::JacobianKeys)::JacobianValueType =
     jacobian(core_terms(J), i, key)
-all_jacobians(J::QuadraticCost)::Vector{JacobianDictType} =
-    all_jacobians(core_terms(J))
+all_jacobians(J::QuadraticCost)::Vector{JacobianDictType} = all_jacobians(core_terms(J))
 
 """
     feasibility_cost(args...)

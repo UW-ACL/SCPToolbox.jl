@@ -20,8 +20,7 @@ import JuMP: value, name
 
 export ArgumentBlock, scale, perturbation, name
 
-export @scale, @perturb_free, @perturb_fix, @perturb_relative,
-    @perturb_absolute
+export @scale, @perturb_free, @perturb_fix, @perturb_relative, @perturb_absolute
 
 # ..:: Globals ::..
 
@@ -43,8 +42,8 @@ to find out the indices of the particular arguments within the total argument
 vector. This becomes important for creating the variation problem in the
 `vary!` function.
 """
-struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArgumentBlock{T, N}
-    value::BlockValue{T, N}       # The value of the block
+struct ArgumentBlock{T<:AtomicArgument,N} <: AbstractArgumentBlock{T,N}
+    value::BlockValue{T,N}       # The value of the block
     name::String                  # Argument name
     blid::Int                     # Block number in the argument
     elid::LocationIndices         # Element indices in the argument
@@ -69,34 +68,33 @@ struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArgumentBlock{T, N}
     """
     function ArgumentBlock(
         arg::AbstractArgument{T},
-        shape::NTuple{N, Int},
+        shape::NTuple{N,Int},
         blid::Int,
         elid1::Int,
-        name::String)::ArgumentBlock{
-            T, N} where {T<:AtomicArgument, N}
+        name::String,
+    )::ArgumentBlock{T,N} where {T<:AtomicArgument,N}
 
         # Initialize the value
-        if T<:AtomicVariable
-            value = Array{AtomicVariable, N}(undef, shape...)
-            populate!(value, jump_model(arg); name=name)
+        if T <: AtomicVariable
+            value = Array{AtomicVariable,N}(undef, shape...)
+            populate!(value, jump_model(arg); name = name)
         else
             value = fill(NaN, shape...)
         end
 
-        elid = (1:length(value)).+(elid1-1)
+        elid = (1:length(value)) .+ (elid1 - 1)
         arg_ref = Ref{AbstractArgument{T}}(arg)
         scale_ref = Ref{Scaling{N}}()
         preturb_ref = Ref{Perturbation{N}}()
 
-        blk = new{T, N}(value, name, blid, elid, scale_ref,
-                        preturb_ref, arg_ref)
+        blk = new{T,N}(value, name, blid, elid, scale_ref, preturb_ref, arg_ref)
 
         # Apply unit scaling (i.e. "no scaling")
         scale = Scaling(blk)
-        apply_scaling!(blk, scale; override=true)
+        apply_scaling!(blk, scale; override = true)
 
         # Set a free perturbation
-        set_perturbation!(blk, Inf; override=true)
+        set_perturbation!(blk, Inf; override = true)
 
         return blk
     end
@@ -117,8 +115,9 @@ struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArgumentBlock{T, N}
     - `sliced_block`: the sliced block.
     """
     function ArgumentBlock(
-        block::ArgumentBlock{T, N},
-        Id...)::ArgumentBlock{T} where {T<:AtomicArgument, N}
+        block::ArgumentBlock{T,N},
+        Id...,
+    )::ArgumentBlock{T} where {T<:AtomicArgument,N}
 
         # Slice the block value
         sliced_value = view(block.value, Id...)
@@ -126,7 +125,7 @@ struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArgumentBlock{T, N}
         # Get the element indices for the slice (which are a subset of the
         # original)
         sliced_elid = block.elid[LinearIndices(block.value)[Id...]]
-        if ndims(sliced_elid)<1
+        if ndims(sliced_elid) < 1
             sliced_elid = fill(sliced_elid)
         end
 
@@ -134,9 +133,15 @@ struct ArgumentBlock{T<:AtomicArgument, N} <: AbstractArgumentBlock{T, N}
         scale_ref = Ref{Scaling{K}}(scale(block)[Id...])
         perturb_ref = Ref{Perturbation{K}}(perturbation(block)[Id...])
 
-        sliced_block = new{T, K}(sliced_value, block.name, block.blid,
-                                 sliced_elid, scale_ref, perturb_ref,
-                                 block.arg)
+        sliced_block = new{T,K}(
+            sliced_value,
+            block.name,
+            block.blid,
+            sliced_elid,
+            scale_ref,
+            perturb_ref,
+            block.arg,
+        )
 
         return sliced_block
     end
@@ -151,12 +156,11 @@ Provide an interface to make `ArgumentBlock` behave like an array. See the
 Base.size(blk::ArgumentBlock) = size(blk.value)
 Base.getindex(blk::ArgumentBlock, I...) = ArgumentBlock(blk, I...)
 Base.view(blk::ArgumentBlock, I...) = ArgumentBlock(blk, I...)
-Base.setindex!(blk::ArgumentBlock{T},
-               v::V, i::Int) where {T, V} = blk.value[i] = v
-Base.setindex!(blk::ArgumentBlock{T}, v::V,
-               I::Vararg{Int, N}) where {T, V, N} = blk.value[I...] = v
+Base.setindex!(blk::ArgumentBlock{T}, v::V, i::Int) where {T,V} = blk.value[i] = v
+Base.setindex!(blk::ArgumentBlock{T}, v::V, I::Vararg{Int,N}) where {T,V,N} =
+    blk.value[I...] = v
 Base.collect(blk::ArgumentBlock) = [blk]
-Base.iterate(blk::ArgumentBlock, state::Int=1) = iterate(blk.value, state)
+Base.iterate(blk::ArgumentBlock, state::Int = 1) = iterate(blk.value, state)
 
 const BlockBroadcastStyle = Broadcast.ArrayStyle{ArgumentBlock}
 Broadcast.BroadcastStyle(::Type{<:ArgumentBlock}) = BlockBroadcastStyle()
@@ -164,7 +168,7 @@ Broadcast.broadcastable(blk::ArgumentBlock) = blk
 
 """ Get the kind of block (`VARIABLE` or `PARAMETER`). """
 function kind(::ArgumentBlock{T})::ArgumentKind where {T<:AtomicArgument}
-    if T<:AtomicVariable
+    if T <: AtomicVariable
         return VARIABLE
     else
         return PARAMETER
@@ -195,10 +199,11 @@ Apply new scaling to the argument block.
 - `override`: (optional) write over the existing scaling if true. You shouldn't
   use this if you want to update an existing scaling.
 """
-function apply_scaling!(blk::ArgumentBlock{T, N},
-                        scale::Scaling{N};
-                        override::Bool=false)::Nothing where {
-                            T<:AtomicArgument, N}
+function apply_scaling!(
+    blk::ArgumentBlock{T,N},
+    scale::Scaling{N};
+    override::Bool = false,
+)::Nothing where {T<:AtomicArgument,N}
     if override
         blk.scale[] = scale
     else
@@ -221,10 +226,11 @@ Apply new perturbation to the argument block.
 - `override`: (optional) write over the existing perturbation if true. You
   shouldn't use this if you want to update an existing perturbation.
 """
-function apply_perturbation!(blk::ArgumentBlock{T, N},
-                             perturb::Perturbation{N};
-                             override::Bool=false)::Nothing where {
-                                 T<:AtomicArgument, N}
+function apply_perturbation!(
+    blk::ArgumentBlock{T,N},
+    perturb::Perturbation{N};
+    override::Bool = false,
+)::Nothing where {T<:AtomicArgument,N}
     if override
         blk.perturb[] = perturb
     else
@@ -247,10 +253,11 @@ the hood".
 - `dil`: the scaling dilation.
 - `off`: the scaling offset.
 """
-function set_scale!(blk::ArgumentBlock,
-                    dil::Union{Real, RealArray},
-                    off::Types.Optional{Union{Real,
-                                              RealArray}}=nothing)::Nothing
+function set_scale!(
+    blk::ArgumentBlock,
+    dil::Union{Real,RealArray},
+    off::Types.Optional{Union{Real,RealArray}} = nothing,
+)::Nothing
     dil = (dil isa RealArray) ? dil : [dil]
     off = (isnothing(off) || off isa RealArray) ? off : [off]
     new_scaling = Scaling(blk, dil, off)
@@ -276,13 +283,15 @@ absolute (`ABSOLUTE`) or relative (`RELATIVE`).
 - `override`: (optional) write over the existing perturbation if true. You
   shouldn't use this if you want to update an existing perturbation.
 """
-function set_perturbation!(blk::ArgumentBlock,
-                           amount::Union{Real, RealArray},
-                           kind::Types.Optional{PerturbationKind}=nothing;
-                           override::Bool=false)::Nothing
-    if amount==0
+function set_perturbation!(
+    blk::ArgumentBlock,
+    amount::Union{Real,RealArray},
+    kind::Types.Optional{PerturbationKind} = nothing;
+    override::Bool = false,
+)::Nothing
+    if amount == 0
         new_perturb = Perturbation(blk, [FIXED])
-    elseif amount==Inf
+    elseif amount == Inf
         new_perturb = Perturbation(blk, [FREE])
     else
         if isnothing(kind)
@@ -291,8 +300,9 @@ function set_perturbation!(blk::ArgumentBlock,
             throw(err)
         end
 
-        if kind==FREE
-            msg = "FIXED or FREE perturbation incompatible with"*
+        if kind == FREE
+            msg =
+                "FIXED or FREE perturbation incompatible with" *
                 " non-Inf perturbation amounts"
             err = SCPError(0, SCP_BAD_ARGUMENT, msg)
             throw(err)
@@ -303,7 +313,7 @@ function set_perturbation!(blk::ArgumentBlock,
         new_perturb = Perturbation(blk, kind, amount)
     end
 
-    apply_perturbation!(blk, new_perturb; override=override)
+    apply_perturbation!(blk, new_perturb; override = override)
 
     return nothing
 end
@@ -341,13 +351,15 @@ Get the value of the block, optionally the raw pre-scaling value.
 # Returns
 - `val`: the block's value.
 """
-function value(blk::ArgumentBlock{T};
-               raw::Bool=false,
-               unscaled::Bool=false)::AbstractArray where T
+function value(
+    blk::ArgumentBlock{T};
+    raw::Bool = false,
+    unscaled::Bool = false,
+)::AbstractArray where {T}
 
-    if T<:AtomicVariable
+    if T <: AtomicVariable
         mdl = jump_model(blk) # The underlying optimization model
-        if raw || termination_status(mdl)==MOI.OPTIMIZE_NOT_CALLED
+        if raw || termination_status(mdl) == MOI.OPTIMIZE_NOT_CALLED
             # Optimization not yet performed, so return the variables
             # themselves
             val = blk.value
@@ -380,14 +392,14 @@ recursive function.
 # Keywords
 - `name`: the element base names.
 """
-function populate!(X, mdl::Model, sub::String=""; name::String="")::Nothing
-    if length(X)==1
-        full_name = isempty(sub) ? name : name*"["*sub[1:end-1]*"]"
-        X[1] = @variable(mdl, base_name=full_name)
+function populate!(X, mdl::Model, sub::String = ""; name::String = "")::Nothing
+    if length(X) == 1
+        full_name = isempty(sub) ? name : name * "[" * sub[1:end-1] * "]"
+        X[1] = @variable(mdl, base_name = full_name)
     else
-        for i=1:size(X, 1)
-            nsub = sub*string(i)*","
-            populate!(view(X, i, :), mdl, nsub; name=name)
+        for i = 1:size(X, 1)
+            nsub = sub * string(i) * ","
+            populate!(view(X, i, :), mdl, nsub; name = name)
         end
     end
     return nothing
@@ -417,11 +429,11 @@ implementation).
 - `bar`: description.
 """
 macro scale(blk, S, c)
-    :( set_scale!($(esc.([blk, S, c])...)) )
+    :(set_scale!($(esc.([blk, S, c])...)))
 end
 
 macro scale(blk, S)
-    :( set_scale!($(esc.([blk, S, nothing])...)) )
+    :(set_scale!($(esc.([blk, S, nothing])...)))
 end
 
 """
@@ -441,21 +453,21 @@ Set the perturbation amount for the block. These macros just wrap
   to fix a non-zero perturbation amount.
 """
 macro perturb_free(blk)
-    :( set_perturbation!($(esc(blk)), Inf) )
+    :(set_perturbation!($(esc(blk)), Inf))
 end
 
 macro perturb_fix(blk)
-    :( set_perturbation!($(esc(blk)), 0) )
+    :(set_perturbation!($(esc(blk)), 0))
 end
 
 macro perturb_fix(blk, amount)
-    :( set_perturbation!($(esc(blk)), $(esc(amount)), FIXED) )
+    :(set_perturbation!($(esc(blk)), $(esc(amount)), FIXED))
 end
 
 macro perturb_relative(blk, amount)
-    :( set_perturbation!($(esc(blk)), $(esc(amount)), RELATIVE) )
+    :(set_perturbation!($(esc(blk)), $(esc(amount)), RELATIVE))
 end
 
 macro perturb_absolute(blk, amount)
-    :( set_perturbation!($(esc(blk)), $(esc(amount)), ABSOLUTE) )
+    :(set_perturbation!($(esc(blk)), $(esc(amount)), ABSOLUTE))
 end

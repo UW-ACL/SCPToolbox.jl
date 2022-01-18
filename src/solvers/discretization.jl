@@ -52,22 +52,27 @@ mutable struct DLTV
     # Returns
     - `dyn`: the dynamics, with empty (undefined) matrices.
     """
-    function DLTV(nx::Int, nu::Int, np::Int, nvc::Int, N::Int,
-                    method::DiscretizationType)::DLTV
+    function DLTV(
+        nx::Int,
+        nu::Int,
+        np::Int,
+        nvc::Int,
+        N::Int,
+        method::DiscretizationType,
+    )::DLTV
 
-        if method==FOH
-            A = RealTensor(undef, nx, nx, N-1)
-            B = [RealTensor(undef, nx, nu, N-1),
-                 RealTensor(undef, nx, nu, N-1)]
-            F = RealTensor(undef, nx, np, N-1)
-            r = RealMatrix(undef, nx, N-1)
-            E = RealTensor(undef, nx, nvc, N-1)
-        elseif method==IMPULSE
-            A = RealTensor(undef, nx, nx, N-1)
-            B = [RealTensor(undef, nx, nu, N-1)]
-            F = RealTensor(undef, nx, np, N-1)
-            r = RealMatrix(undef, nx, N-1)
-            E = RealTensor(undef, nx, nvc, N-1)
+        if method == FOH
+            A = RealTensor(undef, nx, nx, N - 1)
+            B = [RealTensor(undef, nx, nu, N - 1), RealTensor(undef, nx, nu, N - 1)]
+            F = RealTensor(undef, nx, np, N - 1)
+            r = RealMatrix(undef, nx, N - 1)
+            E = RealTensor(undef, nx, nvc, N - 1)
+        elseif method == IMPULSE
+            A = RealTensor(undef, nx, nx, N - 1)
+            B = [RealTensor(undef, nx, nu, N - 1)]
+            F = RealTensor(undef, nx, np, N - 1)
+            r = RealMatrix(undef, nx, N - 1)
+            E = RealTensor(undef, nx, nvc, N - 1)
         end
 
         timing = 0.0
@@ -108,7 +113,8 @@ struct DiscretizationIndices
     function DiscretizationIndices(
         traj::TrajectoryProblem,
         E::RealMatrix,
-        method::DiscretizationType)::DiscretizationIndices
+        method::DiscretizationType,
+    )::DiscretizationIndices
 
         # Parameters
         nx = traj.nx
@@ -116,20 +122,20 @@ struct DiscretizationIndices
         np = traj.np
 
         # Build the indices
-        id_x  = (1:nx)
-        id_A  = id_x[end].+(1:nx*nx)
-        if method==FOH
+        id_x = (1:nx)
+        id_A = id_x[end] .+ (1:nx*nx)
+        if method == FOH
             id_B = Vector{IntRange}(undef, 2)
-            id_B[1] = id_A[end].+(1:nx*nu)
-            id_B[2] = id_B[1][end].+(1:nx*nu)
+            id_B[1] = id_A[end] .+ (1:nx*nu)
+            id_B[2] = id_B[1][end] .+ (1:nx*nu)
             id_B_end = id_B[2][end]
-        elseif method==IMPULSE
+        elseif method == IMPULSE
             id_B = Vector{IntRange}(undef, 0)
             id_B_end = id_A[end]
         end
-        id_S  = id_B_end.+(1:nx*np)
-        id_r  = id_S[end].+(1:nx)
-        id_E  = id_r[end].+(1:length(E))
+        id_S = id_B_end .+ (1:nx*np)
+        id_r = id_S[end] .+ (1:nx)
+        id_E = id_r[end] .+ (1:length(E))
         id_sz = length([id_x; id_A; vcat(id_B...); id_S; id_r; id_E])
 
         idcs = new(id_x, id_A, id_B, id_S, id_r, id_E, id_sz)
@@ -151,12 +157,10 @@ calculates the nonlinear propagation defects.
 - `ref`: reference solution about which to discretize.
 - `pbm`: the SCP problem definition.
 """
-function discretize!(
-    ref::SCPSubproblemSolution, pbm::AbstractSCPProblem)::Nothing
+function discretize!(ref::SCPSubproblemSolution, pbm::AbstractSCPProblem)::Nothing
 
     ref.dyn.timing = get_time()
-    derivs_assoc = Dict(FOH=>derivs_foh,
-                        IMPULSE=>derivs_impulse)
+    derivs_assoc = Dict(FOH => derivs_foh, IMPULSE => derivs_impulse)
 
     # Parameters
     traj = pbm.traj
@@ -177,21 +181,21 @@ function discretize!(
     # Propagate individually over each discrete-time interval
     for k = 1:N-1
         # Reset the state initial condition
-        if method==FOH
+        if method == FOH
             V0[idcs.x] = ref.xd[:, k]
-        elseif method==IMPULSE
+        elseif method == IMPULSE
             # Impulse-update the state
             tk = t[k]
             xk = ref.xd[:, k]
             uk = ref.ud[:, k]
-            xk_plus = xk+pbm.traj.f(tk, -k, xk, uk, ref.p)
+            xk_plus = xk + pbm.traj.f(tk, -k, xk, uk, ref.p)
             V0[idcs.x] = xk_plus
         end
 
         # Integrate
         f = (t, V) -> derivs(t, V, k, pbm, ref)
         t_subgrid = RealVector(LinRange(t[k], t[k+1], Nsub))
-        V = rk4(f, V0, t_subgrid; actions=traj.integ_actions)
+        V = rk4(f, V0, t_subgrid; actions = traj.integ_actions)
 
         # Set the dynamics update matrices encoded in V
         set_update_matrices(ref, V, k, pbm)
@@ -200,14 +204,14 @@ function discretize!(
         # later for the trust region update
         xV = V[idcs.x]
         x_next = ref.xd[:, k+1]
-        ref.defect[:, k] = x_next-xV
-        if norm(iSx*ref.defect[:, k], Inf) > pbm.pars.feas_tol
+        ref.defect[:, k] = x_next - xV
+        if norm(iSx * ref.defect[:, k], Inf) > pbm.pars.feas_tol
             ref.feas = false
         end
 
     end
 
-    ref.dyn.timing = (get_time()-ref.dyn.timing)/1e9
+    ref.dyn.timing = (get_time() - ref.dyn.timing) / 1e9
 
     return nothing
 end
@@ -228,11 +232,13 @@ discretization.
 # Returns
 - `dVdt`: the time derivative of V.
 """
-function derivs_foh(t::RealTypes,
-                    V::RealVector,
-                    k::Int,
-                    pbm::AbstractSCPProblem,
-                    ref::SCPSubproblemSolution)::RealVector
+function derivs_foh(
+    t::RealTypes,
+    V::RealVector,
+    k::Int,
+    pbm::AbstractSCPProblem,
+    ref::SCPSubproblemSolution,
+)::RealVector
     # Parameters
     nx = pbm.traj.nx
     t_span = pbm.common.t_grid[k:k+1]
@@ -243,31 +249,38 @@ function derivs_foh(t::RealTypes,
     u = linterp(t, ref.ud[:, k:k+1], t_span)
     p = ref.p
     Phi = reshape(V[idcs.A], (nx, nx))
-    σ_m = (t_span[2]-t)/(t_span[2]-t_span[1])
-    σ_p = (t-t_span[1])/(t_span[2]-t_span[1])
+    σ_m = (t_span[2] - t) / (t_span[2] - t_span[1])
+    σ_p = (t - t_span[1]) / (t_span[2] - t_span[1])
 
     # Compute the state time derivative and local linearization
     f = pbm.traj.f(t, k, x, u, p)
     A = pbm.traj.A(t, k, x, u, p)
     B = pbm.traj.B(t, k, x, u, p)
     F = pbm.traj.F(t, k, x, u, p)
-    B_m = σ_m*B
-    B_p = σ_p*B
-    r = f-A*x-B*u-F*p
+    B_m = σ_m * B
+    B_p = σ_p * B
+    r = f - A * x - B * u - F * p
     E = pbm.common.E
 
     # Compute the running derivatives for the discrete-time state update
     # matrices
-    iPhi = Phi\I(nx)
-    dPhidt = A*Phi
-    dBmdt = iPhi*B_m
-    dBpdt = iPhi*B_p
-    dFdt = iPhi*F
-    drdt = iPhi*r
-    dEdt = iPhi*E
+    iPhi = Phi \ I(nx)
+    dPhidt = A * Phi
+    dBmdt = iPhi * B_m
+    dBpdt = iPhi * B_p
+    dFdt = iPhi * F
+    drdt = iPhi * r
+    dEdt = iPhi * E
 
-    dVdt = [f; vec(dPhidt); vec(dBmdt); vec(dBpdt);
-            vec(dFdt); drdt; vec(dEdt)]
+    dVdt = [
+        f
+        vec(dPhidt)
+        vec(dBmdt)
+        vec(dBpdt)
+        vec(dFdt)
+        drdt
+        vec(dEdt)
+    ]
 
     return dVdt
 end
@@ -288,11 +301,13 @@ discretization.
 # Returns
 - `dVdt`: the time derivative of V.
 """
-function derivs_impulse(t::RealTypes,
-                        V::RealVector,
-                        k::Int,
-                        pbm::AbstractSCPProblem,
-                        ref::SCPSubproblemSolution)::RealVector
+function derivs_impulse(
+    t::RealTypes,
+    V::RealVector,
+    k::Int,
+    pbm::AbstractSCPProblem,
+    ref::SCPSubproblemSolution,
+)::RealVector
     # Parameters
     nx = pbm.traj.nx
     nu = pbm.traj.nu
@@ -308,16 +323,16 @@ function derivs_impulse(t::RealTypes,
     f = pbm.traj.f(t, k, x, u0, p)
     A = pbm.traj.A(t, k, x, u0, p)
     F = pbm.traj.F(t, k, x, u0, p)
-    r = f-A*x-F*p
+    r = f - A * x - F * p
     E = pbm.common.E
 
     # Compute the running derivatives for the discrete-time state update
     # matrices
-    iPhi = Phi\I(nx)
-    dPhidt = A*Phi
-    dFdt = iPhi*F
-    drdt = iPhi*r
-    dEdt = iPhi*E
+    iPhi = Phi \ I(nx)
+    dPhidt = A * Phi
+    dFdt = iPhi * F
+    drdt = iPhi * r
+    dEdt = iPhi * E
 
     dVdt = [f; vec(dPhidt); vec(dFdt); drdt; vec(dEdt)]
 
@@ -337,8 +352,11 @@ The the `k`th stage update matrices for the discrete linear time varying system
 - `pbm`: the SCP problem definition.
 """
 function set_update_matrices(
-    ref::SCPSubproblemSolution, V::RealVector, k::Int,
-    pbm::AbstractSCPProblem)::Nothing
+    ref::SCPSubproblemSolution,
+    V::RealVector,
+    k::Int,
+    pbm::AbstractSCPProblem,
+)::Nothing
 
     # Parameters
     traj = pbm.traj
@@ -352,7 +370,7 @@ function set_update_matrices(
 
     # Get the raw RK4 results
     AV = V[idcs.A]
-    if method==FOH
+    if method == FOH
         BV = [V[idcs_Bi] for idcs_Bi in idcs.B]
     end
     FV = V[idcs.F]
@@ -361,19 +379,19 @@ function set_update_matrices(
 
     # Extract the discrete-time update matrices for this time interval
     A_k = reshape(AV, (nx, nx))
-    if method==FOH
-        B_k = [A_k*reshape(BV_i, (nx, nu)) for BV_i in BV]
-    elseif method==IMPULSE
+    if method == FOH
+        B_k = [A_k * reshape(BV_i, (nx, nu)) for BV_i in BV]
+    elseif method == IMPULSE
         tk = pbm.common.t_grid[k]
         xk = ref.xd[:, k]
         uk = ref.ud[:, k]
         p = ref.p
         Btk = pbm.traj.B(tk, -k, xk, uk, p)
-        B_k = [A_k*Btk]
+        B_k = [A_k * Btk]
     end
-    F_k = A_k*reshape(FV, (nx, np))
-    r_k = A_k*rV
-    E_k = A_k*reshape(EV, sz_E)
+    F_k = A_k * reshape(FV, (nx, np))
+    r_k = A_k * rV
+    E_k = A_k * reshape(EV, sz_E)
 
     # Save the discrete-time update matrices
     dyn.A[:, :, k] = A_k
@@ -403,9 +421,15 @@ Impose the `k`th-stage state update constraint for the dynamics `dyn`. By the
 - `dyn`: the dynamics update matrices object.
 - `prg`: the conic optimization problem object to which to add the constraint.
 """
-function state_update!(k::Int, x::VarArgBlk, u::VarArgBlk, p::VarArgBlk,
-                       v::Optional{VarArgBlk}, dyn::DLTV,
-                       prg::ConicProgram)::Nothing
+function state_update!(
+    k::Int,
+    x::VarArgBlk,
+    u::VarArgBlk,
+    p::VarArgBlk,
+    v::Optional{VarArgBlk},
+    dyn::DLTV,
+    prg::ConicProgram,
+)::Nothing
 
     novc = isnothing(v)
 
@@ -417,39 +441,55 @@ function state_update!(k::Int, x::VarArgBlk, u::VarArgBlk, p::VarArgBlk,
     r = dyn.r[:, k]
     E = dyn.E[:, :, k]
 
-    if dyn.method==FOH
+    if dyn.method == FOH
         uk, ukp1 = u[:, k], u[:, k+1]
         if novc
             @add_constraint(
-                prg, ZERO, "dynamics",
-                (xkp1, xk, uk, ukp1, p), begin # Value
+                prg,
+                ZERO,
+                "dynamics",
+                (xkp1, xk, uk, ukp1, p),
+                begin # Value
                     local xkp1, xk, uk, ukp1, p = arg
-                    xkp1-(A*xk+B[1]*uk+B[2]*ukp1+F*p+r)
-                end)
+                    xkp1 - (A * xk + B[1] * uk + B[2] * ukp1 + F * p + r)
+                end
+            )
         else
             @add_constraint(
-                prg, ZERO, "dynamics",
-                (xkp1, xk, uk, ukp1, p, vdk), begin # Value
+                prg,
+                ZERO,
+                "dynamics",
+                (xkp1, xk, uk, ukp1, p, vdk),
+                begin # Value
                     local xkp1, xk, uk, ukp1, p, vdk = arg
-                    xkp1-(A*xk+B[1]*uk+B[2]*ukp1+F*p+r+E*vdk)
-                end)
+                    xkp1 - (A * xk + B[1] * uk + B[2] * ukp1 + F * p + r + E * vdk)
+                end
+            )
         end
-    elseif dyn.method==IMPULSE
+    elseif dyn.method == IMPULSE
         uk = u[:, k]
         if novc
             @add_constraint(
-                prg, ZERO, "dynamics",
-                (xkp1, xk, uk, p), begin # Value
+                prg,
+                ZERO,
+                "dynamics",
+                (xkp1, xk, uk, p),
+                begin # Value
                     local xkp1, xk, uk, p = arg
-                    xkp1-(A*xk+B[1]*uk+F*p+r)
-                end)
+                    xkp1 - (A * xk + B[1] * uk + F * p + r)
+                end
+            )
         else
             @add_constraint(
-                prg, ZERO, "dynamics",
-                (xkp1, xk, uk, p, vdk), begin # Value
+                prg,
+                ZERO,
+                "dynamics",
+                (xkp1, xk, uk, p, vdk),
+                begin # Value
                     local xkp1, xk, uk, p, vdk = arg
-                    xkp1-(A*xk+B[1]*uk+F*p+r+E*vdk)
-                end)
+                    xkp1 - (A * xk + B[1] * uk + F * p + r + E * vdk)
+                end
+            )
         end
     end
 
@@ -472,9 +512,11 @@ continuous-time state trajectory that can be queried as `x(t)`.
 # Returns
 - `xc`: the continuous-time state trajectory.
 """
-function propagate(sol::SCPSubproblemSolution,
-                   pbm::AbstractSCPProblem;
-                   res::Int=1000)::Trajectory
+function propagate(
+    sol::SCPSubproblemSolution,
+    pbm::AbstractSCPProblem;
+    res::Int = 1000,
+)::Trajectory
 
     # Parameters
     pars = pbm.pars
@@ -485,19 +527,18 @@ function propagate(sol::SCPSubproblemSolution,
     ud = sol.ud
     p = sol.p
 
-    k = (t) -> max(floor(Int, t/(N-1))+1, N)
+    k = (t) -> max(floor(Int, t / (N - 1)) + 1, N)
     dynamics = (t, u, x) -> pbm.traj.f(t, k(t), x, u, p)
 
-    if method==FOH
+    if method == FOH
         tc = RealVector(LinRange(0.0, 1.0, res))
         uc = Trajectory(td, ud, :linear)
         F = (t, x) -> dynamics(t, sample(uc, t), x)
-        xc_vals = rk4(F, xd[:, 1], tc; full=true,
-                      actions=pbm.traj.integ_actions)
+        xc_vals = rk4(F, xd[:, 1], tc; full = true, actions = pbm.traj.integ_actions)
         xc = Trajectory(tc, xc_vals, :linear)
-    elseif method==IMPULSE
+    elseif method == IMPULSE
         δt = sqrt(eps()) # Tiny offset of the "impulse duration"
-        subres = ceil(Int, res/(N-1)) # Number of nodes per interval
+        subres = ceil(Int, res / (N - 1)) # Number of nodes per interval
         tc_intvl = Vector{RealVector}(undef, N)
         xc_intvl = Vector{RealMatrix}(undef, N)
         tc_intvl[1] = [0.0]
@@ -508,8 +549,8 @@ function propagate(sol::SCPSubproblemSolution,
             x0 += pbm.traj.f(td[k], -k, xd[:, k], ud[:, k], p)
             u_idle = zeros(pbm.traj.nu)
             F = (t, x) -> dynamics(t, u_idle, x)
-            xc_intvl[k+1] = rk4(F, x0, tc_intvl[k+1]; full=true,
-                                actions=pbm.traj.integ_actions)
+            xc_intvl[k+1] =
+                rk4(F, x0, tc_intvl[k+1]; full = true, actions = pbm.traj.integ_actions)
             tc_intvl[k+1][1] += δt
         end
         tc = vcat(tc_intvl...)

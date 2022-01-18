@@ -45,7 +45,8 @@ struct ContinuousTimeTrajectory
     function ContinuousTimeTrajectory(
         t::RealVector,
         x::RealArray,
-        interp::Symbol)::ContinuousTimeTrajectory
+        interp::Symbol,
+    )::ContinuousTimeTrajectory
 
         if !(interp in [:linear, :zoh, :impulse])
             err = ArgumentError("unknown trajectory interpolation type.")
@@ -67,14 +68,13 @@ end # struct
 # Returns
 - `x`: the trajectory value at time t.
 """
-function sample(traj::ContinuousTimeTrajectory,
-                t::RealTypes)::Union{RealTypes, RealArray}
+function sample(traj::ContinuousTimeTrajectory, t::RealTypes)::Union{RealTypes,RealArray}
 
-    if traj.interp==:linear
+    if traj.interp == :linear
         x = linterp(t, traj.x, traj.t)
-    elseif traj.interp==:zoh
+    elseif traj.interp == :zoh
         x = zohinterp(t, traj.x, traj.t)
-    elseif traj.interp==:impulse
+    elseif traj.interp == :impulse
         x = diracinterp(t, traj.x, traj.t)
     end
 

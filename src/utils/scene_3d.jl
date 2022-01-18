@@ -33,8 +33,8 @@ abstract type AbstractObject3D end
 const IntMatrix = Matrix{Int}
 const RealTensor = Types.RealTensor
 const OwnerNode{T} = Optional{TreeNode{T}}
-const MeshColorSpec = Union{String, Vector{String}}
-const MeshWidthSpec = Union{RealValue, RealVector}
+const MeshColorSpec = Union{String,Vector{String}}
+const MeshWidthSpec = Union{RealValue,RealVector}
 
 """
 List of available frames to reference to:
@@ -67,8 +67,7 @@ Types.TreeCompatibilityTrait(::Type{<:AbstractObject3D}) = IsTreeCompatible()
 Types.owner(x::AbstractObject3D) = begin
     node = x.scene_properties.node
     if isnothing(node)
-        msg = @sprintf("Object %s has not been associated with a tree node",
-                       name(x))
+        msg = @sprintf("Object %s has not been associated with a tree node", name(x))
         throw(ErrorException(msg))
     end
     return node
@@ -116,13 +115,13 @@ PoseTrait(::Type{<:AbstractObject3D}) = HasGlobalPose()
 
 """ Check if an object has a global pose. """
 has_global_pose(x) = has_global_pose(PoseTrait(x), x)
-has_global_pose(::Union{HasGlobalPose, HasLocalPose}, x) = true
+has_global_pose(::Union{HasGlobalPose,HasLocalPose}, x) = true
 has_global_pose(::NoPose, x) = false
 
 """ Check if an object has a local pose. """
 has_local_pose(x) = has_local_pose(PoseTrait(x), x)
 has_local_pose(::HasLocalPose, x) = true
-has_local_pose(::Union{NoPose, HasGlobalPose}, x) = false
+has_local_pose(::Union{NoPose,HasGlobalPose}, x) = false
 
 """
     get_pose(x[, frame])
@@ -141,7 +140,7 @@ Get the pose of an object. `frame` specifies whether you want the pose of the
 # Returns
 - `pose`: a homogeneous transformation matrix that defines the relative pose.
 """
-get_pose(x, frame::SceneFrame=Local) = begin
+get_pose(x, frame::SceneFrame = Local) = begin
     return get_pose(PoseTrait(x), x, frame)
 end
 
@@ -150,11 +149,11 @@ get_pose(::NoPose, x::T, frame::SceneFrame) where {T} = begin
     throw(ArgumentError(msg))
 end
 
-get_pose(::HasGlobalPose, x, frame::SceneFrame) = (frame==Body) ? homtransf() :
-    x.scene_properties.pose
+get_pose(::HasGlobalPose, x, frame::SceneFrame) =
+    (frame == Body) ? homtransf() : x.scene_properties.pose
 
-get_pose(::HasLocalPose, x, frame::SceneFrame) = (frame==Body) ? x.local_pose :
-    x.scene_properties.pose
+get_pose(::HasLocalPose, x, frame::SceneFrame) =
+    (frame == Body) ? x.local_pose : x.scene_properties.pose
 
 """
     update_pose!(x, value[; frame, mode, reset])
@@ -174,11 +173,14 @@ Update the pose of an object's frame.
 - `reset`: (optional) whether to hard-reset the pose to `value`, or to update
   it according to `mode`.
 """
-function update_pose!(x, value::RealMatrix;
-                      frame::SceneFrame=Local,
-                      mode::PoseUpdateMode=Intrinsic,
-                      reset::Bool=false)::Nothing
-    @assert size(value)==(4, 4)
+function update_pose!(
+    x,
+    value::RealMatrix;
+    frame::SceneFrame = Local,
+    mode::PoseUpdateMode = Intrinsic,
+    reset::Bool = false,
+)::Nothing
+    @assert size(value) == (4, 4)
     update_pose!(PoseTrait(x), x, value, frame, mode, reset)
 end
 
@@ -187,16 +189,22 @@ update_pose!(::NoPose, x::T, value, frame, mode, reset) where {T} = begin
     throw(ArgumentError(msg))
 end
 
-function update_pose!(pose_trait::Union{HasGlobalPose, HasLocalPose},
-                      x::AbstractObject3D, value, frame, mode, reset)::Nothing
+function update_pose!(
+    pose_trait::Union{HasGlobalPose,HasLocalPose},
+    x::AbstractObject3D,
+    value,
+    frame,
+    mode,
+    reset,
+)::Nothing
     if reset
         H = value
     else
         H = get_pose(x, frame)
-        H = (mode==Intrinsic) ? H*value : value*H
+        H = (mode == Intrinsic) ? H * value : value * H
     end
 
-    if frame==Local || pose_trait isa HasGlobalPose
+    if frame == Local || pose_trait isa HasGlobalPose
         x.scene_properties.pose = H
     else
         x.local_pose = H
@@ -272,23 +280,33 @@ mutable struct Mesh3D <: AbstractObject3D
     # Returns
     - `obj`: the newly created mesh object.
     """
-    function Mesh3D(V::RealMatrix,
-                    F::IntMatrix,
-                    N::Optional{RealMatrix}=nothing;
-                    name::String="mesh",
-                    face_color::MeshColorSpec="none",
-                    edge_color::MeshColorSpec="black",
-                    edge_width::MeshWidthSpec=0.1)::Mesh3D
+    function Mesh3D(
+        V::RealMatrix,
+        F::IntMatrix,
+        N::Optional{RealMatrix} = nothing;
+        name::String = "mesh",
+        face_color::MeshColorSpec = "none",
+        edge_color::MeshColorSpec = "black",
+        edge_width::MeshWidthSpec = 0.1,
+    )::Mesh3D
 
-        @assert !(face_color isa Vector) || length(face_color)==size(F, 2)
-        @assert !(edge_color isa Vector) || length(edge_color)==size(F, 2)
-        @assert !(edge_width isa Vector) || length(edge_width)==size(F, 2)
+        @assert !(face_color isa Vector) || length(face_color) == size(F, 2)
+        @assert !(edge_color isa Vector) || length(edge_color) == size(F, 2)
+        @assert !(edge_width isa Vector) || length(edge_width) == size(F, 2)
 
         default_properties = SceneProperties{Mesh3D}(name)
         default_local_pose = homtransf()
 
-        obj = new(V, F, N, face_color, edge_color, edge_width,
-                  default_local_pose, default_properties)
+        obj = new(
+            V,
+            F,
+            N,
+            face_color,
+            edge_color,
+            edge_width,
+            default_local_pose,
+            default_properties,
+        )
 
         return obj
     end
@@ -307,16 +325,25 @@ mutable struct Mesh3D <: AbstractObject3D
     # Returns
     - `obj`: the newly created mesh object.
     """
-    function Mesh3D(filepath::String;
-                    name::String="mesh",
-                    face_color::MeshColorSpec="none",
-                    edge_color::MeshColorSpec="black",
-                    edge_width::MeshWidthSpec=0.1)::Mesh3D
+    function Mesh3D(
+        filepath::String;
+        name::String = "mesh",
+        face_color::MeshColorSpec = "none",
+        edge_color::MeshColorSpec = "black",
+        edge_width::MeshWidthSpec = 0.1,
+    )::Mesh3D
 
         V, F, N = load_wavefront(filepath)
 
-        obj = Mesh3D(V, F, N, name=name, face_color=face_color,
-                     edge_color=edge_color, edge_width=edge_width)
+        obj = Mesh3D(
+            V,
+            F,
+            N,
+            name = name,
+            face_color = face_color,
+            edge_color = edge_color,
+            edge_width = edge_width,
+        )
 
         return obj
     end
@@ -353,17 +380,18 @@ mutable struct Camera3D <: AbstractObject3D
     # Returns
     - `camera`: the camera object.
     """
-    function Camera3D(; fovy::Real=25,
-                      aspect::Real=1,
-                      znear::Real=1,
-                      zfar::Real=100,
-                      name::String="camera")::Camera3D
+    function Camera3D(;
+        fovy::Real = 25,
+        aspect::Real = 1,
+        znear::Real = 1,
+        zfar::Real = 100,
+        name::String = "camera",
+    )::Camera3D
 
         default_properties = SceneProperties{Camera3D}(name)
-        default_local_pose = homtransf(pitch=180)
+        default_local_pose = homtransf(pitch = 180)
 
-        camera = new(fovy, aspect, znear, zfar, default_local_pose,
-                     default_properties)
+        camera = new(fovy, aspect, znear, zfar, default_local_pose, default_properties)
 
         return camera
     end
@@ -402,10 +430,12 @@ mutable struct Axis3D <: AbstractObject3D
     # Returns
     - `axis`: the new axis object.
     """
-    function Axis3D(; name::String="axis",
-                    visible::Bool=false,
-                    axis_length::RealValue=1.0,
-                    axis_width::RealValue=0.05)::Axis3D
+    function Axis3D(;
+        name::String = "axis",
+        visible::Bool = false,
+        axis_length::RealValue = 1.0,
+        axis_width::RealValue = 0.05,
+    )::Axis3D
 
         default_properties = SceneProperties{Axis3D}(name)
 
@@ -438,12 +468,10 @@ mutable struct Light3D <: AbstractObject3D
     # Returns
     - `light`: the newly created light source.
     """
-    function Light3D(az::RealValue,
-                     el::RealValue;
-                     name::String="light")::Light3D
+    function Light3D(az::RealValue, el::RealValue; name::String = "light")::Light3D
 
-        @assert az>=0 && az<=360
-        @assert el>=0 && el<=90
+        @assert az >= 0 && az <= 360
+        @assert el >= 0 && el <= 90
 
         default_properties = SceneProperties{Light3D}(name)
 
@@ -480,7 +508,7 @@ mutable struct Scene3D
     """
     function Scene3D()::Scene3D
 
-        world_axis = Axis3D(name="cs_world")
+        world_axis = Axis3D(name = "cs_world")
         default_scene = TreeNode(world_axis)
         set_owner(world_axis, default_scene)
 
@@ -546,23 +574,23 @@ function MeshAxis3D(axis::Axis3D)::Mesh3D
 
     # Generate mesh along +y
     Vy, Fy = make_x_axis_mesh(axis.axis_width, axis.axis_length)
-    Vy = homrot(scene_yaw(90))*Vy
+    Vy = homrot(scene_yaw(90)) * Vy
     Fy .+= size(Vx, 2)
     fcy = repeat([Green], size(Fy, 2))
 
     # Generate mesh along +z
     Vz, Fz = make_x_axis_mesh(axis.axis_width, axis.axis_length)
-    Vz = homrot(scene_pitch(-90))*Vz
-    Fz .+= size(Vx, 2)+size(Vy, 2)
+    Vz = homrot(scene_pitch(-90)) * Vz
+    Fz .+= size(Vx, 2) + size(Vy, 2)
     fcz = repeat([Blue], size(Fz, 2))
 
     # Concatenate meshes
-    V = cat(Vx, Vy, Vz, dims=2)
-    F = cat(Fx, Fy, Fz, dims=2)
-    fc = cat(fcx, fcy, fcz, dims=1)
+    V = cat(Vx, Vy, Vz, dims = 2)
+    F = cat(Fx, Fy, Fz, dims = 2)
+    fc = cat(fcx, fcy, fcz, dims = 1)
 
     # Create mesh object
-    axis_mesh = Mesh3D(V, F, face_color=fc, edge_color="none", edge_width=0)
+    axis_mesh = Mesh3D(V, F, face_color = fc, edge_color = "none", edge_width = 0)
 
     return axis_mesh
 end
@@ -586,26 +614,28 @@ Generate a spherical mesh of a given radius.
 # Returns
 - `sphere`: the sphere `Mesh3D` object.
 """
-function Sphere3D(r::Real;
-                  az::Int=30,
-                  el::Int=20,
-                  name::String="sphere",
-                  face_color::MeshColorSpec="none",
-                  edge_color::MeshColorSpec="black",
-                  edge_width::MeshWidthSpec=0.1)::Mesh3D
+function Sphere3D(
+    r::Real;
+    az::Int = 30,
+    el::Int = 20,
+    name::String = "sphere",
+    face_color::MeshColorSpec = "none",
+    edge_color::MeshColorSpec = "black",
+    edge_width::MeshWidthSpec = 0.1,
+)::Mesh3D
 
     # Parameters
-    az_vals = LinRange(0, 2*pi, az+1)
-    el_vals = LinRange(-pi/2, pi/2, el)
-    coord = (el, az) -> [r*cos(el)*cos(az); r*cos(el)*sin(az); r*sin(el)]
+    az_vals = LinRange(0, 2 * pi, az + 1)
+    el_vals = LinRange(-pi / 2, pi / 2, el)
+    coord = (el, az) -> [r * cos(el) * cos(az); r * cos(el) * sin(az); r * sin(el)]
 
     # Generate the vertices
-    V = RealMatrix(undef, 3, 2+(el-2)*az)
-    V2I = Dict{RealVector, Int}()
+    V = RealMatrix(undef, 3, 2 + (el - 2) * az)
+    V2I = Dict{RealVector,Int}()
     k = 1
     for i = 1:el
-        if i==1 || i==el
-            V[:, k] = ((i==1) ? -1 : 1)*[0; 0; r]
+        if i == 1 || i == el
+            V[:, k] = ((i == 1) ? -1 : 1) * [0; 0; r]
             V2I[V[:, k]] = k
             k += 1
         else
@@ -622,27 +652,27 @@ function Sphere3D(r::Real;
     # Generate the faces
     F = Vector{Types.IntVector}(undef, 0)
     for i = 2:el
-        if i==2
+        if i == 2
             vbot = V2I[-1*[0; 0; r]]
             for j = 1:az
-                jn = (j==az) ? 1 : j+1
+                jn = (j == az) ? 1 : j + 1
                 v3 = V2I[coord(el_vals[i], az_vals[jn])]
                 v4 = V2I[coord(el_vals[i], az_vals[j])]
                 push!(F, [vbot; v3; v4])
             end
-        elseif i==el
+        elseif i == el
             vtop = V2I[[0; 0; r]]
-            ip = i-1
+            ip = i - 1
             for j = 1:az
-                jn = (j==az) ? 1 : j+1
+                jn = (j == az) ? 1 : j + 1
                 v3 = V2I[coord(el_vals[ip], az_vals[jn])]
                 v4 = V2I[coord(el_vals[ip], az_vals[j])]
                 push!(F, [v4; v3; vtop])
             end
         else
-            ip = i-1
+            ip = i - 1
             for j = 1:az
-                jn = (j==az) ? 1 : j+1
+                jn = (j == az) ? 1 : j + 1
                 v1 = V2I[coord(el_vals[ip], az_vals[j])]
                 v2 = V2I[coord(el_vals[ip], az_vals[jn])]
                 v3 = V2I[coord(el_vals[i], az_vals[jn])]
@@ -655,11 +685,14 @@ function Sphere3D(r::Real;
     F = hcat(F...)
 
     # Make the mesh object
-    sphere = Mesh3D(V, F,
-                    name=name,
-                    face_color=face_color,
-                    edge_color=edge_color,
-                    edge_width=edge_width)
+    sphere = Mesh3D(
+        V,
+        F,
+        name = name,
+        face_color = face_color,
+        edge_color = edge_color,
+        edge_width = edge_width,
+    )
 
     return sphere
 end
@@ -681,21 +714,23 @@ Generate a straight line mesh.
 # Returns
 - `line`: the line `Mesh3D` object.
 """
-function Line3D(v1::RealVector,
-                v2::RealVector,
-                nseg::Int=100;
-                name::String="sphere",
-                edge_color::MeshColorSpec="black",
-                edge_width::MeshWidthSpec=0.1)
+function Line3D(
+    v1::RealVector,
+    v2::RealVector,
+    nseg::Int = 100;
+    name::String = "sphere",
+    edge_color::MeshColorSpec = "black",
+    edge_width::MeshWidthSpec = 0.1,
+)
 
     # Parameters
-    vx = LinRange(v1[1], v2[1], nseg+1)
-    vy = LinRange(v1[2], v2[2], nseg+1)
-    vz = LinRange(v1[3], v2[3], nseg+1)
+    vx = LinRange(v1[1], v2[1], nseg + 1)
+    vy = LinRange(v1[2], v2[2], nseg + 1)
+    vz = LinRange(v1[3], v2[3], nseg + 1)
 
     # Generate the vertices
-    V = RealMatrix(undef, 3, nseg+1)
-    V2I = Dict{RealVector, Int}()
+    V = RealMatrix(undef, 3, nseg + 1)
+    V2I = Dict{RealVector,Int}()
     k = 1
     for i = 1:nseg+1
         V[:, k] = [vx[i]; vy[i]; vz[i]]
@@ -713,10 +748,7 @@ function Line3D(v1::RealVector,
     F = hcat(F...)
 
     # Make the mesh object
-    line = Mesh3D(V, F,
-                  name=name,
-                  edge_color=edge_color,
-                  edge_width=edge_width)
+    line = Mesh3D(V, F, name = name, edge_color = edge_color, edge_width = edge_width)
 
     return line
 end
@@ -738,36 +770,35 @@ Make the vertex and face arrays for an axis aligned with the x axis.
 - `V`: the vertex matrix.
 - `F`: the face association matrix.
 """
-function make_x_axis_mesh(thickness::RealValue,
-                          length::RealValue;
-                          resol::Int=50)::Tuple{RealMatrix, IntMatrix}
+function make_x_axis_mesh(
+    thickness::RealValue,
+    length::RealValue;
+    resol::Int = 50,
+)::Tuple{RealMatrix,IntMatrix}
 
-    ymin, ymax = -thickness/2, thickness/2
-    zmin, zmax = -thickness/2, thickness/2
+    ymin, ymax = -thickness / 2, thickness / 2
+    zmin, zmax = -thickness / 2, thickness / 2
     xgrid = LinRange(0, length, resol)
 
     # Generate the vertices
-    V = RealMatrix(undef, 3, 4*resol)
-    V2I = Dict{RealVector, Int}()
+    V = RealMatrix(undef, 3, 4 * resol)
+    V2I = Dict{RealVector,Int}()
     k = 0
-    for i=1:resol
+    for i = 1:resol
         x = xgrid[i]
-        v = [[x; ymin; zmin],
-             [x; ymin; zmax],
-             [x; ymax; zmax],
-             [x; ymax; zmin]]
-        for j=1:4
+        v = [[x; ymin; zmin], [x; ymin; zmax], [x; ymax; zmax], [x; ymax; zmin]]
+        for j = 1:4
             V[:, k+j] = v[j]
-            V2I[v[j]] = k+j
+            V2I[v[j]] = k + j
         end
         k += 4
     end
 
     # Generate the faces
     F = Vector{Types.IntVector}(undef, 0)
-    for i=1:resol
+    for i = 1:resol
         x = xgrid[i]
-        if i==1 || i==resol
+        if i == 1 || i == resol
             # Endcaps
             i1 = V2I[[x, ymin, zmin]]
             i2 = V2I[[x, ymax, zmin]]
@@ -776,7 +807,7 @@ function make_x_axis_mesh(thickness::RealValue,
             i2 = V2I[[x, ymin, zmax]]
             push!(F, [i1; i2; i3])
         end
-        if i<resol
+        if i < resol
             xn = xgrid[i+1]
             # Switch the sides
             # +y
@@ -815,20 +846,20 @@ function make_x_axis_mesh(thickness::RealValue,
 end
 
 """ Aliases to create homogeneous transformation matrices. """
-scene_roll(roll::RealValue; deg::Bool=true) = homtransf(roll=roll, deg=deg)
-scene_pitch(pitch::RealValue; deg::Bool=true) = homtransf(pitch=pitch, deg=deg)
-scene_yaw(yaw::RealValue; deg::Bool=true) = homtransf(yaw=yaw, deg=deg)
-scene_pan(; x::RealValue=0.0, y::RealValue=0.0,
-          z::RealValue=0.0) = homtransf(RealVector([x; y; z]))
+scene_roll(roll::RealValue; deg::Bool = true) = homtransf(roll = roll, deg = deg)
+scene_pitch(pitch::RealValue; deg::Bool = true) = homtransf(pitch = pitch, deg = deg)
+scene_yaw(yaw::RealValue; deg::Bool = true) = homtransf(yaw = yaw, deg = deg)
+scene_pan(; x::RealValue = 0.0, y::RealValue = 0.0, z::RealValue = 0.0) =
+    homtransf(RealVector([x; y; z]))
 
 """ Get the object's name. """
 name(obj::AbstractObject3D) = obj.scene_properties.name
 
 """ Rename an object. """
-rename(obj::AbstractObject3D, name::String) = obj.scene_properties.name=name
+rename(obj::AbstractObject3D, name::String) = obj.scene_properties.name = name
 
 """ Set owning node of an object in the object tree. """
-set_owner(obj::AbstractObject3D, node::TreeNode) = obj.scene_properties.node=node
+set_owner(obj::AbstractObject3D, node::TreeNode) = obj.scene_properties.node = node
 
 """ Get the world frame axis "root" of the object tree. """
 world_axis(scene::Scene3D) = scene.objects.data
@@ -850,9 +881,8 @@ of the `parent` object, and thus associated with the `parent`'s frame.
   duplicate objects to the scene.
 - `ErrorException` if `parent` is not associated with a scene object tree.
 """
-function add!(parent::Union{Scene3D, AbstractObject3D},
-              obj::AbstractObject3D...)::Nothing
-    if length(obj)==1
+function add!(parent::Union{Scene3D,AbstractObject3D}, obj::AbstractObject3D...)::Nothing
+    if length(obj) == 1
         obj = obj[1]
 
         # Check that `obj` is not already associated with a tree
@@ -864,8 +894,7 @@ function add!(parent::Union{Scene3D, AbstractObject3D},
         end
 
         if owner_exists
-            fmt = "Object %s is already associated with a node, "*
-                "cannot add it again"
+            fmt = "Object %s is already associated with a node, " * "cannot add it again"
             msg = @eval @sprintf($fmt, name($obj))
             throw(ArgumentError(msg))
         end
@@ -922,46 +951,47 @@ local frame for `frame==Body`).
 # Throws
 - `ErrorException` if the object is not associated with the object tree.
 """
-function move!(obj::AbstractObject3D;
-               frame::SceneFrame=Local,
-               mode::PoseUpdateMode=Intrinsic,
-               kwargs...)::Nothing
+function move!(
+    obj::AbstractObject3D;
+    frame::SceneFrame = Local,
+    mode::PoseUpdateMode = Intrinsic,
+    kwargs...,
+)::Nothing
 
     owner(obj) # Check that object is associated with object tree
 
     sequence = collect(kwargs)
-    degrees = ((:degree in sequence && sequence[:degree]) ||
-        !(:degree in sequence))
+    degrees = ((:degree in sequence && sequence[:degree]) || !(:degree in sequence))
 
     # Perform the sequence of operations
     H_update = homtransf()
     for (op, val) in sequence
         # Compute the atomic transformation
-        if op==:H
+        if op == :H
             H_atom = val
-        elseif op==:x
-            H_atom = scene_pan(x=val)
-        elseif op==:y
-            H_atom = scene_pan(y=val)
-        elseif op==:z
-            H_atom = scene_pan(z=val)
-        elseif op==:roll
-            H_atom = scene_roll(val, deg=degrees)
-        elseif op==:pitch
-            H_atom = scene_pitch(val, deg=degrees)
-        elseif op==:yaw
-            H_atom = scene_yaw(val, deg=degrees)
+        elseif op == :x
+            H_atom = scene_pan(x = val)
+        elseif op == :y
+            H_atom = scene_pan(y = val)
+        elseif op == :z
+            H_atom = scene_pan(z = val)
+        elseif op == :roll
+            H_atom = scene_roll(val, deg = degrees)
+        elseif op == :pitch
+            H_atom = scene_pitch(val, deg = degrees)
+        elseif op == :yaw
+            H_atom = scene_yaw(val, deg = degrees)
         end
         # Apply to the overall transformation
-        if mode==Intrinsic
-            H_update = H_update*H_atom
+        if mode == Intrinsic
+            H_update = H_update * H_atom
         else
-            H_update = H_atom*H_update
+            H_update = H_atom * H_update
         end
     end
 
     # Apply the transformation to the object's frame
-    update_pose!(obj, H_update; frame=frame, mode=mode)
+    update_pose!(obj, H_update; frame = frame, mode = mode)
 
     return nothing
 end
@@ -982,20 +1012,19 @@ original size.
 # Keywords
 - `relative`: (optional) do relative scaling.
 """
-function scale!(obj::Mesh3D, amount::RealValue;
-                relative::Bool=false)::Nothing
-    centroid = (maximum(obj.V, dims=2)+minimum(obj.V, dims=2))/2
+function scale!(obj::Mesh3D, amount::RealValue; relative::Bool = false)::Nothing
+    centroid = (maximum(obj.V, dims = 2) + minimum(obj.V, dims = 2)) / 2
     if !relative
-        span = maximum(maximum(obj.V, dims=2)-minimum(obj.V, dims=2))
-        obj.V = (((obj.V).-centroid)/span)*amount
+        span = maximum(maximum(obj.V, dims = 2) - minimum(obj.V, dims = 2))
+        obj.V = (((obj.V) .- centroid) / span) * amount
     else
-        obj.V = (((obj.V).-centroid)*amount).+centroid
+        obj.V = (((obj.V) .- centroid) * amount) .+ centroid
     end
     return nothing
 end
 
 """ Normalize the mesh to maximum length 1 along each dimension. """
-normalize!(obj::Mesh3D) = scale!(obj, 1; relative=false)
+normalize!(obj::Mesh3D) = scale!(obj, 1; relative = false)
 
 """
     relative_pose(objA, objB[, src, dest])
@@ -1014,10 +1043,12 @@ homogeneous vectors from `objA`'s frame to `objB`'s frame. You can specify
 # Returns
 - `bar`: description.
 """
-function relative_pose(objA::AbstractObject3D,
-                       objB::AbstractObject3D,
-                       src::SceneFrame=Local,
-                       dest::SceneFrame=Local)::RealMatrix
+function relative_pose(
+    objA::AbstractObject3D,
+    objB::AbstractObject3D,
+    src::SceneFrame = Local,
+    dest::SceneFrame = Local,
+)::RealMatrix
 
     # Find a common ancestor node
     nodeA = owner(objA)
@@ -1027,14 +1058,14 @@ function relative_pose(objA::AbstractObject3D,
     # Find the relative pose between local A and local B frames
     H_CA = relative_local_pose_linear(nodeA, nodeC)
     H_CB = relative_local_pose_linear(nodeB, nodeC)
-    H_BA = hominv(H_CB)*H_CA
+    H_BA = hominv(H_CB) * H_CA
 
     # Update for body frame choice
-    if src==Body
-        H_BA = H_BA*get_pose(objA, Body)
+    if src == Body
+        H_BA = H_BA * get_pose(objA, Body)
     end
-    if dest==Body
-        H_BA = hominv(get_pose(objB, Body))*H_BA
+    if dest == Body
+        H_BA = hominv(get_pose(objB, Body)) * H_BA
     end
 
     return H_BA
@@ -1060,22 +1091,23 @@ not, an error is thrown
 - `H`: homogeneous transform from `descendant` local frame to `ancestor` local
   frame.
 """
-function relative_local_pose_linear(
-    descendant::TreeNode,
-    ancestor::TreeNode)::RealMatrix
+function relative_local_pose_linear(descendant::TreeNode, ancestor::TreeNode)::RealMatrix
 
     H = homtransf()
     node = descendant
 
-    while node!=ancestor
-        if is_root(node) && node!=ancestor
-            msg = @sprintf("%s not an ancestor of %s",
-                           name(ancestor.data), name(descendant.data))
+    while node != ancestor
+        if is_root(node) && node != ancestor
+            msg = @sprintf(
+                "%s not an ancestor of %s",
+                name(ancestor.data),
+                name(descendant.data)
+            )
             throw(ArgumentError(msg))
         end
         obj = node.data
         Hi = get_pose(obj, Local)
-        H = Hi*H
+        H = Hi * H
         node = node.parent
     end
 
@@ -1094,8 +1126,8 @@ Compute the perspective transformation matrix for the camera.
 - `P`: the perspective transformation 4x4 matrix.
 """
 function perspective(camera::Camera3D)::RealMatrix
-    h = tan(0.5*deg2rad(camera.fovy))*camera.znear
-    w = h*camera.aspect
+    h = tan(0.5 * deg2rad(camera.fovy)) * camera.znear
+    w = h * camera.aspect
     P = frustum(-w, w, -h, h, camera.znear, camera.zfar)
     return P
 end
@@ -1122,15 +1154,21 @@ References
 # Returns
 - `P`: the 4x4 perspective transformation matrix.
 """
-function frustum(left::Real, right::Real, bottom::Real, top::Real,
-                 near::Real, far::Real)::RealMatrix
+function frustum(
+    left::Real,
+    right::Real,
+    bottom::Real,
+    top::Real,
+    near::Real,
+    far::Real,
+)::RealMatrix
     P = zeros(4, 4)
-    P[1, 1] = 2*near/(right-left)
-    P[2, 2] = 2*near/(top-bottom)
-    P[3, 3] = -(far+near)/(far-near)
-    P[1, 4] = -near*(right+left)/(right-left)
-    P[2, 4] = -near*(top+bottom)/(top-bottom)
-    P[3, 4] = 2*near*far/(near-far)
+    P[1, 1] = 2 * near / (right - left)
+    P[2, 2] = 2 * near / (top - bottom)
+    P[3, 3] = -(far + near) / (far - near)
+    P[1, 4] = -near * (right + left) / (right - left)
+    P[2, 4] = -near * (top + bottom) / (top - bottom)
+    P[3, 4] = 2 * near * far / (near - far)
     P[4, 3] = -1
     return P
 end
@@ -1150,9 +1188,7 @@ the `Object3D` basic constructor.
 - `F`: integer array of faces.
 - `N`: floating point array for face normals.
 """
-function load_wavefront(filepath::String)::Tuple{RealMatrix,
-                                                 IntMatrix,
-                                                 Optional{RealMatrix}}
+function load_wavefront(filepath::String)::Tuple{RealMatrix,IntMatrix,Optional{RealMatrix}}
     V, F, N = [], [], []
     f = open(filepath, "r")
     for line in readlines(f)
@@ -1161,14 +1197,14 @@ function load_wavefront(filepath::String)::Tuple{RealMatrix,
         end
         values = split(line)
         if isempty(values)
-        elseif values[1]=="v"
+        elseif values[1] == "v"
             push!(V, [parse(Float64, x) for x in values[2:4]])
-        elseif values[1]=="vn"
+        elseif values[1] == "vn"
             push!(N, [parse(Float64, x) for x in values[2:4]])
-        elseif values[1]=="f"
-            values = map(s->split(s, "//"), values[2:4])
-            vertices = map(v->v[1], values)
-            if length(values[1])==2
+        elseif values[1] == "f"
+            values = map(s -> split(s, "//"), values[2:4])
+            vertices = map(v -> v[1], values)
+            if length(values[1]) == 2
                 # There is face normal information
                 normal = values[1][2]
                 push!(vertices, normal)
@@ -1206,29 +1242,34 @@ Render the scene.
 - `ArgumentError` if not exactly one camera is found in the scene, when the
   camera to use is specified as a string.
 """
-function render(scene::Scene3D,
-                camera::Optional{Union{Camera3D, String}}=nothing,
-                path::String="./media/scene3d_render.pdf";
-                canvas_size::Tuple{Real, Real}=(5, 5),
-                bg_color=zeros(4))::Nothing
+function render(
+    scene::Scene3D,
+    camera::Optional{Union{Camera3D,String}} = nothing,
+    path::String = "./media/scene3d_render.pdf";
+    canvas_size::Tuple{Real,Real} = (5, 5),
+    bg_color = zeros(4),
+)::Nothing
 
     # Get the camera
     if camera isa String || isnothing(camera)
 
         # Find matching cameras
         if camera isa String
-            match_camera = (obj) -> obj isa Camera3D && name(obj)==camera
+            match_camera = (obj) -> obj isa Camera3D && name(obj) == camera
         else
             match_camera = (obj) -> obj isa Camera3D
         end
         all_cameras = findall(match_camera, scene.objects)
 
         # Extract the camera object
-        if length(all_cameras)>1
-            msg = @sprintf("Too many cameras named \"%s\" found (%d)",
-                           camera, length(all_cameras))
+        if length(all_cameras) > 1
+            msg = @sprintf(
+                "Too many cameras named \"%s\" found (%d)",
+                camera,
+                length(all_cameras)
+            )
             throw(ArgumentError(msg))
-        elseif length(all_cameras)==0
+        elseif length(all_cameras) == 0
             msg = @sprintf("No camera \"%s\" found", camera)
             throw(ArgumentError(msg))
         else
@@ -1240,11 +1281,13 @@ function render(scene::Scene3D,
     fig = create_figure(canvas_size)
 
     # Add an axis
-    ax = fig.add_axes([0, 0, 1, 1],
-                      xlim=(-1, 1),
-                      ylim=(-1, 1),
-                      aspect=1/camera.aspect,
-                      frameon=false)
+    ax = fig.add_axes(
+        [0, 0, 1, 1],
+        xlim = (-1, 1),
+        ylim = (-1, 1),
+        aspect = 1 / camera.aspect,
+        frameon = false,
+    )
 
     # Sanitize axes
     ax.set_xticks([])
@@ -1256,20 +1299,18 @@ function render(scene::Scene3D,
     PolyCollection = PyPlot.matplotlib.collections.PolyCollection
     scene_baked = PolyCollection(
         scene_data.tris,
-        closed=true,
-        linewidths=scene_data.ew,
-        edgecolors=scene_data.ec,
-        facecolors=scene_data.fc,
-        capstyle="round",
-        joinstyle="round")
+        closed = true,
+        linewidths = scene_data.ew,
+        edgecolors = scene_data.ec,
+        facecolors = scene_data.fc,
+        capstyle = "round",
+        joinstyle = "round",
+    )
 
     ax.add_collection(scene_baked)
 
     # Save figure to file
-    save_figure(path,
-                tight_layout=false,
-                dpi=800,
-                facecolor=bg_color)
+    save_figure(path, tight_layout = false, dpi = 800, facecolor = bg_color)
 
     return nothing
 end
@@ -1302,9 +1343,7 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
 
     traverse(scene.objects) do obj, _
         # Do not render cameras and invisible axes
-        if (obj isa Camera3D ||
-            obj isa Light3D ||
-            (obj isa Axis3D && !obj.visible))
+        if (obj isa Camera3D || obj isa Light3D || (obj isa Axis3D && !obj.visible))
             return
         end
 
@@ -1322,19 +1361,19 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
         rel_pose = relative_pose(obj, camera, Body, Body)
 
         # Perspective projection
-        proj = persp*rel_pose
-        verts = proj*[verts; ones(1, size(verts, 2))]
+        proj = persp * rel_pose
+        verts = proj * [verts; ones(1, size(verts, 2))]
         verts ./= reshape(verts[end, :], 1, :)
 
         # Extract the face triangles
         num_faces = size(faces, 2)
         tris = RealTensor[]
         id_face_keep = Int[]
-        for i=1:num_faces
+        for i = 1:num_faces
             face_verts = verts[1:3, faces[1:3, i]]
             # Filter out faces outside the clipping volume
-            outside_verts = (face_verts.>1) .| (face_verts.<-1)
-            if any(all(outside_verts[i, :]) for i=1:3)
+            outside_verts = (face_verts .> 1) .| (face_verts .< -1)
+            if any(all(outside_verts[i, :]) for i = 1:3)
                 continue
             end
             # Filter out faces whose normal points away from the camera
@@ -1342,24 +1381,24 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
             if !isnothing(normals)
                 base = face_verts[:, 1]
                 normal = normals[:, faces[4, i]]
-                tip = base+normal
-                proj_base = proj*[base; 1]
-                proj_tip = proj*[tip; 1]
+                tip = base + normal
+                proj_base = proj * [base; 1]
+                proj_tip = proj * [tip; 1]
                 proj_base ./= proj_base[4]
                 proj_tip ./= proj_tip[4]
                 proj_normal = (proj_base-proj_tip)[1:3]
-                if proj_normal[3]<-0.05 # some buffer (exact would be <0)
+                if proj_normal[3] < -0.05 # some buffer (exact would be <0)
                     continue
                 end
             end
             push!(tris, reshape(face_verts', 1, 3, 3))
             push!(id_face_keep, i)
         end
-        tris = cat(tris..., dims=1)
+        tris = cat(tris..., dims = 1)
         num_faces = size(tris, 1)
 
         # Everything is clipped, no geometry to display
-        if num_faces==0
+        if num_faces == 0
             return
         end
 
@@ -1367,25 +1406,27 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
         light = find_light(obj)
         let_there_be_light = !isnothing(light) && !isnothing(normals)
         if let_there_be_light
-            light = PyPlot.matplotlib.colors.LightSource(
-                azdeg=light.az, altdeg=light.el)
+            light =
+                PyPlot.matplotlib.colors.LightSource(azdeg = light.az, altdeg = light.el)
         end
 
         # Illuminate the face and edge colors
-        face_colors = (obj.face_color isa Vector) ?
-            obj.face_color : repeat([obj.face_color], size(faces, 2))
-        edge_colors = (obj.edge_color isa Vector) ?
-            obj.edge_color : repeat([obj.edge_color], size(faces, 2))
+        face_colors =
+            (obj.face_color isa Vector) ? obj.face_color :
+            repeat([obj.face_color], size(faces, 2))
+        edge_colors =
+            (obj.edge_color isa Vector) ? obj.edge_color :
+            repeat([obj.edge_color], size(faces, 2))
         if let_there_be_light
             # Update face colors according to illumination by the light source
-            normals_array = hcat(map(i->normals[:, i], faces[4, :])...)'
-            shade = light.shade_normals(normals_array, fraction=1.0)
+            normals_array = hcat(map(i -> normals[:, i], faces[4, :])...)'
+            shade = light.shade_normals(normals_array, fraction = 1.0)
             for i = 1:size(faces, 2)
-                dark_fraction = 1-shade[i]
-                face_colors[i] = "#"*hex(RGB(darken_color(
-                    face_colors[i], dark_fraction)[1:3]...))
-                edge_colors[i] = "#"*hex(RGB(darken_color(
-                    edge_colors[i], dark_fraction)[1:3]...))
+                dark_fraction = 1 - shade[i]
+                face_colors[i] =
+                    "#" * hex(RGB(darken_color(face_colors[i], dark_fraction)[1:3]...))
+                edge_colors[i] =
+                    "#" * hex(RGB(darken_color(edge_colors[i], dark_fraction)[1:3]...))
             end
         end
         face_colors = face_colors[id_face_keep]
@@ -1395,8 +1436,11 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
         push!(tris_3d, tris)
         push!(fc, face_colors)
         push!(ec, edge_colors)
-        push!(ew, (obj.edge_width isa Vector) ? obj.edge_width[id_face_keep] :
-            repeat([obj.edge_width], num_faces))
+        push!(
+            ew,
+            (obj.edge_width isa Vector) ? obj.edge_width[id_face_keep] :
+            repeat([obj.edge_width], num_faces),
+        )
 
         # Remove temporary axis mesh
         if draw_axis
@@ -1410,17 +1454,17 @@ function bake(scene::Scene3D, camera::Camera3D)::BakedScene3D
         return out
     end
 
-    tris_3d = cat(tris_3d..., dims=1)
-    tris = mapslices(tris_3d, dims=[2, 3]) do verts
+    tris_3d = cat(tris_3d..., dims = 1)
+    tris = mapslices(tris_3d, dims = [2, 3]) do verts
         verts[:, 1:2]
     end
-    fc = cat(fc..., dims=1)
-    ec = cat(ec..., dims=1)
-    ew = cat(ew..., dims=1)
+    fc = cat(fc..., dims = 1)
+    ec = cat(ec..., dims = 1)
+    ew = cat(ew..., dims = 1)
 
     # >> Do z-depth sorting <<
 
-    faces_z = mapslices(tris_3d, dims=[2, 3]) do verts
+    faces_z = mapslices(tris_3d, dims = [2, 3]) do verts
         verts_z = verts[:, 3]
         mean(verts_z)
     end
@@ -1467,12 +1511,16 @@ function find_light(obj::AbstractObject3D)::Optional{Light3D}
             return data isa Light3D
         end
 
-        if length(child_lights)>1
+        if length(child_lights) > 1
             err = ErrorException(
-                @sprintf("%s has %d light sources (only 1 allowed)",
-                         name(parent), length(child_lights)))
+                @sprintf(
+                    "%s has %d light sources (only 1 allowed)",
+                    name(parent),
+                    length(child_lights)
+                )
+            )
             throw(err)
-        elseif length(child_lights)==1
+        elseif length(child_lights) == 1
             light = child_lights[1]
             return light
         elseif is_root(parent)
@@ -1524,10 +1572,10 @@ function Base.show(io::IO, scene::Scene3D)::Nothing
 
     # >> Print the object counts <<
 
-    match_axis = (obj) -> typeof(obj)==Axis3D
-    match_camera = (obj) -> typeof(obj)==Camera3D
-    match_light = (obj) -> typeof(obj)==Light3D
-    match_mesh = (obj) -> typeof(obj)==Mesh3D
+    match_axis = (obj) -> typeof(obj) == Axis3D
+    match_camera = (obj) -> typeof(obj) == Camera3D
+    match_light = (obj) -> typeof(obj) == Light3D
+    match_mesh = (obj) -> typeof(obj) == Mesh3D
 
     all_axes = findall(match_axis, scene.objects)
     all_cameras = findall(match_camera, scene.objects)
@@ -1560,7 +1608,7 @@ function Base.show(io::IO, scene::Scene3D)::Nothing
     full_tree = String[]
     @preprintf(io, indent, "\nObject tree:\n")
     traverse(scene.objects) do obj, depth
-        local_indent = indent*(" "^(2*(depth+1)))
+        local_indent = indent * (" "^(2 * (depth + 1)))
         push!(full_tree, @sprintf("%s%s", local_indent, name(obj)))
     end
     # Remove repeated lines
@@ -1570,19 +1618,19 @@ function Base.show(io::IO, scene::Scene3D)::Nothing
         this_line = full_tree[line]
         count_instances = 1
         for next_line = line+1:length(full_tree)
-            if full_tree[next_line]==this_line
+            if full_tree[next_line] == this_line
                 count_instances += 1
             else
                 break
             end
         end
-        if count_instances>1
+        if count_instances > 1
             short_tree *= @sprintf("%s (%d)\n", this_line, count_instances)
         else
             short_tree *= @sprintf("%s\n", this_line)
         end
         line += count_instances
-        if line>length(full_tree)
+        if line > length(full_tree)
             break
         end
     end
@@ -1597,7 +1645,10 @@ end
 A wrapper of `show` functions when `MIME` argument is passed in (it is just
 ignored!).
 """
-Base.show(io::IO, ::MIME"text/plain",
-          constraints::Union{Mesh3D,
-                             Scene3D},
-          args...; kwargs...) = show(io, constraints, args...; kwargs...)
+Base.show(
+    io::IO,
+    ::MIME"text/plain",
+    constraints::Union{Mesh3D,Scene3D},
+    args...;
+    kwargs...,
+) = show(io, constraints, args...; kwargs...)

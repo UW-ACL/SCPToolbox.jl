@@ -48,30 +48,36 @@ end # struct
 
 
 function DoubleIntegratorParameters(
-    choice::Int, T::RealValue=10)::DoubleIntegratorParameters
+    choice::Int,
+    T::RealValue = 10,
+)::DoubleIntegratorParameters
 
     @assert choice in (1, 2)
 
     # Parameters
     T = T
     N = 50 # Number of discretization time grid nodes
-    A = [0 1;0 0]
+    A = [0 1; 0 0]
     B = [0; 1]
-    g = (choice==1) ? 0.1 : 0.6
-    s = (choice==1) ? 47 : 30
+    g = (choice == 1) ? 0.1 : 0.6
+    s = (choice == 1) ? 47 : 30
 
     # Equations of motion
-    f = (t, x, u) -> [x[2]; u-g]
+    f = (t, x, u) -> [x[2]; u - g]
 
     # First-order hold (FOH) temporal discretization
     n = 2
     m = 1
-    dt = T/(N-1)
+    dt = T / (N - 1)
     t_grid = collect(LinRange(0, dt, 1000))
-    Bm = rk4((t, x)->reshape(exp(A*(dt-t))*B*(dt-t)/dt, n*m), zeros(n*m), t_grid)
-    Bp = rk4((t, x)->reshape(exp(A*(dt-t))*B*t/dt, n*m), zeros(n*m), t_grid)
-    w = rk4((t, x)->reshape(exp(A*(dt-t))*[0; -g], n), zeros(n), t_grid)
-    A = exp(A*dt)
+    Bm = rk4(
+        (t, x) -> reshape(exp(A * (dt - t)) * B * (dt - t) / dt, n * m),
+        zeros(n * m),
+        t_grid,
+    )
+    Bp = rk4((t, x) -> reshape(exp(A * (dt - t)) * B * t / dt, n * m), zeros(n * m), t_grid)
+    w = rk4((t, x) -> reshape(exp(A * (dt - t)) * [0; -g], n), zeros(n), t_grid)
+    A = exp(A * dt)
 
     mdl = DoubleIntegratorParameters(n, m, N, T, f, A, Bm, Bp, w, g, s, choice)
 

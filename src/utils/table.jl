@@ -25,8 +25,8 @@ export Table, improvement_percent
 """ Iteration progress information table to be printed in REPL. """
 mutable struct Table
     headings::Array{String}    # Column headings
-    sorting::Dict{Symbol, Int} # Column order
-    fmt::Dict{Symbol, String}  # Column value format
+    sorting::Dict{Symbol,Int} # Column order
+    fmt::Dict{Symbol,String}  # Column value format
     row::String                # The full row format
     # >> Private members <<
     __head_print::Bool # Flag whether the column headings have been printed
@@ -48,13 +48,14 @@ mutable struct Table
     - `table`: the table structure.
     """
     function Table(
-        def::Vector{Tuple{Symbol, String, String, Int}},
-        separator::String="|")::Table
+        def::Vector{Tuple{Symbol,String,String,Int}},
+        separator::String = "|",
+    )::Table
 
         # Initialize
         headings = Array{String}(undef, 0)
-        sorting = Dict{Symbol, Int}()
-        fmt = Dict{Symbol, String}()
+        sorting = Dict{Symbol,Int}()
+        fmt = Dict{Symbol,String}()
         row = ""
         colw = IntVector(undef, 0)
         args = (headings, sorting, fmt, colw, separator)
@@ -106,10 +107,11 @@ function add_table_column!(
     fmt::Dict{Symbol,String},
     colw::IntVector,
     sep::String,
-    row::String)::String
+    row::String,
+)::String
 
     # Column separator
-    separator = (length(row)==0) ? "" : string(" ", sep, " ")
+    separator = (length(row) == 0) ? "" : string(" ", sep, " ")
 
     push!(headings, col_heading)
     push!(sorting, col_sym => length(headings))
@@ -165,7 +167,7 @@ Print row of table.
 - `row`: table row specification.
 - `table`: the table specification.
 """
-function print(row::Dict{Symbol, T}, table::Table)::Nothing where {T}
+function print(row::Dict{Symbol,T}, table::Table)::Nothing where {T}
     # Assign values to table columns
     values = fill("", length(table.headings))
     for (k, v) in row
@@ -173,7 +175,7 @@ function print(row::Dict{Symbol, T}, table::Table)::Nothing where {T}
         values[table.sorting[k]] = @eval @sprintf($val_fmt, $v)
     end
 
-    if table.__head_print==true
+    if table.__head_print == true
         table.__head_print = false
         # Print the columnd headers
         @eval @printf($(table.row), $(table.headings)...)
@@ -200,15 +202,14 @@ Compute the relative cost improvement (as a string to be put into a table).
 # Returns
 - `ΔJ`: the relative cost improvement.
 """
-function improvement_percent(J_new::RealTypes,
-                             J_old::RealTypes)::String
+function improvement_percent(J_new::RealTypes, J_old::RealTypes)::String
     if isnan(J_old)
         ΔJ = ""
     else
-        ΔJ = (J_old-J_new)/abs(J_old)*100
+        ΔJ = (J_old - J_new) / abs(J_old) * 100
         _ΔJ = @sprintf("%.2f", ΔJ)
-        if length(_ΔJ)>8
-            fmt = string("%.", (ΔJ>0) ? 2 : 1, "e")
+        if length(_ΔJ) > 8
+            fmt = string("%.", (ΔJ > 0) ? 2 : 1, "e")
             ΔJ = @eval @sprintf($fmt, $ΔJ)
         else
             ΔJ = _ΔJ

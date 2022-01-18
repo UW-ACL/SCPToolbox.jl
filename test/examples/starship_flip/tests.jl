@@ -39,15 +39,27 @@ function ptr()::Nothing
     wvc = 1e3
     wtr = 0.1
     ε_abs = 1e-5
-    ε_rel = 0.01/100
+    ε_rel = 0.01 / 100
     feas_tol = 5e-3
     q_tr = Inf
     q_exit = Inf
     solver = ECOS
-    solver_options = Dict("verbose"=>0, "maxit"=>1000)
-    pars = PTR.Parameters(N, Nsub, iter_max, disc_method, wvc, wtr, ε_abs,
-                          ε_rel, feas_tol, q_tr, q_exit, solver,
-                          solver_options)
+    solver_options = Dict("verbose" => 0, "maxit" => 1000)
+    pars = PTR.Parameters(
+        N,
+        Nsub,
+        iter_max,
+        disc_method,
+        wvc,
+        wtr,
+        ε_abs,
+        ε_rel,
+        feas_tol,
+        q_tr,
+        q_exit,
+        solver,
+        solver_options,
+    )
 
     test_single(mdl, pbm, pars, PTR)
 
@@ -76,16 +88,34 @@ function scvx()::Nothing
     η_lb = 1e-8
     η_ub = 10.0
     ε_abs = 1e-5
-    ε_rel = 0.01/100
+    ε_rel = 0.01 / 100
     feas_tol = 5e-3
     q_tr = Inf
     q_exit = Inf
     solver = ECOS
-    solver_options = Dict("verbose"=>0, "maxit"=>1000)
+    solver_options = Dict("verbose" => 0, "maxit" => 1000)
     pars = SCvx.Parameters(
-        N, Nsub, iter_max, disc_method, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
-        η_init, η_lb, η_ub, ε_abs, ε_rel, feas_tol, q_tr, q_exit, solver,
-        solver_options)
+        N,
+        Nsub,
+        iter_max,
+        disc_method,
+        λ,
+        ρ_0,
+        ρ_1,
+        ρ_2,
+        β_sh,
+        β_gr,
+        η_init,
+        η_lb,
+        η_ub,
+        ε_abs,
+        ε_rel,
+        feas_tol,
+        q_tr,
+        q_exit,
+        solver,
+        solver_options,
+    )
 
     test_single(mdl, pbm, pars, SCvx)
 
@@ -104,10 +134,10 @@ Compute a single trajectory.
 - `solver`: the solver algorithm's module.
 """
 function test_single(
-        mdl::StarshipProblem,
-        traj::TrajectoryProblem,
-        pars::T,
-        solver::Module
+    mdl::StarshipProblem,
+    traj::TrajectoryProblem,
+    pars::T,
+    solver::Module,
 )::Nothing where {T<:SCPParameters}
 
     test_heading("PTR", "Single trajectory")

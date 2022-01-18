@@ -30,7 +30,7 @@ total.
 # Returns
 - `ids`: the index vector in string format, ready to print.
 """
-function print_indices(id::LocationIndices, limit::Int=3)::String
+function print_indices(id::LocationIndices, limit::Int = 3)::String
 
     # Check if empty
     if isempty(id)
@@ -38,21 +38,21 @@ function print_indices(id::LocationIndices, limit::Int=3)::String
     end
 
     # Check if a single number
-    if ndims(id)==0 || length(id)==1
+    if ndims(id) == 0 || length(id) == 1
         ids = @sprintf("%d", id[1])
         return ids
     end
 
     # Check if contiguous range
-    iscontig = !any(diff(id).!=1)
+    iscontig = !any(diff(id) .!= 1)
     if iscontig
         ids = @sprintf("%d:%d", id[1], id[end])
         return ids
     end
 
     # Print a limited number of indices
-    printarr = (arr) -> join(map((x)->@sprintf("%s", x), arr), ",")
-    if length(id)>2*limit
+    printarr = (arr) -> join(map((x) -> @sprintf("%s", x), arr), ",")
+    if length(id) > 2 * limit
         v0 = printarr(id[1:limit])
         vf = printarr(id[end-limit+1:end])
         ids = @sprintf("%s,...,%s", v0, vf)
@@ -76,21 +76,23 @@ function print_array(io::IO, z::AbstractArray)::Nothing
     io_value = IOBuffer()
     max_rows, max_cols = 10, 50
     indent = make_indent(io)
-    io2_value = IOContext(io_value,
-                          :limit=>true,
-                          :displaysize=>(max_rows, max_cols),
-                          :compact=>true)
+    io2_value = IOContext(
+        io_value,
+        :limit => true,
+        :displaysize => (max_rows, max_cols),
+        :compact => true,
+    )
     show(io2_value, MIME("text/plain"), z)
     value_str = String(take!(io_value))
     # Print line by line
     rows = split(value_str, "\n")[2:end]
-    for i=1:length(rows)
+    for i = 1:length(rows)
         row = rows[i]
-        row = replace(row, "\""=>"")
+        row = replace(row, "\"" => "")
         if length(row) > max_cols
-            row = row[1:max_cols]*" …"
+            row = row[1:max_cols] * " …"
         end
-        newline = (i==length(rows)) ? "" : "\n"
+        newline = (i == length(rows)) ? "" : "\n"
         @printf(io, "%s%s%s", indent, row, newline)
     end
     return nothing
@@ -108,10 +110,10 @@ Pretty print the cone.
 # Keywords
 - `z`: (optional) the string to use for the value constrained inside the cone.
 """
-function Base.show(io::IO, cone::ConvexCone; z::String="z")::Nothing
+function Base.show(io::IO, cone::ConvexCone; z::String = "z")::Nothing
     compact = get(io, :compact, false)
 
-    if kind(cone)==UNCONSTRAINED
+    if kind(cone) == UNCONSTRAINED
         @printf(io, "Unconstrained %s\n", z)
     else
         cone_description = Dict(
@@ -121,17 +123,22 @@ function Base.show(io::IO, cone::ConvexCone; z::String="z")::Nothing
             SOC => "{(t, x)∈ℝ×ℝⁿ : ‖x‖₂≤t}",
             LINF => "{(t, x)∈ℝ×ℝⁿ : ‖x‖∞≤t}",
             GEOM => "{(t, x)∈ℝ×ℝⁿ : (x₁x₂⋯xₙ)^{1/n}≥t}",
-            EXP => "{(x,y,w)∈ℝ³ : y⋅e^{x/y}≤w, y>0}")
+            EXP => "{(x,y,w)∈ℝ³ : y⋅e^{x/y}≤w, y>0}",
+        )
 
         @printf(io, "Cone %s∈K, where:\n", z)
-        @printf(io, "K is a %s cone, %s\n", CONE_NAMES[cone.kind],
-                cone_description[cone.kind])
+        @printf(
+            io,
+            "K is a %s cone, %s\n",
+            CONE_NAMES[cone.kind],
+            cone_description[cone.kind]
+        )
     end
 
     if !compact
         # Print the value of z
         @printf(io, "%s = \n", z)
-        io2 = IOContext(io, :indent=>1)
+        io2 = IOContext(io, :indent => 1)
         print_array(io2, cone.z)
     end
 
@@ -143,8 +150,8 @@ Get string description of the kind of function this is.
 """
 function function_kind(F::ProgramFunction)::String
     value_type = typeof(F.f.out[].value)
-    quadratic_type = Union{Types.QExpr, AbstractArray{Types.QExpr}}
-    kind = (value_type<:quadratic_type) ? "Quadratic" : "Affine"
+    quadratic_type = Union{Types.QExpr,AbstractArray{Types.QExpr}}
+    kind = (value_type <: quadratic_type) ? "Quadratic" : "Affine"
     return kind
 end
 
@@ -155,7 +162,7 @@ combination of functions.
 """
 function function_kind(F::FunctionLinearCombination)::String
     kinds = [function_kind(f) for f in F.f]
-    kind = any(kinds.=="Quadratic") ? "Quadratic" : "Affine"
+    kind = any(kinds .== "Quadratic") ? "Quadratic" : "Affine"
     return kind
 end
 
@@ -193,7 +200,7 @@ function Base.show(io::IO, F::ProgramFunction)::Nothing
         try
             f_value = value(F)
             @printf(io, "%sCurrent value =\n", indent)
-            io2 = IOContext(io, :indent=>get(io, :indent, 0)+1)
+            io2 = IOContext(io, :indent => get(io, :indent, 0) + 1)
             print_array(io2, f_value)
         catch
             @printf(io, "%sNot evaluated yet", indent)
@@ -220,9 +227,9 @@ function Base.show(io::IO, cost::QuadraticCost)::Nothing
     for i = 1:length(cost.terms)
         @printf(io, "\nTerm %d:\n", i)
         @printf(io, "  Coefficient: %.2e\n", cost.terms.a[i])
-        io2 = IOContext(io, :indent=>2)
+        io2 = IOContext(io, :indent => 2)
         show(io2, cost.terms.f[i])
-        if i<length(cost.terms)
+        if i < length(cost.terms)
             @printf(io, "\n")
         end
     end
@@ -250,7 +257,7 @@ function Base.show(io::IO, f::DifferentiableFunction)::Nothing
     if f.evaluated
         @printf(io, "  %d Jacobians available\n", length(all_jacobians(f.out[])))
         @printf(io, "  Current value =\n")
-        io2 = IOContext(io, :indent=>3)
+        io2 = IOContext(io, :indent => 3)
         print_array(io2, value(f))
     else
         @printf(io, "  Not evaluated.")
@@ -273,10 +280,10 @@ function Base.show(io::IO, cone::ConicConstraint)::Nothing
 
     @printf(io, "Name: %s\n", name(cone))
 
-    show(io, cone.K; z="f(x,p)")
+    show(io, cone.K; z = "f(x,p)")
     @printf(io, "\n")
 
-    io2 = IOContext(io, :compact=>true)
+    io2 = IOContext(io, :compact => true)
     show(io2, cone.f)
 
     return nothing
@@ -299,7 +306,7 @@ function Base.show(io::IO, constraints::Constraints)::Nothing
 
     # Print a more detailed list of constraints
     # Collect cone types
-    cone_count = Dict(cone=>0 for cone in instances(SupportedCone))
+    cone_count = Dict(cone => 0 for cone in instances(SupportedCone))
     for constraint in constraints
         cone_count[kind(constraint)] += 1
     end
@@ -307,7 +314,7 @@ function Base.show(io::IO, constraints::Constraints)::Nothing
     for cone in instances(SupportedCone)
         count = cone_count[cone]
         name = CONE_NAMES[cone]
-        if count>0
+        if count > 0
             @printf(io, "\n%s  %d %s cones", indent, count, name)
         end
     end
@@ -340,31 +347,31 @@ function Base.show(io::IO, sc::Scaling)::Nothing
     S = dilation(sc)
     c = offset(sc)
 
-    if all(S.==1) && all(c.==0)
+    if all(S .== 1) && all(c .== 0)
         @printf(io, "%sNo scaling (x=xh)\n", indent)
-        mode=:none
-    elseif all(c.==0)
+        mode = :none
+    elseif all(c .== 0)
         @printf(io, "%sAffine dilation x=S.*xh\n", indent)
-        mode=:linear
-    elseif all(S.==1)
+        mode = :linear
+    elseif all(S .== 1)
         @printf(io, "%sAffine offset x=xh.+c\n", indent)
-        mode=:offset
+        mode = :offset
     else
         @printf(io, "%sAffine scaling x=(S.*xh).+c\n", indent)
-        mode=:affine
+        mode = :affine
     end
 
     if !compact
-        if mode==:none
+        if mode == :none
             return nothing
         end
-        io2 = IOContext(io, :indent=>this_indent+1, :compact=>true)
-        if mode==:linear || mode==:affine
+        io2 = IOContext(io, :indent => this_indent + 1, :compact => true)
+        if mode == :linear || mode == :affine
             @printf(io, "%sS =\n", indent)
             print_array(io2, dilation(sc))
             @printf(io, "%s\n", indent)
         end
-        if mode==:offset || mode==:affine
+        if mode == :offset || mode == :affine
             @printf(io, "%sc =\n", indent)
             print_array(io2, offset(sc))
         end
@@ -387,21 +394,21 @@ function Base.show(io::IO, pert::Perturbation)::Nothing
     this_indent = get(io, :indent, 0)
     indent = make_indent(io)
 
-    if all(kind(pert).==FIXED)
-        if all(amount(pert).==0)
+    if all(kind(pert) .== FIXED)
+        if all(amount(pert) .== 0)
             @printf(io, "%sNo perturbation allowed\n", indent)
             mode = :fixed
         else
             @printf(io, "%sConstant perturbation\n", indent)
             mode = :fixed_nonzero
         end
-    elseif all(kind(pert).==FREE)
+    elseif all(kind(pert) .== FREE)
         @printf(io, "%sAny perturbation allowed\n", indent)
         mode = :free
-    elseif all(kind(pert).==ABSOLUTE)
+    elseif all(kind(pert) .== ABSOLUTE)
         @printf(io, "%sAbsolute perturbation\n", indent)
         mode = :all_absolute
-    elseif all(kind(pert).==RELATIVE)
+    elseif all(kind(pert) .== RELATIVE)
         @printf(io, "%sRelative perturbation\n", indent)
         mode = :all_relative
     else
@@ -410,10 +417,10 @@ function Base.show(io::IO, pert::Perturbation)::Nothing
     end
 
     if !compact
-        io2 = IOContext(io, :indent=>this_indent+1, :compact=>true)
-        if mode==:fixed || mode==:free
+        io2 = IOContext(io, :indent => this_indent + 1, :compact => true)
+        if mode == :fixed || mode == :free
             return nothing
-        elseif mode==:all_absolute || mode==:all_relative || mode==:fixed_nonzero
+        elseif mode == :all_absolute || mode == :all_relative || mode == :fixed_nonzero
             @printf(io, "%sAmount =\n", indent)
             print_array(io2, amount(pert))
         else
@@ -439,13 +446,13 @@ Pretty print an argument block.
 - `io`: stream object.
 - `blk`: the argument block.
 """
-function Base.show(io::IO, blk::ArgumentBlock{T})::Nothing where T
+function Base.show(io::IO, blk::ArgumentBlock{T})::Nothing where {T}
     compact = get(io, :compact, false)
 
-    isvar = T==AtomicVariable
+    isvar = T == AtomicVariable
     dim = ndims(blk)
-    qualifier = Dict(0=>"Scalar", 1=>"Vector", 2=>"Matrix", 3=>"Tensor")
-    if dim<=3
+    qualifier = Dict(0 => "Scalar", 1 => "Vector", 2 => "Matrix", 3 => "Tensor")
+    if dim <= 3
         qualifier = qualifier[dim]
     else
         qualifier = "N-dimensional"
@@ -461,12 +468,12 @@ function Base.show(io::IO, blk::ArgumentBlock{T})::Nothing where T
     @printf(io, "  Indices in stack: %s\n", print_indices(blk.elid))
     @printf(io, "  Type: %s\n", typeof(blk.value))
 
-    io2 = IOContext(io, :indent=>2, :compact=>true)
+    io2 = IOContext(io, :indent => 2, :compact => true)
     show(io2, scale(blk))
     show(io2, perturbation(blk))
 
     @printf(io, "  Value =\n")
-    io2 = IOContext(io, :indent=>4, :compact=>true)
+    io2 = IOContext(io, :indent => 4, :compact => true)
     print_array(io2, blk.value)
 
     return nothing
@@ -484,7 +491,7 @@ Pretty print an argument.
 function Base.show(io::IO, arg::Argument{T})::Nothing where {T<:AtomicArgument}
     compact = get(io, :compact, false)
 
-    isvar = T<:AtomicVariable
+    isvar = T <: AtomicVariable
     kind = isvar ? "Variable" : "Parameter"
     n_blocks = length(arg)
     indent = make_indent(io)
@@ -493,21 +500,28 @@ function Base.show(io::IO, arg::Argument{T})::Nothing where {T<:AtomicArgument}
     @printf(io, "%s  %d elements\n", indent, numel(arg))
     @printf(io, "%s  %d blocks\n", indent, n_blocks)
 
-    if n_blocks==0
+    if n_blocks == 0
         return nothing
     end
 
     ids = (i) -> arg.blocks[i].elid
     make_span_str = (i) -> print_indices(ids(i))
-    span_str = [make_span_str(i) for i=1:n_blocks]
+    span_str = [make_span_str(i) for i = 1:n_blocks]
     max_span_sz = maximum(length.(span_str))
     for i = 1:n_blocks
-        newline = (i==n_blocks) ? "" : "\n"
+        newline = (i == n_blocks) ? "" : "\n"
         span_str = make_span_str(i)
-        span_diff = max_span_sz-length(span_str)
-        span_str = span_str*(" "^span_diff)
-        @printf(io, "%s   %d) %s ... %s%s",
-                indent, i, span_str, arg.blocks[i].name, newline)
+        span_diff = max_span_sz - length(span_str)
+        span_str = span_str * (" "^span_diff)
+        @printf(
+            io,
+            "%s   %d) %s ... %s%s",
+            indent,
+            i,
+            span_str,
+            arg.blocks[i].name,
+            newline
+        )
     end
 
     return nothing
@@ -532,17 +546,15 @@ function Base.show(io::IO, prog::ConicProgram)::Nothing
         kind = function_kind(core_terms(cost(prog)))
         @printf(io, "  %s cost function\n", kind)
     end
-    @printf(io, "  %d variables (%d blocks)\n", numel(prog.x),
-            length(prog.x))
-    @printf(io, "  %d parameters (%d blocks)\n", numel(prog.p),
-            length(prog.p))
+    @printf(io, "  %d variables (%d blocks)\n", numel(prog.x), length(prog.x))
+    @printf(io, "  %d parameters (%d blocks)\n", numel(prog.p), length(prog.p))
 
-    io2 = IOContext(io, :indent=>2, :compact=>true)
+    io2 = IOContext(io, :indent => 2, :compact => true)
     show(io2, constraints(prog))
 
     # Print a more detailed list of variables and parameters
     if !compact
-        io2 = IOContext(io, :indent=>2)
+        io2 = IOContext(io, :indent => 2)
         @printf(io, "\n\n")
         show(io2, prog.x)
         @printf(io, "\n\n")
@@ -567,16 +579,21 @@ is just ignored!).
 - `kwargs...`: any other keyword arguments the underlying `show` function
   accepts.
 """
-Base.show(io::IO, ::MIME"text/plain",
-          constraints::Union{
-              ConvexCone,
-              ProgramFunction,
-              DifferentiableFunction,
-              ConicConstraint,
-              Constraints,
-              Scaling,
-              Perturbation,
-              ArgumentBlock,
-              Argument,
-              ConicProgram},
-          args...; kwargs...) = show(io, constraints, args...; kwargs...)
+Base.show(
+    io::IO,
+    ::MIME"text/plain",
+    constraints::Union{
+        ConvexCone,
+        ProgramFunction,
+        DifferentiableFunction,
+        ConicConstraint,
+        Constraints,
+        Scaling,
+        Perturbation,
+        ArgumentBlock,
+        Argument,
+        ConicProgram,
+    },
+    args...;
+    kwargs...,
+) = show(io, constraints, args...; kwargs...)

@@ -41,7 +41,7 @@ struct Ellipsoid
     - `E`: the ellipsoid.
     """
     function Ellipsoid(H::RealMatrix, c::RealVector)::Ellipsoid
-        if size(H,2)!=length(c)
+        if size(H, 2) != length(c)
             err = ArgumentError("matrix size mismatch.")
             throw(err)
         end
@@ -69,15 +69,15 @@ function project(E::Ellipsoid, ax::IntVector)::Ellipsoid
 
     # Projection matrix onto lower-dimensional space
     P = zeros(m, n)
-    for i=1:m
+    for i = 1:m
         P[i, ax[i]] = 1.0
     end
 
     # Do the projection
-    Hb = P*E.H
+    Hb = P * E.H
     F = svd(Hb)
-    H_prj = F.U*diagm(F.S)
-    c_prj = P*E.c
+    H_prj = F.U * diagm(F.S)
+    c_prj = P * E.c
     E_prj = Ellipsoid(H_prj, c_prj)
 
     return E_prj
@@ -97,7 +97,7 @@ Evaluate ellipsoid level set value at location. Acts like a functor [1].
 - `y`: the level set value.
 """
 function (E::Ellipsoid)(r::RealVector)::Real
-    y = norm(E.H*(r-E.c))
+    y = norm(E.H * (r - E.c))
     return y
 end
 
@@ -113,6 +113,6 @@ Ellipsoid gradient at location.
 - `g`: the gradient value.
 """
 function ∇(E::Ellipsoid, r::RealVector)::RealVector
-    g = (E.H'*E.H)*(r-E.c)/E(r)
+    g = (E.H' * E.H) * (r - E.c) / E(r)
     return g
 end

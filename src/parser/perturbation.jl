@@ -21,7 +21,7 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 # Constants to denote perturbationkind
 @enum(PerturbationKind, FREE, FIXED, ABSOLUTE, RELATIVE)
 
-const PerturbationKindArray = AbstractArray{PerturbationKind, N} where N
+const PerturbationKindArray = AbstractArray{PerturbationKind,N} where {N}
 
 # ..:: Data structures ::..
 
@@ -48,18 +48,18 @@ struct Perturbation{N} <: AbstractRealArray{N}
     - `perturb`: the perturbation object.
     """
     function Perturbation(
-        blk::AbstractArgumentBlock{T, N},
+        blk::AbstractArgumentBlock{T,N},
         kind::PerturbationKindArray,
-        amount::Types.Optional{
-            RealArray}=nothing)::Perturbation{N} where {
-                T<:AtomicArgument, N}
+        amount::Types.Optional{RealArray} = nothing,
+    )::Perturbation{N} where {T<:AtomicArgument,N}
 
-        if ndims(blk)>0
+        if ndims(blk) > 0
             blk_shape = size(blk)
-            kind = repeat(kind, outer=blk_shape.÷size(kind))
-            amount = isnothing(amount) ? fill(NaN, blk_shape) :
-                repeat(amount, outer=blk_shape.÷size(amount))
-        elseif (length(kind)>1 || (!isnothing(amount) && length(amount)>1))
+            kind = repeat(kind, outer = blk_shape .÷ size(kind))
+            amount =
+                isnothing(amount) ? fill(NaN, blk_shape) :
+                repeat(amount, outer = blk_shape .÷ size(amount))
+        elseif (length(kind) > 1 || (!isnothing(amount) && length(amount) > 1))
             msg = "kind and amount must be single-element vectors"
             err = SCPError(0, SCP_BAD_ARGUMENT, msg)
             throw(err)
@@ -68,17 +68,16 @@ struct Perturbation{N} <: AbstractRealArray{N}
             amount = isnothing(amount) ? fill(NaN) : fill(amount[1])
         end
 
-        for i=1:length(kind)
-            if kind[i]==FREE
+        for i = 1:length(kind)
+            if kind[i] == FREE
                 amount[i] = Inf
-            elseif kind[i]==FIXED
+            elseif kind[i] == FIXED
                 amount[i] = isnan(amount[i]) ? 0 : amount[i]
             elseif isnan(amount[i])
                 # ABSOLUTE or RELATIVE perturbation, but the perturbation
                 # amount was not specified
                 msg = "Perturbation is %s but amount was not specified"
-                err = SCPError(
-                    0, SCP_BAD_ARGUMENT, @eval @sprintf($msg, $(kind[i])))
+                err = SCPError(0, SCP_BAD_ARGUMENT, @eval @sprintf($msg, $(kind[i])))
                 throw(err)
             end
         end
@@ -121,7 +120,7 @@ Base.size(pert::Perturbation) = size(pert.amount)
 Base.getindex(pert::Perturbation, I...) = Perturbation(pert, I...)
 Base.view(pert::Perturbation, I...) = Perturbation(pert, I...)
 Base.collect(pert::Perturbation) = [pert]
-Base.iterate(pert::Perturbation, state::Int=1) = iterate(pert.amount, state)
+Base.iterate(pert::Perturbation, state::Int = 1) = iterate(pert.amount, state)
 
 """ Get the kind of perturbation """
 kind(pert::Perturbation)::PerturbationKindArray = pert.kind

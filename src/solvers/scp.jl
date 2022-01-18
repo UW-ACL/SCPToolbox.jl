@@ -76,12 +76,16 @@ struct SCPProblem{T<:SCPParameters} <: AbstractSCPProblem
     # Returns
     - `pbm`: the SCP problem definition structure.
     """
-    function SCPProblem(pars::T,
-                        traj::TrajectoryProblem,
-                        common::SCPCommon)::SCPProblem where {T<:SCPParameters}
-        if !(traj.nx>=1 && traj.nu >=1)
-            msg = string("the current implementation only supports",
-                         " problems with at least 1 state and 1 control")
+    function SCPProblem(
+        pars::T,
+        traj::TrajectoryProblem,
+        common::SCPCommon,
+    )::SCPProblem where {T<:SCPParameters}
+        if !(traj.nx >= 1 && traj.nu >= 1)
+            msg = string(
+                "the current implementation only supports",
+                " problems with at least 1 state and 1 control",
+            )
             err = SCPError(0, SCP_BAD_PROBLEM, msg)
             throw(err)
         end
@@ -110,8 +114,8 @@ struct SCPSolution
     ud::RealMatrix  # Inputs
     p::RealVector   # Parameter vector
     # >> Continuous-time trajectory <<
-    xc::Union{Trajectory, Missing} # States
-    uc::Union{Trajectory, Missing} # Inputs
+    xc::Union{Trajectory,Missing} # States
+    uc::Union{Trajectory,Missing} # Inputs
 end # struct
 
 """" SCP iteration history data."""
@@ -136,11 +140,12 @@ matrices used to improve subproblem numerics.
 function SCPProblem(
     pars::T,
     traj::TrajectoryProblem,
-    table::ST.Table)::SCPProblem where {T<:SCPParameters}
+    table::ST.Table,
+)::SCPProblem where {T<:SCPParameters}
 
     # Compute the common constant terms
     t_grid = RealVector(LinRange(0.0, 1.0, pars.N))
-    Δt = t_grid[2]-t_grid[1]
+    Δt = t_grid[2] - t_grid[1]
     E = RealMatrix(collect(Int, I(traj.nx)))
     scale = compute_scaling(pars, traj, t_grid)
     idcs = DiscretizationIndices(traj, E, pars.disc_method)
@@ -225,11 +230,11 @@ function SCPSolution(history::SCPHistory)::SCPSolution
         # >> Continuos-time trajectory <<
         # Since within-interval integration using Nsub points worked, using
         # twice as many this time around seems like a good heuristic
-        Nc = 2*Nsub*(N-1)
-        xc = propagate(last_sol, pbm; res=Nc)
-        if method==FOH
+        Nc = 2 * Nsub * (N - 1)
+        xc = propagate(last_sol, pbm; res = Nc)
+        if method == FOH
             uc = Trajectory(td, ud, :linear)
-        elseif method==IMPULSE
+        elseif method == IMPULSE
             uc = Trajectory(td, ud, :impulse)
         end
 
@@ -270,11 +275,11 @@ Closeness is measured in an L1-norm sense.
 - `constructor`: the subproblem constructor function (as a symbol).
 """
 function correct_convex!(
-        x_ref::RealMatrix,
-        u_ref::RealMatrix,
-        p_ref::RealVector,
-        pbm::SCPProblem,
-        constructor
+    x_ref::RealMatrix,
+    u_ref::RealMatrix,
+    p_ref::RealVector,
+    pbm::SCPProblem,
+    constructor,
 )::Nothing
 
     # Parameters
@@ -285,7 +290,7 @@ function correct_convex!(
     opti = constructor(pbm)
 
     # Add the convex path constraints
-    add_convex_state_constraints!(opti; force_hard=true)
+    add_convex_state_constraints!(opti; force_hard = true)
     add_convex_input_constraints!(opti)
 
     # Add epigraph constraints to make a convex cost for JuMP
@@ -297,56 +302,60 @@ function correct_convex!(
     epi_p = @new_variable(opti.prg, "τp")
     for k = 1:N
         @add_constraint(
-            opti.prg, L1, "x_variation",
+            opti.prg,
+            L1,
+            "x_variation",
             (epi_x[k], x[:, k]),
             begin
                 local epi_x_k, x_k = arg
-                local dxh_k = scale.iSx*(x_k-x_ref[:, k])
+                local dxh_k = scale.iSx * (x_k - x_ref[:, k])
                 vcat(epi_x_k, dxh_k)
             end
         )
         @add_constraint(
-            opti.prg, L1, "u_variation",
+            opti.prg,
+            L1,
+            "u_variation",
             (epi_u[k], u[:, k]),
             begin
                 local epi_u_k, u_k = arg
-                local duh_k = scale.iSu*(u_k-u_ref[:, k])
+                local duh_k = scale.iSu * (u_k - u_ref[:, k])
                 vcat(epi_u_k, duh_k)
             end
         )
     end
     @add_constraint(
-        opti.prg, L1, "p_variation",
+        opti.prg,
+        L1,
+        "p_variation",
         (epi_p, p),
         begin
             local epi_p, p = arg
-            local dph = scale.iSp*(p-p_ref)
+            local dph = scale.iSp * (p - p_ref)
             vcat(epi_p, dph)
         end
     )
 
     # Define the cost
-    @add_cost(
-        opti.prg, (epi_x, epi_u, epi_p),
-        begin
-            local epi_x, epi_u, epi_p = arg
-            sum(epi_x)+sum(epi_u)+epi_p[1]
-        end
-    )
+    @add_cost(opti.prg, (epi_x, epi_u, epi_p), begin
+        local epi_x, epi_u, epi_p = arg
+        sum(epi_x) + sum(epi_u) + epi_p[1]
+    end)
 
     # Solve
     status = solve!(opti.prg)
 
     # Save solution
-    if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
+    if (status == MOI.OPTIMAL || status == MOI.ALMOST_OPTIMAL)
         x_ref .= value(opti.x)
         u_ref .= value(opti.u)
         p_ref .= value(opti.p)
     else
-        msg = string("Solver failed to find the closest initial guess ",
-                     "that satisfies the convex constraints (%s)")
-        err = SCPError(0, SCP_GUESS_PROJECTION_FAILED,
-                       @eval @sprintf($msg, $status))
+        msg = string(
+            "Solver failed to find the closest initial guess ",
+            "that satisfies the convex constraints (%s)",
+        )
+        err = SCPError(0, SCP_GUESS_PROJECTION_FAILED, @eval @sprintf($msg, $status))
         throw(err)
     end
 
@@ -369,7 +378,8 @@ Compute the scaling matrices given the problem definition.
 function compute_scaling(
     pars::SCPParameters,
     traj::TrajectoryProblem,
-    t::RealVector)::SCPScaling
+    t::RealVector,
+)::SCPScaling
 
     # Parameters
     nx = traj.nx
@@ -393,30 +403,40 @@ function compute_scaling(
     u_bbox[:, 1] .= 0.0
     p_bbox[:, 1] .= 0.0
 
-    defs = [Dict(:dim => nx,
-                 :set => traj.X,
-                 :setcall => (prg, t, k, x, u, p) -> traj.X(prg, t, k, x, p),
-                 :bbox => x_bbox,
-                 :advice => :xrg,
-                 :cost => (x, u, p, i) -> x[i]),
-            Dict(:dim => nu,
-                 :set => traj.U,
-                 :setcall => (prg, t, k, x, u, p) -> traj.U(prg, t, k, u, p),
-                 :bbox => u_bbox,
-                 :advice => :urg,
-                 :cost => (x, u, p, i) -> u[i]),
-            Dict(:dim => np,
-                 :set => traj.X,
-                 :setcall => (prg, t, k, x, u, p) -> traj.X(prg, t, k, x, p),
-                 :bbox => p_bbox,
-                 :advice => :prg,
-                 :cost => (x, u, p, i) -> p[i]),
-            Dict(:dim => np,
-                 :set => traj.U,
-                 :setcall => (prg, t, k, x, u, p) -> traj.U(prg, t, k, u, p),
-                 :bbox => p_bbox,
-                 :advice => :prg,
-                 :cost => (x, u, p, i) -> p[i])]
+    defs = [
+        Dict(
+            :dim => nx,
+            :set => traj.X,
+            :setcall => (prg, t, k, x, u, p) -> traj.X(prg, t, k, x, p),
+            :bbox => x_bbox,
+            :advice => :xrg,
+            :cost => (x, u, p, i) -> x[i],
+        ),
+        Dict(
+            :dim => nu,
+            :set => traj.U,
+            :setcall => (prg, t, k, x, u, p) -> traj.U(prg, t, k, u, p),
+            :bbox => u_bbox,
+            :advice => :urg,
+            :cost => (x, u, p, i) -> u[i],
+        ),
+        Dict(
+            :dim => np,
+            :set => traj.X,
+            :setcall => (prg, t, k, x, u, p) -> traj.X(prg, t, k, x, p),
+            :bbox => p_bbox,
+            :advice => :prg,
+            :cost => (x, u, p, i) -> p[i],
+        ),
+        Dict(
+            :dim => np,
+            :set => traj.U,
+            :setcall => (prg, t, k, x, u, p) -> traj.U(prg, t, k, u, p),
+            :bbox => p_bbox,
+            :advice => :prg,
+            :cost => (x, u, p, i) -> p[i],
+        ),
+    ]
 
     for def in defs
         for j = 1:2 # 1:min, 2:max
@@ -426,8 +446,11 @@ function compute_scaling(
                     def[:bbox][i, j] = getfield(traj, def[:advice])[i][j]
                 else
                     # Initialize JuMP model
-                    prg = ConicProgram(traj; solver=solver.Optimizer,
-                                       solver_options=solver_opts)
+                    prg = ConicProgram(
+                        traj;
+                        solver = solver.Optimizer,
+                        solver_options = solver_opts,
+                    )
                     # Variables
                     x = @new_variable(prg, nx, "x")
                     u = @new_variable(prg, nu, "u")
@@ -442,22 +465,20 @@ function compute_scaling(
                     end
                     traj.force_hard = false
                     # Cost
-                    minimize_cost = (j==1) ? 1 : -1
+                    minimize_cost = (j == 1) ? 1 : -1
                     @add_cost(prg, (x, u, p), begin
-                                  local x, u, p = arg
-                                  minimize_cost*def[:cost](x, u, p, i)
-                              end)
+                        local x, u, p = arg
+                        minimize_cost * def[:cost](x, u, p, i)
+                    end)
                     # Solve
                     status = solve!(prg)
                     # Record the solution
-                    if (status==MOI.OPTIMAL || status==MOI.ALMOST_OPTIMAL)
+                    if (status == MOI.OPTIMAL || status == MOI.ALMOST_OPTIMAL)
                         # Nominal case
-                        def[:bbox][i, j] = minimize_cost*objective_value(prg)
-                    elseif !(status == MOI.DUAL_INFEASIBLE ||
-                             status == MOI.NUMERICAL_ERROR)
+                        def[:bbox][i, j] = minimize_cost * objective_value(prg)
+                    elseif !(status == MOI.DUAL_INFEASIBLE || status == MOI.NUMERICAL_ERROR)
                         msg = "Solver failed during variable scaling (%s)"
-                        err = SCPError(0, SCP_SCALING_FAILED,
-                                       @eval @sprintf($msg, $status))
+                        err = SCPError(0, SCP_SCALING_FAILED, @eval @sprintf($msg, $status))
                         throw(err)
                     end
                 end
@@ -466,33 +487,33 @@ function compute_scaling(
     end
 
     # >> Compute scaling matrices and offset vectors <<
-    wdth_x = intrvl_x[2]-intrvl_x[1]
-    wdth_u = intrvl_u[2]-intrvl_u[1]
-    wdth_p = intrvl_p[2]-intrvl_p[1]
+    wdth_x = intrvl_x[2] - intrvl_x[1]
+    wdth_u = intrvl_u[2] - intrvl_u[1]
+    wdth_p = intrvl_p[2] - intrvl_p[1]
 
     # State scaling terms
     x_min, x_max = x_bbox[:, 1], x_bbox[:, 2]
-    diag_Sx = (x_max-x_min)/wdth_x
-    diag_Sx[diag_Sx .< zero_intvl_tol] .= 1.0
+    diag_Sx = (x_max - x_min) / wdth_x
+    diag_Sx[diag_Sx.<zero_intvl_tol] .= 1.0
     Sx = collect(Diagonal(diag_Sx))
     iSx = inv(Sx)
-    cx = x_min-diag_Sx*intrvl_x[1]
+    cx = x_min - diag_Sx * intrvl_x[1]
 
     # Input scaling terms
     u_min, u_max = u_bbox[:, 1], u_bbox[:, 2]
-    diag_Su = (u_max-u_min)/wdth_u
-    diag_Su[diag_Su .< zero_intvl_tol] .= 1.0
+    diag_Su = (u_max - u_min) / wdth_u
+    diag_Su[diag_Su.<zero_intvl_tol] .= 1.0
     Su = collect(Diagonal(diag_Su))
     iSu = inv(Su)
-    cu = u_min-diag_Su*intrvl_u[1]
+    cu = u_min - diag_Su * intrvl_u[1]
 
     # Parameter scaling terms
     p_min, p_max = p_bbox[:, 1], p_bbox[:, 2]
-    diag_Sp = (p_max-p_min)/wdth_p
-    diag_Sp[diag_Sp .< zero_intvl_tol] .= 1.0
+    diag_Sp = (p_max - p_min) / wdth_p
+    diag_Sp[diag_Sp.<zero_intvl_tol] .= 1.0
     Sp = collect(Diagonal(diag_Sp))
     iSp = inv(Sp)
-    cp = p_min-diag_Sp*intrvl_p[1]
+    cp = p_min - diag_Sp * intrvl_p[1]
 
     # Constant parameter scaling terms
 
@@ -514,10 +535,7 @@ Create initial guess from a warm start solution.
 # Returns
 - `guess`: the initial guess for PTR.
 """
-function warm_start(
-        pbm::SCPProblem,
-        warm::SCPSolution,
-        constructor)
+function warm_start(pbm::SCPProblem, warm::SCPSolution, constructor)
 
     # Extract the warm-start trajectory
     x, u, p = warm.xd, warm.ud, warm.p
@@ -537,9 +555,7 @@ Compute the original problem cost function and assign it to the optimization pro
 # Returns
 - `cost`: the original cost as an optimization object.
 """
-function compute_original_cost!(
-        spbm::SCPSubproblem
-)::Objective
+function compute_original_cost!(spbm::SCPSubproblem)::Objective
 
     # Variables and parameters
     pbm = spbm.def
@@ -551,11 +567,12 @@ function compute_original_cost!(
     u = spbm.u
     p = spbm.p
 
-    x_stages = [x[:, k] for k=1:N]
-    u_stages = [u[:, k] for k=1:N]
+    x_stages = [x[:, k] for k = 1:N]
+    u_stages = [u[:, k] for k = 1:N]
 
     cost = @add_cost(
-        prg, (x_stages..., u_stages..., p),
+        prg,
+        (x_stages..., u_stages..., p),
         begin
             local x = arg[1:N]
             local u = arg[(1:N).+N]
@@ -582,7 +599,7 @@ function compute_original_cost!(
             end
             local integ_J_run = trapz(J_run, t)
 
-            J_term+integ_J_run
+            J_term + integ_J_run
         end
     )
 
@@ -607,7 +624,8 @@ function compute_original_cost(
     x::RealMatrix,
     u::RealMatrix,
     p::RealVector,
-    pbm::SCPProblem)::RealTypes
+    pbm::SCPProblem,
+)::RealTypes
 
     # Parameters
     N = pbm.pars.N
@@ -625,7 +643,7 @@ function compute_original_cost(
     end
     integ_J_run = trapz(J_run, t)
 
-    cost = J_term+integ_J_run
+    cost = J_term + integ_J_run
 
     return cost
 end
@@ -642,8 +660,7 @@ Add dynamics constraints to the problem.
 - `relaxed`: (optional) if true then relax dynamics with a virtual control,
   else impose the linearized dynamics as-is.
 """
-function add_dynamics!(spbm::SCPSubproblem;
-                       relaxed::Bool=true)::Nothing
+function add_dynamics!(spbm::SCPSubproblem; relaxed::Bool = true)::Nothing
 
     # Variables and parameters
     N = spbm.def.pars.N
@@ -672,8 +689,8 @@ Add convex state constraints.
 - `force_hard`: force state constraints to be hard-enforced, if they are not so already.
 """
 function add_convex_state_constraints!(
-        spbm::T;
-        force_hard::Bool = false
+    spbm::T;
+    force_hard::Bool = false,
 )::Nothing where {T<:SCPSubproblem}
 
     # Variables and parameters
@@ -703,8 +720,7 @@ Add convex input constraints.
 # Arguments
 - `spbm`: the subproblem definition.
 """
-function add_convex_input_constraints!(
-    spbm::T)::Nothing where {T<:SCPSubproblem}
+function add_convex_input_constraints!(spbm::T)::Nothing where {T<:SCPSubproblem}
 
     # Variables and parameters
     N = spbm.def.pars.N
@@ -731,8 +747,7 @@ Add non-convex state, input, and parameter constraints.
 # Arguments
 - `spbm`: the subproblem definition.
 """
-function add_nonconvex_constraints!(
-    spbm::T)::Nothing where {T<:SCPSubproblem}
+function add_nonconvex_constraints!(spbm::T)::Nothing where {T<:SCPSubproblem}
 
     # Variables and parameters
     N = spbm.def.pars.N
@@ -755,22 +770,27 @@ function add_nonconvex_constraints!(
             tkxup = (t[k], k, xb[:, k], ub[:, k], pb)
             s = traj_pbm.s(tkxup...)
             ns = length(s)
-            if k==1
+            if k == 1
                 spbm.vs = @new_variable(prg, (ns, N), "vs")
             end
             C = !isnothing(traj_pbm.C) ? traj_pbm.C(tkxup...) : zeros(ns, nx)
             D = !isnothing(traj_pbm.D) ? traj_pbm.D(tkxup...) : zeros(ns, nu)
             G = !isnothing(traj_pbm.G) ? traj_pbm.G(tkxup...) : zeros(ns, np)
-            r = s-C*xb[:, k]-D*ub[:, k]-G*pb
+            r = s - C * xb[:, k] - D * ub[:, k] - G * pb
 
-            xk, uk, vsk = x[:,k], u[:,k], spbm.vs[:, k]
+            xk, uk, vsk = x[:, k], u[:, k], spbm.vs[:, k]
 
-            @add_constraint(prg, NONPOS, "path_ncvx",
-                            (xk, uk, p, vsk), begin
-                                local xk, uk, p, vsk = arg
-                                local lhs = C*xk+D*uk+G*p+r
-                                lhs-vsk
-                            end)
+            @add_constraint(
+                prg,
+                NONPOS,
+                "path_ncvx",
+                (xk, uk, p, vsk),
+                begin
+                    local xk, uk, p, vsk = arg
+                    local lhs = C * xk + D * uk + G * p + r
+                    lhs - vsk
+                end
+            )
         else
             break
         end
@@ -791,8 +811,7 @@ Add boundary condition constraints to the problem.
 - `relaxed`: (optional) if true then relax equalities with a virtual control,
   else impose the linearized boundary conditions exactly.
 """
-function add_bcs!(
-    spbm::T; relaxed::Bool=true)::Nothing where {T<:SCPSubproblem}
+function add_bcs!(spbm::T; relaxed::Bool = true)::Nothing where {T<:SCPSubproblem}
 
     # Variables and parameters
     traj = spbm.def.traj
@@ -812,23 +831,33 @@ function add_bcs!(
         nic = length(gic)
         H0 = !isnothing(traj.H0) ? traj.H0(xb0, pb) : zeros(nic, nx)
         K0 = !isnothing(traj.K0) ? traj.K0(xb0, pb) : zeros(nic, np)
-        ℓ0 = gic-H0*xb0-K0*pb
+        ℓ0 = gic - H0 * xb0 - K0 * pb
 
         if relaxed
             spbm.vic = @new_variable(prg, nic, "vic")
-            @add_constraint(prg, ZERO, "initial_condition",
-                            (x0, p, spbm.vic), begin
-                                local x0, p, vic = arg
-                                local lhs = H0*x0+K0*p+ℓ0
-                                lhs+vic
-                            end)
+            @add_constraint(
+                prg,
+                ZERO,
+                "initial_condition",
+                (x0, p, spbm.vic),
+                begin
+                    local x0, p, vic = arg
+                    local lhs = H0 * x0 + K0 * p + ℓ0
+                    lhs + vic
+                end
+            )
         else
-            @add_constraint(prg, ZERO, "initial_condition",
-                            (x0, p), begin
-                                local x0, p = arg
-                                local lhs = H0*x0+K0*p+ℓ0
-                                lhs
-                            end)
+            @add_constraint(
+                prg,
+                ZERO,
+                "initial_condition",
+                (x0, p),
+                begin
+                    local x0, p = arg
+                    local lhs = H0 * x0 + K0 * p + ℓ0
+                    lhs
+                end
+            )
         end
     end
 
@@ -838,23 +867,33 @@ function add_bcs!(
         ntc = length(gtc)
         Hf = !isnothing(traj.Hf) ? traj.Hf(xbf, pb) : zeros(ntc, nx)
         Kf = !isnothing(traj.Kf) ? traj.Kf(xbf, pb) : zeros(ntc, np)
-        ℓf = gtc-Hf*xbf-Kf*pb
+        ℓf = gtc - Hf * xbf - Kf * pb
 
         if relaxed
             spbm.vtc = @new_variable(prg, ntc, "vtc")
-            @add_constraint(prg, ZERO, "terminal_condition",
-                            (xf, p, spbm.vtc), begin
-                                local xf, p, vtc = arg
-                                local lhs = Hf*xf+Kf*p+ℓf
-                                lhs+vtc
-                            end)
+            @add_constraint(
+                prg,
+                ZERO,
+                "terminal_condition",
+                (xf, p, spbm.vtc),
+                begin
+                    local xf, p, vtc = arg
+                    local lhs = Hf * xf + Kf * p + ℓf
+                    lhs + vtc
+                end
+            )
         else
-            @add_constraint(prg, ZERO, "terminal_condition",
-                            (xf, p), begin
-                                local xf, p = arg
-                                local lhs = Hf*xf+Kf*p+ℓf
-                                lhs
-                            end)
+            @add_constraint(
+                prg,
+                ZERO,
+                "terminal_condition",
+                (xf, p),
+                begin
+                    local xf, p = arg
+                    local lhs = Hf * xf + Kf * p + ℓf
+                    lhs
+                end
+            )
         end
     end
 
@@ -881,18 +920,18 @@ function solution_deviation(spbm::T)::RealTypes where {T<:SCPSubproblem}
     scale = pbm.common.scale
     ref = spbm.ref
     sol = spbm.sol
-    xh = scale.iSx*(sol.xd.-scale.cx)
-    ph = scale.iSp*(sol.p-scale.cp)
-    xh_ref = scale.iSx*(ref.xd.-scale.cx)
-    ph_ref = scale.iSp*(ref.p-scale.cp)
+    xh = scale.iSx * (sol.xd .- scale.cx)
+    ph = scale.iSp * (sol.p - scale.cp)
+    xh_ref = scale.iSx * (ref.xd .- scale.cx)
+    ph_ref = scale.iSp * (ref.p - scale.cp)
 
     # Compute deviation
-    dp = norm(ph-ph_ref, q)
+    dp = norm(ph - ph_ref, q)
     dx = 0.0
     for k = 1:N
-        dx = max(dx, norm(xh[:, k]-xh_ref[:, k], q))
+        dx = max(dx, norm(xh[:, k] - xh_ref[:, k], q))
     end
-    deviation = dp+dx
+    deviation = dp + dx
 
     return deviation
 end
@@ -928,8 +967,9 @@ solving the subproblem.
 # Returns
 - `unsafe`: true if the subproblem solution process "failed".
 """
-function unsafe_solution(sol::Union{T, V})::Bool where {
-    T<:SCPSubproblemSolution, V<:SCPSubproblem}
+function unsafe_solution(
+    sol::Union{T,V},
+)::Bool where {T<:SCPSubproblemSolution,V<:SCPSubproblem}
 
     # If the parent subproblem passed in, then get its solution
     if typeof(sol) <: SCPSubproblem
@@ -937,7 +977,7 @@ function unsafe_solution(sol::Union{T, V})::Bool where {
     end
 
     if !sol.unsafe
-        safe = sol.status==MOI.OPTIMAL || sol.status==MOI.ALMOST_OPTIMAL
+        safe = sol.status == MOI.OPTIMAL || sol.status == MOI.ALMOST_OPTIMAL
         sol.unsafe = !safe
     end
 
@@ -953,10 +993,9 @@ Compute solution time overhead introduced by the surrounding code.
 - `spbm`: the subproblem structure.
 """
 function overhead!(spbm::T)::Nothing where {T<:SCPSubproblem}
-    useful_time = (spbm.timing[:discretize]+spbm.timing[:formulate]+
-                   spbm.timing[:solve])
-    spbm.timing[:total] = (get_time()-spbm.timing[:total])/1e9
-    spbm.timing[:overhead] = spbm.timing[:total]-useful_time
+    useful_time = (spbm.timing[:discretize] + spbm.timing[:formulate] + spbm.timing[:solve])
+    spbm.timing[:total] = (get_time() - spbm.timing[:total]) / 1e9
+    spbm.timing[:overhead] = spbm.timing[:total] - useful_time
     return nothing
 end
 
@@ -969,9 +1008,8 @@ Add subproblem to SCP history.
 - `hist`: the history.
 - `spbm`: subproblem structure.
 """
-function save!(hist::SCPHistory,
-               spbm::SCPSubproblem)::Nothing
-    spbm.timing[:formulate] = (get_time()-spbm.timing[:formulate])/1e9
+function save!(hist::SCPHistory, spbm::SCPSubproblem)::Nothing
+    spbm.timing[:formulate] = (get_time() - spbm.timing[:formulate]) / 1e9
     push!(hist.subproblems, spbm)
     return nothing
 end

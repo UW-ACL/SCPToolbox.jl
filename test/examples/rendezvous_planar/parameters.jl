@@ -90,8 +90,8 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     yh = [0.0; 1.0]
     μ = 3.986e14 # [m³/s²] Standard gravitational parameter
     Re = 6378e3 # [m] Earth radius
-    R = Re+400e3 # [m] Orbit radius
-    n = sqrt(μ/R^3)
+    R = Re + 400e3 # [m] Orbit radius
+    n = sqrt(μ / R^3)
     env = PlanarRendezvousEnvironmentParameters(xh, yh, n)
 
     # ..:: Spacecraft vehicle ::..
@@ -110,19 +110,35 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     J = 1e5
     lu = 0.6
     lv = 2.1
-    uh = (θ) -> -cos(θ)*xh+sin(θ)*yh
-    vh = (θ) -> -sin(θ)*xh-cos(θ)*yh
+    uh = (θ) -> -cos(θ) * xh + sin(θ) * yh
+    vh = (θ) -> -sin(θ) * xh - cos(θ) * yh
     # >> Control parameters <<
     f_max = 750.0 # 445.0
     f_db = 200.0
 
     sc = PlanarRendezvousParameters(
-        id_r, id_v, id_θ, id_ω, id_f, id_fr, id_l1f, id_l1feq, id_t,
-        m, J, lu, lv, uh, vh, f_max, f_db)
+        id_r,
+        id_v,
+        id_θ,
+        id_ω,
+        id_f,
+        id_fr,
+        id_l1f,
+        id_l1feq,
+        id_t,
+        m,
+        J,
+        lu,
+        lv,
+        uh,
+        vh,
+        f_max,
+        f_db,
+    )
 
     # ..:: Trajectory ::..
-    r0 = 100.0*xh+10.0*yh
-    v0 = 0.0*xh
+    r0 = 100.0 * xh + 10.0 * yh
+    v0 = 0.0 * xh
     θ0 = deg2rad(180.0)
     ω0 = 0.0
     vf = 0.1
@@ -130,8 +146,7 @@ function PlanarRendezvousProblem()::PlanarRendezvousProblem
     tf_max = 500.0
     κ = NaN
     γ = 3e-1
-    traj = PlanarRendezvousTrajectoryParameters(
-        r0, v0, θ0, ω0, vf, tf_min, tf_max, κ, γ)
+    traj = PlanarRendezvousTrajectoryParameters(r0, v0, θ0, ω0, vf, tf_min, tf_max, κ, γ)
 
     mdl = PlanarRendezvousProblem(sc, env, traj)
 

@@ -22,46 +22,44 @@ using JuMP
 import ..SCPStatus
 
 """ Get the types composing a Union. """
-Base.collect(t::Union{Type, DataType, Union{}}) = _collect(t, [])
-_collect(t::Type, list) = t<:Union{} ? push!(list, t) :
-    _collect(t.b, push!(list, t.a))
+Base.collect(t::Union{Type,DataType,Union{}}) = _collect(t, [])
+_collect(t::Type, list) = t <: Union{} ? push!(list, t) : _collect(t.b, push!(list, t.a))
 _collect(t::Union{DataType,Core.TypeofBottom}, list) = push!(list, t)
 
-const Optional{T} = Union{T, Nothing}
+const Optional{T} = Union{T,Nothing}
 
-const RealTypes = Union{Int, Float64}
+const RealTypes = Union{Int,Float64}
 
 const IntVector = Vector{Int}
 const IntRange = UnitRange{Int}
-const Index = Union{Int, IntRange, Colon}
+const Index = Union{Int,IntRange,Colon}
 
-const RealArray{n} = Union{[Array{T, n} for T in collect(RealTypes)]...}
+const RealArray{n} = Union{[Array{T,n} for T in collect(RealTypes)]...}
 const RealVector = RealArray{1}
 const RealMatrix = RealArray{2}
 const RealTensor = RealArray{3}
 
 const VRef = VariableRef
-const AExpr = GenericAffExpr{Float64, VRef}
-const QExpr = GenericQuadExpr{Float64, VRef}
-const Variable = Union{RealTypes, VariableRef, AExpr, QExpr}
-const VariableAbstractArray{n} = Union{[AbstractArray{T, n} for T
-                                            in collect(Variable)]...}
-const VariableArray{n} = Union{[Array{T, n} for T in collect(Variable)]...}
+const AExpr = GenericAffExpr{Float64,VRef}
+const QExpr = GenericQuadExpr{Float64,VRef}
+const Variable = Union{RealTypes,VariableRef,AExpr,QExpr}
+const VariableAbstractArray{n} = Union{[AbstractArray{T,n} for T in collect(Variable)]...}
+const VariableArray{n} = Union{[Array{T,n} for T in collect(Variable)]...}
 const VariableVector = VariableArray{1}
 const VariableMatrix = VariableArray{2}
 
 const Constraint = Optional{ConstraintRef}
-const ConstraintArray{n} = Array{Constraint, n}
+const ConstraintArray{n} = Array{Constraint,n}
 const ConstraintVector = ConstraintArray{1}
 const ConstraintMatrix = ConstraintArray{2}
 
-const Objective = Union{Missing, Variable}
+const Objective = Union{Missing,Variable}
 
-const ExitStatus = Union{SCPStatus, MOI.TerminationStatusCode}
+const ExitStatus = Union{SCPStatus,MOI.TerminationStatusCode}
 
-const Func = Union{Nothing, Function}
+const Func = Union{Nothing,Function}
 
-const SpecialIntegrationActions = Vector{Tuple{Index, Function}}
+const SpecialIntegrationActions = Vector{Tuple{Index,Function}}
 
 """
     RealArray(args...)
@@ -75,8 +73,8 @@ Real array constructor.
 # Returns
 The real array.
 """
-function (::Type{RealArray{n}})(args...)::Array{Float64, n} where n
-    return Array{Float64, n}(args...)
+function (::Type{RealArray{n}})(args...)::Array{Float64,n} where {n}
+    return Array{Float64,n}(args...)
 end
 
 """
@@ -91,8 +89,7 @@ Variable array constructor.
 # Returns
 The variable array.
 """
-function (::Type{VariableArray})(
-    X::Array{T, n})::Array{T, n} where {T<:Variable, n}
+function (::Type{VariableArray})(X::Array{T,n})::Array{T,n} where {T<:Variable,n}
 
-    return Array{T, n}(X)
+    return Array{T,n}(X)
 end

@@ -43,9 +43,12 @@ struct Homotopy
     - `h`: the homotopy object.
     """
     function Homotopy(
-        δ_min::RealTypes; δ_max::RealTypes=1.0, ε::RealTypes=1e-2)::Homotopy
+        δ_min::RealTypes;
+        δ_max::RealTypes = 1.0,
+        ε::RealTypes = 1e-2,
+    )::Homotopy
 
-        ρ = δ_min/δ_max
+        ρ = δ_min / δ_max
         h = new(ε, δ_min, δ_max, ρ)
 
         return h
@@ -65,6 +68,6 @@ Interpolate the homotopy parameter value.
 - `h`: homotopy value for x.
 """
 function (hom::Homotopy)(x::RealTypes)::RealTypes
-    h = log(1/hom.ε-1)/(hom.ρ^(x)*hom.δ_max)
+    h = log(1 / hom.ε - 1) / (hom.ρ^(x) * hom.δ_max)
     return h
 end

@@ -36,7 +36,7 @@ const RealTensor = ST.RealTensor
 const VarArgBlk = VariableArgumentBlock
 const CstArgBlk = ConstantArgumentBlock
 
-const Objective = Union{ST.Objective, QuadraticCost}
+const Objective = Union{ST.Objective,QuadraticCost}
 
 const Trajectory = ST.ContinuousTimeTrajectory
 

@@ -52,23 +52,21 @@ mutable struct Scaling{N} <: AbstractRealArray{N}
     # Returns
     - `scaling`: the resulting scaling object.
     """
-    function Scaling(blk::AbstractArgumentBlock{T, N},
-                     S::Types.Optional{RealArray}=nothing,
-                     c::Types.Optional{RealArray}=nothing)::Scaling{N} where {
-                         T<:AtomicArgument, N}
+    function Scaling(
+        blk::AbstractArgumentBlock{T,N},
+        S::Types.Optional{RealArray} = nothing,
+        c::Types.Optional{RealArray} = nothing,
+    )::Scaling{N} where {T<:AtomicArgument,N}
 
-        if ndims(blk)>0
+        if ndims(blk) > 0
 
             S = isnothing(S) ? S : filldims(S, blk)
             c = isnothing(c) ? c : filldims(c, blk)
 
-            S = isnothing(S) ? ones(size(blk)) :
-                repeat(S, outer=size(blk).÷size(S))
-            c = isnothing(c) ? zeros(size(blk)) :
-                repeat(c, outer=size(blk).÷size(c))
+            S = isnothing(S) ? ones(size(blk)) : repeat(S, outer = size(blk) .÷ size(S))
+            c = isnothing(c) ? zeros(size(blk)) : repeat(c, outer = size(blk) .÷ size(c))
 
-        elseif ((!isnothing(S) && length(S)>1) ||
-            (!isnothing(c) && length(c)>1))
+        elseif ((!isnothing(S) && length(S) > 1) || (!isnothing(c) && length(c) > 1))
 
             msg = "S and c must be single-element vectors"
             err = SCPError(0, SCP_BAD_ARGUMENT, msg)
@@ -115,7 +113,7 @@ Base.size(sc::Scaling) = size(sc.S)
 Base.getindex(sc::Scaling, I...) = Scaling(sc, I...)
 Base.view(sc::Scaling, I...) = Scaling(sc, I...)
 Base.collect(sc::Scaling) = [sc]
-Base.iterate(sc::Scaling, state::Int=1) = iterate(sc.S, state)
+Base.iterate(sc::Scaling, state::Int = 1) = iterate(sc.S, state)
 
 """ Simple getters for scaling terms. """
 dilation(scale::Scaling)::AbstractRealArray = scale.S
@@ -136,7 +134,7 @@ Apply scaling (dilation and offset) to an array.
 function scale(sc::Scaling, xh::AbstractArray)::AbstractArray
     S = dilation(sc)
     c = offset(sc)
-    x = (S.*xh).+c
+    x = (S .* xh) .+ c
     x = (x isa AbstractArray) ? x : fill(x)
     return x
 end
@@ -155,8 +153,8 @@ Pad A with extra dimensions so that it matches the dimension of B.
   dimensional array.
 """
 function filldims(A::AbstractArray, B::AbstractArray)::AbstractArray
-    extra_dims = ndims(B)-ndims(A)
-    if extra_dims<0
+    extra_dims = ndims(B) - ndims(A)
+    if extra_dims < 0
         msg = "B msut be of higher dimension than A"
         err = SCPError(0, SCP_BAD_ARGUMENT, msg)
         throw(err)

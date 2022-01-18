@@ -105,7 +105,7 @@ function StarshipProblem()::StarshipProblem
     ex = [1.0; 0.0]
     ey = [0.0; 1.0]
     g0 = 9.81 # [m/s^2] Gravitational acceleration
-    g = -g0*ey
+    g = -g0 * ey
     env = StarshipEnvironmentParameters(ex, ey, g)
 
     # >> Starship <<
@@ -121,55 +121,92 @@ function StarshipProblem()::StarshipProblem
     id_δdot = 3
     id_t1 = 1
     id_t2 = 2
-    id_xs = (1:id_δd).+2
+    id_xs = (1:id_δd) .+ 2
     # Body axes
-    ei = (θ) -> cos(θ)*[1.0; 0.0]+sin(θ)*[0.0; 1.0]
-    ej = (θ) -> -sin(θ)*[1.0; 0.0]+cos(θ)*[0.0; 1.0]
+    ei = (θ) -> cos(θ) * [1.0; 0.0] + sin(θ) * [0.0; 1.0]
+    ej = (θ) -> -sin(θ) * [1.0; 0.0] + cos(θ) * [0.0; 1.0]
     # Mechanical parameters
     rs = 4.5 # [m] Fuselage radius
     ls = 50.0 # [m] Fuselage height
     m = 120e3
-    lcg = 0.4*ls
-    lcp = 0.45*ls
-    J = 1/12*m*(6*rs^2+ls^2)
+    lcg = 0.4 * ls
+    lcp = 0.45 * ls
+    J = 1 / 12 * m * (6 * rs^2 + ls^2)
     # Aerodynamic parameters
     vterm = 85 # [m/s] Terminal velocity (during freefall)
-    CD = m*g0/vterm^2
+    CD = m * g0 / vterm^2
     CD *= 1.2 # Fudge factor
     # Propulsion parameters
     Isp = 330 # [s] Specific impulse
     T_min1 = 880e3 # [N] One engine min thrust
     T_max1 = 2210e3 # [N] One engine max thrust
-    T_min3 = 3*T_min1
-    T_max3 = 3*T_max1
-    αe = -1/(Isp*g0)
+    T_min3 = 3 * T_min1
+    T_max3 = 3 * T_max1
+    αe = -1 / (Isp * g0)
     δ_max = deg2rad(10.0)
-    δdot_max = 2*δ_max
+    δdot_max = 2 * δ_max
     rate_delay = 0.05
 
     starship = StarshipParameters(
-        id_r, id_v, id_θ, id_ω, id_m, id_δd, id_T, id_δ, id_δdot, id_t1,
-        id_t2, id_xs, ei, ej, lcg, lcp, m, J, CD, T_min1, T_max1, T_min3,
-        T_max3, αe, δ_max, δdot_max, rate_delay)
+        id_r,
+        id_v,
+        id_θ,
+        id_ω,
+        id_m,
+        id_δd,
+        id_T,
+        id_δ,
+        id_δdot,
+        id_t1,
+        id_t2,
+        id_xs,
+        ei,
+        ej,
+        lcg,
+        lcp,
+        m,
+        J,
+        CD,
+        T_min1,
+        T_max1,
+        T_min3,
+        T_max3,
+        αe,
+        δ_max,
+        δdot_max,
+        rate_delay,
+    )
 
     # >> Trajectory <<
     # Initial values
-    r0 = 100.0*ex+600.0*ey
-    v0 = -vterm*ey
+    r0 = 100.0 * ex + 600.0 * ey
+    v0 = -vterm * ey
     θ0 = deg2rad(90.0)
     # Phase switch (guess) values
     θs = deg2rad(-10.0)
-    vs = -10.0*ey
+    vs = -10.0 * ey
     # Terminal values
-    vf = -0.1*ey
+    vf = -0.1 * ey
     tf_min = 0.0
     tf_max = 40.0
     γ_gs = deg2rad(27.0)
     θmax2 = deg2rad(15.0)
     τs = 0.5
     hs = 100.0
-    traj = StarshipTrajectoryParameters(r0, v0, θ0, vs, θs, vf, tf_min,
-                                        tf_max, γ_gs, θmax2, τs, hs)
+    traj = StarshipTrajectoryParameters(
+        r0,
+        v0,
+        θ0,
+        vs,
+        θs,
+        vf,
+        tf_min,
+        tf_max,
+        γ_gs,
+        θmax2,
+        τs,
+        hs,
+    )
 
     mdl = StarshipProblem(starship, env, traj)
 

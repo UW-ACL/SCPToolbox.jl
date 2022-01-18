@@ -19,8 +19,7 @@ using LinearAlgebra
 
 # ..:: Methods ::..
 
-function define_problem!(pbm::TrajectoryProblem,
-                         algo::Symbol)::Nothing
+function define_problem!(pbm::TrajectoryProblem, algo::Symbol)::Nothing
     set_dims!(pbm)
     set_scale!(pbm)
     set_cost!(pbm, algo)
@@ -56,14 +55,14 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     rx_max = max([rx0, 1.0]...)
     ry_min = min([ry0, -0.1]...)
     ry_max = max([ry0, 0.1]...)
-    vx_min = min([vx0, -rx0/traj.tf_min, -0.1]...)
+    vx_min = min([vx0, -rx0 / traj.tf_min, -0.1]...)
     vx_max = min([vx0, 0.1]...)
-    vy_min = min([vy0, -ry0/traj.tf_min, -0.1]...)
-    vy_max = max([vy0, -ry0/traj.tf_min, 0.1]...)
+    vy_min = min([vy0, -ry0 / traj.tf_min, -0.1]...)
+    vy_max = max([vy0, -ry0 / traj.tf_min, 0.1]...)
     θ_min = min([traj.θ0, deg2rad(-1.0)]...)
     θ_max = max([traj.θ0, deg2rad(1.0)]...)
-    ω_min = min([-traj.θ0/traj.tf_min, traj.ω0, deg2rad(-1.0)]...)
-    ω_max = max([-traj.θ0/traj.tf_min, traj.ω0, deg2rad(1.0)]...)
+    ω_min = min([-traj.θ0 / traj.tf_min, traj.ω0, deg2rad(-1.0)]...)
+    ω_max = max([-traj.θ0 / traj.tf_min, traj.ω0, deg2rad(1.0)]...)
 
     advise! = problem_advise_scale!
 
@@ -84,7 +83,7 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
         advise!(pbm, :input, i, (0.0, veh.f_max))
     end
     for i in veh.id_l1feq
-        advise!(pbm, :input, i, (0.0, 2*veh.f_max))
+        advise!(pbm, :input, i, (0.0, 2 * veh.f_max))
     end
     # Parameters
     advise!(pbm, :parameter, veh.id_t, (traj.tf_min, traj.tf_max))
@@ -94,42 +93,41 @@ end
 
 function set_guess!(pbm::TrajectoryProblem)::Nothing
 
-    problem_set_guess!(
-        pbm, (N, pbm) -> begin
-            veh = pbm.mdl.vehicle
-            traj = pbm.mdl.traj
-            env = pbm.mdl.env
+    problem_set_guess!(pbm, (N, pbm) -> begin
+        veh = pbm.mdl.vehicle
+        traj = pbm.mdl.traj
+        env = pbm.mdl.env
 
-            # Parameter guess
-            p = zeros(pbm.np)
-            p[veh.id_t] = 0.5*(traj.tf_min+traj.tf_max)
+        # Parameter guess
+        p = zeros(pbm.np)
+        p[veh.id_t] = 0.5 * (traj.tf_min + traj.tf_max)
 
-            # State guess
-            x0 = zeros(pbm.nx)
-            xf = zeros(pbm.nx)
-            x0[veh.id_r] = traj.r0
-            x0[veh.id_v] = -traj.r0/p[veh.id_t]
-            x0[veh.id_θ] = traj.θ0
-            x0[veh.id_ω] = -traj.θ0/p[veh.id_t]
-            xf[veh.id_v] = x0[veh.id_v]
-            xf[veh.id_ω] = x0[veh.id_ω]
-            x = straightline_interpolate(x0, xf, N)
+        # State guess
+        x0 = zeros(pbm.nx)
+        xf = zeros(pbm.nx)
+        x0[veh.id_r] = traj.r0
+        x0[veh.id_v] = -traj.r0 / p[veh.id_t]
+        x0[veh.id_θ] = traj.θ0
+        x0[veh.id_ω] = -traj.θ0 / p[veh.id_t]
+        xf[veh.id_v] = x0[veh.id_v]
+        xf[veh.id_ω] = x0[veh.id_ω]
+        x = straightline_interpolate(x0, xf, N)
 
-            # Input guess
-            idle = zeros(pbm.nu)
-            u = straightline_interpolate(idle, idle, N)
+        # Input guess
+        idle = zeros(pbm.nu)
+        u = straightline_interpolate(idle, idle, N)
 
-            return x, u, p
-        end)
+        return x, u, p
+    end)
 
     return nothing
 end
 
-function set_cost!(pbm::TrajectoryProblem,
-                            algo::Symbol)::Nothing
+function set_cost!(pbm::TrajectoryProblem, algo::Symbol)::Nothing
 
     problem_set_running_cost!(
-        pbm, algo,
+        pbm,
+        algo,
         (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
@@ -137,10 +135,11 @@ function set_cost!(pbm::TrajectoryProblem,
             l1feq = u[veh.id_l1feq]
             f = u[veh.id_f]
             f_nrml = veh.f_max
-            runn = sum(l1f)/f_nrml
-            runn += traj.γ*sum(l1feq)/f_nrml
+            runn = sum(l1f) / f_nrml
+            runn += traj.γ * sum(l1feq) / f_nrml
             return runn
-        end)
+        end,
+    )
 
 end
 
@@ -153,7 +152,7 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             # Parameters
             veh = pbm.mdl.vehicle
             env = pbm.mdl.env
-            impulse = k<0
+            impulse = k < 0
             # Current (x, u, p) values
             r = x[veh.id_r]
             v = x[veh.id_v]
@@ -167,12 +166,12 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             xh, yh, n = env.xh, env.yh, env.n
             # The dynamics
             f = zeros(pbm.nx)
-            f[veh.id_v] = ((fm+fp)*uh+f0*vh)/veh.m
-            f[veh.id_ω] = ((fp-fm)*veh.lv-f0*veh.lu)/veh.J
+            f[veh.id_v] = ((fm + fp) * uh + f0 * vh) / veh.m
+            f[veh.id_ω] = ((fp - fm) * veh.lv - f0 * veh.lu) / veh.J
             if !impulse
                 f[veh.id_r] = v
-                f[veh.id_v] += (2*n*dot(yh, v))*xh
-                f[veh.id_v] += (3*n^2*dot(yh, r)-2*n*dot(xh, v))*yh
+                f[veh.id_v] += (2 * n * dot(yh, v)) * xh
+                f[veh.id_v] += (3 * n^2 * dot(yh, r) - 2 * n * dot(xh, v)) * yh
                 f[veh.id_θ] = ω
                 # Scale for absolute time
                 f *= tdil
@@ -195,9 +194,9 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             # The Jacobian
             A = zeros(pbm.nx, pbm.nx)
             A[veh.id_r, veh.id_v] = I(2)
-            A[veh.id_v, veh.id_r] = 3*n^2*yh*yh'
-            A[veh.id_v, veh.id_v] = 2*n*(xh*yh'-yh*xh')
-            A[veh.id_v, veh.id_θ] = ((fm+fp)*∇θ_uh+f0*∇θ_vh)/veh.m
+            A[veh.id_v, veh.id_r] = 3 * n^2 * yh * yh'
+            A[veh.id_v, veh.id_v] = 2 * n * (xh * yh' - yh * xh')
+            A[veh.id_v, veh.id_θ] = ((fm + fp) * ∇θ_uh + f0 * ∇θ_vh) / veh.m
             A[veh.id_θ, veh.id_ω] = 1.0
             # Scale for absolute time
             A *= tdil
@@ -207,7 +206,7 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
         (t, k, x, u, p, pbm) -> begin
             # Parameters
             veh = pbm.mdl.vehicle
-            impulse = k<0
+            impulse = k < 0
             # Current (x, u, p) values
             θ = x[veh.id_θ]
             tdil = p[veh.id_t]
@@ -217,12 +216,12 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             id_fm, id_fp, id_f0 = veh.id_f
             # The Jacobian
             B = zeros(pbm.nx, pbm.nu)
-            B[veh.id_v, id_fm] = uh/veh.m
-            B[veh.id_v, id_fp] = uh/veh.m
-            B[veh.id_v, id_f0] = vh/veh.m
-            B[veh.id_ω, id_fm] = -veh.lv/veh.J
-            B[veh.id_ω, id_fp] = veh.lv/veh.J
-            B[veh.id_ω, id_f0] = -veh.lu/veh.J
+            B[veh.id_v, id_fm] = uh / veh.m
+            B[veh.id_v, id_fp] = uh / veh.m
+            B[veh.id_v, id_f0] = vh / veh.m
+            B[veh.id_ω, id_fm] = -veh.lv / veh.J
+            B[veh.id_ω, id_fp] = veh.lv / veh.J
+            B[veh.id_ω, id_f0] = -veh.lu / veh.J
             if !impulse
                 # Scale for absolute time
                 B *= tdil
@@ -234,9 +233,10 @@ function set_dynamics!(pbm::TrajectoryProblem)::Nothing
             veh = pbm.mdl.vehicle
             tdil = p[veh.id_t]
             F = zeros(pbm.nx, pbm.np)
-            F[:, veh.id_t] = pbm.f(t, k, x, u, p)/tdil
+            F[:, veh.id_t] = pbm.f(t, k, x, u, p) / tdil
             return F
-        end)
+        end,
+    )
 
     return nothing
 end
@@ -245,7 +245,8 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
     # Convex path constraints on the input
     problem_set_U!(
-        pbm, (t, k, u, p, pbm, ocp) -> begin
+        pbm,
+        (t, k, u, p, pbm, ocp) -> begin
             veh = pbm.mdl.vehicle
             traj = pbm.mdl.traj
             n_rcs = length(veh.id_f)
@@ -260,71 +261,100 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                 l1feq_i = u[veh.id_l1feq[i]]
 
                 @add_constraint(
-                    ocp, NONPOS, "thrust_absval_max",
-                    (l1f_i,), begin
+                    ocp,
+                    NONPOS,
+                    "thrust_absval_max",
+                    (l1f_i,),
+                    begin
                         local l1f, = arg
-                        l1f[1]-veh.f_max
-                    end)
+                        l1f[1] - veh.f_max
+                    end
+                )
 
                 @add_constraint(
-                    ocp, NONPOS, "thrust_refval_max",
-                    (fr_i,), begin
+                    ocp,
+                    NONPOS,
+                    "thrust_refval_max",
+                    (fr_i,),
+                    begin
                         local fr, = arg
-                        fr[1]-veh.f_max
-                    end)
+                        fr[1] - veh.f_max
+                    end
+                )
 
                 @add_constraint(
-                    ocp, NONPOS, "thrust_refval_min",
-                    (fr_i,), begin
+                    ocp,
+                    NONPOS,
+                    "thrust_refval_min",
+                    (fr_i,),
+                    begin
                         local fr, = arg
-                        -fr[1]-veh.f_max
-                    end)
+                        -fr[1] - veh.f_max
+                    end
+                )
 
                 @add_constraint(
-                    ocp, L1, "thrust_absval",
-                    (l1f_i, f_i), begin
+                    ocp,
+                    L1,
+                    "thrust_absval",
+                    (l1f_i, f_i),
+                    begin
                         local l1f, f = arg
                         vcat(l1f, f)
-                    end)
+                    end
+                )
 
                 @add_constraint(
-                    ocp, L1, "thrust_absval",
-                    (l1feq_i, f_i, fr_i), begin
+                    ocp,
+                    L1,
+                    "thrust_absval",
+                    (l1feq_i, f_i, fr_i),
+                    begin
                         local l1feq, f, fr = arg
-                        vcat(l1feq, f-fr)
-                    end)
+                        vcat(l1feq, f - fr)
+                    end
+                )
 
             end
 
             @add_constraint(
-                ocp, NONPOS, "min_time_bound",
-                (tdil, ), begin
+                ocp,
+                NONPOS,
+                "min_time_bound",
+                (tdil,),
+                begin
                     local tdil, = arg
-                    tdil[1]-traj.tf_max
-                end)
+                    tdil[1] - traj.tf_max
+                end
+            )
 
             @add_constraint(
-                ocp, NONPOS, "max_time_bound",
-                (tdil, ), begin
+                ocp,
+                NONPOS,
+                "max_time_bound",
+                (tdil,),
+                begin
                     local tdil, = arg
-                    traj.tf_min-tdil[1]
-                end)
+                    traj.tf_min - tdil[1]
+                end
+            )
 
             return nothing
-        end)
+        end,
+    )
 
     return nothing
 end
 
-function set_nonconvex_constraints!(pbm::TrajectoryProblem,
-                                             algo::Symbol)::Nothing
+function set_nonconvex_constraints!(pbm::TrajectoryProblem, algo::Symbol)::Nothing
 
     veh = pbm.mdl.vehicle
     n_rcs = length(veh.id_f)
-    _common_s_sz = 2*n_rcs
+    _common_s_sz = 2 * n_rcs
 
     problem_set_s!(
-        pbm, algo,
+        pbm,
+        algo,
         # Constraint s
         (t, k, x, u, p, pbm) -> begin
             veh = pbm.mdl.vehicle
@@ -332,18 +362,19 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
 
             s = zeros(_common_s_sz)
 
-            for i=1:n_rcs
+            for i = 1:n_rcs
                 id_f, id_fr = veh.id_f[i], veh.id_fr[i]
                 f, fr = u[id_f], u[id_fr]
-                above_db = fr-veh.f_db
-                below_db = -veh.f_db-fr
+                above_db = fr - veh.f_db
+                below_db = -veh.f_db - fr
                 OR = or(
                     [above_db, below_db];
-                    κ=traj.κ,
-                    match=[veh.f_max-veh.f_db, -veh.f_db-veh.f_max],
-                    normalize=veh.f_max+veh.f_db)
-                s[2*(i-1)+1] = f-OR*fr
-                s[2*(i-1)+2] = OR*fr-f
+                    κ = traj.κ,
+                    match = [veh.f_max - veh.f_db, -veh.f_db - veh.f_max],
+                    normalize = veh.f_max + veh.f_db,
+                )
+                s[2*(i-1)+1] = f - OR * fr
+                s[2*(i-1)+2] = OR * fr - f
             end
 
             return s
@@ -363,17 +394,18 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
             for i = 1:n_rcs
                 id_f, id_fr = veh.id_f[i], veh.id_fr[i]
                 fr = u[id_fr]
-                above_db = fr-veh.f_db
+                above_db = fr - veh.f_db
                 ∇above_db = [1.0]
-                below_db = -veh.f_db-fr
+                below_db = -veh.f_db - fr
                 ∇below_db = [-1.0]
                 OR, ∇OR = or(
                     [above_db, below_db],
                     [∇above_db, ∇below_db];
-                    κ=traj.κ,
-                    match=[veh.f_max-veh.f_db, -veh.f_db-veh.f_max],
-                    normalize=veh.f_max+veh.f_db)
-                ∇ORfr = ∇OR[1]*fr+OR
+                    κ = traj.κ,
+                    match = [veh.f_max - veh.f_db, -veh.f_db - veh.f_max],
+                    normalize = veh.f_max + veh.f_db,
+                )
+                ∇ORfr = ∇OR[1] * fr + OR
                 D[2*(i-1)+1, id_f] = 1.0
                 D[2*(i-1)+1, id_fr] = -∇ORfr
                 D[2*(i-1)+2, id_f] = -1.0
@@ -386,7 +418,8 @@ function set_nonconvex_constraints!(pbm::TrajectoryProblem,
         (t, k, x, u, p, pbm) -> begin
             G = zeros(_common_s_sz, pbm.np)
             return G
-        end)
+        end,
+    )
 
     return nothing
 end
@@ -395,7 +428,8 @@ function set_bcs!(pbm::TrajectoryProblem)::Nothing
 
     # Initial conditions
     problem_set_bc!(
-        pbm, :ic,
+        pbm,
+        :ic,
         # Constraint g
         (x, p, pbm) -> begin
             veh = pbm.mdl.vehicle
@@ -405,10 +439,7 @@ function set_bcs!(pbm::TrajectoryProblem)::Nothing
             rhs[3:4] = traj.v0
             rhs[5] = traj.θ0
             rhs[6] = traj.ω0
-            g = x[vcat(veh.id_r,
-                       veh.id_v,
-                       veh.id_θ,
-                       veh.id_ω)]-rhs
+            g = x[vcat(veh.id_r, veh.id_v, veh.id_θ, veh.id_ω)] - rhs
             return g
         end,
         # Jacobian dg/dx
@@ -420,11 +451,13 @@ function set_bcs!(pbm::TrajectoryProblem)::Nothing
             H[5, veh.id_θ] = 1.0
             H[6, veh.id_ω] = 1.0
             return H
-        end)
+        end,
+    )
 
     # Initial conditions
     problem_set_bc!(
-        pbm, :tc,
+        pbm,
+        :tc,
         # Constraint g
         (x, p, pbm) -> begin
             veh = pbm.mdl.vehicle
@@ -432,13 +465,10 @@ function set_bcs!(pbm::TrajectoryProblem)::Nothing
             traj = pbm.mdl.traj
             rhs = zeros(6)
             rhs[1:2] = zeros(2)
-            rhs[3:4] = -traj.vf*env.xh
+            rhs[3:4] = -traj.vf * env.xh
             rhs[5] = 0.0
             rhs[6] = 0.0
-            g = x[vcat(veh.id_r,
-                       veh.id_v,
-                       veh.id_θ,
-                       veh.id_ω)]-rhs
+            g = x[vcat(veh.id_r, veh.id_v, veh.id_θ, veh.id_ω)] - rhs
             return g
         end,
         # Jacobian dg/dx
@@ -450,7 +480,8 @@ function set_bcs!(pbm::TrajectoryProblem)::Nothing
             H[5, veh.id_θ] = 1.0
             H[6, veh.id_ω] = 1.0
             return H
-        end)
+        end,
+    )
 
     return nothing
 end

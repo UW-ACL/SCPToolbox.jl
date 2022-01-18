@@ -44,13 +44,13 @@ struct Hyperrectangle
     - `H`: the hyperrectangle set.
     """
     function Hyperrectangle(l::RealVector, u::RealVector)::Hyperrectangle
-        if length(l)!=length(u)
+        if length(l) != length(u)
             err = ArgumentError("vertex dimension mismatch.")
             throw(err)
         end
         n = length(l)
-        s = (u-l)/2
-        c = (u+l)/2
+        s = (u - l) / 2
+        c = (u + l) / 2
         H = new(n, l, u, s, c)
         return H
     end
@@ -66,12 +66,11 @@ struct Hyperrectangle
     # Returns
     - `H`: the hyperrectangle set.
     """
-    function Hyperrectangle(
-        range::Tuple{RealTypes, RealTypes}...)::Hyperrectangle
+    function Hyperrectangle(range::Tuple{RealTypes,RealTypes}...)::Hyperrectangle
 
         n = length(range)
-        l = RealVector([range[i][1] for i=1:n])
-        u = RealVector([range[i][2] for i=1:n])
+        l = RealVector([range[i][1] for i = 1:n])
+        u = RealVector([range[i][2] for i = 1:n])
 
         H = Hyperrectangle(l, u)
 
@@ -100,36 +99,44 @@ struct Hyperrectangle
     # Returns
     - `H`: the hyperrectangle set.
     """
-    function Hyperrectangle(offset::RealVector,
-                              width::RealTypes,
-                              height::RealTypes,
-                              depth::RealTypes;
-                              yaw::RealTypes=0.0,
-                              pitch::RealTypes=0.0,
-                              roll::RealTypes=0.0)::Hyperrectangle
-        if yaw%90!=0 || pitch%90!=0 || roll%90!=0
+    function Hyperrectangle(
+        offset::RealVector,
+        width::RealTypes,
+        height::RealTypes,
+        depth::RealTypes;
+        yaw::RealTypes = 0.0,
+        pitch::RealTypes = 0.0,
+        roll::RealTypes = 0.0,
+    )::Hyperrectangle
+        if yaw % 90 != 0 || pitch % 90 != 0 || roll % 90 != 0
             err = ArgumentError("hyperrectangle must be axis-aligned.")
             throw(err)
         end
         # Compute the hyperrectangle min/max vertices in world frame, no offset
-        l = RealVector([-width/2, -height/2, 0.0])
-        u = RealVector([width/2, height/2, depth])
+        l = RealVector([-width / 2, -height / 2, 0.0])
+        u = RealVector([width / 2, height / 2, depth])
         # Apply rotation
         c = (angle) -> cosd(angle)
         s = (angle) -> sind(angle)
         ψ, θ, φ = yaw, pitch, roll
-        Rz = RealMatrix([c(ψ) -s(ψ) 0;
-                         s(ψ)  c(ψ) 0;
-                         0       0  1])
-        Ry = RealMatrix([c(θ) 0 s(θ);
-                         0    1 0;
-                         -s(θ) 0 c(θ)])
-        Rx = RealMatrix([1 0     0;
-                         0 c(φ) -s(φ);
-                         0 s(φ)  c(φ)])
-        R = Rz*Ry*Rx # **intrinsic** rotations
-        lr = R*l
-        ur = R*u
+        Rz = RealMatrix([
+            c(ψ) -s(ψ) 0
+            s(ψ) c(ψ) 0
+            0 0 1
+        ])
+        Ry = RealMatrix([
+            c(θ) 0 s(θ)
+            0 1 0
+            -s(θ) 0 c(θ)
+        ])
+        Rx = RealMatrix([
+            1 0 0
+            0 c(φ) -s(φ)
+            0 s(φ) c(φ)
+        ])
+        R = Rz * Ry * Rx # **intrinsic** rotations
+        lr = R * l
+        ur = R * u
         l = min.(lr, ur)
         u = max.(lr, ur)
         # Apply offset

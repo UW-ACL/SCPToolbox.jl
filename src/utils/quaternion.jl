@@ -60,7 +60,7 @@ struct Quaternion
     - `q`: the quaternion.
     """
     function Quaternion(v::RealVector, w::RealTypes)::Quaternion
-        if length(v)!=3
+        if length(v) != 3
             err = ArgumentError("quaternion is a 4-element object.")
             throw(err)
         end
@@ -82,14 +82,16 @@ struct Quaternion
     - `q`: the pure quaternion.
     """
     function Quaternion(v::RealVector)::Quaternion
-        if length(v)!=3 && length(v)!=4
-            msg = string("cannot construct a quaternion from ",
-                         "fewer than 3 or more than 4 elements.")
+        if length(v) != 3 && length(v) != 4
+            msg = string(
+                "cannot construct a quaternion from ",
+                "fewer than 3 or more than 4 elements.",
+            )
             err = ArgumentError(msg)
             throw(err)
         end
 
-        if length(v)==3
+        if length(v) == 3
             q = Quaternion(v, 0.0)
         else
             q = Quaternion(v[1:3], v[4])
@@ -111,15 +113,15 @@ struct Quaternion
     - `q`: the unit quaternion.
     """
     function Quaternion(α::RealTypes, a::RealVector)::Quaternion
-        if length(a)!=3
+        if length(a) != 3
             msg = string("axis must be in R^3.")
             err = ArgumentError(msg)
             throw(err)
         end
 
         a /= norm(a)
-        v = a*sin(α/2)
-        w = cos(α/2)
+        v = a * sin(α / 2)
+        w = cos(α / 2)
         q = Quaternion(v, w)
 
         return q
@@ -142,7 +144,7 @@ struct Quaternion
         q_yaw = Quaternion(yaw, [0; 0; 1])
         q_pitch = Quaternion(pitch, [0; 1; 0])
         q_roll = Quaternion(roll, [1; 0; 0])
-        q = q_yaw*q_pitch*q_roll
+        q = q_yaw * q_pitch * q_roll
 
         return q
     end
@@ -161,12 +163,12 @@ Quaternion indexing.
 - `v`: the value.
 """
 function getindex(q::Quaternion, i::Int)::RealTypes
-    if i<0 || i>4
+    if i < 0 || i > 4
         err = ArgumentError("quaternion index out of bounds.")
         throw(err)
     end
 
-    v = (i<=3) ? q.v[i] : q.w
+    v = (i <= 3) ? q.v[i] : q.w
 
     return v
 end
@@ -185,9 +187,9 @@ Skew-symmetric matrix from a quaternion.
 # Returns
 - `S`: the skew-symmetric matrix.
 """
-function skew(q::Quaternion, side::Symbol=:L)::RealMatrix
+function skew(q::Quaternion, side::Symbol = :L)::RealMatrix
     S = RealMatrix(undef, 4, 4)
-    S[1:3, 1:3] = q.w*I(3)+((side==:L) ? 1 : -1)*skew(q.v)
+    S[1:3, 1:3] = q.w * I(3) + ((side == :L) ? 1 : -1) * skew(q.v)
     S[1:3, 4] = q.v
     S[4, 1:3] = -q.v
     S[4, 4] = q.w
@@ -207,7 +209,7 @@ Quaternion multiplication.
 - `r`: the resultant quaternion, r=q*p.
 """
 function *(q::Quaternion, p::Quaternion)::Quaternion
-    r = Quaternion(skew(q)*vec(p))
+    r = Quaternion(skew(q) * vec(p))
     return r
 end
 
@@ -224,20 +226,20 @@ Quaternion multiplication by a pure quaternion (a vector).
 - `r`: the resultant quaternion, `r=q*p`.
 """
 function *(q::Quaternion, p::RealVector)::Quaternion
-    if length(p)!=3
+    if length(p) != 3
         err = ArgumentError("p must be a vector in R^3.")
         throw(err)
     end
-    r = q*Quaternion(p)
+    r = q * Quaternion(p)
     return r
 end
 
 function *(q::RealVector, p::Quaternion)::Quaternion
-    if length(q)!=3
+    if length(q) != 3
         err = ArgumentError("q must be a vector in R^3.")
         throw(err)
     end
-    r = Quaternion(q)*p
+    r = Quaternion(q) * p
     return r
 end
 
@@ -272,10 +274,10 @@ assume that a unit quaternion is passed in (no checks are run to verify this).
 - `α`: the rotation angle (in radians).
 - `a`: the rotation axis.
 """
-function Log(q::Quaternion)::Tuple{Real, RealVector}
+function Log(q::Quaternion)::Tuple{Real,RealVector}
     nrm_qv = norm(q.v)
-    α = 2*atan(nrm_qv, q.w)
-    a = q.v/nrm_qv
+    α = 2 * atan(nrm_qv, q.w)
+    a = q.v / nrm_qv
     return α, a
 end
 
@@ -353,8 +355,8 @@ References:
 - `w`: the final rotated vector.
 """
 function rotate(v::RealVector, q::Quaternion...)::RealVector
-    w = (q[end]*v*q[end]').v
-    if length(q)>1
+    w = (q[end] * v * q[end]').v
+    if length(q) > 1
         w = rotate(w, q[1:end-1]...)
     end
     return w
@@ -390,7 +392,7 @@ the call to the `rpy(dcm)` function, so see its docstring for details.
 - `pitch`: the pitch angle (in radians).
 - `roll`: the roll angle (in radians).
 """
-function rpy(q::Quaternion)::Tuple{Real, Real, Real}
+function rpy(q::Quaternion)::Tuple{Real,Real,Real}
     R = dcm(q)
     yaw, pitch, roll = rpy(R)
     # From Wikipedia (en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles)
@@ -430,7 +432,7 @@ References:
 - `pitch`: the pitch angle (in radians).
 - `roll`: the roll angle (in radians).
 """
-function rpy(R::RealMatrix)::Tuple{Real, Real, Real}
+function rpy(R::RealMatrix)::Tuple{Real,Real,Real}
     pitch = asin(-R[3, 1])
     roll = atan(R[3, 2], R[3, 3])
     yaw = atan(R[2, 1], R[1, 1])
@@ -478,14 +480,12 @@ References:
 # Returns
 - `qt`: the interpolated quaternion between q0 and q1.
 """
-function slerp_interpolate(q0::Quaternion,
-                           q1::Quaternion,
-                           τ::RealTypes)::Quaternion
+function slerp_interpolate(q0::Quaternion, q1::Quaternion, τ::RealTypes)::Quaternion
     τ = max(0.0, min(1.0, τ))
-    Δq = q0'*q1 # Error quaternion correcting q0 to q1
+    Δq = q0' * q1 # Error quaternion correcting q0 to q1
     Δα, Δa = Log(Δq)
-    Δq_t = Quaternion(τ*Δα, Δa)
-    qt = q0*Δq_t
+    Δq_t = Quaternion(τ * Δα, Δa)
+    qt = q0 * Δq_t
     return qt
 end
 
@@ -505,8 +505,8 @@ Compute the Jacobian with respect to `q` of the rotation operation `q*a*q'`.
 """
 function ddq(q::Quaternion, a::RealVector)::RealMatrix
     J = RealMatrix(undef, 3, 4)
-    J[:, 1] = q.w*a+cross(q.v, a)
-    J[:, 2:4] = dot(q.v, a)*I(3)+q.v*a'-a*q.v'-q.w*skew(a)
+    J[:, 1] = q.w * a + cross(q.v, a)
+    J[:, 2:4] = dot(q.v, a) * I(3) + q.v * a' - a * q.v' - q.w * skew(a)
     J *= 2
     return J
 end

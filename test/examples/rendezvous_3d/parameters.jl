@@ -22,7 +22,7 @@ using .SCPToolbox
 
 # ..:: Globals ::..
 
-const RCSKey = Tuple{Symbol, Symbol}
+const RCSKey = Tuple{Symbol,Symbol}
 
 # ..:: Data structures ::..
 
@@ -87,13 +87,13 @@ struct ApolloCSM
     # Transformation matrices
     H_SD::RealMatrix
     H_SR::RealMatrix
-    H_RQ::Dict{Symbol, RealMatrix}
-    H_QT::Dict{Symbol, RealMatrix}
-    H_DT::Dict{RCSKey, RealMatrix}
+    H_RQ::Dict{Symbol,RealMatrix}
+    H_QT::Dict{Symbol,RealMatrix}
+    H_DT::Dict{RCSKey,RealMatrix}
     H_DP::RealMatrix
     # Vectors (in D frame)
-    r_rcs::Dict{RCSKey, RealVector} # Thrust application points
-    f_rcs::Dict{RCSKey, RealVector} # Thrust vectors
+    r_rcs::Dict{RCSKey,RealVector} # Thrust application points
+    f_rcs::Dict{RCSKey,RealVector} # Thrust vectors
     # Mass properties
     m::RealValue       # [kg] Mass
     J::RealMatrix      # [kg] Inertia matrix in D frame
@@ -121,39 +121,47 @@ struct ApolloCSM
         H_SD = H(cvu.([933.9; 5.0; 4.7], :in, :m))
 
         # RCS frame with respect to structural frame
-        ang_offset = 7+15/60
-        H_SR = H(roll=-ang_offset)
+        ang_offset = 7 + 15 / 60
+        H_SR = H(roll = -ang_offset)
 
         # Quad positions with respect to RCS frame
-        Pan_RQ = Dict(:A=>H(cvu.([958.97; 0.0; -83.56], :in, :m)),
-                      :B=>H(cvu.([958.97; 83.56; 0.0], :in, :m)),
-                      :C=>H(cvu.([958.97; 0.0; 83.56], :in, :m)),
-                      :D=>H(cvu.([958.97; -83.56; 0.0], :in, :m)))
+        Pan_RQ = Dict(
+            :A => H(cvu.([958.97; 0.0; -83.56], :in, :m)),
+            :B => H(cvu.([958.97; 83.56; 0.0], :in, :m)),
+            :C => H(cvu.([958.97; 0.0; 83.56], :in, :m)),
+            :D => H(cvu.([958.97; -83.56; 0.0], :in, :m)),
+        )
 
         # Quad rotations with respect to RCS frame
-        Rot_RQ = Dict(:A=>H(roll=-90),
-                      :B=>H(roll=0),
-                      :C=>H(roll=90),
-                      :D=>H(roll=180))
+        Rot_RQ = Dict(
+            :A => H(roll = -90),
+            :B => H(roll = 0),
+            :C => H(roll = 90),
+            :D => H(roll = 180),
+        )
 
         # Quad frames with respect to RCS frame
-        H_RQ = Dict(k=>Pan_RQ[k]*Rot_RQ[k] for k in (:A, :B, :C, :D))
+        H_RQ = Dict(k => Pan_RQ[k] * Rot_RQ[k] for k in (:A, :B, :C, :D))
 
         # Thruster positions in quad frame
-        Pan_QT = Dict(:pf=>H(cvu.([6.75, 0.0, 0.0], :in, :m)),
-                      :pa=>H(cvu.([-6.75, 0.0, 0.0], :in, :m)),
-                      :rf=>H(cvu.([0.94, 0.0, 3.125], :in, :m)),
-                      :ra=>H(cvu.([-0.94, 0.0, -3.125], :in, :m)))
+        Pan_QT = Dict(
+            :pf => H(cvu.([6.75, 0.0, 0.0], :in, :m)),
+            :pa => H(cvu.([-6.75, 0.0, 0.0], :in, :m)),
+            :rf => H(cvu.([0.94, 0.0, 3.125], :in, :m)),
+            :ra => H(cvu.([-0.94, 0.0, -3.125], :in, :m)),
+        )
 
         # Thruster orientations with respect to quad frame
         cant = 10
-        Rot_QT = Dict(:pf=>H(yaw=cant),
-                      :pa=>H(pitch=180)*H(yaw=cant),
-                      :rf=>H(pitch=-90)*H(yaw=cant),
-                      :ra=>H(pitch=90)*H(yaw=cant))
+        Rot_QT = Dict(
+            :pf => H(yaw = cant),
+            :pa => H(pitch = 180) * H(yaw = cant),
+            :rf => H(pitch = -90) * H(yaw = cant),
+            :ra => H(pitch = 90) * H(yaw = cant),
+        )
 
         # Thruster frames with respect to quad frame
-        H_QT = Dict(k=>Pan_QT[k]*Rot_QT[k] for k in (:pf, :pa, :rf, :ra))
+        H_QT = Dict(k => Pan_QT[k] * Rot_QT[k] for k in (:pf, :pa, :rf, :ra))
 
         # Thrusters with respect to dynamical frame
         H_DT = Dict()
@@ -161,30 +169,32 @@ struct ApolloCSM
         for quad in (:A, :B, :C, :D)
             for thruster in (:pf, :pa, :rf, :ra)
                 k = (quad, thruster)
-                H_DT[k] = H_DS*H_SR*H_RQ[quad]*H_QT[thruster]
+                H_DT[k] = H_DS * H_SR * H_RQ[quad] * H_QT[thruster]
             end
         end
 
         # Thruster positions in dynamics frame
-        r_rcs = Dict(k=>homdisp(H_DT[k]) for k in keys(H_DT))
+        r_rcs = Dict(k => homdisp(H_DT[k]) for k in keys(H_DT))
         f_rcs_T = [-1; 0; 0] # Thrust vector in thruster frame
-        f_rcs = Dict(k=>homrot(H_DT[k])*f_rcs_T for k in keys(H_DT))
+        f_rcs = Dict(k => homrot(H_DT[k]) * f_rcs_T for k in keys(H_DT))
 
         # Docking port position in structural frame
         docked_orientation = -30
         H_SP = H(cvu.([1110.25; 0.0; 0.0], :in, :m))
-        H_SP *= H(roll=docked_orientation)
+        H_SP *= H(roll = docked_orientation)
 
         # Docking port in dynamical frame
-        H_DP = H_DS*H_SP
+        H_DP = H_DS * H_SP
 
         # Mass properties
         m = convert_units(66850.6, :lb, :kg)
         J_xx, J_yy, J_zz = 36324, 80036, 81701
         J_xy, J_xz, J_yz = -2111, 273, 2268
-        J = [J_xx -J_xy -J_xz;
-             -J_xy J_yy -J_yz;
-             -J_xz -J_yz J_zz]
+        J = [
+            J_xx -J_xy -J_xz
+            -J_xy J_yy -J_yz
+            -J_xz -J_yz J_zz
+        ]
         J = convert_units.(J, :ft2slug, :m2kg)
 
         # Propulsion properties
@@ -194,15 +204,39 @@ struct ApolloCSM
 
         # Piecewise affine map for single thruster fuel consumption map (pulse
         # duration to fuel consumed)
-        pulse = [36.552; 50.042; 63.532; 77.022; 90.512; 104.002; 117.492;
-                 130.982; 144.472; 157.962; 171.452; 184.942]
-        pulse = (pulse.-pulse[1])./(pulse[end]-pulse[1]).*(1000-14).+14
+        pulse = [
+            36.552
+            50.042
+            63.532
+            77.022
+            90.512
+            104.002
+            117.492
+            130.982
+            144.472
+            157.962
+            171.452
+            184.942
+        ]
+        pulse = (pulse .- pulse[1]) ./ (pulse[end] - pulse[1]) .* (1000 - 14) .+ 14
         pulse .*= 1e-3
         pushfirst!(pulse, 0)
 
-        fuel = [108.433; 108.121; 107.656; 106.527; 105.143; 103.189; 99.941;
-                94.992; 87.920; 78.050; 62.829; 40.849]
-        fuel = (fuel.-fuel[1])./(fuel[end]-fuel[1]).*(0.364-0.005).+0.005
+        fuel = [
+            108.433
+            108.121
+            107.656
+            106.527
+            105.143
+            103.189
+            99.941
+            94.992
+            87.920
+            78.050
+            62.829
+            40.849
+        ]
+        fuel = (fuel .- fuel[1]) ./ (fuel[end] - fuel[1]) .* (0.364 - 0.005) .+ 0.005
         fuel = convert_units.(fuel, :lb, :kg)
         pushfirst!(fuel, 0)
 
@@ -223,8 +257,23 @@ struct ApolloCSM
         end
 
         # Compile all into CSM object
-        csm = new(H_SD, H_SR, H_RQ, H_QT, H_DT, H_DP, r_rcs, f_rcs, m, J,
-                  imp_min, imp_max, Frcs, fuel_consum, rcs_select)
+        csm = new(
+            H_SD,
+            H_SR,
+            H_RQ,
+            H_QT,
+            H_DT,
+            H_DP,
+            r_rcs,
+            f_rcs,
+            m,
+            J,
+            imp_min,
+            imp_max,
+            Frcs,
+            fuel_consum,
+            rcs_select,
+        )
 
         return csm
     end
@@ -311,8 +360,8 @@ function RendezvousProblem()::RendezvousProblem
     zi = [0.0; 0.0; 1.0]
     μ = 3.986e14 # [m³/s²] Standard gravitational parameter
     Re = 6378e3 # [m] Earth radius
-    R = Re+400e3 # [m] Orbit radius
-    n = sqrt(μ/R^3)
+    R = Re + 400e3 # [m] Orbit radius
+    n = sqrt(μ / R^3)
     env = RendezvousEnvironmentParameters(xi, yi, zi, n)
 
     # ..:: Chaser spacecraft ::..
@@ -322,27 +371,37 @@ function RendezvousProblem()::RendezvousProblem
     id_q = 7:10
     id_ω = 11:13
     id_rcs = 1:16
-    id_rcs_ref = (1:16).+id_rcs[end]
-    id_rcs_eq = id_rcs_ref[end]+1
+    id_rcs_ref = (1:16) .+ id_rcs[end]
+    id_rcs_eq = id_rcs_ref[end] + 1
     id_t = 1
-    id_dock_tol = (1:13).+1
+    id_dock_tol = (1:13) .+ 1
     # Vehicle
     csm = ApolloCSM()
 
-    sc = ChaserParameters(id_r, id_v, id_q, id_ω, id_rcs, id_rcs_ref,
-                          id_rcs_eq, id_t, id_dock_tol, csm)
+    sc = ChaserParameters(
+        id_r,
+        id_v,
+        id_q,
+        id_ω,
+        id_rcs,
+        id_rcs_ref,
+        id_rcs_eq,
+        id_t,
+        id_dock_tol,
+        csm,
+    )
 
     # ..:: Trajectory ::..
     # >> Boundary conditions <<
-    r0 = 100.0*xi-20.0*zi+20.0*yi
-    v0 = 0.0*xi
-    vf = -0.1*xi
+    r0 = 100.0 * xi - 20.0 * zi + 20.0 * yi
+    v0 = 0.0 * xi
+    vf = -0.1 * xi
     q0 = Quaternion(deg2rad(0), yi)
     ω0 = zeros(3)
     ωf = zeros(3)
     # Terminal pose based on docking orientation
-    H_LP = homtransf(yaw=180)
-    H_LD = H_LP*hominv(csm.H_DP)
+    H_LP = homtransf(yaw = 180)
+    H_LD = H_LP * hominv(csm.H_DP)
     rf = homdisp(H_LD)
     Rf = homrot(H_LD)
     qf = Quaternion(Rf)
@@ -359,17 +418,38 @@ function RendezvousProblem()::RendezvousProblem
     tf_min = 100.0
     tf_max = 1000.0
     # >> Homotopy <<
-    β = 1e1/100
+    β = 1e1 / 100
     γc = 1.0
     γg = 5.0
     hom_steps = 10 # Number of homotopy values to sweep through
-    hom_obj = Homotopy(1e-2; δ_max=10.0)
+    hom_obj = Homotopy(1e-2; δ_max = 10.0)
     hom_grid = map(hom_obj, LinRange(0.0, 1.0, hom_steps))
     hom = hom_grid[1]
 
     traj = RendezvousTrajectoryParameters(
-        r0, rf, v0, vf, q0, qf, ω0, ωf, rf_tol, vf_tol, ang_tol, ωf_tol,
-        r_plume, r_appch, θ_appch, tf_min, tf_max, hom, hom_grid, β, γc, γg)
+        r0,
+        rf,
+        v0,
+        vf,
+        q0,
+        qf,
+        ω0,
+        ωf,
+        rf_tol,
+        vf_tol,
+        ang_tol,
+        ωf_tol,
+        r_plume,
+        r_appch,
+        θ_appch,
+        tf_min,
+        tf_max,
+        hom,
+        hom_grid,
+        β,
+        γc,
+        γg,
+    )
 
     mdl = RendezvousProblem(sc, env, traj)
 
@@ -389,12 +469,11 @@ Compute the Apollo CSM fuel consumption given a history of thruster impulses.
 # Returns
 - `fuel`: the amount of fuel consumed by this impulse history.
 """
-function fuel_consumption(mdl::RendezvousProblem,
-                          impulses::RealMatrix)::RealValue
+function fuel_consumption(mdl::RendezvousProblem, impulses::RealMatrix)::RealValue
 
     # Extract pulse durations
     csm = mdl.vehicle.csm
-    dt = impulses./csm.Frcs
+    dt = impulses ./ csm.Frcs
     N = size(dt, 2) # History length
 
     # Integrate the fuel consumption

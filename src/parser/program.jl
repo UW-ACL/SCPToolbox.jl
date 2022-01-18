@@ -19,16 +19,14 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 import Base: copy
 import JuMP: termination_status, solve_time, objective_value
 
-export ConicProgram, numel, constraints, variables, parameters, cost,
-    solve!, jump_model, objective_value
-export @new_variable, @new_parameter, @add_constraint,
-    @add_cost, @set_feasibility
+export ConicProgram,
+    numel, constraints, variables, parameters, cost, solve!, jump_model, objective_value
+export @new_variable, @new_parameter, @add_constraint, @add_cost, @set_feasibility
 
 # ..:: Globals ::..
 
-const ArgumentBlockMap = Dict{ArgumentBlock, ArgumentBlock}
-const PerturbationSet = Dict{ConstantArgumentBlock{N}, T} where {
-    T<:Types.RealArray, N}
+const ArgumentBlockMap = Dict{ArgumentBlock,ArgumentBlock}
+const PerturbationSet = Dict{ConstantArgumentBlock{N},T} where {T<:Types.RealArray,N}
 
 # ..:: Data structures ::..
 
@@ -63,15 +61,16 @@ mutable struct ConicProgram <: AbstractConicProgram
     - `prog`: the conic linear program data structure.
     """
     function ConicProgram(
-        pars::Any=nothing;
-        solver::DataType=ECOS.Optimizer,
-        solver_options::Types.Optional{Dict{String}}=nothing)::ConicProgram
+        pars::Any = nothing;
+        solver::DataType = ECOS.Optimizer,
+        solver_options::Types.Optional{Dict{String}} = nothing,
+    )::ConicProgram
 
         # Configure JuMP model
         mdl = Model()
         set_optimizer(mdl, solver)
         if !isnothing(solver_options)
-            for (key,val) in solver_options
+            for (key, val) in solver_options
                 set_optimizer_attribute(mdl, key, val)
             end
         end
@@ -89,15 +88,14 @@ mutable struct ConicProgram <: AbstractConicProgram
         _feasibility = true
 
         # Combine everything into a conic program
-        prog = new(mdl, pars, x, p, cost, constraints,
-                   _feasibility, solver, solver_options)
+        prog = new(mdl, pars, x, p, cost, constraints, _feasibility, solver, solver_options)
 
         # Associate the arguments with the newly created program
         link!(x, prog)
         link!(p, prog)
 
         # Add a zero objective (feasibility problem)
-        add_cost!(prog, feasibility_cost, [], []; new=true)
+        add_cost!(prog, feasibility_cost, [], []; new = true)
 
         return prog
     end
@@ -124,13 +122,11 @@ Modify `new_name` so that it is not a duplicate of an existing name in the list
 # Returns
 - `new_name`: updated `new_name` (only if necessary to deconflict).
 """
-function deconflict_name(new_name::String,
-                         existing_names::Vector{String})::String
+function deconflict_name(new_name::String, existing_names::Vector{String})::String
     regex = Regex(@sprintf("^%s", new_name))
     regex_match = (s) -> !isempty(findall(regex, s))
-    duplicate_count = length(findall(
-        (this_name)->regex_match(this_name), existing_names))
-    if duplicate_count>0
+    duplicate_count = length(findall((this_name) -> regex_match(this_name), existing_names))
+    if duplicate_count > 0
         new_name = @sprintf("%s%d", new_name, duplicate_count)
     end
     return new_name
@@ -149,24 +145,25 @@ Add a new argument block to the optimization program.
 # Returns
 - `block`: the new argument block.
 """
-function Base.push!(prog::ConicProgram,
-                    kind::ArgumentKind,
-                    shape::Int...;
-                    blk_name::Types.Optional{String}=nothing)::ArgumentBlock
+function Base.push!(
+    prog::ConicProgram,
+    kind::ArgumentKind,
+    shape::Int...;
+    blk_name::Types.Optional{String} = nothing,
+)::ArgumentBlock
 
     if !(kind in (VARIABLE, PARAMETER))
-        err = SCPError(0, SCP_BAD_ARGUMENT,
-                       "specify either VARIABLE or PARAMETER")
+        err = SCPError(0, SCP_BAD_ARGUMENT, "specify either VARIABLE or PARAMETER")
         throw(err)
     end
 
-    z = (kind==VARIABLE) ? prog.x : prog.p
+    z = (kind == VARIABLE) ? prog.x : prog.p
 
     # Assign the name
     if isnothing(blk_name)
         # Create a default name
-        base_name = (kind==VARIABLE) ? "x" : "p"
-        blk_name = base_name*@sprintf("%d", length(z)+1)
+        base_name = (kind == VARIABLE) ? "x" : "p"
+        blk_name = base_name * @sprintf("%d", length(z) + 1)
     else
         # Deconflict duplicate name by appending a number suffix
         all_names = [name(blk) for blk in z]
@@ -179,15 +176,21 @@ function Base.push!(prog::ConicProgram,
 end
 
 """ Specialize `push!` for variables. """
-function variable!(prog::ConicProgram, shape::Int...;
-                   name::Types.Optional{String}=nothing)::ArgumentBlock
-    push!(prog, VARIABLE, shape...; blk_name=name)
+function variable!(
+    prog::ConicProgram,
+    shape::Int...;
+    name::Types.Optional{String} = nothing,
+)::ArgumentBlock
+    push!(prog, VARIABLE, shape...; blk_name = name)
 end
 
 """ Specialize `push!` for parameters. """
-function parameter!(prog::ConicProgram, shape::Int...;
-                    name::Types.Optional{String}=nothing)::ArgumentBlock
-    push!(prog, PARAMETER, shape...; blk_name=name)
+function parameter!(
+    prog::ConicProgram,
+    shape::Int...;
+    name::Types.Optional{String} = nothing,
+)::ArgumentBlock
+    push!(prog, PARAMETER, shape...; blk_name = name)
 end
 
 """
@@ -211,11 +214,14 @@ of `DifferentiableFunction`.
 # Returns
 - `new_constraint`: the newly added constraint.
 """
-function constraint!(prog::ConicProgram,
-                     kind::Union{SupportedCone, SupportedDualCone},
-                     f::Function,
-                     x, p;
-                     refname::Types.Optional{String}=nothing)::ConicConstraint
+function constraint!(
+    prog::ConicProgram,
+    kind::Union{SupportedCone,SupportedDualCone},
+    f::Function,
+    x,
+    p;
+    refname::Types.Optional{String} = nothing,
+)::ConicConstraint
     x = VariableArgumentBlocks(collect(x))
     p = ConstantArgumentBlocks(collect(p))
     Axb = ProgramFunction(prog, x, p, f)
@@ -224,14 +230,14 @@ function constraint!(prog::ConicProgram,
     if isnothing(refname)
         # Create a default name
         constraint_count = length(constraints(prog))
-        refname = @sprintf("f%d", constraint_count+1)
+        refname = @sprintf("f%d", constraint_count + 1)
     else
         # Deconflict duplicate name by appending a number suffix
         all_names = [name(C) for C in constraints(prog)]
         refname = deconflict_name(refname, all_names)
     end
 
-    new_constraint = ConicConstraint(Axb, kind, prog; name=refname)
+    new_constraint = ConicConstraint(Axb, kind, prog; name = refname)
     push!(prog.constraints, new_constraint)
     return new_constraint
 end
@@ -253,10 +259,14 @@ of `DifferentiableFunction`.
 # Returns
 - `new_cost`: the new term that was added to the cost.
 """
-function add_cost!(prog::ConicProgram,
-                   J::Function, x, p,
-                   a::Types.RealTypes=1.0;
-                   new::Bool=false)::QuadraticCost
+function add_cost!(
+    prog::ConicProgram,
+    J::Function,
+    x,
+    p,
+    a::Types.RealTypes = 1.0;
+    new::Bool = false,
+)::QuadraticCost
     x = VariableArgumentBlocks(collect(x))
     p = ConstantArgumentBlocks(collect(p))
     J = ProgramFunction(prog, x, p, J)
@@ -273,7 +283,7 @@ function add_cost!(prog::ConicProgram,
     # Update feasibility flag if new or already determined (from prior calls)
     # that this is not a feasibility cost
     if prog._feasibility || new
-        prog._feasibility = length(variables(J))==0
+        prog._feasibility = length(variables(J)) == 0
     end
 
     return new_term
@@ -293,13 +303,15 @@ Add a new argument to the problem.
 # Returns
 The newly created argument object.
 """
-function new_argument(prog::ConicProgram,
-                      shape,
-                      name::Types.Optional{String},
-                      kind::ArgumentKind)::ArgumentBlock
-    f = (kind==VARIABLE) ? variable! : parameter!
+function new_argument(
+    prog::ConicProgram,
+    shape,
+    name::Types.Optional{String},
+    kind::ArgumentKind,
+)::ArgumentBlock
+    f = (kind == VARIABLE) ? variable! : parameter!
     shape = collect(shape)
-    return f(prog, shape...; name=name)
+    return f(prog, shape...; name = name)
 end
 
 """ Check if this is a feasibility problem """
@@ -319,9 +331,8 @@ string, return all the constraints whose name contains the string `ref`.
 # Returns
 The constraint(s).
 """
-function constraints(prg::ConicProgram,
-                     ref=-1)::Union{Constraints, ConicConstraint}
-    if typeof(ref)<:String
+function constraints(prg::ConicProgram, ref = -1)::Union{Constraints,ConicConstraint}
+    if typeof(ref) <: String
         # Search for all constraints the match `ref`
         match_list = Vector{ConicConstraint}(undef, 0)
         regex = Regex(ref)
@@ -330,11 +341,11 @@ function constraints(prg::ConicProgram,
                 push!(match_list, constraint)
             end
         end
-        match_list = (length(match_list)==1) ? match_list[1] : match_list
+        match_list = (length(match_list) == 1) ? match_list[1] : match_list
         return match_list
     else
         # Get the constraint by numerical reference
-        if ref>=0
+        if ref >= 0
             return prg.constraints[ref]
         else
             return prg.constraints
@@ -356,12 +367,15 @@ to `constraints`, so see there for more information.
 # Returns
 - `bar`: description.
 """
-function blocks(prg::ConicProgram, kind::Symbol,
-                ref=-1)::Union{ArgumentBlock, ArgumentBlocks}
+function blocks(
+    prg::ConicProgram,
+    kind::Symbol,
+    ref = -1,
+)::Union{ArgumentBlock,ArgumentBlocks}
     z = getfield(prg, kind)
-    if typeof(ref)<:String
+    if typeof(ref) <: String
         # Search for all constraints the match `ref`
-        if kind==:x
+        if kind == :x
             match_list = VariableArgumentBlocks(undef, 0)
         else
             match_list = ConstantArgumentBlocks(undef, 0)
@@ -372,11 +386,11 @@ function blocks(prg::ConicProgram, kind::Symbol,
                 push!(match_list, z_blk)
             end
         end
-        match_list = (length(match_list)==1) ? match_list[1] : match_list
+        match_list = (length(match_list) == 1) ? match_list[1] : match_list
         return match_list
     else
         # Get the constraint by numerical reference
-        if ref>=0
+        if ref >= 0
             return z[ref]
         else
             return z[:]
@@ -385,8 +399,8 @@ function blocks(prg::ConicProgram, kind::Symbol,
 end
 
 """ Specialize `blocks` for variable and constant arguments. """
-variables(prg::ConicProgram, ref=-1) = blocks(prg, :x, ref)
-parameters(prg::ConicProgram, ref=-1) = blocks(prg, :p, ref)
+variables(prg::ConicProgram, ref = -1) = blocks(prg, :x, ref)
+parameters(prg::ConicProgram, ref = -1) = blocks(prg, :p, ref)
 
 """ Get the optimization problem cost. """
 cost(prg::ConicProgram)::QuadraticCost = prg.cost[]
@@ -417,8 +431,7 @@ termination_status(prog::ConicProgram)::MOI.TerminationStatusCode =
 solve_time(prog::ConicProgram)::Float64 = solve_time(jump_model(prog))
 
 """ Get the optimal cost value. """
-objective_value(prog::ConicProgram)::Float64 =
-    objective_value(jump_model(prog))
+objective_value(prog::ConicProgram)::Float64 = objective_value(jump_model(prog))
 
 """
     copy(blk, prg)
@@ -439,11 +452,12 @@ end of the corresponding argument of the new problem
 # Returns
 - `new_blk`: the newly created argument block.
 """
-function copy(blk::ArgumentBlock{T},
-              prg::ConicProgram;
-              new_name::String="%s",
-              copyas::Types.Optional{
-                  ArgumentKind}=nothing)::ArgumentBlock where T
+function copy(
+    blk::ArgumentBlock{T},
+    prg::ConicProgram;
+    new_name::String = "%s",
+    copyas::Types.Optional{ArgumentKind} = nothing,
+)::ArgumentBlock where {T}
 
     blk_shape = size(blk)
     blk_kind = isnothing(copyas) ? kind(blk) : copyas
@@ -471,25 +485,25 @@ and `@add_cost` macros. See the docstrings of those macros for more details.
 - `f`: expression for the function value computation.
 - `J`: expression for the function Jacobian computation.
 """
-function adapt_macro_arguments(args::NTuple{N, Expr})::NTuple{4, Expr} where N
-    if length(args)==4
+function adapt_macro_arguments(args::NTuple{N,Expr})::NTuple{4,Expr} where {N}
+    if length(args) == 4
         # The "full" case: all arguments presents
         x, p, f, J = args
-    elseif length(args)==2
+    elseif length(args) == 2
         # The "minimum" case: no Jacobians and no parameters
         x, f = args
-        p = :( () )
-        J = :( Dict() )
+        p = :(())
+        J = :(Dict())
     else # length(args)==3
         # The "ambiguous" case: either Jacobians or parameters
-        if args[2].head==:tuple
+        if args[2].head == :tuple
             # No Jacobians
             x, p, f = args
-            J = :( Dict() )
+            J = :(Dict())
         else
             # No parameters
             x, f, J = args
-            p = :( () )
+            p = :(())
         end
     end
     return x, p, f, J
@@ -548,20 +562,20 @@ The following macros specialize `@new_argument` for creating variables.
 """
 macro new_variable(prog, shape, name)
     var = QuoteNode(VARIABLE)
-    :( new_argument($(esc.([prog, shape, name, var])...)) )
+    :(new_argument($(esc.([prog, shape, name, var])...)))
 end
 
 macro new_variable(prog, shape_or_name)
     var = QuoteNode(VARIABLE)
-    if typeof(shape_or_name)<:String
-        :( new_argument($(esc.([prog, 1, shape_or_name, var])...)) )
+    if typeof(shape_or_name) <: String
+        :(new_argument($(esc.([prog, 1, shape_or_name, var])...)))
     else
-        :( new_argument($(esc.([prog, shape_or_name, nothing, var])...)) )
+        :(new_argument($(esc.([prog, shape_or_name, nothing, var])...)))
     end
 end
 
 macro new_variable(prog)
-    :( new_argument($(esc(prog)), 1, nothing, VARIABLE) )
+    :(new_argument($(esc(prog)), 1, nothing, VARIABLE))
 end
 
 """
@@ -574,20 +588,20 @@ The following macros specialize `@new_argument` for creating parameters.
 """
 macro new_parameter(prog, shape, name)
     var = QuoteNode(PARAMETER)
-    :( new_argument($(esc.([prog, shape, name, var])...)) )
+    :(new_argument($(esc.([prog, shape, name, var])...)))
 end
 
 macro new_parameter(prog, shape_or_name)
     var = QuoteNode(PARAMETER)
-    if typeof(shape_or_name)<:String
-        :( new_argument($(esc.([prog, 1, shape_or_name, var])...)) )
+    if typeof(shape_or_name) <: String
+        :(new_argument($(esc.([prog, 1, shape_or_name, var])...)))
     else
-        :( new_argument($(esc.([prog, shape_or_name, nothing, var])...)) )
+        :(new_argument($(esc.([prog, shape_or_name, nothing, var])...)))
     end
 end
 
 macro new_parameter(prog)
-    :( new_argument($(esc(prog)), 1, nothing, PARAMETER) )
+    :(new_argument($(esc(prog)), 1, nothing, PARAMETER))
 end
 
 """
@@ -657,8 +671,14 @@ macro add_constraint(prog, kind, args...)
     # Make the constraint
     quote
         f = $(esc(anon_func))
-        constraint!($(esc(prog)), $(esc(kind)), f, $(esc(x)), $(esc(p));
-                    refname=$(esc(name)))
+        constraint!(
+            $(esc(prog)),
+            $(esc(kind)),
+            f,
+            $(esc(x)),
+            $(esc(p));
+            refname = $(esc(name)),
+        )
     end
 end
 
@@ -688,5 +708,5 @@ macro add_cost(prog, args...)
 end
 
 macro set_feasibility(prog)
-    :( add_cost!($(esc(prog)), feasibility_cost, [], []; new=true) )
+    :(add_cost!($(esc(prog)), feasibility_cost, [], []; new = true))
 end

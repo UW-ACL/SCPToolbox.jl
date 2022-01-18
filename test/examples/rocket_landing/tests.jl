@@ -26,11 +26,11 @@ function lcvx()::Nothing
     rocket = Rocket()
 
     tol = 1e-3
-    tf_min = rocket.m_dry*norm(rocket.v0,2)/rocket.ρ_max
-    tf_max = (rocket.m_wet-rocket.m_dry)/(rocket.α*rocket.ρ_min)
+    tf_min = rocket.m_dry * norm(rocket.v0, 2) / rocket.ρ_max
+    tf_max = (rocket.m_wet - rocket.m_dry) / (rocket.α * rocket.ρ_min)
 
-    t_opt, cost_opt = golden((tf)->solve_pdg_fft(rocket,tf).cost,
-                             tf_min, tf_max; tol=tol)
+    t_opt, cost_opt =
+        golden((tf) -> solve_pdg_fft(rocket, tf).cost, tf_min, tf_max; tol = tol)
 
     pdg = solve_pdg_fft(rocket, t_opt) # Optimal 3-DoF PDG trajectory
 

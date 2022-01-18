@@ -87,8 +87,8 @@ end
     env: the environment struct.
 """
 function FreeFlyerEnvironmentParameters(
-        iss::Vector{Hyperrectangle},
-        obs::Vector{Ellipsoid}
+    iss::Vector{Hyperrectangle},
+    obs::Vector{Ellipsoid},
 )::FreeFlyerEnvironmentParameters
 
     # Derived values
@@ -106,35 +106,24 @@ end
 # Returns
     mdl: the free-flyer problem.
 """
-function FreeFlyerProblem(
-        N::Int
-)::FreeFlyerProblem
+function FreeFlyerProblem(N::Int)::FreeFlyerProblem
 
     # >> Environment <<
-    obs_shape = diagm([1.0; 1.0; 1.0]/0.3)
+    obs_shape = diagm([1.0; 1.0; 1.0] / 0.3)
     z_iss = 4.75
-    obs = [Ellipsoid(copy(obs_shape), [8.5; -0.15; 5.0]),
-           Ellipsoid(copy(obs_shape), [11.2; 1.84; 5.0]),
-           Ellipsoid(copy(obs_shape), [11.3; 3.8;  4.8])]
+    obs = [
+        Ellipsoid(copy(obs_shape), [8.5; -0.15; 5.0]),
+        Ellipsoid(copy(obs_shape), [11.2; 1.84; 5.0]),
+        Ellipsoid(copy(obs_shape), [11.3; 3.8; 4.8]),
+    ]
     iss_rooms = [
-        Hyperrectangle([6.0; 0.0; z_iss],
-                        1.0, 1.0, 1.5;
-                        pitch=90.0),
-        Hyperrectangle([7.5; 0.0; z_iss],
-                        2.0, 2.0, 4.0;
-                        pitch=90.0),
-        Hyperrectangle([11.5; 0.0; z_iss],
-                        1.25, 1.25, 0.5;
-                        pitch=90.0),
-        Hyperrectangle([10.75; -1.0; z_iss],
-                        1.5, 1.5, 1.5;
-                        yaw=-90.0, pitch=90.0),
-        Hyperrectangle([10.75; 1.0; z_iss],
-                        1.5, 1.5, 1.5;
-                        yaw=90.0, pitch=90.0),
-        Hyperrectangle([10.75; 2.5; z_iss],
-                        2.5, 2.5, 4.5;
-                        yaw=90.0, pitch=90.0)]
+        Hyperrectangle([6.0; 0.0; z_iss], 1.0, 1.0, 1.5; pitch = 90.0),
+        Hyperrectangle([7.5; 0.0; z_iss], 2.0, 2.0, 4.0; pitch = 90.0),
+        Hyperrectangle([11.5; 0.0; z_iss], 1.25, 1.25, 0.5; pitch = 90.0),
+        Hyperrectangle([10.75; -1.0; z_iss], 1.5, 1.5, 1.5; yaw = -90.0, pitch = 90.0),
+        Hyperrectangle([10.75; 1.0; z_iss], 1.5, 1.5, 1.5; yaw = 90.0, pitch = 90.0),
+        Hyperrectangle([10.75; 2.5; z_iss], 2.5, 2.5, 4.5; yaw = 90.0, pitch = 90.0),
+    ]
     env = FreeFlyerEnvironmentParameters(iss_rooms, obs)
 
     # >> Free-flyer <<
@@ -145,7 +134,7 @@ function FreeFlyerProblem(
     id_T = 1:3
     id_M = 4:6
     id_t = 1
-    id_δ = (1:(N*env.n_iss)).+1
+    id_δ = (1:(N*env.n_iss)) .+ 1
     v_max = 0.4
     ω_max = deg2rad(1)
     T_max = 20e-3
@@ -153,8 +142,21 @@ function FreeFlyerProblem(
     mass = 7.2
     J = diagm([0.1083, 0.1083, 0.1083])
     fflyer = FreeFlyerParameters(
-        id_r, id_v, id_q, id_ω, id_T, id_M, id_t,
-        id_δ, v_max, ω_max, T_max, M_max, mass, J)
+        id_r,
+        id_v,
+        id_q,
+        id_ω,
+        id_T,
+        id_M,
+        id_t,
+        id_δ,
+        v_max,
+        ω_max,
+        T_max,
+        M_max,
+        mass,
+        J,
+    )
 
     # >> Trajectory <<
     r0 = [6.5; -0.2; 5.0]
@@ -171,8 +173,20 @@ function FreeFlyerProblem(
     hom = 50.0
     ε_sdf = 1e-4
     traj = FreeFlyerTrajectoryParameters(
-        r0, rf, v0, vf, q0, qf, ω0, ωf, tf_min,
-        tf_max, γ, hom, ε_sdf)
+        r0,
+        rf,
+        v0,
+        vf,
+        q0,
+        qf,
+        ω0,
+        ωf,
+        tf_min,
+        tf_max,
+        γ,
+        hom,
+        ε_sdf,
+    )
 
     mdl = FreeFlyerProblem(fflyer, env, traj)
 

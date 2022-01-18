@@ -21,18 +21,30 @@ using Printf
 using ..Utils
 using ..Parser
 
-import ..ST, ..RealTypes, ..IntRange, ..RealVector, ..RealMatrix, ..Trajectory,
-    ..Objective, ..VarArgBlk, ..CstArgBlk, ..DLTV
+import ..ST,
+    ..RealTypes,
+    ..IntRange,
+    ..RealVector,
+    ..RealMatrix,
+    ..Trajectory,
+    ..Objective,
+    ..VarArgBlk,
+    ..CstArgBlk,
+    ..DLTV
 
-import ..SCPParameters, ..SCPSubproblem, ..SCPSubproblemSolution, ..SCPProblem,
-    ..SCPSolution, ..SCPHistory
+import ..SCPParameters,
+    ..SCPSubproblem, ..SCPSubproblemSolution, ..SCPProblem, ..SCPSolution, ..SCPHistory
 
 import ..warm_start
 import ..discretize!
-import ..compute_original_cost!, ..add_dynamics!, ..add_convex_state_constraints!,
-    ..add_convex_input_constraints!, ..add_nonconvex_constraints!, ..add_bcs!
-import ..solve_subproblem!, ..solution_deviation, ..unsafe_solution,
-    ..overhead!, ..save!, ..get_time
+import ..compute_original_cost!,
+    ..add_dynamics!,
+    ..add_convex_state_constraints!,
+    ..add_convex_input_constraints!,
+    ..add_nonconvex_constraints!,
+    ..add_bcs!
+import ..solve_subproblem!,
+    ..solution_deviation, ..unsafe_solution, ..overhead!, ..save!, ..get_time
 
 const CLP = ConicLinearProgram
 const Variable = ST.Variable
@@ -55,7 +67,7 @@ mutable struct Parameters <: SCPParameters
     q_tr::RealTypes      # Trust region norm (possible: 1, 2, 4 (2^2), Inf)
     q_exit::RealTypes    # Stopping criterion norm
     solver::Module       # The numerical solver to use for the subproblems
-    solver_opts::Dict{String, Any} # Numerical solver options
+    solver_opts::Dict{String,Any} # Numerical solver options
 end # struct
 
 """ PTR subproblem solution. """
@@ -97,8 +109,8 @@ mutable struct Subproblem <: SCPSubproblem
     # >> Algorithm parameters <<
     def::SCPProblem      # The PTR problem definition
     # >> Reference and solution trajectories <<
-    sol::Union{SubproblemSolution, Missing} # Solution trajectory
-    ref::Union{SubproblemSolution, Missing} # Reference trajectory
+    sol::Union{SubproblemSolution,Missing} # Solution trajectory
+    ref::Union{SubproblemSolution,Missing} # Reference trajectory
     # >> Cost function <<
     J::Objective        # The original convex cost function
     J_tr::Objective     # The virtual control penalty
@@ -118,7 +130,7 @@ mutable struct Subproblem <: SCPSubproblem
     ηu::VarArgBlk       # Input trust region radii
     ηp::VarArgBlk       # Parameter trust region radii
     # >> Statistics <<
-    timing::Dict{Symbol, RealTypes} # Runtime profiling
+    timing::Dict{Symbol,RealTypes} # Runtime profiling
 end # struct
 
 """
@@ -133,8 +145,7 @@ Construct the PTR problem definition.
 # Returns
 - `pbm`: the problem structure ready for being solved by PTR.
 """
-function create(pars::Parameters,
-                traj::TrajectoryProblem)::SCPProblem
+function create(pars::Parameters, traj::TrajectoryProblem)::SCPProblem
 
     # Default progress table columns
     default_columns = [
@@ -167,11 +178,12 @@ function create(pars::Parameters,
         # Maximum input trust region size
         (:tru_max, "ηu", "%.2f", 5),
         # Parameter trust region size
-        (:trp, "ηp", "%.2f", 5)]
+        (:trp, "ηp", "%.2f", 5),
+    ]
 
     # User-defined extra columns
-    user_columns = Tuple{Symbol, String, String, Int}[
-        tuple(col[1:4]...) for col in traj.table_cols]
+    user_columns =
+        Tuple{Symbol,String,String,Int}[tuple(col[1:4]...) for col in traj.table_cols]
 
     all_columns = [default_columns; user_columns]
 
@@ -198,9 +210,11 @@ parameters.
 # Returns
 - `spbm`: the subproblem structure.
 """
-function Subproblem(pbm::SCPProblem, iter::Int,
-                    ref::Union{SubproblemSolution,
-                               Missing}=missing)::Subproblem
+function Subproblem(
+    pbm::SCPProblem,
+    iter::Int,
+    ref::Union{SubproblemSolution,Missing} = missing,
+)::Subproblem
 
     # Statistics
     timing = Dict(:formulate => get_time(), :total => get_time())
@@ -217,9 +231,7 @@ function Subproblem(pbm::SCPProblem, iter::Int,
     # Optimization problem handle
     solver = pars.solver
     solver_opts = pars.solver_opts
-    prg = ConicProgram(pbm.traj;
-                       solver=solver.Optimizer,
-                       solver_options=solver_opts)
+    prg = ConicProgram(pbm.traj; solver = solver.Optimizer, solver_options = solver_opts)
     cvx_algo = string(pars.solver)
     algo = @sprintf("PTR (backend: %s)", cvx_algo)
 
@@ -243,7 +255,7 @@ function Subproblem(pbm::SCPProblem, iter::Int,
     @scale(p, Sp, scale.cp)
 
     # Virtual controls
-    vd = @new_variable(prg, (size(_E, 2), N-1), "vd")
+    vd = @new_variable(prg, (size(_E, 2), N - 1), "vd")
     vs = nothing
     vic = nothing
     vtc = nothing
@@ -253,8 +265,29 @@ function Subproblem(pbm::SCPProblem, iter::Int,
     ηu = @new_variable(prg, N, "ηu")
     ηp = @new_variable(prg, "ηp")
 
-    spbm = Subproblem(iter, prg, algo, pbm, sol, ref, J, J_tr, J_vc, J_aug,
-                      x, u, p, vd, vs, vic, vtc, ηx, ηu, ηp, timing)
+    spbm = Subproblem(
+        iter,
+        prg,
+        algo,
+        pbm,
+        sol,
+        ref,
+        J,
+        J_tr,
+        J_vc,
+        J_aug,
+        x,
+        u,
+        p,
+        vd,
+        vs,
+        vic,
+        vtc,
+        ηx,
+        ηu,
+        ηp,
+        timing,
+    )
 
     return spbm
 end
@@ -282,7 +315,8 @@ function SubproblemSolution(
     u::RealMatrix,
     p::RealVector,
     iter::Int,
-    pbm::SCPProblem)::SubproblemSolution
+    pbm::SCPProblem,
+)::SubproblemSolution
 
     # Parameters
     N = pbm.pars.N
@@ -298,7 +332,7 @@ function SubproblemSolution(
     ηp = NaN
     status = MOI.OPTIMIZE_NOT_CALLED
     feas = false
-    defect = fill(NaN, nx, N-1)
+    defect = fill(NaN, nx, N - 1)
     deviation = NaN
     improv_rel = NaN
     unsafe = false
@@ -317,9 +351,29 @@ function SubproblemSolution(
     J_aug = NaN
 
     subsol = SubproblemSolution(
-        iter, x, u, p, vd, vs, vic, vtc, J, J_tr, J_vc, J_aug,
-        ηx, ηu, ηp, status, feas, defect, deviation, improv_rel,
-        unsafe, dyn, bay
+        iter,
+        x,
+        u,
+        p,
+        vd,
+        vs,
+        vic,
+        vtc,
+        J,
+        J_tr,
+        J_vc,
+        J_aug,
+        ηx,
+        ηu,
+        ηp,
+        status,
+        feas,
+        defect,
+        deviation,
+        improv_rel,
+        unsafe,
+        dyn,
+        bay,
     )
 
     # Compute the DLTV dynamics around this solution
@@ -391,10 +445,10 @@ method.
 - `sol`: the PTR solution structur.
 - `history`: PTR iteration data history.
 """
-function solve(pbm::SCPProblem,
-               warm::Union{Nothing, SCPSolution}=nothing)::Tuple{
-                   Union{SCPSolution, Nothing},
-                   SCPHistory}
+function solve(
+    pbm::SCPProblem,
+    warm::Union{Nothing,SCPSolution} = nothing,
+)::Tuple{Union{SCPSolution,Nothing},SCPHistory}
     # ..:: Initialize ::..
 
     if isnothing(warm)
@@ -464,7 +518,7 @@ function solve(pbm::SCPProblem,
 
         # Stop at maximum iterations
         k += 1
-        if k>pbm.pars.iter_max
+        if k > pbm.pars.iter_max
             break
         end
     end
@@ -491,8 +545,7 @@ generator, which is converted to an SubproblemSolution structure.
 # Returns
 - `guess`: the initial guess.
 """
-function generate_initial_guess(
-    pbm::SCPProblem)::SubproblemSolution
+function generate_initial_guess(pbm::SCPProblem)::SubproblemSolution
 
     # Construct the raw trajectory
     x, u, p = pbm.traj.guess(pbm.pars.N)
@@ -519,9 +572,9 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     x = spbm.x
     u = spbm.u
     p = spbm.p
-    xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
-    uh_ref = scale.iSu*(spbm.ref.ud.-scale.cu)
-    ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
+    xh_ref = scale.iSx * (spbm.ref.xd .- scale.cx)
+    uh_ref = scale.iSu * (spbm.ref.ud .- scale.cu)
+    ph_ref = scale.iSp * (spbm.ref.p - scale.cp)
     ηx = spbm.ηx
     ηu = spbm.ηu
     ηp = spbm.ηp
@@ -532,65 +585,105 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     # >> Parameter trust region <<
     dp_lq = @new_variable(prg, "dp_lq")
 
-    @add_constraint(prg, cone, "parameter_trust_region",
-                    (p, dp_lq), begin
-                        local p, dp_lq = arg
-                        local ph = scale.iSp*(p-scale.cp)
-                        local dp = ph-ph_ref
-                        vcat(dp_lq, dp)
-                    end)
+    @add_constraint(
+        prg,
+        cone,
+        "parameter_trust_region",
+        (p, dp_lq),
+        begin
+            local p, dp_lq = arg
+            local ph = scale.iSp * (p - scale.cp)
+            local dp = ph - ph_ref
+            vcat(dp_lq, dp)
+        end
+    )
 
-    if q==4
+    if q == 4
         wp = @new_variable(prg, "wp")
-        @add_constraint(prg, SOC, "parameter_trust_region",
-                        (wp, dp_lq), begin
-                            local wp, dp_lq = arg
-                            vcat(wp, dp_lq)
-                        end)
-        @add_constraint(prg, GEOM, "parameter_trust_region",
-                        (wp, ηp), begin
-                            local wp, ηp = arg
-                            vcat(wp, ηp, 1)
-                        end)
+        @add_constraint(
+            prg,
+            SOC,
+            "parameter_trust_region",
+            (wp, dp_lq),
+            begin
+                local wp, dp_lq = arg
+                vcat(wp, dp_lq)
+            end
+        )
+        @add_constraint(
+            prg,
+            GEOM,
+            "parameter_trust_region",
+            (wp, ηp),
+            begin
+                local wp, ηp = arg
+                vcat(wp, ηp, 1)
+            end
+        )
     else
-        @add_constraint(prg, NONPOS, "parameter_trust_region",
-                        (ηp, dp_lq), begin
-                            local ηp, dp_lq = arg
-                            dp_lq-ηp
-                        end)
+        @add_constraint(
+            prg,
+            NONPOS,
+            "parameter_trust_region",
+            (ηp, dp_lq),
+            begin
+                local ηp, dp_lq = arg
+                dp_lq - ηp
+            end
+        )
     end
 
     # State trust regions
     dx_lq = @new_variable(prg, N, "dx_lq")
 
     for k = 1:N
-        @add_constraint(prg, cone, "state_trust_region",
-                        (x[:, k], dx_lq[k]), begin
-                            local xk, dxk_lq = arg
-                            local xhk = scale.iSx*(xk-scale.cx)
-                            local dxk = xhk-xh_ref[:, k]
-                            vcat(dxk_lq, dxk)
-                        end)
-        if q==4
+        @add_constraint(
+            prg,
+            cone,
+            "state_trust_region",
+            (x[:, k], dx_lq[k]),
+            begin
+                local xk, dxk_lq = arg
+                local xhk = scale.iSx * (xk - scale.cx)
+                local dxk = xhk - xh_ref[:, k]
+                vcat(dxk_lq, dxk)
+            end
+        )
+        if q == 4
             # State
             wx = @new_variable(prg, "wx")
-            @add_constraint(prg, SOC, "state_trust_region",
-                            (wx, dx_lq[k]), begin
-                                local wx, dxk_lq = arg
-                                vcat(wx, dxk_lq)
-                            end)
-            @add_constraint(prg, GEOM, "state_trust_region",
-                            (wx, ηx[k]), begin
-                                local wx, ηxk = arg
-                                vcat(wx, ηxk, 1)
-                            end)
+            @add_constraint(
+                prg,
+                SOC,
+                "state_trust_region",
+                (wx, dx_lq[k]),
+                begin
+                    local wx, dxk_lq = arg
+                    vcat(wx, dxk_lq)
+                end
+            )
+            @add_constraint(
+                prg,
+                GEOM,
+                "state_trust_region",
+                (wx, ηx[k]),
+                begin
+                    local wx, ηxk = arg
+                    vcat(wx, ηxk, 1)
+                end
+            )
         else
             # State
-            @add_constraint(prg, NONPOS, "state_trust_region",
-                            (ηx[k], dx_lq[k]), begin
-                                local ηxk, dxk_lq = arg
-                                dxk_lq-ηxk
-                            end)
+            @add_constraint(
+                prg,
+                NONPOS,
+                "state_trust_region",
+                (ηx[k], dx_lq[k]),
+                begin
+                    local ηxk, dxk_lq = arg
+                    dxk_lq - ηxk
+                end
+            )
         end
     end
 
@@ -598,31 +691,51 @@ function add_trust_region!(spbm::Subproblem)::Nothing
     du_lq = @new_variable(prg, N, "du_lq")
 
     for k = 1:N
-        @add_constraint(prg, cone, "input_trust_region",
-                        (u[:, k], du_lq[k]), begin
-                            local uk, duk_lq = arg
-                            local uhk = scale.iSu*(uk-scale.cu)
-                            local duk = uhk-uh_ref[:, k]
-                            vcat(duk_lq, duk)
-                        end)
-        if q==4
+        @add_constraint(
+            prg,
+            cone,
+            "input_trust_region",
+            (u[:, k], du_lq[k]),
+            begin
+                local uk, duk_lq = arg
+                local uhk = scale.iSu * (uk - scale.cu)
+                local duk = uhk - uh_ref[:, k]
+                vcat(duk_lq, duk)
+            end
+        )
+        if q == 4
             wu = @new_variable(prg, "wu")
-            @add_constraint(prg, SOC, "input_trust_region",
-                            (wu, du_lq[k]), begin
-                                local wu, duk_lq = arg
-                                vcat(wu, duk_lq)
-                            end)
-            @add_constraint(prg, GEOM, "input_trust_region",
-                            (wu, ηu[k]), begin
-                                local wu, ηuk = arg
-                                vcat(wu, ηuk, 1)
-                            end)
+            @add_constraint(
+                prg,
+                SOC,
+                "input_trust_region",
+                (wu, du_lq[k]),
+                begin
+                    local wu, duk_lq = arg
+                    vcat(wu, duk_lq)
+                end
+            )
+            @add_constraint(
+                prg,
+                GEOM,
+                "input_trust_region",
+                (wu, ηu[k]),
+                begin
+                    local wu, ηuk = arg
+                    vcat(wu, ηuk, 1)
+                end
+            )
         else
-            @add_constraint(prg, NONPOS, "input_trust_region",
-                            (ηu[k], du_lq[k]), begin
-                                local ηuk, duk_lq = arg
-                                duk_lq-ηuk
-                            end)
+            @add_constraint(
+                prg,
+                NONPOS,
+                "input_trust_region",
+                (ηu[k], du_lq[k]),
+                begin
+                    local ηuk, duk_lq = arg
+                    duk_lq - ηuk
+                end
+            )
         end
     end
 
@@ -667,12 +780,11 @@ function compute_trust_region_penalty!(spbm::Subproblem)::Nothing
     ηu = spbm.ηu
     ηp = spbm.ηp
 
-    spbm.J_tr = @add_cost(
-        prg, (ηx, ηu, ηp), begin
-            local ηx, ηu, ηp = arg
-            ηp = ηp[1]
-            wtr*(trapz(ηx, t)+trapz(ηu, t)+ηp)
-        end)
+    spbm.J_tr = @add_cost(prg, (ηx, ηu, ηp), begin
+        local ηx, ηu, ηp = arg
+        ηp = ηp[1]
+        wtr * (trapz(ηx, t) + trapz(ηu, t) + ηp)
+    end)
 
     return nothing
 end
@@ -703,74 +815,82 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
     Pf = @new_variable(prg, 2, "Pf")
     if !isnothing(vs)
         for k = 1:N
-            if k<N
-                @add_constraint(prg, L1, "vd_vs_penalty",
-                                (P[k], vd[:, k], vs[:, k]), begin
-                                    local Pk, vdk, vsk = arg
-                                    vcat(Pk, E[:, :, k]*vdk, vsk)
-                                end)
+            if k < N
+                @add_constraint(
+                    prg,
+                    L1,
+                    "vd_vs_penalty",
+                    (P[k], vd[:, k], vs[:, k]),
+                    begin
+                        local Pk, vdk, vsk = arg
+                        vcat(Pk, E[:, :, k] * vdk, vsk)
+                    end
+                )
             else
-                @add_constraint(prg, L1, "vd_vs_penalty",
-                                (P[k], vs[:, k]), begin
-                                    local Pk, vsk = arg
-                                    vcat(Pk, vsk)
-                                end)
+                @add_constraint(
+                    prg,
+                    L1,
+                    "vd_vs_penalty",
+                    (P[k], vs[:, k]),
+                    begin
+                        local Pk, vsk = arg
+                        vcat(Pk, vsk)
+                    end
+                )
             end
         end
     else
         for k = 1:N
-            if k<N
-                @add_constraint(prg, L1, "vd_vs_penalty",
-                                (P[k], vd[:, k]), begin
-                                    local Pk, vdk = arg
-                                    vcat(Pk, E[:, :, k]*vdk)
-                                end)
-            else
+            if k < N
                 @add_constraint(
-                    prg, ZERO, "vd_vs_penalty",
-                    (P[k],), begin
-                        local Pk, = arg
-                        Pk
-                    end)
+                    prg,
+                    L1,
+                    "vd_vs_penalty",
+                    (P[k], vd[:, k]),
+                    begin
+                        local Pk, vdk = arg
+                        vcat(Pk, E[:, :, k] * vdk)
+                    end
+                )
+            else
+                @add_constraint(prg, ZERO, "vd_vs_penalty", (P[k],), begin
+                    local Pk, = arg
+                    Pk
+                end)
             end
         end
     end
 
     # Initial condition relaxation penalty
     if !isnothing(vic)
-        @add_constraint(prg, L1, "vic_penalty",
-                        (Pf[1], vic), begin
-                            local Pf1, vic = arg
-                            vcat(Pf1, vic)
-                        end)
+        @add_constraint(prg, L1, "vic_penalty", (Pf[1], vic), begin
+            local Pf1, vic = arg
+            vcat(Pf1, vic)
+        end)
     else
-        @add_constraint(prg, ZERO, "vic_penalty",
-                        (Pf[1]), begin
-                            local Pf1, = arg
-                            Pf1
-                        end)
+        @add_constraint(prg, ZERO, "vic_penalty", (Pf[1]), begin
+            local Pf1, = arg
+            Pf1
+        end)
     end
 
     # Terminal condition relaxation penalty
     if !isnothing(vtc)
-        @add_constraint(prg, L1, "vtc_penalty",
-                        (Pf[2], vtc), begin
-                            local Pf2, vtc = arg
-                            vcat(Pf2, vtc)
-                        end)
+        @add_constraint(prg, L1, "vtc_penalty", (Pf[2], vtc), begin
+            local Pf2, vtc = arg
+            vcat(Pf2, vtc)
+        end)
     else
-        @add_constraint(prg, ZERO, "vtc_penalty",
-                        (Pf[2]), begin
-                            local Pf2, = arg
-                            Pf2
-                        end)
+        @add_constraint(prg, ZERO, "vtc_penalty", (Pf[2]), begin
+            local Pf2, = arg
+            Pf2
+        end)
     end
 
-    spbm.J_vc = @add_cost(
-        prg, (P, Pf), begin
-            local P, Pf = arg
-            wvc*(trapz(P, t)+sum(Pf))
-        end)
+    spbm.J_vc = @add_cost(prg, (P, Pf), begin
+        local P, Pf = arg
+        wvc * (trapz(P, t) + sum(Pf))
+    end)
 
     return nothing
 end
@@ -801,11 +921,13 @@ function check_stopping_criterion!(spbm::Subproblem)::Bool
     # Check predicted cost improvement
     J_ref = ref.J_aug
     J_sol = sol.J_aug
-    sol.improv_rel = (J_ref-J_sol)/abs(J_ref)
+    sol.improv_rel = (J_ref - J_sol) / abs(J_ref)
 
     # Compute stopping criterion
-    stop = (spbm.iter>1 &&
-        (sol.feas && (abs(sol.improv_rel)<=ε_rel || sol.deviation<=ε_abs)))
+    stop = (
+        spbm.iter > 1 &&
+        (sol.feas && (abs(sol.improv_rel) <= ε_rel || sol.deviation <= ε_abs))
+    )
 
     return stop
 end
@@ -819,8 +941,7 @@ Print command line info message.
 - `spbm`: the subproblem that was solved.
 - `err`: an PTR-specific error message.
 """
-function print_info(spbm::Subproblem,
-                    err::Union{Nothing, SCPError}=nothing)::Nothing
+function print_info(spbm::Subproblem, err::Union{Nothing,SCPError} = nothing)::Nothing
 
     # Convenience variables
     sol = spbm.sol
@@ -835,15 +956,15 @@ function print_info(spbm::Subproblem,
     else
         # Preprocess values
         scale = spbm.def.common.scale
-        xh = scale.iSx*(sol.xd.-scale.cx)
-        uh = scale.iSu*(sol.ud.-scale.cu)
-        ph = scale.iSp*(sol.p-scale.cp)
-        xh_ref = scale.iSx*(spbm.ref.xd.-scale.cx)
-        uh_ref = scale.iSu*(spbm.ref.ud.-scale.cu)
-        ph_ref = scale.iSp*(spbm.ref.p-scale.cp)
-        max_dxh = norm(xh-xh_ref, Inf)
-        max_duh = norm(uh-uh_ref, Inf)
-        max_dph = norm(ph-ph_ref, Inf)
+        xh = scale.iSx * (sol.xd .- scale.cx)
+        uh = scale.iSu * (sol.ud .- scale.cu)
+        ph = scale.iSp * (sol.p - scale.cp)
+        xh_ref = scale.iSx * (spbm.ref.xd .- scale.cx)
+        uh_ref = scale.iSu * (spbm.ref.ud .- scale.cu)
+        ph_ref = scale.iSp * (spbm.ref.p - scale.cp)
+        max_dxh = norm(xh - xh_ref, Inf)
+        max_duh = norm(uh - uh_ref, Inf)
+        max_dph = norm(ph - ph_ref, Inf)
         status = @sprintf "%s" sol.status
         status = status[1:min(8, length(status))]
         ΔJ = improvement_percent(sol.J_aug, ref.J_aug)
@@ -852,21 +973,23 @@ function print_info(spbm::Subproblem,
         ηp = sol.ηp
 
         # Associate values with columns
-        assoc = Dict(:iter => spbm.iter,
-                     :status => status,
-                     :maxvd => norm(sol.vd, Inf),
-                     :maxvs => norm(sol.vs, Inf),
-                     :maxvbc => norm([sol.vic; sol.vtc], Inf),
-                     :cost => sol.J_aug,
-                     :ΔJ => ΔJ,
-                     :dx => max_dxh,
-                     :du => max_duh,
-                     :dp => max_dph,
-                     :δ => sol.deviation,
-                     :dynfeas => sol.feas ? "T" : "F",
-                     :trx_max => ηx_max,
-                     :tru_max => ηu_max,
-                     :trp => ηp)
+        assoc = Dict(
+            :iter => spbm.iter,
+            :status => status,
+            :maxvd => norm(sol.vd, Inf),
+            :maxvs => norm(sol.vs, Inf),
+            :maxvbc => norm([sol.vic; sol.vtc], Inf),
+            :cost => sol.J_aug,
+            :ΔJ => ΔJ,
+            :dx => max_dxh,
+            :du => max_duh,
+            :dp => max_dph,
+            :δ => sol.deviation,
+            :dynfeas => sol.feas ? "T" : "F",
+            :trx_max => ηx_max,
+            :tru_max => ηu_max,
+            :trp => ηp,
+        )
 
         # Set user-defined columns
         for col in traj.table_cols

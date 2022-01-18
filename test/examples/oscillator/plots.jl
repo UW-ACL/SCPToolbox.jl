@@ -28,9 +28,11 @@ Plot the position and velocity timeseries.
 - `sol`: the trajectory solution.
 - `history`: SCP iteration data history.
 """
-function plot_timeseries(mdl::OscillatorProblem,
-                         sol::SCPSolution,
-                         history::SCPHistory)::Nothing
+function plot_timeseries(
+    mdl::OscillatorProblem,
+    sol::SCPSolution,
+    history::SCPHistory,
+)::Nothing
 
     # Common values
     num_iter = length(history.subproblems)
@@ -39,9 +41,9 @@ function plot_timeseries(mdl::OscillatorProblem,
     veh = mdl.vehicle
     traj = mdl.traj
     ct_res = 500
-    td = RealVector(LinRange(0.0, 1.0, pars.N))*traj.tf
+    td = RealVector(LinRange(0.0, 1.0, pars.N)) * traj.tf
     τc = RealVector(LinRange(0.0, 1.0, ct_res))
-    tc = τc*traj.tf
+    tc = τc * traj.tf
     cmap = generate_colormap()
     cmap_offset = 0.1
     alph_offset = 0.3
@@ -50,21 +52,29 @@ function plot_timeseries(mdl::OscillatorProblem,
     fig = create_figure((6, 6))
 
     # Plot data
-    data = [Dict(:ylabel=>"Position [m]",
-                 :scale=>(r)->r,
-                 :dt_y=>(sol)->sol.xd,
-                 :ct_y=>sol.xc,
-                 :id=>veh.id_r),
-            Dict(:ylabel=>"Velocity [m/s]",
-                 :scale=>(v)->v,
-                 :dt_y=>(sol)->sol.xd,
-                 :ct_y=>sol.xc,
-                 :id=>veh.id_v),
-            Dict(:ylabel=>"Acceleration [m/s\$^2\$]",
-                 :scale=>(a)->a,
-                 :dt_y=>(sol)->sol.ud,
-                 :ct_y=>sol.uc,
-                 :id=>veh.id_aa)]
+    data = [
+        Dict(
+            :ylabel => "Position [m]",
+            :scale => (r) -> r,
+            :dt_y => (sol) -> sol.xd,
+            :ct_y => sol.xc,
+            :id => veh.id_r,
+        ),
+        Dict(
+            :ylabel => "Velocity [m/s]",
+            :scale => (v) -> v,
+            :dt_y => (sol) -> sol.xd,
+            :ct_y => sol.xc,
+            :id => veh.id_v,
+        ),
+        Dict(
+            :ylabel => "Acceleration [m/s\$^2\$]",
+            :scale => (a) -> a,
+            :dt_y => (sol) -> sol.ud,
+            :ct_y => sol.uc,
+            :id => veh.id_aa,
+        ),
+    ]
 
     axes = []
 
@@ -72,26 +82,26 @@ function plot_timeseries(mdl::OscillatorProblem,
         ax = fig.add_subplot(length(data), 1, i)
         push!(axes, ax)
 
-        ax.grid(linewidth=0.3, alpha=0.5)
+        ax.grid(linewidth = 0.3, alpha = 0.5)
         ax.set_axisbelow(true)
         ax.set_facecolor("white")
-        ax.autoscale(tight=true, axis="x")
+        ax.autoscale(tight = true, axis = "x")
 
         ax.set_xlabel("Time [s]")
         ax.set_ylabel(data[i][:ylabel])
 
         # >> Intermediate SCP subproblem solutions <<
-        for j=0:num_iter
+        for j = 0:num_iter
             # Extract values for the trajectory at iteration i
-            if j==0
+            if j == 0
                 trj = history.subproblems[1].ref
                 alph = alph_offset
                 clr = parse(RGB, "#356397")
-                clr = rgb2pyplot(clr, a=alph)
+                clr = rgb2pyplot(clr, a = alph)
                 shp = "X"
             else
                 trj = history.subproblems[j].sol
-                f = (off) -> (j-1)/(num_iter-1)*(1-off)+off
+                f = (off) -> (j - 1) / (num_iter - 1) * (1 - off) + off
                 alph = f(alph_offset)
                 clr = (rgb(cmap, f(cmap_offset))..., alph)
                 shp = "o"
@@ -100,25 +110,30 @@ function plot_timeseries(mdl::OscillatorProblem,
             x = data[i][:dt_y](trj)[data[i][:id], :]
             x = map(data[i][:scale], x)
 
-            ax.plot(td, x,
-                    linestyle="none",
-                    marker=shp,
-                    markersize=4,
-                    markerfacecolor=clr,
-                    markeredgecolor=(1, 1, 1, alph),
-                    markeredgewidth=0.3,
-                    zorder=10+num_iter,
-                    clip_on=false)
+            ax.plot(
+                td,
+                x,
+                linestyle = "none",
+                marker = shp,
+                markersize = 4,
+                markerfacecolor = clr,
+                markeredgecolor = (1, 1, 1, alph),
+                markeredgewidth = 0.3,
+                zorder = 10 + num_iter,
+                clip_on = false,
+            )
         end
 
         # >> Final continuous-time solution <<
-        yc = hcat([data[i][:scale](sample(data[i][:ct_y], τ)[data[i][:id]])
-                   for τ in τc]...)
-        ax.plot(tc, yc[:],
-                color=ct_clr,
-                linewidth=3,
-                alpha=0.5,
-                zorder=10+num_iter-1)
+        yc = hcat([data[i][:scale](sample(data[i][:ct_y], τ)[data[i][:id]]) for τ in τc]...)
+        ax.plot(
+            tc,
+            yc[:],
+            color = ct_clr,
+            linewidth = 3,
+            alpha = 0.5,
+            zorder = 10 + num_iter - 1,
+        )
 
     end
 
@@ -139,8 +154,7 @@ deadband.
 - `mdl`: the oscillator problem parameters.
 - `sol`: the trajectory solution.
 """
-function plot_deadband(mdl::OscillatorProblem,
-                       sol::SCPSolution)::Nothing
+function plot_deadband(mdl::OscillatorProblem, sol::SCPSolution)::Nothing
 
     # Common
     algo = sol.algo
@@ -158,8 +172,8 @@ function plot_deadband(mdl::OscillatorProblem,
     ax.axis("square")
     ax.set_axisbelow(true)
     ax.set_facecolor("white")
-    ax.grid(linewidth=0.3, alpha=0.5)
-    ax.autoscale(tight=true)
+    ax.grid(linewidth = 0.3, alpha = 0.5)
+    ax.autoscale(tight = true)
     ax.set_xlabel("Reference acceleration, \$a_{\\mathsf{ref}}\$ [m/s\$^2\$]")
     ax.set_ylabel("Actual acceleration, \$a_{\\mathsf{act}}\$ [m/s\$^2\$]")
 
@@ -167,40 +181,54 @@ function plot_deadband(mdl::OscillatorProblem,
     a_max = max(maximum(aa), maximum(ar))
     a_min = min(minimum(aa), minimum(ar))
     ar_rng = LinRange(a_min, a_max, resol)
-    above_db = (ar)->ar-veh.a_db
-    below_db = (ar)->-veh.a_db-ar
-    aa_polar = map((ar)->or([above_db(ar); below_db(ar)],
-                            κ=traj.κ1,
-                            match=veh.a_max-veh.a_db,
-                            normalize=veh.a_max-veh.a_db)*ar,
-                   ar_rng)
+    above_db = (ar) -> ar - veh.a_db
+    below_db = (ar) -> -veh.a_db - ar
+    aa_polar = map(
+        (ar) ->
+            or(
+                [above_db(ar); below_db(ar)],
+                κ = traj.κ1,
+                match = veh.a_max - veh.a_db,
+                normalize = veh.a_max - veh.a_db,
+            ) * ar,
+        ar_rng,
+    )
 
     # Without deadband
-    ax.plot(ar_rng, ar_rng,
-            color=Red,
-            linewidth=1,
-            solid_capstyle="round",
-            clip_on=false,
-            zorder=10)
+    ax.plot(
+        ar_rng,
+        ar_rng,
+        color = Red,
+        linewidth = 1,
+        solid_capstyle = "round",
+        clip_on = false,
+        zorder = 10,
+    )
 
     # With deadband
-    ax.plot(ar_rng, aa_polar,
-            color=Green,
-            linewidth=4,
-            solid_capstyle="round",
-            clip_on=false,
-            zorder=10)
+    ax.plot(
+        ar_rng,
+        aa_polar,
+        color = Green,
+        linewidth = 4,
+        solid_capstyle = "round",
+        clip_on = false,
+        zorder = 10,
+    )
 
     # ..:: The discrete-time (ar, aa) trajectory values ::..
-    ax.plot(ar, aa,
-            linestyle="none",
-            marker="o",
-            markersize=4,
-            markerfacecolor=clr,
-            markeredgecolor="white",
-            markeredgewidth=0.3,
-            clip_on=false,
-            zorder=100)
+    ax.plot(
+        ar,
+        aa,
+        linestyle = "none",
+        marker = "o",
+        markersize = 4,
+        markerfacecolor = clr,
+        markeredgecolor = "white",
+        markeredgewidth = 0.3,
+        clip_on = false,
+        zorder = 100,
+    )
 
     save_figure("oscillator_deadband.pdf", algo)
 

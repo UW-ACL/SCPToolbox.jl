@@ -77,8 +77,8 @@ Constructor for the environment.
 - `env`: the environment struct.
 """
 function QuadrotorEnvironmentParameters(
-        gnrm::Real,
-        obs::Vector{Ellipsoid}
+    gnrm::Real,
+    obs::Vector{Ellipsoid},
 )::QuadrotorEnvironmentParameters
 
     # Derived values
@@ -110,13 +110,14 @@ function QuadrotorProblem()::QuadrotorProblem
     u_max = 23.2
     u_min = 0.6
     tilt_max = deg2rad(60)
-    quad = QuadrotorParameters(id_r, id_v, id_u, id_σ, id_t,
-                               u_max, u_min, tilt_max)
+    quad = QuadrotorParameters(id_r, id_v, id_u, id_σ, id_t, u_max, u_min, tilt_max)
 
     # >> Environment <<
     g = 9.81
-    obs = [Ellipsoid(diagm([2.0; 2.0; 0.0]), [1.0; 2.0; 0.0]),
-           Ellipsoid(diagm([1.5; 1.5; 0.0]), [2.0; 5.0; 0.0])]
+    obs = [
+        Ellipsoid(diagm([2.0; 2.0; 0.0]), [1.0; 2.0; 0.0]),
+        Ellipsoid(diagm([1.5; 1.5; 0.0]), [2.0; 5.0; 0.0]),
+    ]
     env = QuadrotorEnvironmentParameters(g, obs)
 
     # >> Trajectory <<

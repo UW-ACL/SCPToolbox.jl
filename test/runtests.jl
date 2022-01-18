@@ -22,9 +22,8 @@ using Test
 using .Examples
 
 """ Print a heading for the test set. """
-test_heading(algo, description) = printstyled(
-    @sprintf("(%s) %s\n", algo, description),
-    color=:blue, bold=true)
+test_heading(algo, description) =
+    printstyled(@sprintf("(%s) %s\n", algo, description), color = :blue, bold = true)
 
 # Number of trials if statistics are gathered
 const NUM_TRIALS = 3

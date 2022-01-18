@@ -51,14 +51,32 @@ function scvx(trials::Int)::Nothing
     q_tr = Inf
     q_exit = Inf
     solver = ECOS
-    solver_options = Dict("verbose"=>0)
+    solver_options = Dict("verbose" => 0)
     pars = SCvx.Parameters(
-        N, Nsub, iter_max, disc_method, λ, ρ_0, ρ_1, ρ_2, β_sh, β_gr,
-        η_init, η_lb, η_ub, ε_abs, ε_rel, feas_tol, q_tr, q_exit, solver,
-        solver_options)
+        N,
+        Nsub,
+        iter_max,
+        disc_method,
+        λ,
+        ρ_0,
+        ρ_1,
+        ρ_2,
+        β_sh,
+        β_gr,
+        η_init,
+        η_lb,
+        η_ub,
+        ε_abs,
+        ε_rel,
+        feas_tol,
+        q_tr,
+        q_exit,
+        solver,
+        solver_options,
+    )
 
     # Solve multiple times to gather statistics
-    run_trials(mdl, pbm, pars, SCvx; num_trials=trials)
+    run_trials(mdl, pbm, pars, SCvx; num_trials = trials)
 
 end
 
@@ -96,14 +114,37 @@ function gusto(trials::Int)::Nothing
     q_tr = Inf
     q_exit = Inf
     solver = ECOS
-    solver_options = Dict("verbose"=>0)
+    solver_options = Dict("verbose" => 0)
     pars = GuSTO.Parameters(
-        N, Nsub, iter_max, disc_method, λ_init, λ_max, ρ_0, ρ_1, β_sh, β_gr,
-        γ_fail, η_init, η_lb, η_ub, μ, iter_μ, ε_abs, ε_rel, feas_tol, pen, hom,
-        q_tr, q_exit, solver, solver_options)
+        N,
+        Nsub,
+        iter_max,
+        disc_method,
+        λ_init,
+        λ_max,
+        ρ_0,
+        ρ_1,
+        β_sh,
+        β_gr,
+        γ_fail,
+        η_init,
+        η_lb,
+        η_ub,
+        μ,
+        iter_μ,
+        ε_abs,
+        ε_rel,
+        feas_tol,
+        pen,
+        hom,
+        q_tr,
+        q_exit,
+        solver,
+        solver_options,
+    )
 
     # Solve multiple times to gather statistics
-    run_trials(mdl, pbm, pars, GuSTO; num_trials=trials)
+    run_trials(mdl, pbm, pars, GuSTO; num_trials = trials)
 
 end
 
@@ -121,11 +162,11 @@ Solves the same problem multiple times in order to gather realiable runtime stat
   many to plot statistically meaningful timing results
 """
 function run_trials(
-        mdl::FreeFlyerProblem,
-        traj::TrajectoryProblem,
-        pars::T,
-        solver::Module;
-        num_trials::Int=100
+    mdl::FreeFlyerProblem,
+    traj::TrajectoryProblem,
+    pars::T,
+    solver::Module;
+    num_trials::Int = 100,
 )::Nothing where {T<:SCPParameters}
 
     sol_list = Vector{SCPSolution}(undef, num_trials)
@@ -134,14 +175,14 @@ function run_trials(
     for trial = 1:num_trials
         local pbm = solver.create(pars, traj)
         @printf("Trial %d/%d\n", trial, num_trials)
-        if trial>1
+        if trial > 1
             # Suppress output
             real_stdout = stdout
             (rd, wr) = redirect_stdout()
         end
         sol_list[trial], history_list[trial] = solver.solve(pbm)
         @test sol_list[trial].status == @sprintf("%s", SCP_SOLVED)
-        if trial>1
+        if trial > 1
             redirect_stdout(real_stdout)
         end
     end

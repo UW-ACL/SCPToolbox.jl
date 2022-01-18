@@ -31,11 +31,19 @@ using JuMP
 using ..Utils
 
 export TrajectoryProblem
-export problem_set_dims!, problem_advise_scale!,
-    problem_set_integration_action!, problem_set_guess!,
-    problem_set_callback!, problem_set_terminal_cost!,
-    problem_set_running_cost!, problem_set_dynamics!, problem_set_X!,
-    problem_set_U!, problem_set_s!, problem_set_bc!, problem_add_table_column!,
+export problem_set_dims!,
+    problem_advise_scale!,
+    problem_set_integration_action!,
+    problem_set_guess!,
+    problem_set_callback!,
+    problem_set_terminal_cost!,
+    problem_set_running_cost!,
+    problem_set_dynamics!,
+    problem_set_X!,
+    problem_set_U!,
+    problem_set_s!,
+    problem_set_bc!,
+    problem_add_table_column!,
     define_conic_constraint!
 export DiscretizationType, FOH, IMPULSE
 
@@ -43,11 +51,11 @@ export DiscretizationType, FOH, IMPULSE
 
 @enum(DiscretizationType, FOH, IMPULSE)
 
-const RealTuple = Tuple{Types.RealTypes, Types.RealTypes}
-const VectorOfTuples = Vector{Union{Nothing, RealTuple}}
+const RealTuple = Tuple{Types.RealTypes,Types.RealTypes}
+const VectorOfTuples = Vector{Union{Nothing,RealTuple}}
 const SIA = Types.SpecialIntegrationActions
 const Func = Types.Func
-const TableColumnDef = Tuple{Symbol, String, String, Int, Function}
+const TableColumnDef = Tuple{Symbol,String,String,Int,Function}
 
 # ..:: Data structures ::..
 
@@ -95,8 +103,8 @@ mutable struct TrajectoryProblem
     G::Func     # Jacobian ds/dp
     ind_X::Union{
         Vector{VariableArgumentBlock},
-        Vector{Union{
-            Types.RealTypes, Types.RealVector}}} # Indicator variables for convex state constraints
+        Vector{Union{Types.RealTypes,Types.RealVector}},
+    } # Indicator variables for convex state constraints
     # >> Boundary conditions <<
     gic::Func   # Initial condition
     H0::Func    # Jacobian dgic/dx
@@ -168,9 +176,50 @@ function TrajectoryProblem(mdl::Any)::TrajectoryProblem
     table_cols = TableColumnDef[]
 
     pbm = TrajectoryProblem(
-        nx, nu, np, xrg, urg, prg, propag_actions, guess, callback!, φ, Γ, S, dSdp, ℓ, dℓdx, dℓdp,
-        g, dgdx, dgdp, S_cvx, ℓ_cvx, g_cvx, f, A, B, F, X, U, s, C, D, G, ind_X, gic, H0, K0, gtc,
-        Hf, Kf, mdl, scp, force_hard, table_cols)
+        nx,
+        nu,
+        np,
+        xrg,
+        urg,
+        prg,
+        propag_actions,
+        guess,
+        callback!,
+        φ,
+        Γ,
+        S,
+        dSdp,
+        ℓ,
+        dℓdx,
+        dℓdp,
+        g,
+        dgdx,
+        dgdp,
+        S_cvx,
+        ℓ_cvx,
+        g_cvx,
+        f,
+        A,
+        B,
+        F,
+        X,
+        U,
+        s,
+        C,
+        D,
+        G,
+        ind_X,
+        gic,
+        H0,
+        K0,
+        gtc,
+        Hf,
+        Kf,
+        mdl,
+        scp,
+        force_hard,
+        table_cols,
+    )
 
     return pbm
 end
@@ -188,8 +237,7 @@ Set the problem dimensions.
 - `nu`: input dimension.
 - `np`: parameter dimension.
 """
-function problem_set_dims!(pbm::TrajectoryProblem,
-                           nx::Int, nu::Int, np::Int)::Nothing
+function problem_set_dims!(pbm::TrajectoryProblem, nx::Int, nu::Int, np::Int)::Nothing
     pbm.nx = nx
     pbm.nu = nu
     pbm.np = np
@@ -211,17 +259,21 @@ variable scaling that may occur.
 - `idx`: which elements this range applies to.
 - `rg`: the range itself, (min, max).
 """
-function problem_advise_scale!(pbm::TrajectoryProblem,
-                               which::Symbol,
-                               idx::Types.Index,
-                               rg::RealTuple)::Nothing
+function problem_advise_scale!(
+    pbm::TrajectoryProblem,
+    which::Symbol,
+    idx::Types.Index,
+    rg::RealTuple,
+)::Nothing
     if rg[2] < rg[1]
         err = ArgumentError("min must be less than max")
         throw(err)
     end
-    map = Dict(:state => (pbm.nx, pbm.xrg),
-               :input => (pbm.nu, pbm.urg),
-               :parameter => (pbm.np, pbm.prg))
+    map = Dict(
+        :state => (pbm.nx, pbm.xrg),
+        :input => (pbm.nu, pbm.urg),
+        :parameter => (pbm.np, pbm.prg),
+    )
     nz, zrg = map[which]
     for i in LinearIndices(1:nz)[idx]
         zrg[i] = rg
@@ -241,7 +293,10 @@ Define an action on (part of) the state at integration update step.
   updated/correct value.
 """
 function problem_set_integration_action!(
-    pbm::TrajectoryProblem, idx::Types.Index, action::Func)::Nothing
+    pbm::TrajectoryProblem,
+    idx::Types.Index,
+    action::Func,
+)::Nothing
 
     push!(pbm.integ_actions, (idx, (x) -> action(x, pbm)))
 
@@ -257,8 +312,7 @@ Define the initial trajectory guess.
 - `pbm`: the trajectory problem structure.
 - `guess`: the guess generator.
 """
-function problem_set_guess!(pbm::TrajectoryProblem,
-                            guess::Func)::Nothing
+function problem_set_guess!(pbm::TrajectoryProblem, guess::Func)::Nothing
     pbm.guess = (N) -> guess(N, pbm)
     return nothing
 end
@@ -293,11 +347,8 @@ contract:
 - `pbm`: the trajectory problem structure.
 - `cb`: the callback function.
 """
-function problem_set_callback!(pbm::TrajectoryProblem,
-                               cb::Func)::Nothing
-    pbm.callback! = (subproblem) -> cb(subproblem.sol.bay,
-                                       subproblem,
-                                       pbm.mdl)
+function problem_set_callback!(pbm::TrajectoryProblem, cb::Func)::Nothing
+    pbm.callback! = (subproblem) -> cb(subproblem.sol.bay, subproblem, pbm.mdl)
     return nothing
 end
 
@@ -310,8 +361,7 @@ Define the terminal cost.
 - `pbm`: the trajectory problem structure.
 - `φ`: (optional) the terminal cost.
 """
-function problem_set_terminal_cost!(pbm::TrajectoryProblem,
-                                    φ::Func)::Nothing
+function problem_set_terminal_cost!(pbm::TrajectoryProblem, φ::Func)::Nothing
     pbm.φ = (x, p) -> φ(x, p, pbm)
     return nothing
 end
@@ -336,16 +386,18 @@ Args:
 - `dgdx`: (optional) the additive penalty function Jacobian wrt state.
 - `dgdp`: (optional) the additive penalty function Jacobian wrt parameter.
 """
-function problem_set_running_cost!(pbm::TrajectoryProblem,
-                                   algo::Symbol,
-                                   SΓ::Func,
-                                   dSdp::Func=nothing,
-                                   ℓ::Func=nothing,
-                                   dℓdx::Func=nothing,
-                                   dℓdp::Func=nothing,
-                                   g::Func=nothing,
-                                   dgdx::Func=nothing,
-                                   dgdp::Func=nothing)::Nothing
+function problem_set_running_cost!(
+    pbm::TrajectoryProblem,
+    algo::Symbol,
+    SΓ::Func,
+    dSdp::Func = nothing,
+    ℓ::Func = nothing,
+    dℓdx::Func = nothing,
+    dℓdp::Func = nothing,
+    g::Func = nothing,
+    dgdx::Func = nothing,
+    dgdp::Func = nothing,
+)::Nothing
     if algo in (:scvx, :ptr)
         pbm.Γ = (t, k, x, u, p) -> SΓ(t, k, x, u, p, pbm)
     else
@@ -353,17 +405,12 @@ function problem_set_running_cost!(pbm::TrajectoryProblem,
         pbm.dSdp = !isnothing(dSdp) ? (t, k, p) -> dSdp(t, k, p, pbm) : nothing
         pbm.S_cvx = isnothing(dSdp)
         pbm.ℓ = !isnothing(ℓ) ? (t, k, x, p) -> ℓ(t, k, x, p, pbm) : nothing
-        pbm.dℓdx = !isnothing(dℓdx) ?
-            (t, k, x, p) -> dℓdx(t, k, x, p, pbm) : nothing
-        pbm.dℓdp = !isnothing(dℓdp) ?
-            (t, k, x, p) -> dℓdp(t, k, x, p, pbm) : nothing
+        pbm.dℓdx = !isnothing(dℓdx) ? (t, k, x, p) -> dℓdx(t, k, x, p, pbm) : nothing
+        pbm.dℓdp = !isnothing(dℓdp) ? (t, k, x, p) -> dℓdp(t, k, x, p, pbm) : nothing
         pbm.ℓ_cvx = isnothing(dℓdx) && isnothing(dℓdp)
-        pbm.g = !isnothing(g) ?
-            (t, k, x, p) -> g(t, k, x, p, pbm) : nothing
-        pbm.dgdx = !isnothing(dgdx) ?
-            (t, k, x, p) -> dgdx(t, k, x, p, pbm) : nothing
-        pbm.dgdp = !isnothing(dgdp) ?
-            (t, k, x, p) -> dgdp(t, k, x, p, pbm) : nothing
+        pbm.g = !isnothing(g) ? (t, k, x, p) -> g(t, k, x, p, pbm) : nothing
+        pbm.dgdx = !isnothing(dgdx) ? (t, k, x, p) -> dgdx(t, k, x, p, pbm) : nothing
+        pbm.dgdp = !isnothing(dgdp) ? (t, k, x, p) -> dgdp(t, k, x, p, pbm) : nothing
         pbm.g_cvx = isnothing(dgdx) && isnothing(dgdp)
     end
     return nothing
@@ -381,17 +428,22 @@ Define the dynamics (SCvx).
 - `B`: Jacobian with respect to the input, `df/du`.
 - `F`: Jacobian with respect to the parameter, `df/dp`.
 """
-function problem_set_dynamics!(pbm::TrajectoryProblem,
-                               f::Func,
-                               A::Func,
-                               B::Func,
-                               F::Func)::Nothing
+function problem_set_dynamics!(
+    pbm::TrajectoryProblem,
+    f::Func,
+    A::Func,
+    B::Func,
+    F::Func,
+)::Nothing
     pbm.f = (t, k, x, u, p) -> f(t, k, x, u, p, pbm)
-    pbm.A = !isnothing(A) ? (t, k, x, u, p) -> A(t, k, x, u, p, pbm) :
+    pbm.A =
+        !isnothing(A) ? (t, k, x, u, p) -> A(t, k, x, u, p, pbm) :
         (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx)
-    pbm.B = !isnothing(A) ? (t, k, x, u, p) -> B(t, k, x, u, p, pbm) :
+    pbm.B =
+        !isnothing(A) ? (t, k, x, u, p) -> B(t, k, x, u, p, pbm) :
         (t, k, x, u, p) -> zeros(pbm.nx, pbm.nu)
-    pbm.F = !isnothing(F) ? (t, k, x, u, p) -> F(t, k, x, u, p, pbm) :
+    pbm.F =
+        !isnothing(F) ? (t, k, x, u, p) -> F(t, k, x, u, p, pbm) :
         (x, u, p) -> zeros(pbm.nx, pbm.nu)
     return nothing
 end
@@ -408,21 +460,20 @@ Define the input-affine dynamics (GuSTO).
 - `A`: Jacobians with respect to the state, `{df0/dx, df1/dx, ...}`.
 - `F`: Jacobians with respect to the parameter, `{df0/dp, df1/dp, ...}`.
 """
-function problem_set_dynamics!(pbm::TrajectoryProblem,
-                               f::Func,
-                               A::Func,
-                               F::Func)::Nothing
+function problem_set_dynamics!(pbm::TrajectoryProblem, f::Func, A::Func, F::Func)::Nothing
     pbm.f = (t, k, x, u, p) -> begin
         _f = f(t, k, x, p, pbm)
-        _f = _f[1]+sum(u[i]*_f[i+1] for i=1:pbm.nu)
+        _f = _f[1] + sum(u[i] * _f[i+1] for i = 1:pbm.nu)
         return _f
     end
 
-    pbm.A = !isnothing(A) ? (t, k, x, u, p) -> begin
-        _A = A(t, k, x, p, pbm)
-        _A = _A[1]+sum(u[i]*_A[i+1] for i=1:pbm.nu)
-        return _A
-    end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx)
+    pbm.A =
+        !isnothing(A) ?
+        (t, k, x, u, p) -> begin
+            _A = A(t, k, x, p, pbm)
+            _A = _A[1] + sum(u[i] * _A[i+1] for i = 1:pbm.nu)
+            return _A
+        end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx)
 
     pbm.B = (t, k, x, u, p) -> begin
         _B = zeros(pbm.nx, pbm.nu)
@@ -433,11 +484,13 @@ function problem_set_dynamics!(pbm::TrajectoryProblem,
         return _B
     end
 
-    pbm.F = !isnothing(F) ? (t, k, x, u, p) -> begin
-        _F = F(t, k, x, p, pbm)
-        _F = _F[1]+sum(u[i]*_F[i+1] for i=1:pbm.nu)
-        return _F
-    end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx)
+    pbm.F =
+        !isnothing(F) ?
+        (t, k, x, u, p) -> begin
+            _F = F(t, k, x, p, pbm)
+            _F = _F[1] + sum(u[i] * _F[i+1] for i = 1:pbm.nu)
+            return _F
+        end : (t, k, x, u, p) -> zeros(pbm.nx, pbm.nx)
 
     return nothing
 end
@@ -452,20 +505,19 @@ function if you want to use the GuSTO solver.
 - `pbm`: the trajectory problem structure.
 - `X`: the conic constraints whose intersection defines the convex state set.
 """
-function problem_set_X!(
-        pbm::TrajectoryProblem,
-        X::Func
-)::Nothing
-    pbm.X = (ocp, t, k, x, p) -> begin
-        mode = (x isa Union{Types.RealTypes, Types.RealVector}) ? :numerical : :optimization
-        if mode==:optimization
-            pbm.ind_X = Vector{VariableArgumentBlock}(undef, 0)
-        else
-            pbm.ind_X = Vector{Union{Types.RealTypes, Types.RealVector}}(undef, 0)
+function problem_set_X!(pbm::TrajectoryProblem, X::Func)::Nothing
+    pbm.X =
+        (ocp, t, k, x, p) -> begin
+            mode =
+                (x isa Union{Types.RealTypes,Types.RealVector}) ? :numerical : :optimization
+            if mode == :optimization
+                pbm.ind_X = Vector{VariableArgumentBlock}(undef, 0)
+            else
+                pbm.ind_X = Vector{Union{Types.RealTypes,Types.RealVector}}(undef, 0)
+            end
+            X(t, k, x, p, pbm, ocp)
+            return pbm.ind_X
         end
-        X(t, k, x, p, pbm, ocp)
-        return pbm.ind_X
-    end
     return nothing
 end
 
@@ -478,10 +530,7 @@ Define the convex input constraint set.
 - `pbm`: the trajectory problem structure.
 - `U`: the conic constraints whose intersection defines the convex input set.
 """
-function problem_set_U!(
-        pbm::TrajectoryProblem,
-        U::Func
-)::Nothing
+function problem_set_U!(pbm::TrajectoryProblem, U::Func)::Nothing
     pbm.U = (ocp, t, k, u, p) -> begin
         _force_hard = pbm.force_hard
         pbm.force_hard = true
@@ -509,12 +558,14 @@ Args:
 - `G`: (optional) Jacobian with respect to the parameter, `ds/dp`. Only provide
   if using SCvx.
 """
-function problem_set_s!(pbm::TrajectoryProblem,
-                        algo::Symbol,
-                        s::Func,
-                        C::Func=nothing,
-                        DG::Func=nothing,
-                        G::Func=nothing)::Nothing
+function problem_set_s!(
+    pbm::TrajectoryProblem,
+    algo::Symbol,
+    s::Func,
+    C::Func = nothing,
+    DG::Func = nothing,
+    G::Func = nothing,
+)::Nothing
     if isnothing(s)
         err = SCPError(0, SCP_BAD_ARGUMENT, "must at least provide s")
         throw(err)
@@ -548,17 +599,19 @@ Define the boundary conditions.
 - `H`: Jacobian with respect to the state, dg/dx.
 - `K`: (optional) Jacobian with respect to the parameter, dg/dp.
 """
-function problem_set_bc!(pbm::TrajectoryProblem,
-                         kind::Symbol,
-                         g::Func,
-                         H::Func,
-                         K::Func=nothing)::Nothing
+function problem_set_bc!(
+    pbm::TrajectoryProblem,
+    kind::Symbol,
+    g::Func,
+    H::Func,
+    K::Func = nothing,
+)::Nothing
     if isnothing(g)
         err = SCPError(0, SCP_BAD_ARGUMENT, "must at least provide g")
         throw(err)
     end
 
-    if kind==:ic
+    if kind == :ic
         pbm.gic = (x, p) -> g(x, p, pbm)
         pbm.H0 = !isnothing(H) ? (x, p) -> H(x, p, pbm) : nothing
         pbm.K0 = !isnothing(K) ? (x, p) -> K(x, p, pbm) : nothing
@@ -592,12 +645,14 @@ values that you want to display in the table column, you must put them into
   user-set `bay` field of `SCPSubproblemSolution` (during callback) and returns
   a value appropriate to be `printf`'ed for the column.
 """
-function problem_add_table_column!(pbm::TrajectoryProblem,
-                                   id::Symbol,
-                                   header::String,
-                                   format::String,
-                                   width::Int,
-                                   col_value::Function)::Nothing
+function problem_add_table_column!(
+    pbm::TrajectoryProblem,
+    id::Symbol,
+    header::String,
+    format::String,
+    width::Int,
+    col_value::Function,
+)::Nothing
     push!(pbm.table_cols, (id, header, format, width, col_value))
     return nothing
 end
@@ -628,98 +683,124 @@ solver.
   constrained to take values inside the cone.
 """
 function define_conic_constraint!(
-        pbm::TrajectoryProblem,
-        prog::ConicProgram,
-        alg::Symbol,
-        cone::SupportedCone,
-        desc::String,
-        varlist::Union{
-            NTuple{N, VariableArgumentBlock},
-            NTuple{N, Union{Types.RealTypes, Types.RealVector}}},
-        definition::Func
-)::Nothing where N
+    pbm::TrajectoryProblem,
+    prog::ConicProgram,
+    alg::Symbol,
+    cone::SupportedCone,
+    desc::String,
+    varlist::Union{
+        NTuple{N,VariableArgumentBlock},
+        NTuple{N,Union{Types.RealTypes,Types.RealVector}},
+    },
+    definition::Func,
+)::Nothing where {N}
 
     # Check the mode in which to run the function
-    mode = (varlist isa NTuple{N, VariableArgumentBlock}) ? :optimization : :numerical
+    mode = (varlist isa NTuple{N,VariableArgumentBlock}) ? :optimization : :numerical
 
     # Sanitize arguments so that scalars are actually scalars and not zero-dimensional arrays
-    scalarize = (z) -> (z isa Array && length(z)==1) ? scalarize(z[1]) : z
+    scalarize = (z) -> (z isa Array && length(z) == 1) ? scalarize(z[1]) : z
     scalarize_args = (args) -> [scalarize(arg) for arg in args]
 
     if pbm.force_hard || alg != :gusto
         @add_constraint(prog, cone, desc, (varlist...,), definition(scalarize_args(arg)...))
     else
-        if mode==:optimization
+        if mode == :optimization
             if cone in (ZERO, NONPOS)
                 _z = definition(scalarize_args(value.(varlist))...)
                 cone_dim = (_z isa Array) ? length(_z) : 1
                 q = @new_variable(prog, cone_dim, "q")
                 @add_constraint(
-                    prog, NONPOS, desc, (varlist..., q), begin
+                    prog,
+                    NONPOS,
+                    desc,
+                    (varlist..., q),
+                    begin
                         local arg = scalarize_args(arg)
                         local varlist, q = arg[1:end-1], arg[end]
                         local z = definition(varlist...)
-                        z-q
-                    end)
+                        z - q
+                    end
+                )
                 if cone == ZERO
                     @add_constraint(
-                        prog, NONPOS, desc, (varlist..., q), begin
+                        prog,
+                        NONPOS,
+                        desc,
+                        (varlist..., q),
+                        begin
                             local arg = scalarize_args(arg)
                             local varlist, q = arg[1:end-1], arg[end]
                             local z = definition(varlist...)
-                            -q-z
-                        end)
+                            -q - z
+                        end
+                    )
                 end
             else
                 q = @new_variable(prog, "q")
                 if cone in (L1, SOC, LINF)
                     @add_constraint(
-                        prog, cone, desc, (varlist..., q), begin
+                        prog,
+                        cone,
+                        desc,
+                        (varlist..., q),
+                        begin
                             local arg = scalarize_args(arg)
                             local varlist, q = arg[1:end-1], arg[end]
                             local z = definition(varlist...)
                             local t = z[1]
                             local x = z[2:end]
-                            vcat(t+q, x)
-                        end)
-                elseif cone==GEOM
+                            vcat(t + q, x)
+                        end
+                    )
+                elseif cone == GEOM
                     @add_constraint(
-                        prog, cone, desc, (varlist..., q), begin
+                        prog,
+                        cone,
+                        desc,
+                        (varlist..., q),
+                        begin
                             local arg = scalarize_args(arg)
                             local varlist, q = arg[1:end-1], arg[end]
                             local z = definition(varlist...)
                             local t, x = z[1], z[2:end]
-                            vcat(x, t-q)
-                        end)
-                elseif cone==EXP
+                            vcat(x, t - q)
+                        end
+                    )
+                elseif cone == EXP
                     @add_constraint(
-                        prog, cone, desc, (varlist..., q), begin
+                        prog,
+                        cone,
+                        desc,
+                        (varlist..., q),
+                        begin
                             local arg = scalarize_args(arg)
                             local varlist, q = arg[1:end-1], arg[end]
                             local z = definition(varlist...)
                             local x, y, w = z
-                            vcat(x, y, w+q)
-                        end)
+                            vcat(x, y, w + q)
+                        end
+                    )
                 end
             end
         else
             z = definition(scalarize_args(varlist)...)
-            if cone==ZERO
+            if cone == ZERO
                 q = abs.(z)
-            elseif cone==NONPOS
+            elseif cone == NONPOS
                 q = z
             elseif cone in (L1, SOC, LINF)
                 t = z[1]
                 x = z[2:end]
                 nrm = Dict(L1 => 1, SOC => 2, LINF => Inf)
-                q = norm(x, nrm[cone])-t
-            elseif cone==GEOM
+                q = norm(x, nrm[cone]) - t
+            elseif cone == GEOM
                 t, x = z[1], z[2:end]
-                dim = cone.dim-1
-                q = t-exp(1/dim*sum(log.(x)))
-            elseif cone==EXP
+                dim = cone.dim - 1
+                q = t - exp(1 / dim * sum(log.(x)))
+            elseif cone == EXP
                 x, y, w = z
-                q = y*exp(x/y)-w
+                q = y * exp(x / y) - w
             end
         end
         push!(pbm.ind_X, q)

@@ -19,10 +19,7 @@ using ECOS
 using Printf
 using Test
 
-function ptr(
-        trials::Int,
-        hom_trials::Int
-)::Nothing
+function ptr(trials::Int, hom_trials::Int)::Nothing
 
     # Problem definition
     N = 25
@@ -37,20 +34,31 @@ function ptr(
     wvc = 1e4
     wtr = 5e0
     ε_abs = -Inf
-    ε_rel = 1e-3/100
+    ε_rel = 1e-3 / 100
     feas_tol = 5e-3
     q_tr = Inf
     q_exit = Inf
     solver = ECOS
-    solver_options = Dict("verbose"=>0, "maxit"=>1000)
+    solver_options = Dict("verbose" => 0, "maxit" => 1000)
     pars = PTR.Parameters(
-        N, Nsub, iter_max, disc_method, wvc, wtr, ε_abs,
-        ε_rel, feas_tol, q_tr, q_exit, solver,
-        solver_options)
+        N,
+        Nsub,
+        iter_max,
+        disc_method,
+        wvc,
+        wtr,
+        ε_abs,
+        ε_rel,
+        feas_tol,
+        q_tr,
+        q_exit,
+        solver,
+        solver_options,
+    )
 
     # test_single(mdl, pbm, pars)
     # test_runtime(mdl, pbm, pars; num_trials=trials)
-    test_homotopy_update(mdl, pbm, pars; resol=hom_trials)
+    test_homotopy_update(mdl, pbm, pars; resol = hom_trials)
 
     return nothing
 end
@@ -69,10 +77,11 @@ Compute a single trajectory.
 - `sol`: the trajectory solution.
 - `history`: the iterate history.
 """
-function test_single(mdl::RendezvousProblem,
-                     pbm::TrajectoryProblem,
-                     pars::PTR.Parameters)::Tuple{SCPSolution,
-                                                  SCPHistory}
+function test_single(
+    mdl::RendezvousProblem,
+    pbm::TrajectoryProblem,
+    pars::PTR.Parameters,
+)::Tuple{SCPSolution,SCPHistory}
 
     test_heading("PTR", "Single trajectory")
 
@@ -87,10 +96,10 @@ function test_single(mdl::RendezvousProblem,
 
     # Make plots
     plot_trajectory_2d(mdl, sol)
-    plot_trajectory_2d(mdl, sol; attitude=true)
+    plot_trajectory_2d(mdl, sol; attitude = true)
     plot_state_timeseries(mdl, sol)
     plot_inputs(mdl, sol, history)
-    plot_inputs(mdl, sol, history; quad="D")
+    plot_inputs(mdl, sol, history; quad = "D")
     plot_cost_evolution(mdl, history)
 
     return sol, history
@@ -111,10 +120,12 @@ Run the algorithm several times and plot runtime statistics.
 # Returns
 - `history_list`: vector of iterate histories for each trial.
 """
-function test_runtime(mdl::RendezvousProblem,
-                      pbm::TrajectoryProblem,
-                      pars::PTR.Parameters;
-                      num_trials::Int=20)::Vector{SCPHistory}
+function test_runtime(
+    mdl::RendezvousProblem,
+    pbm::TrajectoryProblem,
+    pars::PTR.Parameters;
+    num_trials::Int = 20,
+)::Vector{SCPHistory}
 
     test_heading("PTR", "Runtime statistics")
 
@@ -140,9 +151,13 @@ function test_runtime(mdl::RendezvousProblem,
         @test sol.status == @sprintf("%s", SCP_SOLVED)
     end
 
-    plot_convergence(history_list, "rendezvous_3d",
-                     options=fig_opts, xlabel="\$\\ell\$",
-                     horizontal=true)
+    plot_convergence(
+        history_list,
+        "rendezvous_3d",
+        options = fig_opts,
+        xlabel = "\$\\ell\$",
+        horizontal = true,
+    )
 
     return history_list
 end
@@ -163,16 +178,16 @@ Test a sweep of homotopy update thresholds.
 - `sol_list`: vector of trajectory solutions that were obtained for each
   setting.
 """
-function test_homotopy_update(mdl::RendezvousProblem,
-                              pbm::TrajectoryProblem,
-                              pars::PTR.Parameters;
-                              resol::Int=20)::Tuple{
-                                  Vector{Float64},
-                                  Vector{SCPSolution}}
+function test_homotopy_update(
+    mdl::RendezvousProblem,
+    pbm::TrajectoryProblem,
+    pars::PTR.Parameters;
+    resol::Int = 20,
+)::Tuple{Vector{Float64},Vector{SCPSolution}}
 
     test_heading("PTR", "Homotopy update sweep")
 
-    β_sweep = collect(LinRange(0.1, 30, resol))/100
+    β_sweep = collect(LinRange(0.1, 30, resol)) / 100
 
     sol_list = Vector{SCPSolution}(undef, resol)
 

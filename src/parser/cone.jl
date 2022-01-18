@@ -20,10 +20,17 @@ import JuMP: dual
 
 export ConvexCone, add!, isfixed, isfree, dual, indicator!
 export SupportedCone, UNCONSTRAINED, ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
-export SupportedDualCone, UNCONSTRAINED_DUAL, ZERO_DUAL, NONPOS_DUAL, L1_DUAL,
-    SOC_DUAL, LINF_DUAL, GEOM_DUAL, EXP_DUAL
+export SupportedDualCone,
+    UNCONSTRAINED_DUAL,
+    ZERO_DUAL,
+    NONPOS_DUAL,
+    L1_DUAL,
+    SOC_DUAL,
+    LINF_DUAL,
+    GEOM_DUAL,
+    EXP_DUAL
 
-const ConeVariable = Union{Types.Variable, Types.VariableVector}
+const ConeVariable = Union{Types.Variable,Types.VariableVector}
 
 """
 A conic constraint is of the form `{z : z ∈ K}`, where `K` is a convex cone.
@@ -43,8 +50,17 @@ The supported cones are:
 """
 Similar to `SupportedCone`, except with a `_DUAL` qualiifier postfix.
 """
-@enum(SupportedDualCone, UNCONSTRAINED_DUAL, ZERO_DUAL, NONPOS_DUAL, L1_DUAL,
-      SOC_DUAL, LINF_DUAL, GEOM_DUAL, EXP_DUAL)
+@enum(
+    SupportedDualCone,
+    UNCONSTRAINED_DUAL,
+    ZERO_DUAL,
+    NONPOS_DUAL,
+    L1_DUAL,
+    SOC_DUAL,
+    LINF_DUAL,
+    GEOM_DUAL,
+    EXP_DUAL
+)
 
 # Maps from the original cone to the dual cone
 const DUAL_CONE_MAP = Dict(
@@ -66,16 +82,19 @@ const DUAL_CONE_MAP = Dict(
     SOC_DUAL => SOC,
     LINF_DUAL => L1,
     GEOM_DUAL => GEOM,
-    EXP_DUAL => EXP)
+    EXP_DUAL => EXP,
+)
 
-const CONE_NAMES = Dict(UNCONSTRAINED => "unconstrained",
-                        ZERO => "zero",
-                        NONPOS => "nonpositive orthant",
-                        L1 => "one-norm",
-                        SOC => "second-order",
-                        LINF => "inf-norm",
-                        GEOM => "geometric",
-                        EXP => "exponential")
+const CONE_NAMES = Dict(
+    UNCONSTRAINED => "unconstrained",
+    ZERO => "zero",
+    NONPOS => "nonpositive orthant",
+    L1 => "one-norm",
+    SOC => "second-order",
+    LINF => "inf-norm",
+    GEOM => "geometric",
+    EXP => "exponential",
+)
 
 """
 `ConvexCone` stores the information necessary to form a convex cone constraint
@@ -99,14 +118,15 @@ struct ConvexCone{T<:MOI.AbstractSet}
     # Returns
     - `constraint`: the conic constraint.
     """
-    function ConvexCone(z::ConeVariable,
-                        kind::Union{SupportedCone,
-                                    SupportedDualCone})::ConvexCone
+    function ConvexCone(
+        z::ConeVariable,
+        kind::Union{SupportedCone,SupportedDualCone},
+    )::ConvexCone
 
         z = (typeof(z) <: Array) ? z : [z]
         dim = length(z)
 
-        if kind==EXP && dim!=3
+        if kind == EXP && dim != 3
             msg = "Exponential cone is in R^3"
             err = SCPError(0, SCP_BAD_ARGUMENT, msg)
             throw(err)
@@ -115,32 +135,32 @@ struct ConvexCone{T<:MOI.AbstractSet}
         # Convert to dual cone
         if kind isa SupportedDualCone
             kind_dual = DUAL_CONE_MAP[kind]
-            if kind==GEOM_DUAL
+            if kind == GEOM_DUAL
                 t, x = z[1], z[2:end]
                 n = length(x)
-                z = [-t/n; x]
-            elseif kind==EXP_DUAL
+                z = [-t / n; x]
+            elseif kind == EXP_DUAL
                 u, v, w = z
-                z = [-u; -v; exp(1)*w]
+                z = [-u; -v; exp(1) * w]
             end
             return ConvexCone(z, kind_dual)
         end
 
-        if kind==UNCONSTRAINED
+        if kind == UNCONSTRAINED
             K = MOI.Reals(dim)
-        elseif kind==ZERO
+        elseif kind == ZERO
             K = MOI.Zeros(dim)
-        elseif kind==NONPOS
+        elseif kind == NONPOS
             K = MOI.Nonpositives(dim)
-        elseif kind==L1
+        elseif kind == L1
             K = MOI.NormOneCone(dim)
-        elseif kind==SOC
+        elseif kind == SOC
             K = MOI.SecondOrderCone(dim)
-        elseif kind==LINF
+        elseif kind == LINF
             K = MOI.NormInfinityCone(dim)
-        elseif kind==GEOM
+        elseif kind == GEOM
             K = MOI.GeometricMeanCone(dim)
-        elseif kind==EXP
+        elseif kind == EXP
             K = MOI.ExponentialCone()
         end
 
@@ -192,9 +212,7 @@ Add several conic constraints to the optimization problem.
 # Returns
 - `constraints`: the conic constraint references.
 """
-function add!(pbm::Model,
-              cones::Vector{T})::Types.ConstraintVector where {
-                  T<:ConvexCone}
+function add!(pbm::Model, cones::Vector{T})::Types.ConstraintVector where {T<:ConvexCone}
 
     constraints = Types.ConstraintVector(undef, 0)
 
@@ -218,12 +236,12 @@ optimization).
 - `is_fixed`: true if the cone is purely numerical.
 """
 function isfixed(cone::ConvexCone)::Bool
-    is_fixed = typeof(cone.z)<:Types.RealArray
+    is_fixed = typeof(cone.z) <: Types.RealArray
     return is_fixed
 end
 
 """ Find out whether the cone is all of ``\\reals^n``. """
-isfree(cone::ConvexCone)::Bool = kind(cone)==UNCONSTRAINED
+isfree(cone::ConvexCone)::Bool = kind(cone) == UNCONSTRAINED
 
 """ Convert from cone to its dual cone. """
 dual(cone::SupportedCone)::SupportedDualCone = DUAL_CONE_MAP[cone]
@@ -254,45 +272,45 @@ function indicator!(pbm::Model, cone::ConvexCone)::Types.Variable
     mode = (isfixed(cone)) ? :numerical : :jump
 
     # Compute the indicator
-    if mode==:numerical
+    if mode == :numerical
         z = cone.z
-        if cone.kind==ZERO
+        if cone.kind == ZERO
             q = abs.(z)
-        elseif cone.kind==NONPOS
+        elseif cone.kind == NONPOS
             q = z
         elseif cone.kind in (L1, SOC, LINF)
             t = z[1]
             x = z[2:end]
             nrm = Dict(L1 => 1, SOC => 2, LINF => Inf)
-            q = norm(x, nrm[cone.kind])-t
-        elseif cone.kind==GEOM
+            q = norm(x, nrm[cone.kind]) - t
+        elseif cone.kind == GEOM
             t, x = z[1], z[2:end]
-            dim = cone.dim-1
-            q = t-exp(1/dim*sum(log.(x)))
-        elseif cone.kind==EXP
+            dim = cone.dim - 1
+            q = t - exp(1 / dim * sum(log.(x)))
+        elseif cone.kind == EXP
             x, y, w = z
-            q = y*exp(x/y)-w
+            q = y * exp(x / y) - w
         end
     else
         z = cone.z
         if cone.kind in (ZERO, NONPOS)
-            q = @variable(pbm, [1:cone.dim], base_name="q")
-            add!(pbm, ConvexCone(z-q, NONPOS))
-            if cone.kind==ZERO
-                add!(pbm, ConvexCone(-q-z, NONPOS))
+            q = @variable(pbm, [1:cone.dim], base_name = "q")
+            add!(pbm, ConvexCone(z - q, NONPOS))
+            if cone.kind == ZERO
+                add!(pbm, ConvexCone(-q - z, NONPOS))
             end
         else
-            q = @variable(pbm, base_name="q")
+            q = @variable(pbm, base_name = "q")
             if cone.kind in (L1, SOC, LINF)
                 t = z[1]
                 x = z[2:end]
-                add!(pbm, ConvexCone(vcat(t+q, x), cone.kind))
-            elseif cone.kind==GEOM
+                add!(pbm, ConvexCone(vcat(t + q, x), cone.kind))
+            elseif cone.kind == GEOM
                 t, x = z[1], z[2:end]
-                add!(pbm, ConvexCone(vcat(x, t-q), cone.kind))
-            elseif cone.kind==EXP
+                add!(pbm, ConvexCone(vcat(x, t - q), cone.kind))
+            elseif cone.kind == EXP
                 x, y, w = z
-                add!(pbm, ConvexCone(vcat(x, y, w+q), cone.kind))
+                add!(pbm, ConvexCone(vcat(x, y, w + q), cone.kind))
             end
             q = [q]
         end
