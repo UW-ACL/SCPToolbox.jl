@@ -39,7 +39,7 @@ function ptr(trials::Int, hom_trials::Int)::Nothing
     q_tr = Inf
     q_exit = Inf
     solver = ECOS
-    solver_options = Dict("verbose" => 0, "maxit" => 1000)
+    solver_options = Dict("verbose" => 1, "maxit" => 1000)
     pars = PTR.Parameters(
         N,
         Nsub,
@@ -187,7 +187,9 @@ function test_homotopy_update(
 
     test_heading("PTR", "Homotopy update sweep")
 
-    β_sweep = collect(LinRange(0.1, 30, resol)) / 100
+    # β_sweep = collect(LinRange(0.1, 30, resol)) / 100
+    resol = 1
+    β_sweep = [0.5]
 
     sol_list = Vector{SCPSolution}(undef, resol)
 
@@ -202,13 +204,13 @@ function test_homotopy_update(
         @printf("(%d/%d) β = %.2e\n", i, resol, mdl.traj.β)
 
         # Suppress output
-        real_stdout = stdout
-        (rd, wr) = redirect_stdout()
+        # real_stdout = stdout
+        # (rd, wr) = redirect_stdout()
 
         # Run algorithm
         sol_list[i], _ = PTR.solve(ptr_pbm)
 
-        redirect_stdout(real_stdout) # Revert to normal output
+        # redirect_stdout(real_stdout) # Revert to normal output
 
         @test sol_list[i].status == @sprintf("%s", SCP_SOLVED)
     end
