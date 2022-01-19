@@ -1,7 +1,8 @@
 .juliahistory
 /.vscode/
 /media/*
+/media/tests/*
 /.ipynb_checkpoints/*
 /sandbox/*
 !/**/.gitkeep
-!/media/logo/
+!/media/logo/*

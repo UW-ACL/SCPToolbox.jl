@@ -2,7 +2,7 @@
 <img alt="SCP Toolbox"
     title="SCP Toolbox"
     src="./logo.png"
-    width="300px" />
+    width="400px" />
 </p>
 
 The SCP Toolbox logo is composed of the following elements:
