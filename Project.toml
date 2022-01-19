@@ -3,6 +3,9 @@ uuid = "bd2bc758-a5dc-11eb-050f-6b2434548817"
 authors = ["Danylo Malyuta <danylo@malyuta.name>", "Taylor P. Reynolds", "Michael Szmuk", "Thomas Lew", "Riccardo Bonalli", "Marco Pavone", "Behcet Acikmese"]
 version = "1.0.0"
 
+[compat]
+julia = "1.7.1"
+
 [deps]
 Colors = "5ae59095-9a9b-59fe-a467-6f913c188581"
 ECOS = "e2685f51-7e38-5353-a97d-a921fd2c8199"
