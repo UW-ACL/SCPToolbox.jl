@@ -49,7 +49,7 @@ mutable struct ConicProgram <: AbstractConicProgram
     Empty model constructor.
 
     # Arguments
-    - `pars`: (optional )problem parameter structure. This can be anything, and
+    - `pars`: (optional) problem parameter structure. This can be anything, and
       it is passed down to the low-level functions defining the problem.
 
     # Keywords

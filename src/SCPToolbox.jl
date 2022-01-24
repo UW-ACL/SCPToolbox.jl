@@ -44,7 +44,7 @@ export SCP_SOLVED,
 
 # Optimization problem (low-level conic form parser)
 export ConicProgram
-export @new_variable, @add_constraint, @add_cost, @value, @jacobian, @scale
+export @new_variable, @new_parameter, @add_constraint, @add_cost, @value, @jacobian, @scale
 export ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
 export value, constraints, variables, parameters, cost, jump_model, objective_value
 export solve!
@@ -152,7 +152,8 @@ import .Utils: Yellow, Red, Blue, DarkBlue, Green
 ### Low-level conic optimization problem parser
 
 import .Parser: ConicProgram
-import .Parser: @new_variable, @add_constraint, @add_cost, @value, @jacobian, @scale
+import .Parser: @new_variable, @new_parameter, @add_constraint, @add_cost,
+    @value, @jacobian, @scale
 import .Parser: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
 import .Parser: value, constraints, variables, parameters, cost, jump_model, objective_value
 import .Parser: solve!
