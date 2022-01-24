@@ -38,6 +38,7 @@ export skew,
     make_indent,
     golden,
     c2d,
+    scalarize,
     test_heading
 
 export @preprintf
@@ -939,6 +940,31 @@ function hominv(T::RealMatrix)::RealMatrix
     iR = R' # Inverse rotation
     iT = [iR -iR*v; zeros(3)' 1]
     return iT
+end
+
+"""
+    scalarize(args)
+
+Scalarize a list of arrays. If an element `x`, which is of Array type, has a single element (i.e.,
+it is a scalar that is wrapped in an Array structure), then use `x[1]` in order to convert it to a
+scalar.
+
+# Arguments
+- `args`: vector of elements that are of Array type.
+
+# Returns
+The same list, but with singleton arrays converted to scalars
+"""
+function scalarize(
+    args::Union{NTuple{N,T},Vector{T}},
+)::Union{NTuple{V,Any} where V,Vector} where {N,T<:Array}
+    scalarize_element = (z) -> (z isa Array && length(z) == 1) ? scalarize_element(z[1]) : z
+    scalarized_args = [scalarize_element(arg) for arg in args]
+    if args isa NTuple
+        return tuple(scalarized_args...)
+    else
+        return scalarized_args
+    end
 end
 
 """

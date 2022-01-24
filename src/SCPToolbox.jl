@@ -83,7 +83,8 @@ export linterp,
     homtransf,
     hominv,
     homdisp,
-    homrot
+    homrot,
+    scalarize
 export rpy, slerp_interpolate, Log, skew, rotate, ddq
 export sample
 
@@ -129,7 +130,8 @@ import .Utils:
     homtransf,
     hominv,
     homdisp,
-    homrot
+    homrot,
+    scalarize
 import .Utils: ContinuousTimeTrajectory, sample
 import .Utils: Homotopy
 
@@ -152,8 +154,8 @@ import .Utils: Yellow, Red, Blue, DarkBlue, Green
 ### Low-level conic optimization problem parser
 
 import .Parser: ConicProgram
-import .Parser: @new_variable, @new_parameter, @add_constraint, @add_cost,
-    @value, @jacobian, @scale
+import .Parser:
+    @new_variable, @new_parameter, @add_constraint, @add_cost, @value, @jacobian, @scale
 import .Parser: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
 import .Parser: value, constraints, variables, parameters, cost, jump_model, objective_value
 import .Parser: solve!

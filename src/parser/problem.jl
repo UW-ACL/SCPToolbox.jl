@@ -698,16 +698,12 @@ function define_conic_constraint!(
     # Check the mode in which to run the function
     mode = (varlist isa NTuple{N,VariableArgumentBlock}) ? :optimization : :numerical
 
-    # Sanitize arguments so that scalars are actually scalars and not zero-dimensional arrays
-    scalarize = (z) -> (z isa Array && length(z) == 1) ? scalarize(z[1]) : z
-    scalarize_args = (args) -> [scalarize(arg) for arg in args]
-
     if pbm.force_hard || alg != :gusto
-        @add_constraint(prog, cone, desc, (varlist...,), definition(scalarize_args(arg)...))
+        @add_constraint(prog, cone, desc, (varlist...,), definition(scalarize(arg)...))
     else
         if mode == :optimization
             if cone in (ZERO, NONPOS)
-                _z = definition(scalarize_args(value.(varlist))...)
+                _z = definition(scalarize(value.(varlist))...)
                 cone_dim = (_z isa Array) ? length(_z) : 1
                 q = @new_variable(prog, cone_dim, "q")
                 @add_constraint(
@@ -716,7 +712,7 @@ function define_conic_constraint!(
                     desc,
                     (varlist..., q),
                     begin
-                        local arg = scalarize_args(arg)
+                        local arg = scalarize(arg)
                         local varlist, q = arg[1:end-1], arg[end]
                         local z = definition(varlist...)
                         z - q
@@ -729,7 +725,7 @@ function define_conic_constraint!(
                         desc,
                         (varlist..., q),
                         begin
-                            local arg = scalarize_args(arg)
+                            local arg = scalarize(arg)
                             local varlist, q = arg[1:end-1], arg[end]
                             local z = definition(varlist...)
                             -q - z
@@ -745,7 +741,7 @@ function define_conic_constraint!(
                         desc,
                         (varlist..., q),
                         begin
-                            local arg = scalarize_args(arg)
+                            local arg = scalarize(arg)
                             local varlist, q = arg[1:end-1], arg[end]
                             local z = definition(varlist...)
                             local t = z[1]
@@ -760,7 +756,7 @@ function define_conic_constraint!(
                         desc,
                         (varlist..., q),
                         begin
-                            local arg = scalarize_args(arg)
+                            local arg = scalarize(arg)
                             local varlist, q = arg[1:end-1], arg[end]
                             local z = definition(varlist...)
                             local t, x = z[1], z[2:end]
@@ -774,7 +770,7 @@ function define_conic_constraint!(
                         desc,
                         (varlist..., q),
                         begin
-                            local arg = scalarize_args(arg)
+                            local arg = scalarize(arg)
                             local varlist, q = arg[1:end-1], arg[end]
                             local z = definition(varlist...)
                             local x, y, w = z
@@ -784,7 +780,7 @@ function define_conic_constraint!(
                 end
             end
         else
-            z = definition(scalarize_args(varlist)...)
+            z = definition(scalarize(varlist)...)
             if cone == ZERO
                 q = abs.(z)
             elseif cone == NONPOS
