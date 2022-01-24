@@ -715,7 +715,7 @@ function define_conic_constraint!(
                         local arg = scalarize(arg)
                         local varlist, q = arg[1:end-1], arg[end]
                         local z = definition(varlist...)
-                        z - q
+                        z - q[1]
                     end
                 )
                 if cone == ZERO
@@ -728,7 +728,7 @@ function define_conic_constraint!(
                             local arg = scalarize(arg)
                             local varlist, q = arg[1:end-1], arg[end]
                             local z = definition(varlist...)
-                            -q - z
+                            -q[1] - z
                         end
                     )
                 end
@@ -746,7 +746,7 @@ function define_conic_constraint!(
                             local z = definition(varlist...)
                             local t = z[1]
                             local x = z[2:end]
-                            vcat(t + q, x)
+                            vcat(t + q[1], x)
                         end
                     )
                 elseif cone == GEOM
@@ -760,7 +760,7 @@ function define_conic_constraint!(
                             local varlist, q = arg[1:end-1], arg[end]
                             local z = definition(varlist...)
                             local t, x = z[1], z[2:end]
-                            vcat(x, t - q)
+                            vcat(x, t - q[1])
                         end
                     )
                 elseif cone == EXP
@@ -774,7 +774,7 @@ function define_conic_constraint!(
                             local varlist, q = arg[1:end-1], arg[end]
                             local z = definition(varlist...)
                             local x, y, w = z
-                            vcat(x, y, w + q)
+                            vcat(x, y, w + q[1])
                         end
                     )
                 end

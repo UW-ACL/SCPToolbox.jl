@@ -978,7 +978,7 @@ function soft_penalty(
             v = @new_variable(prg, "v")
             @add_constraint(prg, NONPOS, (u,), begin
                 local u, = arg
-                -u[1]
+                -u
             end)
             if linearized
                 @add_constraint(prg, NONPOS, (x, p, u, v), begin
@@ -988,7 +988,7 @@ function soft_penalty(
             else
                 @add_constraint(prg, NONPOS, (f, u, v), begin
                     local f, u, v = arg
-                    f[1] + u[1] - v[1]
+                    f + u[1] - v[1]
                 end)
             end
             return v, (v) -> λ * v[1]^2
@@ -1019,7 +1019,7 @@ function soft_penalty(
             else
                 @add_constraint(prg, EXP, (f, w, v), begin
                     local f, w, v = arg
-                    vcat(hom * f[1] - w[1], 1, v[1])
+                    vcat(hom * f - w[1], 1, v[1])
                 end)
             end
             @add_constraint(prg, NONPOS, (u, v), begin
@@ -1131,7 +1131,7 @@ function trust_region_cost(
                     (w, η, tr[k]),
                     begin
                         local w, η, trk = arg
-                        vcat(w, η + trk[1], 1)
+                        vcat(w, η + trk, 1)
                     end
                 )
             else
@@ -1142,7 +1142,7 @@ function trust_region_cost(
                     (dx_lq[k], dp_lq, tr[k]),
                     begin
                         local dxk_lq, dp_lq, trk = arg
-                        dxk_lq[1] + dp_lq[1] - (η + trk[1])
+                        dxk_lq + dp_lq[1] - (η + trk)
                     end
                 )
             end

@@ -18,6 +18,8 @@ this program.  If not, see <https://www.gnu.org/licenses/>. =#
 
 module Examples
 
+include("../../src/SCPToolbox.jl")
+
 module DoubleIntegrator
 include("double_integrator/parameters.jl")
 include("double_integrator/definition.jl")

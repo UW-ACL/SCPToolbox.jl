@@ -140,7 +140,7 @@ function test_single(
     solver::Module,
 )::Nothing where {T<:SCPParameters}
 
-    test_heading("PTR", "Single trajectory")
+    test_heading(string(solver), "Single trajectory")
 
     # Create problem
     pbm = solver.create(pars, traj)

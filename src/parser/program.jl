@@ -523,20 +523,12 @@ Generate an anonymous function that can be used to create a
 - `anon_func`: an anonymous function expression that is can be used to
   construct a `DifferentiableFunction` object.
 """
-function generate_differentiable_function(
-    vars::Expr,
-    pars::Expr,
-    feval::Expr,
-    Jeval::Expr,
-)::Expr
-    local variable_argument_names = vars.args
-    local constant_argument_names = pars.args
+function generate_differentiable_function(feval::Expr, Jeval::Expr)::Expr
     anon_func = quote
         (args...) -> begin
-            # Load variables arguments (arg), constant arguments (cst), static parameters (pars),
-            # and function Jacobians (jacobians) into standardized containers
-            local arg = scalarize(args[1:end-2][1:length($variable_argument_names)])
-            local cst = scalarize(args[1:end-2][(length($variable_argument_names)+1):end])
+            # Load variable and constant arguments (arg, split into variables first), static
+            # parameters (pars), and function Jacobians (jacobians) into standardized containers
+            local arg = scalarize(args[1:end-2])
             local pars = args[end-1]
             local jacobians = args[end]
             # Evaluate function value
@@ -676,7 +668,7 @@ macro add_constraint(prog, kind, args...)
     # Get the constraint (x, p, f, J) values
     x, p, f, J = adapt_macro_arguments(args)
     # Make the anonymous function to be constrained
-    anon_func = generate_differentiable_function(x, p, f, J)
+    anon_func = generate_differentiable_function(f, J)
     # Make the constraint
     quote
         f = $(esc(anon_func))
@@ -708,7 +700,7 @@ macro add_cost(prog, args...)
     # Get the constraint (x, p, f, J) values
     x, p, f, J = adapt_macro_arguments(args)
     # Make the anonymous function to be constrained
-    anon_func = generate_differentiable_function(x, p, f, J)
+    anon_func = generate_differentiable_function(f, J)
     # Make the constraint
     quote
         f = $(esc(anon_func))

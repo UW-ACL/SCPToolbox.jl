@@ -267,7 +267,7 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                     (l1f_i,),
                     begin
                         local l1f, = arg
-                        l1f[1] - veh.f_max
+                        l1f - veh.f_max
                     end
                 )
 
@@ -278,7 +278,7 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                     (fr_i,),
                     begin
                         local fr, = arg
-                        fr[1] - veh.f_max
+                        fr - veh.f_max
                     end
                 )
 
@@ -289,7 +289,7 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                     (fr_i,),
                     begin
                         local fr, = arg
-                        -fr[1] - veh.f_max
+                        -fr - veh.f_max
                     end
                 )
 
@@ -317,27 +317,15 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
             end
 
-            @add_constraint(
-                ocp,
-                NONPOS,
-                "min_time_bound",
-                (tdil,),
-                begin
+            @add_constraint(ocp, NONPOS, "min_time_bound", (tdil,), begin
                     local tdil, = arg
-                    tdil[1] - traj.tf_max
-                end
-            )
+                    tdil - traj.tf_max
+                end)
 
-            @add_constraint(
-                ocp,
-                NONPOS,
-                "max_time_bound",
-                (tdil,),
-                begin
+            @add_constraint(ocp, NONPOS, "max_time_bound", (tdil,), begin
                     local tdil, = arg
-                    traj.tf_min - tdil[1]
-                end
-            )
+                    traj.tf_min - tdil
+                end)
 
             return nothing
         end,

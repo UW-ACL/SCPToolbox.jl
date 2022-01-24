@@ -257,9 +257,6 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                     vcat(l1r_k, r)
                 end,
                 begin # Jacobians
-                    if LangServer
-                        local J = Dict()
-                    end
                     J[1] = vcat(zeros(length(r))', I(length(r)))
                     J[2] = vcat(1, zeros(length(r)))
                 end
@@ -285,12 +282,9 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                 (aa,),
                 begin # Value
                     local aa, = arg
-                    aa[1] - veh.a_max
+                    aa - veh.a_max
                 end,
                 begin # Jacobians
-                    if LangServer
-                        local J = Dict()
-                    end
                     J[1] = [1]
                 end
             )
@@ -302,12 +296,9 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                 (aa,),
                 begin # Value
                     local aa, = arg
-                    -veh.a_max - aa[1]
+                    -veh.a_max - aa
                 end,
                 begin # Jacobians
-                    if LangServer
-                        local J = Dict()
-                    end
                     J[1] = [-1]
                 end
             )
@@ -319,12 +310,9 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                 (ar,),
                 begin # Value
                     local ar, = arg
-                    ar[1] - veh.a_max
+                    ar - veh.a_max
                 end,
                 begin # Jacobians
-                    if LangServer
-                        local J = Dict()
-                    end
                     J[1] = [1]
                 end
             )
@@ -336,12 +324,9 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                 (ar,),
                 begin # Value
                     local ar, = arg
-                    -veh.a_max - ar[1]
+                    -veh.a_max - ar
                 end,
                 begin # Jacobians
-                    if LangServer
-                        local J = Dict()
-                    end
                     J[1] = [-1]
                 end
             )
@@ -356,9 +341,6 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                     vcat(l1aa, aa)
                 end,
                 begin # Jacobians
-                    if LangServer
-                        local J = Dict()
-                    end
                     J[1] = [1; 0]
                     J[2] = [0; 1]
                 end
@@ -374,9 +356,6 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                     vcat(l1adiff, aa - ar)
                 end,
                 begin # Jacobians
-                    if LangServer
-                        local J = Dict()
-                    end
                     J[1] = [1; 0]
                     J[2] = [0; 1]
                     J[3] = [0; -1]

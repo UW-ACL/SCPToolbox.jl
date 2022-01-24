@@ -782,8 +782,7 @@ function compute_trust_region_penalty!(spbm::Subproblem)::Nothing
 
     spbm.J_tr = @add_cost(prg, (ηx, ηu, ηp), begin
         local ηx, ηu, ηp = arg
-        ηp = ηp[1]
-        wtr * (trapz(ηx, t) + trapz(ηu, t) + ηp)
+        wtr * (trapz(ηx, t) + trapz(ηu, t) + ηp[1])
     end)
 
     return nothing

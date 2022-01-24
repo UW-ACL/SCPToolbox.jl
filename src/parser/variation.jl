@@ -200,12 +200,12 @@ function set_perturbation_constraint!(
         if pert_kind[i] == FIXED
             @add_constraint(prg, ZERO, "perturb", (δx,), begin
                 local δx = arg[1]
-                δx[1] - ε
+                δx - ε
             end)
         elseif pert_kind[i] == ABSOLUTE
             @add_constraint(prg, L1, "perturb", (δx,), begin
                 local δx = arg[1]
-                vcat(ε, δx[1])
+                vcat(ε, δx)
             end)
         elseif pert_kind[i] == RELATIVE
             abs_xref = abs(xref)
@@ -217,7 +217,7 @@ function set_perturbation_constraint!(
             end
             @add_constraint(prg, L1, "perturb", (δx,), begin
                 local δx = arg[1]
-                vcat(ε * abs_xref, δx[1])
+                vcat(ε * abs_xref, δx)
             end)
         end
     end
@@ -410,7 +410,7 @@ function variation(
                     local δp = vcat(arg[idcs_p]...)
                     local δλ = arg[end-1]
                     local μ = arg[end]
-                    dot(f[i], δλ) + dot(Dxf[i] * δx + Dpf[i] * δp, λ[i]) - μ[1]
+                    dot(f[i], δλ) + dot(Dxf[i] * δx + Dpf[i] * δp, λ[i]) - μ
                 end
             )
         end

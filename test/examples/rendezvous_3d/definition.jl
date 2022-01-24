@@ -484,14 +484,14 @@ function set_convex_constraints!(pbm::TrajectoryProblem, N::Int)::Nothing
             )
 
             @add_constraint(ocp, NONPOS, "min_time", (tdil,), begin
-                    local tdil, = arg
-                    tdil[1] - traj.tf_max
-                end)
+                local tdil, = arg
+                tdil - traj.tf_max
+            end)
 
             @add_constraint(ocp, NONPOS, "max_time", (tdil,), begin
-                    local tdil, = arg
-                    traj.tf_min - tdil[1]
-                end)
+                local tdil, = arg
+                traj.tf_min - tdil
+            end)
 
         end,
     )

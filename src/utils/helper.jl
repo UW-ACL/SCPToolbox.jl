@@ -950,17 +950,16 @@ it is a scalar that is wrapped in an Array structure), then use `x[1]` in order 
 scalar.
 
 # Arguments
-- `args`: vector of elements that are of Array type.
+- `args`: vector or tuple of elements that are of Array type.
 
 # Returns
 The same list, but with singleton arrays converted to scalars
 """
-function scalarize(
-    args::Union{NTuple{N,T},Vector{T}},
-)::Union{NTuple{V,Any} where V,Vector} where {N,T<:Array}
-    scalarize_element = (z) -> (z isa Array && length(z) == 1) ? scalarize_element(z[1]) : z
+function scalarize(args::Union{NTuple{N,Any},Vector})::Union{NTuple{N,Any},Vector} where {N}
+    scalarize_element =
+        (z) -> (z isa Array && length(size(z)) == 0) ? scalarize_element(z[1]) : z
     scalarized_args = [scalarize_element(arg) for arg in args]
-    if args isa NTuple
+    if args isa NTuple{N,Any} where {N}
         return tuple(scalarized_args...)
     else
         return scalarized_args

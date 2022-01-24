@@ -70,11 +70,11 @@ function solve_lcvx(mdl::DoubleIntegratorParameters)::Solution
 
     for k = 1:N
         @add_constraint(ocp, NONPOS, "sigma_ub", (σ[k],), begin
-            local σk = arg[1][1]
+            local σk = arg[1]
             σk - 2
         end)
         @add_constraint(ocp, NONPOS, "sigma_lb", (σ[k],), begin
-            local σk = arg[1][1]
+            local σk = arg[1]
             1 - σk
         end)
         @add_constraint(ocp, L1, "lcvx_equality", (u[k], σ[k]), begin

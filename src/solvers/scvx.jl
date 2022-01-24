@@ -668,7 +668,7 @@ function add_trust_region!(spbm::Subproblem)::Nothing
                 (dx_lq[k], du_lq[k], dp_lq),
                 begin
                     local dxk_lq, duk_lq, dp_lq = arg
-                    dxk_lq[1] + duk_lq[1] + dp_lq[1] - η
+                    dxk_lq + duk_lq + dp_lq[1] - η
                 end
             )
         end

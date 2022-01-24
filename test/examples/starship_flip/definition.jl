@@ -659,29 +659,17 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                 dot(v, env.ey)
             end)
 
-            @add_constraint(
-                ocp,
-                NONPOS,
-                "max_time",
-                (tf1, tf2),
-                begin
+            @add_constraint(ocp, NONPOS, "max_time", (tf1, tf2), begin
                     local tf1, tf2 = arg
-                    local tf = tf1[1] + tf2[1]
+                    local tf = tf1 + tf2
                     tf - traj.tf_max
-                end
-            )
+                end)
 
-            @add_constraint(
-                ocp,
-                NONPOS,
-                "min_time",
-                (tf1, tf2),
-                begin
+            @add_constraint(ocp, NONPOS, "min_time", (tf1, tf2), begin
                     local tf1, tf2 = arg
-                    local tf = tf1[1] + tf2[1]
+                    local tf = tf1 + tf2
                     traj.tf_min - tf
-                end
-            )
+                end)
         end,
     )
 
@@ -699,12 +687,12 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
             @add_constraint(ocp, NONPOS, "max_thrust", (T,), begin
                 local T = arg[1]
-                T[1] - T_max
+                T - T_max
             end)
 
             @add_constraint(ocp, NONPOS, "min_thrust", (T,), begin
                 local T = arg[1]
-                T_min - T[1]
+                T_min - T
             end)
 
             @add_constraint(ocp, L1, "gimbal", (δ,), begin
