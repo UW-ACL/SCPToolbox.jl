@@ -56,8 +56,8 @@ function ptr(trials::Int, hom_trials::Int)::Nothing
         solver_options,
     )
 
-    # test_single(mdl, pbm, pars)
-    # test_runtime(mdl, pbm, pars; num_trials=trials)
+    test_single(mdl, pbm, pars)
+    test_runtime(mdl, pbm, pars; num_trials = trials)
     test_homotopy_update(mdl, pbm, pars; resol = hom_trials)
 
     return nothing

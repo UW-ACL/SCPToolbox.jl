@@ -471,6 +471,52 @@ function copy(
 end
 
 """
+    extract_variables_and_parameters!(f)
+
+Extracts the tuples of variable and parameter arguments to the function `f`.
+
+# Arguments
+- `f`: the function expression (expression of an anonymous function).
+
+# Returns
+- `x`: expression for tuple of variable arguments.
+- `p`: expression for tuple of parameter arguments.
+"""
+function extract_variables_and_parameters!(f::Expr)::Tuple{Expr,Expr}
+    if f.args[1] isa Symbol
+        x = :(($(f.args[1]),))
+        p = :(())
+    elseif f.args[1].head == :tuple
+        if f.args[1].args[1] isa Expr
+            x_args = f.args[1].args[2:end]
+            p_args = f.args[1].args[1].args
+            x = :(($(x_args...),))
+            p = :(($(p_args...),))
+            f.args[1].args = [x_args..., p_args...]
+        else
+            x = Base.copy(f.args[1])
+            p = :(())
+        end
+    elseif f.args[1].head == :block
+        f.args[1].head = :tuple
+        f_args = f.args[1].args
+        arg_mask = [arg isa LineNumberNode for arg in f_args]
+        split_idx = findfirst(arg_mask)
+        if isnothing(split_idx)
+            split_idx = length(f_args)
+        end
+        x_args = f_args[1:split_idx-1]
+        p_args = f_args[(split_idx+1):end]
+        x = Base.copy(f.args[1])
+        x.args = x_args
+        p = Base.copy(f.args[1])
+        p.args = p_args
+        f.args[1].args = f_args[.!arg_mask]
+    end
+    return x, p
+end
+
+"""
     adapt_macro_arguments(args)
 
 Extract corresponding values from the arguments passed to the `@add_constraint`
@@ -489,12 +535,30 @@ function adapt_macro_arguments(args::NTuple{N,Expr})::NTuple{4,Expr} where {N}
     if length(args) == 4
         # The "full" case: all arguments presents
         x, p, f, J = args
-    elseif length(args) == 2
-        # The "minimum" case: no Jacobians and no parameters
-        x, f = args
-        p = :(())
+    elseif length(args) == 1
+        # Only function case: anonymous function form, extract variables and parameters from there
+        f = args[1]
+        x, p = extract_variables_and_parameters!(f)
         J = :(Dict())
-    else # length(args)==3
+    elseif length(args) == 2
+        # Ambiguous case #1: either variables and function, or function and Jacobians
+        if args[1].head == :tuple
+            # Minimum case: no Jacobians and no parameters
+            x, f = args
+            p = :(())
+            J = :(Dict())
+        else
+            # Compact case: function and Jacobians, with the variables and parameters defined
+            # directly by the anonymous function
+            f, J = args
+            x, p = extract_variables_and_parameters!(f)
+            if J.head == :->
+                # Make the arguments of J match those of f
+                f_single_arg = f.args[1] isa Symbol
+                J.args[1] = f_single_arg ? f.args[1] : Base.copy(f.args[1])
+            end
+        end
+    else # length(args) == 3
         # The "ambiguous" case: either Jacobians or parameters
         if args[2].head == :tuple
             # No Jacobians
@@ -524,21 +588,27 @@ Generate an anonymous function that can be used to create a
   construct a `DifferentiableFunction` object.
 """
 function generate_differentiable_function(feval::Expr, Jeval::Expr)::Expr
+    local f_isa_anon_func = feval.head == :->
+    local J_isa_anon_func = Jeval.head == :->
     anon_func = quote
         (args...) -> begin
-            # Load variable and constant arguments (arg, split into variables first), static
-            # parameters (pars), and function Jacobians (jacobians) into standardized containers
+            # Load variables and parameters (arg, a tuple of (variables..., parameters...)), and
+            # constant terms (cst, which is ConicProgram::pars)
             local arg = scalarize(args[1:end-2])
-            local pars = args[end-1]
-            local jacobians = args[end]
+            local cst = args[end-1]
             # Evaluate function value
-            local out = $feval
-            local out = @value(out)
+            local out = @value($f_isa_anon_func ? $feval(arg...) : $feval)
             # Evaluate function Jacobians
-            if jacobians
+            # Whether to do this is decided in DifferentiableFunction call (see function.jl)
+            local compute_jacobians = args[end]
+            if compute_jacobians
                 local jacmap = begin
-                    local J = Dict()
-                    $Jeval
+                    if $J_isa_anon_func
+                        local J = $Jeval(arg...)
+                    else
+                        local J = Dict()
+                        $Jeval
+                    end
                     J
                 end
                 for (key, val) in jacmap
@@ -614,50 +684,59 @@ end
     @add_constraint(prog, kind, x, p, f)
     @add_constraint(prog, kind, x, f, J)
     @add_constraint(prog, kind, x, f)
+    @add_constraint(prog, kind, f, J)
+    @add_constraint(prog, kind, f)
 
-This macro generates an anonymous function that is subsequential constrained as
-a `DifferentiableFunction` object inside of a convex cone. The aim is to
-abstract the internal implementation away from the user, leaving them with a
-rigid interface for creating conic constraints. Ultimately, this funciton
-passes the generated anonymous function to the internal `constraint!` function,
-so you may look there for more information as well.
+This macro generates an anonymous function that is subsequently constrained as a
+`DifferentiableFunction` object inside of a convex cone. The aim is to abstract the internal
+implementation away from the user, leaving them with a rigid interface for creating conic
+constraints. Ultimately, this funciton passes the generated anonymous function to the internal
+`constraint!` function, so you may look there for more information as well.
 
-The macro provides some flexibility in terms of the arguments that you can
-provice, see above for the exhaustive list of possibilities.
+The macro provides some flexibility in terms of the arguments that you can provice, see above for
+the exhaustive list of possibilities.
 
 # Arguments
 - `prog`: the optimization program with which to associate this constraint.
 - `kind`: the convex cone that the function value is to lie inside of.
 - `name`: (optional) the constraint name.
-- `x`: a **tuple** of variable arguments to the function. Even if just one
-  argument, this must be a tuple (e.g., `(foo,)`).
+- `x`: a **tuple** of variable arguments to the function. Even if just one argument, this must be a
+  tuple (e.g., `(foo,)`).
 - `p`: (optional) a **tuple** of constant arguments to the function.
-- `f`: the core computation of the function value. You can assume that when the
-  code executes, you have available a variable `arg` which is a tuple of
-  splatted variable and constant arguments. In other words, `arg==(x...,
-  p...)`. You can provide `f` as either a one-line computation, or as a
-  `begin...end` block that returns the function value. For safety, any
-  variables that you declare inside the `begin...end` block should be prepended
-  with `local` in order to not have a scope conflict.
-- `J`: (optional) the core computation of the function Jacobians. Just like for
-  `f`, you have the `arg` variable available to use. In writing this function,
-  you must assume that an (empty) `Dict` variable `J` is available to you. You
-  are to simply set the fields of `J`. The `(key, value)` pairs of the
-  dictionary map from the arguments being differentiated to the resulting
-  Jacobian value. For example, suppose that `arg==(x..., p...)=(x1, x2,
-  p1)`. Then your dictionary can entries like `J[1]` which represents the
-  Jacobian of `f` with respect to `x1`, and `J[(3,1)]` which represents the
-  Jacobian of `f` with respect to `x1`, followed by `p1` (i.e., the matrix
-  ``D_{p_1 x_1}f`` if `f` is a scalar function). If you want to use the
-  `variation` function after solving `prog` and `f` has non-zero Jacobians,
-  then you **must** provide `J` for correct results.
+- `f`: the core computation of the function value. This can be an anonymous function or a
+  `begin...end` block. For the first case, the arguments of the anonymous function define the
+  variables and parameter arguments of the cone constraint, with `;` splitting variables on the left
+  from parameters on the right. For example, `(x) -> ...` has variable `x` and no parameters,
+  whereas `(x, y; w)` has variables `x` and `y` as well as a parameter `w`. If you do not pass in
+  `x` and `p` separately from `f` (see the above like of `@add_constraint` possible forms), then the
+  arguments of the anonymous function are used to deduce `x` and `p`, in which case these must be
+  actual variables in the local context.
+
+  For the `begin...end` form you can assume that when the code executes, you have available a
+  variable `arg` which is a tuple of splatted variable and constant arguments. In other words,
+  `arg==(x..., p...)`. Note that you can also provide `f` as a one-line computation. For safety, any
+  variables that you declare inside the `begin...end` block should be prepended with `local` in
+  order to not have a scope conflict.
+- `J`: (optional) the core computation of the function Jacobians. Just like for `f`, you can use
+  either an anonymous function of a `begin...end` block. In writing this function, you must assume
+  that an (empty) `Dict` variable `J` is available to you. You are to simply set the fields of `J`.
+  The `(key, value)` pairs of the dictionary map from the arguments being differentiated to the
+  resulting Jacobian value. For example, suppose that `arg==(x..., p...)=(x1, x2, p1)`. Then your
+  dictionary can entries like `J[1]` which represents the Jacobian of `f` with respect to `x1`, and
+  `J[(3,1)]` which represents the Jacobian of `f` with respect to `x1`, followed by `p1` (i.e., the
+  matrix ``D_{p_1 x_1}f`` if `f` is a scalar function). If you want to use the `variation` function
+  after solving `prog` and `f` has non-zero Jacobians, then you **must** provide `J` for correct
+  results.
 
 # Returns
 The newly created `ConicConstraint` object.
 """
 macro add_constraint(prog, kind, args...)
     # Get the constraint name
-    hasname = !(args[1] isa Expr && args[1].head == :tuple)
+    hasname = !(
+        (args[1] isa Expr && args[1].head == :tuple) ||
+        (args[1] isa Expr && args[1].head == :->)
+    )
     if hasname
         name = args[1]
         args = args[2:end]
@@ -688,13 +767,13 @@ end
     @set_cost(prog, x, p, f)
     @set_cost(prog, x, f, J)
     @set_cost(prog, x, f)
-    @set_feasibility(prog)
+    @set_cost(prog, f, J)
+    @set_cost(prog, f)
 
-Add a term to the optimization problem cost, or reset it back to a feasibility
-problem. See the docstring of `@add_constraint`, which has more or less the
-same interface as this macro, except that this macro is missing the `kind` and
-`name` fields since there is no conic set involved in defining the cost
-function.
+Add a term to the optimization problem cost, or reset it back to a feasibility problem. See the
+docstring of `@add_constraint`, which has more or less the same interface as this macro, except that
+this macro is missing the `kind` and `name` fields since there is no conic set involved in defining
+the cost function.
 """
 macro add_cost(prog, args...)
     # Get the constraint (x, p, f, J) values
@@ -708,6 +787,11 @@ macro add_cost(prog, args...)
     end
 end
 
+"""
+    @set_feasibility(prog)
+
+Make the problem a feasibility problem (zero cost).
+"""
 macro set_feasibility(prog)
     :(add_cost!($(esc(prog)), feasibility_cost, [], []; new = true))
 end

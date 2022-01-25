@@ -880,7 +880,7 @@ function compute_virtual_control_penalty!(spbm::Subproblem)::Nothing
             vcat(Pf2, vtc)
         end)
     else
-        @add_constraint(prg, ZERO, "vtc_penalty", (Pf[2]), begin
+        @add_constraint(prg, ZERO, "vtc_penalty", (Pf[2],), begin
             local Pf2, = arg
             Pf2
         end)
