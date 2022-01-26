@@ -448,7 +448,7 @@ function compute_scaling(
                     # Initialize JuMP model
                     prg = ConicProgram(
                         traj;
-                        solver = solver.Optimizer,
+                        solver = solver,
                         solver_options = solver_opts,
                     )
                     # Variables

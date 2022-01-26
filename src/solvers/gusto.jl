@@ -237,7 +237,7 @@ function Subproblem(
     # Optimization problem handle
     solver = pars.solver
     solver_opts = pars.solver_opts
-    prg = ConicProgram(pbm.traj; solver = solver.Optimizer, solver_options = solver_opts)
+    prg = ConicProgram(pbm.traj; solver = solver, solver_options = solver_opts)
     cvx_algo = string(pars.solver)
     algo = @sprintf("GuSTO (backend: %s)", cvx_algo)
 

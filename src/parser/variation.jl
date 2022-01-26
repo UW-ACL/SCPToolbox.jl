@@ -263,7 +263,7 @@ function variation(
 )::Tuple{ArgumentBlockMap,ConicProgram}
 
     # Initialize the variational problem
-    kkt = ConicProgram(solver = prg._solver, solver_options = prg._solver_options)
+    kkt = ConicProgram(solver = prg._solver.Optimizer, solver_options = prg._solver_options)
 
     # Make the ignore lists and checker function
     varignorelist = [Regex(r) for r in ignore_variables]

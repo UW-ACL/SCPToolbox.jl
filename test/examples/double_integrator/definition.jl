@@ -49,7 +49,7 @@ function solve_lcvx(mdl::DoubleIntegratorParameters)::Solution
 
     ocp = ConicProgram(
         nothing;
-        solver = ECOS.Optimizer,
+        solver = ECOS,
         solver_options = Dict("verbose" => 0),
     )
 

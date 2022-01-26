@@ -40,7 +40,7 @@ mutable struct ConicProgram <: AbstractConicProgram
     constraints::Constraints  # List of conic constraints
 
     _feasibility::Bool        # Flag if feasibility problem
-    _solver::DataType         # The solver input to the constructor
+    _solver::Module           # The solver input to the constructor
     _solver_options::Types.Optional{Dict{String}} # Solver options
 
     """
@@ -62,13 +62,13 @@ mutable struct ConicProgram <: AbstractConicProgram
     """
     function ConicProgram(
         pars::Any = nothing;
-        solver::DataType = ECOS.Optimizer,
+        solver::Module = ECOS,
         solver_options::Types.Optional{Dict{String}} = nothing,
     )::ConicProgram
 
         # Configure JuMP model
         mdl = Model()
-        set_optimizer(mdl, solver)
+        set_optimizer(mdl, solver.Optimizer)
         if !isnothing(solver_options)
             for (key, val) in solver_options
                 set_optimizer_attribute(mdl, key, val)
