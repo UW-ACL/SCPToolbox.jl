@@ -57,7 +57,7 @@ struct ContinuousTimeTrajectory
 
         return traj
     end
-end # struct
+end
 
 """ Get the value of a continuous-time trajectory at time t.
 

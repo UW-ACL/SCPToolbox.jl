@@ -33,14 +33,14 @@ struct DoubleIntegratorParameters
     g::RealValue   # Friction amount
     s::RealValue   # Travel distance
     choice::Int    # Problem parameters choice
-end # struct
+end
 
 """ Problem optimal solution. """
 struct Solution
     t::RealVector # The discrete times at which solution is stored
     x::RealMatrix # The state trajectory (columns for each time)
     u::RealMatrix # The input trajectory (columns for each time)
-end # struct
+end
 
 # ..:: Methods ::..
 

@@ -99,7 +99,7 @@ mutable struct ConicProgram <: AbstractConicProgram
 
         return prog
     end
-end # struct
+end
 
 # ..:: Methods ::..
 

@@ -145,7 +145,7 @@ struct ArgumentBlock{T<:AtomicArgument,N} <: AbstractArgumentBlock{T,N}
 
         return sliced_block
     end
-end # struct
+end
 
 # ..:: Methods ::..
 

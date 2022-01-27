@@ -102,9 +102,9 @@ means that the object has both a global and a local pose.
 """
 abstract type PoseTrait end
 
-struct NoPose <: PoseTrait end # struct
-struct HasGlobalPose <: PoseTrait end # struct
-struct HasLocalPose <: PoseTrait end # struct
+struct NoPose <: PoseTrait end
+struct HasGlobalPose <: PoseTrait end
+struct HasLocalPose <: PoseTrait end
 
 """ By default, types do not have a pose. """
 PoseTrait(x) = PoseTrait(typeof(x))
@@ -240,7 +240,7 @@ mutable struct SceneProperties{T<:AbstractObject3D}
         props = new{T}(name, no_owner, default_pose)
         return props
     end
-end # struct
+end
 
 """
 `Mesh3D` defines a 3D mesh that is rendered in the scene. This is a "concrete"
@@ -347,7 +347,7 @@ mutable struct Mesh3D <: AbstractObject3D
 
         return obj
     end
-end # struct
+end
 
 # A mesh has a local pose
 PoseTrait(::Type{<:Mesh3D}) = HasLocalPose()
@@ -395,7 +395,7 @@ mutable struct Camera3D <: AbstractObject3D
 
         return camera
     end
-end # struct
+end
 
 # A camera has a local pose
 PoseTrait(::Type{<:Camera3D}) = HasLocalPose()
@@ -443,7 +443,7 @@ mutable struct Axis3D <: AbstractObject3D
 
         return axis
     end
-end # struct
+end
 
 """
 `Light3D` is a light source object which allows to apply shading to the scene.
@@ -479,7 +479,7 @@ mutable struct Light3D <: AbstractObject3D
 
         return light
     end
-end # struct
+end
 
 """
 `ObjectTree` is an alias to a tree node that holds an `Axis3D` object. This
@@ -516,7 +516,7 @@ mutable struct Scene3D
 
         return scene
     end
-end # struct
+end
 
 """
 `BakedScene3D` stores the Matplotlib-ready data for plotting. It stores the
@@ -551,7 +551,7 @@ mutable struct BakedScene3D
         baked = new(tris, fc, ec, ew)
         return baked
     end
-end # struct
+end
 
 # ..:: Methods ::..
 

@@ -58,7 +58,7 @@ mutable struct FunctionLinearCombination
 
         return f_comb
     end
-end # struct
+end
 
 """
 `QuadraticCost` stores the objective function of the problem. The goal is to
@@ -104,7 +104,7 @@ mutable struct QuadraticCost
 
         return cost
     end
-end # struct
+end
 
 # ..:: Methods ::..
 

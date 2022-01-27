@@ -73,7 +73,7 @@ mutable struct Table
 
         return table
     end
-end # struct
+end
 
 """
     add_table_column!(col_sym, col_heading, col_fmt, col_width, headings,
@@ -186,6 +186,7 @@ function print(row::Dict{Symbol,T}, table::Table)::Nothing where {T}
 
     @eval @printf($(table.row), $values...)
     println()
+    flush(stdout)
 
     return nothing
 end

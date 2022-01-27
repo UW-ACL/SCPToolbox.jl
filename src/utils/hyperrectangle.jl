@@ -146,7 +146,7 @@ struct Hyperrectangle
         H = Hyperrectangle(l, u)
         return H
     end
-end # struct
+end
 
 """
     contains(H, r)

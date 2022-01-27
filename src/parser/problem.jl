@@ -117,7 +117,7 @@ mutable struct TrajectoryProblem
     scp::Any    # SCP algorithm parameter data structure
     force_hard::Bool # Force hard enforcement of constraints
     table_cols::Vector{TableColumnDef} # Extra progress table columns
-end # struct
+end
 
 """
     TrajectoryProblem(mdl)

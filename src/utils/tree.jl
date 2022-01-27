@@ -37,8 +37,8 @@ methods and data that make tree operations work.
 """
 abstract type TreeCompatibilityTrait end
 
-struct IsTreeCompatible <: TreeCompatibilityTrait end # struct
-struct NotTreeCompatible <: TreeCompatibilityTrait end # struct
+struct IsTreeCompatible <: TreeCompatibilityTrait end
+struct NotTreeCompatible <: TreeCompatibilityTrait end
 
 """ By default, types are incompatible with being used in the tree. """
 TreeCompatibilityTrait(x) = TreeCompatibilityTrait(typeof(x))
@@ -111,7 +111,7 @@ mutable struct TreeNode{T} <: AbstractTreeNode
 
         return node
     end
-end # struct
+end
 
 # ..:: Methods ::..
 

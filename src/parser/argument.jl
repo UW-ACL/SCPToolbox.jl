@@ -57,7 +57,7 @@ mutable struct Argument{T<:AtomicArgument} <: AbstractArgument{T}
 
         return arg
     end
-end # struct
+end
 
 # ..:: Methods ::..
 

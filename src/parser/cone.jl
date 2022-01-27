@@ -168,7 +168,7 @@ struct ConvexCone{T<:MOI.AbstractSet}
 
         return constraint
     end
-end # struct
+end
 
 """ Get the kind of cone """
 kind(cone::ConvexCone)::SupportedCone = cone.kind

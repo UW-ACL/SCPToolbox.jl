@@ -71,7 +71,7 @@ struct TypedFunction
         wrapper = new(f, in, out)
         return wrapper
     end
-end # struct
+end
 
 """
 `DifferentialFunctionOutput` is a convenience structure to systematize how the
@@ -112,7 +112,7 @@ struct DifferentiableFunctionOutput
 
         return fout
     end
-end # struct
+end
 
 const DFOut = DifferentiableFunctionOutput
 
@@ -184,7 +184,7 @@ mutable struct DifferentiableFunction
 
         return DF
     end
-end # struct
+end
 
 const DiffblF = DifferentiableFunction
 

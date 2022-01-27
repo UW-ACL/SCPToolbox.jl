@@ -80,7 +80,7 @@ struct ProgramFunction
 
         return F
     end
-end # struct
+end
 
 """
 `ConicConstraint` defines a conic constraint for the optimization program. It
@@ -138,7 +138,7 @@ struct ConicConstraint
 
         return finK
     end
-end # struct
+end
 
 const Constraints = Vector{ConicConstraint}
 

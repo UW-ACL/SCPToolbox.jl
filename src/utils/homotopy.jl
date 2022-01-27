@@ -53,7 +53,7 @@ struct Homotopy
 
         return h
     end
-end # struct
+end
 
 """
     (hom::Homotopy)(x)

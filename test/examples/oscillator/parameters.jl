@@ -36,7 +36,7 @@ struct OscillatorParameters
     # ..:: Control parameters ::..
     a_db::RealValue        # [m/s²] Deadband acceleration
     a_max::RealValue       # [m/s²] Maximum acceleration
-end # struct
+end
 
 """ Trajectory parameters. """
 mutable struct OscillatorTrajectoryParameters
@@ -47,13 +47,13 @@ mutable struct OscillatorTrajectoryParameters
     κ2::RealValue # Normalization homotopy parameter
     α::RealValue  # Control usage weight
     γ::RealValue  # Control weight for deadband relaxation
-end # struct
+end
 
 """ Oscillator trajectory optimization problem parameters all in one. """
 struct OscillatorProblem
     vehicle::OscillatorParameters        # The ego-vehicle
     traj::OscillatorTrajectoryParameters # The trajectory
-end # struct
+end
 
 """
     OscillatorProblem(N)

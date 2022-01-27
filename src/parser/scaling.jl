@@ -101,7 +101,7 @@ mutable struct Scaling{N} <: AbstractRealArray{N}
         sliced_scaling = new{N}(sliced_S, sliced_c)
         return sliced_scaling
     end
-end # struct
+end
 
 # ..:: Methods ::..
 

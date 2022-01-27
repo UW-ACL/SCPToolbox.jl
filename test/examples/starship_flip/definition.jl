@@ -291,10 +291,7 @@ function starship_initial_guess(
     solve_trajectory =
         (t2) -> begin
             # >> Formulate the convex optimization problem <<
-            cvx = ConicProgram(
-                solver = ECOS,
-                solver_options = Dict("verbose" => 0),
-            )
+            cvx = ConicProgram(solver = ECOS, solver_options = Dict("verbose" => 0))
 
             # Decision variables
             x = @new_variable(cvx, (nx, N2), "x")

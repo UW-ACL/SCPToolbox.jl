@@ -46,7 +46,7 @@ struct SCPScaling
     iSx::RealMatrix # Inverse of state scaling matrix
     iSu::RealMatrix # Inverse of input scaling matrix
     iSp::RealMatrix # Inverse of parameter scaling coefficient matrix
-end # struct
+end
 
 """" Common constant terms used throughout the algorithm."""
 struct SCPCommon
@@ -57,7 +57,7 @@ struct SCPCommon
     scale::SCPScaling    # Variable scaling
     id::DiscretizationIndices # Convenience indices during propagation
     table::ST.Table      # Iteration info table (printout to REPL)
-end # struct
+end
 
 """ Structure which contains all the necessary information to run SCP."""
 struct SCPProblem{T<:SCPParameters} <: AbstractSCPProblem
@@ -96,7 +96,7 @@ struct SCPProblem{T<:SCPParameters} <: AbstractSCPProblem
 
         return pbm
     end
-end # struct
+end
 
 """ Overall trajectory solution.
 
@@ -116,12 +116,12 @@ struct SCPSolution
     # >> Continuous-time trajectory <<
     xc::Union{Trajectory,Missing} # States
     uc::Union{Trajectory,Missing} # Inputs
-end # struct
+end
 
 """" SCP iteration history data."""
 struct SCPHistory{T<:SCPSubproblem}
     subproblems::Vector{T} # Subproblems
-end # struct
+end
 
 """
     SCPProblem(pars, traj, table)
@@ -157,20 +157,18 @@ function SCPProblem(
 end
 
 """
-    SCPSubproblemSolution(spbm)
+    SCPSubproblemSolution(spbm, constructor)
 
 Create the subproblem solution structure. This calls the SCP algorithm-specific
 function, and also saves some general properties of the solution.
 
 # Arguments
 - `spbm`: the subproblem structure.
+- `constructor`: subproblem solution constructor.
 """
-function SCPSubproblemSolution(spbm::T)::Nothing where {T<:SCPSubproblem}
+function SCPSubproblemSolution(spbm::T, constructor::Type)::Nothing where {T<:SCPSubproblem}
     # Save the solution
-    # (this complicated-looking thing calls the constructor for the
-    #  SCPSubproblemSolution child type)
-    constructor = Meta.parse(string(typeof(spbm.ref)))
-    spbm.sol = eval(Expr(:call, constructor, spbm))
+    spbm.sol = constructor(spbm)
 
     # Save common solution properties
     spbm.sol.status = termination_status(spbm.prg)
@@ -272,14 +270,14 @@ Closeness is measured in an L1-norm sense.
 - `u_ref`: the discrete-time input trajectory to be projected.
 - `p_ref`: the parameter vector to be projected.
 - `pbm`: the SCP problem definition.
-- `constructor`: the subproblem constructor function (as a symbol).
+- `constructor`: the subproblem constructor.
 """
 function correct_convex!(
     x_ref::RealMatrix,
     u_ref::RealMatrix,
     p_ref::RealVector,
     pbm::SCPProblem,
-    constructor,
+    constructor::Type,
 )::Nothing
 
     # Parameters
@@ -446,11 +444,7 @@ function compute_scaling(
                     def[:bbox][i, j] = getfield(traj, def[:advice])[i][j]
                 else
                     # Initialize JuMP model
-                    prg = ConicProgram(
-                        traj;
-                        solver = solver,
-                        solver_options = solver_opts,
-                    )
+                    prg = ConicProgram(traj; solver = solver, solver_options = solver_opts)
                     # Variables
                     x = @new_variable(prg, nx, "x")
                     u = @new_variable(prg, nu, "u")
@@ -535,7 +529,7 @@ Create initial guess from a warm start solution.
 # Returns
 - `guess`: the initial guess for PTR.
 """
-function warm_start(pbm::SCPProblem, warm::SCPSolution, constructor)
+function warm_start(pbm::SCPProblem, warm::SCPSolution, constructor::Type)
 
     # Extract the warm-start trajectory
     x, u, p = warm.xd, warm.ud, warm.p
@@ -937,19 +931,20 @@ function solution_deviation(spbm::T)::RealTypes where {T<:SCPSubproblem}
 end
 
 """
-    solve_subproblem!(spbm)
+    solve_subproblem!(spbm, constructor)
 
 Solve the SCP method's convex subproblem via numerical optimization.
 
 # Arguments
 - `spbm`: the subproblem structure.
+- `constructor`: subproblem solution constructor.
 """
-function solve_subproblem!(spbm::T)::Nothing where {T<:SCPSubproblem}
+function solve_subproblem!(spbm::T, constructor)::Nothing where {T<:SCPSubproblem}
     # Optimize
     solve!(spbm.prg)
 
     # Save the solution
-    SCPSubproblemSolution(spbm)
+    SCPSubproblemSolution(spbm, constructor)
 
     return nothing
 end

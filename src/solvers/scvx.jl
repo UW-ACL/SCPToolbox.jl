@@ -495,7 +495,7 @@ function solve(
 
         try
             # Solve the subproblem
-            solve_subproblem!(spbm)
+            solve_subproblem!(spbm, SubproblemSolution)
 
             # "Emergency exit" the SCvx loop if something bad happened
             # (e.g. numerical problems)
@@ -561,7 +561,7 @@ function generate_initial_guess(pbm::SCPProblem)::SubproblemSolution
 
     # Construct the raw trajectory
     x, u, p = pbm.traj.guess(pbm.pars.N)
-    correct_convex!(x, u, p, pbm, (pbm) -> Subproblem(pbm))
+    correct_convex!(x, u, p, pbm, Subproblem)
     guess = SubproblemSolution(x, u, p, 0, pbm)
 
     return guess

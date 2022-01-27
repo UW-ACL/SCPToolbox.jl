@@ -48,7 +48,7 @@ struct Ellipsoid
         E = new(H, c)
         return E
     end
-end # struct
+end
 
 """
     project(E, ax)

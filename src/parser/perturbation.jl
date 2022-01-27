@@ -108,7 +108,7 @@ struct Perturbation{N} <: AbstractRealArray{N}
         sliced_pert = new{N}(sliced_kind, sliced_amount)
         return sliced_pert
     end
-end # struct
+end
 
 # ..:: Methods ::..
 

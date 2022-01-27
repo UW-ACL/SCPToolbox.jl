@@ -47,11 +47,7 @@ function solve_lcvx(mdl::DoubleIntegratorParameters)::Solution
     s = mdl.s
     dt = T / (N - 1)
 
-    ocp = ConicProgram(
-        nothing;
-        solver = ECOS,
-        solver_options = Dict("verbose" => 0),
-    )
+    ocp = ConicProgram(nothing; solver = ECOS, solver_options = Dict("verbose" => 0))
 
     x = @new_variable(ocp, (2, N), "x")
     u = @new_variable(ocp, (1, N), "u")

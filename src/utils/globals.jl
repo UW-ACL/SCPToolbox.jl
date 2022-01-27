@@ -53,7 +53,7 @@ struct SCPError <: Exception
     k::Int            # At what discrete time step the error occured
     status::SCPStatus # Error status code
     msg::String       # Error message
-end # struct
+end
 
 """
     showerror(io, e)

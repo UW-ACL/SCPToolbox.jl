@@ -81,7 +81,7 @@ mutable struct DLTV
 
         return dyn
     end
-end # struct
+end
 
 """
 `SCPDiscretizationIndices` provides array indices for convenient access during
@@ -142,7 +142,7 @@ struct DiscretizationIndices
 
         return idcs
     end
-end # struct
+end
 
 # ..:: Methods ::..
 

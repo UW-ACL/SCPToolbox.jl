@@ -275,7 +275,7 @@ struct ApolloCSM
 
         return csm
     end
-end # struct
+end
 
 """ Chaser vehicle parameters. """
 struct ChaserParameters
@@ -291,7 +291,7 @@ struct ChaserParameters
     id_dock_tol::IntRange # Docking tolerance (parameter)
     # Vehicle
     csm::ApolloCSM   # Apollo command and service module vehicle
-end # struct
+end
 
 """ Planar rendezvous flight environment. """
 struct RendezvousEnvironmentParameters
@@ -331,7 +331,7 @@ mutable struct RendezvousTrajectoryParameters
     β::RealValue         # Relative cost improvement triggering homotopy update
     γc::RealValue        # Deadband relaxation cost weight
     γg::RealValue        # Deadband relaxation gradient keepout zone
-end # struct
+end
 
 """ Rendezvous trajectory optimization problem parameters all in one. """
 struct RendezvousProblem

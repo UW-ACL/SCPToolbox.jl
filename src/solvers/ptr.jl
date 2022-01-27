@@ -68,7 +68,7 @@ mutable struct Parameters <: SCPParameters
     q_exit::RealTypes    # Stopping criterion norm
     solver::Module       # The numerical solver to use for the subproblems
     solver_opts::Dict{String,Any} # Numerical solver options
-end # struct
+end
 
 """ PTR subproblem solution. """
 mutable struct SubproblemSolution <: SCPSubproblemSolution
@@ -99,7 +99,7 @@ mutable struct SubproblemSolution <: SCPSubproblemSolution
     unsafe::Bool          # Indicator that the solution is unsafe to use
     dyn::DLTV             # The dynamics
     bay::Dict             # Storage bay for user-set values during callback
-end # struct
+end
 
 """ Subproblem definition for the convex numerical optimizer. """
 mutable struct Subproblem <: SCPSubproblem
@@ -131,7 +131,7 @@ mutable struct Subproblem <: SCPSubproblem
     ηp::VarArgBlk       # Parameter trust region radii
     # >> Statistics <<
     timing::Dict{Symbol,RealTypes} # Runtime profiling
-end # struct
+end
 
 """
     create(pars, traj)
@@ -481,7 +481,7 @@ function solve(
 
         try
             # Solve the subproblem
-            solve_subproblem!(spbm)
+            solve_subproblem!(spbm, SubproblemSolution)
 
             # "Emergency exit" the PTR loop if something bad happened
             # (e.g. numerical problems)

@@ -28,15 +28,15 @@ test_heading(algo, description) =
 # Number of trials if statistics are gathered
 const NUM_TRIALS = 3
 
-@testset "DoubleIntegrator" begin
-    test_heading("LCvx", "Double integrator")
-    Examples.DoubleIntegrator.lcvx()
-end
+# @testset "DoubleIntegrator" begin
+#     test_heading("LCvx", "Double integrator")
+#     Examples.DoubleIntegrator.lcvx()
+# end
 
-@testset "RocketLanding" begin
-    test_heading("LCvx", "Rocket landing")
-    Examples.RocketLanding.lcvx()
-end
+# @testset "RocketLanding" begin
+#     test_heading("LCvx", "Rocket landing")
+#     Examples.RocketLanding.lcvx()
+# end
 
 @testset "Oscillator" begin
     test_heading("PTR", "Oscillator")

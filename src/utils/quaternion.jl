@@ -148,7 +148,7 @@ struct Quaternion
 
         return q
     end
-end # struct
+end
 
 """
     q[i]
