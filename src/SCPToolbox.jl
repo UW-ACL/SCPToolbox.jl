@@ -46,7 +46,7 @@ export SCP_SOLVED,
 export ConicProgram
 export @new_variable, @new_parameter, @add_constraint, @add_cost, @value, @jacobian, @scale
 export ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
-export value, constraints, variables, parameters, cost, jump_model, objective_value
+export value, constraints, variables, parameters, cost, jump_model, objective_value, solve_time
 export solve!
 
 # Trajectory problem high-level definition
@@ -157,7 +157,8 @@ import .Parser: ConicProgram
 import .Parser:
     @new_variable, @new_parameter, @add_constraint, @add_cost, @value, @jacobian, @scale
 import .Parser: ZERO, NONPOS, L1, SOC, LINF, GEOM, EXP
-import .Parser: value, constraints, variables, parameters, cost, jump_model, objective_value
+import .Parser: value, constraints, variables, parameters, cost, jump_model, objective_value,
+    solve_time
 import .Parser: solve!
 
 ### Trajectory problem definition
