@@ -55,6 +55,7 @@ const RealTuple = Tuple{Types.RealTypes,Types.RealTypes}
 const VectorOfTuples = Vector{Union{Nothing,RealTuple}}
 const SIA = Types.SpecialIntegrationActions
 const Func = Types.Func
+const Optional = Types.Optional
 const TableColumnDef = Tuple{Symbol,String,String,Int,Function}
 
 # ..:: Data structures ::..
@@ -130,7 +131,7 @@ Default (empty) constructor of a trajectory problem..
 # Returns
 - `pbm`: an empty trajectory problem.
 """
-function TrajectoryProblem(mdl::Any)::TrajectoryProblem
+function TrajectoryProblem(mdl::Optional{Any} = nothing)::TrajectoryProblem
 
     nx = 0
     nu = 0
