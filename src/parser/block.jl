@@ -160,7 +160,13 @@ Base.setindex!(blk::ArgumentBlock{T}, v::V, i::Int) where {T,V} = blk.value[i] =
 Base.setindex!(blk::ArgumentBlock{T}, v::V, I::Vararg{Int,N}) where {T,V,N} =
     blk.value[I...] = v
 Base.collect(blk::ArgumentBlock) = [blk]
-Base.iterate(blk::ArgumentBlock, state::Int = 1) = iterate(blk.value, state)
+Base.iterate(blk::ArgumentBlock, state::Int = 1) = begin
+    if state <= length(blk)
+        return blk[state], state+1
+    else
+        return nothing
+    end
+end
 
 const BlockBroadcastStyle = Broadcast.ArrayStyle{ArgumentBlock}
 Broadcast.BroadcastStyle(::Type{<:ArgumentBlock}) = BlockBroadcastStyle()
