@@ -168,6 +168,14 @@ Base.iterate(blk::ArgumentBlock, state::Int = 1) = begin
     end
 end
 
+""" Equality comparison. """
+Base.:(==)(x::ArgumentBlock, y::ArgumentBlock) = begin
+    return ( x.value == y.value &&
+             x.name == y.name &&
+             x.blid == y.blid &&
+             x.elid == y.elid )
+end
+
 const BlockBroadcastStyle = Broadcast.ArrayStyle{ArgumentBlock}
 Broadcast.BroadcastStyle(::Type{<:ArgumentBlock}) = BlockBroadcastStyle()
 Broadcast.broadcastable(blk::ArgumentBlock) = blk
