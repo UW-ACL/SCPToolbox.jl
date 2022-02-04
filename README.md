@@ -15,7 +15,7 @@
 <p align="center">
     <a href="http://www.gnu.org/licenses/gpl-3.0.txt"><img src="https://img.shields.io/badge/license-GPL_3-green.svg" alt="License GPL 3" /></a>
     &ensp;&ensp;
-    <a href="https://mybinder.org/v2/gh/dmalyuta/SCPToolbox_tutorial/master?labpath=tutorial%2Fsrc%2Fp1_clp.ipynb"><img src="https://mybinder.org/badge_logo.svg" alt="Launch Binder" /></a>
+    <a href="https://mybinder.org/v2/gh/UW-ACL/SCPToolbox_tutorial/master?labpath=tutorial%2Fsrc%2Fp1_clp.ipynb"><img src="https://mybinder.org/badge_logo.svg" alt="Launch Binder" /></a>
 </p>
 
 The <b>SCP Toolbox</b> provides the tools necessary to define and solve
@@ -33,7 +33,7 @@ without having to re-implement the underlying algorithms each time.
 
 ## Getting Started
 
-Click on the [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/dmalyuta/SCPToolbox_tutorial/master?labpath=tutorial%2Fsrc%2Fp1_clp.ipynb) button to spin up a remote Jupyter environment. Following the included notebooks to get a feel for the toolbox, and finish by solving a self-guided tutorial to land a rocket on the Moon!
+Click on the [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/UW-ACL/SCPToolbox_tutorial/master?labpath=tutorial%2Fsrc%2Fp1_clp.ipynb) button to spin up a remote Jupyter environment. Following the included notebooks to get a feel for the toolbox, and finish by solving a self-guided tutorial to land a rocket on the Moon!
 
 ## Implemented SCP algorithms
 
