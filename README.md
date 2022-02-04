@@ -33,7 +33,7 @@ without having to re-implement the underlying algorithms each time.
 
 ## Getting Started
 
-Click on the [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/UW-ACL/SCPToolbox_tutorial/master?labpath=tutorial%2Fsrc%2Fp1_clp.ipynb) button to spin up a remote Jupyter environment. Following the included notebooks to get a feel for the toolbox, and finish by solving a self-guided tutorial to land a rocket on the Moon!
+Click on the [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/UW-ACL/SCPToolbox_tutorial/master?labpath=tutorial%2Fsrc%2Fp1_clp.ipynb) button to spin up a remote Jupyter environment. Follow the included notebooks to get a feel for the toolbox, and finish by solving a self-guided tutorial to land a rocket on the Moon!
 
 ## Implemented SCP algorithms
 
