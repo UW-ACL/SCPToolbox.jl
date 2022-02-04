@@ -1,0 +1,352 @@
+\documentclass[varwidth=false,multi=tikzpicture,border=0,margin=1pt]{standalone}
+
+\input{latex_common/preamble.tex}
+\input{latex_common/commands.tex}
+\input{latex_common/PykZ/pykz.tex}
+
+\usepackage{xcolor}
+
+\definecolor{DarkBlue}{HTML}{26415d}
+\definecolor{Blue}{HTML}{356397}
+\definecolor{Green}{HTML}{5da9a1}
+\definecolor{Yellow}{HTML}{f1d46a}
+\definecolor{Red}{HTML}{db6245}
+\definecolor{Black}{HTML}{000000}
+\definecolor{Grey}{HTML}{acacac}
+\definecolor{darts}{HTML}{009670}
+
+\pykzinit{latex_common/PykZ/}
+
+% Global TikZ settings
+\tikzset{
+  every node/.append style={
+    inner sep=0,
+    outer sep=0,
+    minimum size=0
+  }
+}
+\let\temp\rmdefault
+\usepackage{mathpazo}
+\let\rmdefault\temp
+
+\pgfdeclarelayer{scptbg}
+\pgfdeclarelayer{bg}
+\pgfdeclarelayer{traj bg}
+\pgfdeclarelayer{traj}
+\pgfdeclarelayer{traj fg}
+\pgfsetlayers{bg,traj bg,traj,traj fg,scptbg,main}
+
+\begin{document}
+
+\makeatletter
+
+\def\@scp@height{1em}
+\def\@scpt@bbox@pad{0.1em}
+\def\@tip@clr@mix{50}
+\def\@tip@offset@x{3pt}
+\def\@tip@offset@y{1em}
+\def\@traj@bezier@angle{80}
+\def\@traj@bezier@tension{3.2cm}
+\def\@traj@precision{4}
+\def\@traj@dt{0.005}
+
+\tikzset{
+  scp text/.style={},
+  scp t/.style={
+    anchor=west,
+    xshift=1pt,
+    yshift=-0.3pt
+  },
+  scpt box/.style = {
+    draw=none,
+    % line width=0.01pt,
+    rounded corners=0.5em,
+    fill=none
+  },
+  traj end/.style = {
+    circle,
+    line width=0.3pt,
+    draw=Red,
+    fill=#1!\@tip@clr@mix!white,
+    minimum size=2pt
+  },
+  traj/.style = {
+    line width=1pt,
+    draw=Red,
+    line cap=round,
+    line join=round
+  },
+  gradient/.style = {
+    line width=0.3pt,
+    draw=darts,
+    line cap=round,
+    line join=round
+  },
+  traj point/.style = {
+    circle,
+    fill=Yellow,
+    minimum size=0.5pt
+  },
+  bg box/.style = {
+    rectangle,
+    fill=white,
+    draw=black,
+    line width=0.3pt,
+    rounded corners=3pt,
+    minimum width=45pt,
+    minimum height=40pt
+  }
+}
+
+\begin{pykzmathblock}
+import numpy as np
+
+def bisection(l, r, condition):
+    # Find a point c where condition for (c-) is False and
+    # for (c+) is it True. A "transition point", so to speak.
+    #
+    # Inputs
+    # l : condition(l)==False
+    # r : condition(r)==True
+    # condition : the checking function.
+    #
+    # Returns
+    # c : the transition point.
+    tol = 1e-7
+    maxiter = 30
+    for iter in range(maxiter):
+        c = (l+r)/2
+        if condition(c):
+            r = c
+        else:
+            l = c
+        out_of_iter = iter == maxiter-1
+        if r-l <= tol or out_of_iter:
+            if out_of_iter:
+                print('[bisection error] out of iterations')
+            return (r+l)/2
+
+def generate_points(f, t0, dt, yf, t_max=1.0):
+    # Generate points of a 2D parametric curve f(t) up to f(t)==yf.
+    # The points are started at t==t0 and the parameter is incremented
+    # with step size dt.
+    #
+    # Inputs
+    # f : the parametric curve definition.
+    # t0: the parameter start value.
+    # dt: the parameter step size.
+    # yf: the final y-value of f(t).
+    # t_max: the maximum value of t.
+    #
+    # Returns
+    # pts : a matrix of points where first row are x coordinates and second row
+    #       are y coordinates.
+    # t : the parameter at the end of the trajectory.
+    maxiter = 200
+    t = t0
+    iter = 0
+    ft = f(t)
+    up = ft[1] < yf
+    finished = lambda: ft[1] >= yf if up else ft[1] < yf
+    pts = []
+    while True:
+        ft = f(t)
+        if finished() or t >= t_max:
+            t = min(t, t_max)
+            if t < 1:
+                if up:
+                    condition = lambda t: f(t)[1] >= yf
+                else:
+                    condition = lambda t: f(t)[1] < yf
+                t = bisection(t-dt, t, condition)
+            ft = f(t)
+            pts.append(ft)
+            break
+        else:
+            pts.append(ft)
+            t += dt
+            iter += 1
+            if iter >= maxiter:
+                print('[generate_points error] out of iterations')
+                break
+    pts = np.array([[pt[0] for pt in pts], [pt[1] for pt in pts]])
+    return pts, t
+\end{pykzmathblock}
+
+\newcommand{\generate@traj@pts}{
+  \pykzmathinline[@traj@pts@len]{pts.shape[1]}
+  \def\@traj@stride{10}
+  \tikzmath{
+    \@traj@stride@steps = int(\@traj@pts@len/\@traj@stride)+1;
+  }
+  \def\@traj@pts{}
+  \foreach \@i in {1,...,\@traj@stride@steps} {
+    \pykzmathinline[traj@pts@batch]{
+      ' '.join('({0:.\@traj@precision}pt, {1:.\@traj@precision}pt)'.format(
+      pts[0, i], pts[1, i]) for i in
+      range((\@i-1)*\@traj@stride, min(\@i*\@traj@stride, \@traj@pts@len)))}
+    \xdef\@traj@pts{\@traj@pts \traj@pts@batch}
+  }
+}
+
+\newcommand{\draw@path}[2]{
+  \pykzexec{path = #2}
+  % Check if path starts inside the box
+  \pykzexec{inside_box = path(0)[1] > box_y_bot and path(0)[1] < box_y_top}
+  \pykzmathinline[@inside@box]{1 if inside_box else 0}
+  \pgfmathparse{\@inside@box==1 ? 1 : 0}
+  \ifthenelse{\pgfmathresult>0}{
+    \pykzexec{yc = box_y_top if path(1)[1] > path(0)[1] else box_y_bot}
+    \pykzexec{_, t = generate_points(path, 0, \@traj@dt, yc)}
+  }{
+    \pykzexec{t = 0}
+  }
+  \pykzexec{yc = box_y_bot if path(0)[1] < box_y_bot else box_y_top}
+  \pykzmathinline[@t]{t}
+  \foreach \@i in {1,...,7} {
+    \pgfmathparse{\@t<1 ? 1 : 0}
+    \ifthenelse{\pgfmathresult>0}{
+      \pgfmathparse{\@i==1 ? 1 : 0}
+      \ifthenelse{\pgfmathresult>0}{}{
+        \pykzexec{yc = box_y_top if yc==box_y_bot else box_y_bot}
+        \pykzexec{_, t = generate_points(path, t, \@traj@dt, yc)}
+      }
+      \pykzexec{pts, t = generate_points(path, t+1e-6, \@traj@dt, yc)}
+      \pykzmathinline[@t]{t}
+      \generate@traj@pts
+      \draw[#1] plot coordinates {\@traj@pts};
+    }{}
+  }
+}
+
+\begin{tikzpicture}[line join=round, line cap=round]
+
+  %%% The SCP(t) text
+
+  \begin{scope}[local bounding box=scpt]
+    \node[scp text] (scp) at (0, 0) {%
+      \includegraphics[height=\@scp@height]{scp.pdf}};
+    \node[scp t] (t) at (scp.east) {$(t)$};
+  \end{scope}
+
+  \begin{pgfonlayer}{scptbg}
+    \coordinate (box south west) at
+    ($(scpt.south west)+(-\@scpt@bbox@pad, -\@scpt@bbox@pad)$);
+    \coordinate (box north east) at
+    ($(scpt.north east)+(\@scpt@bbox@pad, \@scpt@bbox@pad)$);
+
+    \draw[scpt box,
+    name path=scptbox]
+    (box south west) rectangle (box north east);
+  \end{pgfonlayer}
+
+  %%% Background
+
+  \begin{pgfonlayer}{bg}
+    \node[bg box]  at (scpt.center) {};
+  \end{pgfonlayer}
+
+  %%% Trajectory
+
+  % Cubic Bezier curve
+  %
+  %   p0: start point
+  %   p1: end point
+  %   c0: control for start point
+  %   c1: control for end point
+  %   t: the interpolation value, in [0, 1]
+  %
+  % p0 ---- c0 ---- c1 ---- p1
+  \pykzexec{B_p0_c0 = lambda p0, c0, t: (1-t)*p0+t*c0}
+  \pykzexec{B_c0_c1 = lambda c0, c1, t: (1-t)*c0+t*c1}
+  \pykzexec{B_c1_p1 = lambda c1, p1, t: (1-t)*c1+t*p1}
+  \pykzexec{B_p0_c0_c1 = lambda p0, c0, c1, t: (1-t)*B_p0_c0(p0,c0,t)+t*B_c0_c1(c0,c1,t)}
+  \pykzexec{B_c0_c1_p1 = lambda c0, c1, p1, t: (1-t)*B_c0_c1(c0,c1,t)+t*B_c1_p1(c1,p1,t)}
+  \pykzexec{bezier_numpy = lambda p0, c0, c1, p1, t:
+    tuple((1-t)*B_p0_c0_c1(p0,c0,c1,t)+t*B_c0_c1_p1(c0,c1,p1,t))}
+  \pykzexec{normalize = lambda v: v/la.norm(v)}
+  \pykzexec{bezier_grad_numpy = lambda p0, c0, c1, p1, t:
+    tuple(normalize(3*(1-t)**2*(c0-p0)+6*(1-t)*t*(c1-c0)+3*t**2*(p1-c1)))}
+  \pykzexec{bezier = lambda p0, c0, c1, p1, t:
+    bezier_numpy(np.array(p0), np.array(c0), np.array(c1), np.array(p1), t)}
+  \pykzexec{bezier_grad = lambda p0, c0, c1, p1, t:
+    bezier_grad_numpy(np.array(p0), np.array(c0), np.array(c1), np.array(p1), t)}
+
+  \begin{pgfonlayer}{traj}
+    \begin{pgfonlayer}{traj fg}
+      \node[traj end=Red] (traj start) at
+      ($(box south west)+(\@tip@offset@x, -\@tip@offset@y)$) {};
+
+      \node[traj end=Green] (traj finish) at
+      ($(box north east)+(-\@tip@offset@x, \@tip@offset@y)$) {};
+    \end{pgfonlayer}
+
+    \coordinate (bez control start) at
+    ($(traj start.center)+(\@traj@bezier@angle:\@traj@bezier@tension)$);
+    \coordinate (bez control finish) at
+    ($(traj finish.center)+({-180+\@traj@bezier@angle}:\@traj@bezier@tension)$);
+
+    \path let
+    \p1=(traj start),
+    \p2=(traj finish),
+    \p3=(bez control start),
+    \p4=(bez control finish),
+    \p5=(box south west),
+    \p6=(box north east)
+    in \pgfextra{
+      \tikzmath{
+        \@pzo = \x1;
+        \@pzt = \y1;
+        \@poo = \x2;
+        \@pot = \y2;
+        \@czo = \x3;
+        \@czt = \y3;
+        \@coo = \x4;
+        \@cot = \y4;
+        \@box@bottom = \y5;
+        \@box@top = \y6;
+      }
+      \pykzexec{p0 = (\@pzo,\@pzt)}
+      \pykzexec{p1 = (\@poo,\@pot)}
+      \pykzexec{c0 = (\@czo,\@czt)}
+      \pykzexec{c1 = (\@coo,\@cot)}
+      \pykzexec{box_y_bot = \@box@bottom}
+      \pykzexec{box_y_top = \@box@top}
+      \draw@path{traj}{lambda t: bezier(p0, c0, c1, p1, t)}
+
+      % Linearized pieces
+      \def\@num@grad{50}
+      \def\@traj@grad@len{6}
+      \pykzexec{t_pad = 0.02}
+      \pykzexec{t_vals = np.linspace(t_pad, 1-t_pad, \@num@grad)}
+      \foreach \@i in {1,...,\@num@grad} {
+        \pykzexec{grad = np.array(bezier_grad(p0, c0, c1, p1, t_vals[\@i-1]))}
+        \pykzexec{grad_pt_c = np.array(bezier(p0, c0, c1, p1, t_vals[\@i-1]))}
+        \pykzexec{grad_pt_0 = grad_pt_c-\@traj@grad@len*grad}
+        \pykzexec{grad_pt_1 = grad_pt_c+\@traj@grad@len*grad}
+        \pykzexec{grad_path = lambda t: tuple((1-t)*grad_pt_0+t*grad_pt_1)}
+        \pykzmathinline[@grad@pt]{'{:f}pt, {:f}pt'.format(
+          grad_pt_c[0], grad_pt_c[1])}
+        \pykzmathinline[@outside@box]{1 if grad_pt_c[1] < box_y_bot or
+          grad_pt_c[1] > box_y_top else 0}
+        \pgfmathparse{\@outside@box==1 ? 1 : 0}
+        \ifthenelse{\pgfmathresult>0}{
+          \node[traj point] at (\@grad@pt) {};
+        }{}
+        \begin{pgfonlayer}{traj bg}
+          \draw@path{gradient}{grad_path}
+        \end{pgfonlayer}
+      }
+    };
+  \end{pgfonlayer}
+
+\end{tikzpicture}
+
+\makeatother
+
+\end{document}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:

@@ -1,5 +1,9 @@
 .juliahistory
-/figures/*
+/**/Manifest.toml
+/.vscode/
+/media/*
+/media/tests/*
 /.ipynb_checkpoints/*
 /sandbox/*
-!/figures/.gitkeep
+!/**/.gitkeep
+!/media/logo/*
