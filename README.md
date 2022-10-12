@@ -68,13 +68,19 @@ If you use the SCP Toolbox, kindly cite the following associated publication.
 
 ```
 @article{SCPToolboxCSM2022,
-  year	       = {2021},
-  publisher    = {{IEEE}},
-  author       = {Danylo Malyuta and Taylor P. Reynolds and Michael Szmuk
-                  and Thomas Lew and Riccardo Bonalli and Marco Pavone
-                  and Behcet Acikmese},
-  title	       = {Convex Optimization for Trajectory Generation},
-  journal      = {{IEEE} Control Systems Magazine (accepted)},
-  pages        = {arXiv:2106.09125}
+  doi = {10.1109/mcs.2022.3187542},
+  url = {https://doi.org/10.1109/mcs.2022.3187542},
+  year = {2022},
+  month = oct,
+  publisher = {Institute of Electrical and Electronics Engineers ({IEEE})},
+  volume = {42},
+  number = {5},
+  pages = {40--113},
+  author = {Danylo Malyuta and Taylor P. Reynolds and Michael Szmuk and Thomas Lew
+            and Riccardo Bonalli and Marco Pavone and Behcet Acikmese},
+  title = {Convex Optimization for Trajectory Generation: A Tutorial on Generating
+           Dynamically Feasible Trajectories Reliably and Efficiently},
+  journal = {{IEEE} Control Systems},
+  note = {Free preprint available at https://arxiv.org/abs/2106.09125}
 }
 ```
