@@ -33,7 +33,7 @@ without having to re-implement the underlying algorithms each time.
 
 ## Getting Started
 
-Click on the [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/UW-ACL/SCPToolbox_tutorial/master?labpath=tutorial%2Fsrc%2Fp1_clp.ipynb) button to spin up a remote Jupyter environment. Follow the included notebooks to get a feel for the toolbox, and finish by solving a self-guided tutorial to land a rocket on the Moon!
+Click on the [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/UW-ACL/SCPToolbox_tutorial/master?labpath=tutorial%2Fsrc%2Fp1_clp.ipynb) button to spin up a remote Jupyter environment. Follow the included notebooks to get a feel for the toolbox, and finish by solving a self-guided tutorial to land a rocket on the Moon! Check out the [SCPToolbox_tutorial](https://github.com/UW-ACL/SCPToolbox_tutorial) repository for more details.
 
 ## Implemented SCP algorithms
 
@@ -77,7 +77,7 @@ If you use the SCP Toolbox, kindly cite the following associated publication.
   number = {5},
   pages = {40--113},
   author = {Danylo Malyuta and Taylor P. Reynolds and Michael Szmuk and Thomas Lew
-            and Riccardo Bonalli and Marco Pavone and Behcet Acikmese},
+            and Riccardo Bonalli and Marco Pavone and Behçet Açıkmeşe},
   title = {Convex Optimization for Trajectory Generation: A Tutorial on Generating
            Dynamically Feasible Trajectories Reliably and Efficiently},
   journal = {{IEEE} Control Systems},
