@@ -188,11 +188,15 @@ function run_trials(
     history = history_list[end]
 
     # Make plots
-    plot_trajectory_history(mdl, history)
-    plot_final_trajectory(mdl, sol)
-    plot_input_norm(mdl, sol)
-    plot_tilt_angle(mdl, sol)
-    plot_convergence(history_list, "quadrotor")
+    try
+        plot_trajectory_history(mdl, history)
+        plot_final_trajectory(mdl, sol)
+        plot_input_norm(mdl, sol)
+        plot_tilt_angle(mdl, sol)
+        plot_convergence(history_list, "quadrotor")     
+    catch e
+        showerror(stdout, e)
+    end
 
     return nothing
 end

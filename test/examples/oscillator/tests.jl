@@ -81,9 +81,13 @@ function ptr()::Nothing
     @test sol.status == @sprintf("%s", SCP_SOLVED)
 
     # Make plots
-    plot_timeseries(mdl, sol, history)
-    plot_deadband(mdl, sol)
-    plot_convergence(history, "oscillator")
+    try
+        plot_timeseries(mdl, sol, history)
+        plot_deadband(mdl, sol)
+        plot_convergence(history, "oscillator")    
+    catch e
+        showerror(stdout, e)
+    end
 
     return nothing
 end

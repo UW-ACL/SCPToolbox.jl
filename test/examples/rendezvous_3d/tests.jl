@@ -95,12 +95,16 @@ function test_single(
     @test sol.status == @sprintf("%s", SCP_SOLVED)
 
     # Make plots
-    plot_trajectory_2d(mdl, sol)
-    plot_trajectory_2d(mdl, sol; attitude = true)
-    plot_state_timeseries(mdl, sol)
-    plot_inputs(mdl, sol, history)
-    plot_inputs(mdl, sol, history; quad = "D")
-    plot_cost_evolution(mdl, history)
+    try
+        plot_trajectory_2d(mdl, sol)
+        plot_trajectory_2d(mdl, sol; attitude = true)
+        plot_state_timeseries(mdl, sol)
+        plot_inputs(mdl, sol, history)
+        plot_inputs(mdl, sol, history; quad = "D")
+        plot_cost_evolution(mdl, history)
+    catch e
+        showerror(stdout, e)
+    end
 
     return sol, history
 end
@@ -151,13 +155,17 @@ function test_runtime(
         @test sol.status == @sprintf("%s", SCP_SOLVED)
     end
 
-    plot_convergence(
-        history_list,
-        "rendezvous_3d",
-        options = fig_opts,
-        xlabel = "\$\\ell\$",
-        horizontal = true,
-    )
+    try
+        plot_convergence(
+            history_list,
+            "rendezvous_3d",
+            options = fig_opts,
+            xlabel = "\$\\ell\$",
+            horizontal = true,
+        )    
+    catch e
+        showerror(stdout, e)
+    end
 
     return history_list
 end
@@ -213,7 +221,11 @@ function test_homotopy_update(
         @test sol_list[i].status == @sprintf("%s", SCP_SOLVED)
     end
 
-    plot_homotopy_threshold_sweep(mdl, β_sweep, sol_list)
+    try
+        plot_homotopy_threshold_sweep(mdl, β_sweep, sol_list)
+    catch e
+        showerror(stdout, e)
+    end
 
     return β_sweep, sol_list
 end

@@ -14,8 +14,10 @@
 
 <p align="center">
     <a href="http://www.gnu.org/licenses/gpl-3.0.txt"><img src="https://img.shields.io/badge/license-GPL_3-green.svg" alt="License GPL 3" /></a>
-    &ensp;&ensp;
     <a href="https://mybinder.org/v2/gh/UW-ACL/SCPToolbox_tutorial/master?labpath=tutorial%2Fsrc%2Fp1_clp.ipynb"><img src="https://mybinder.org/badge_logo.svg" alt="Launch Binder" /></a>
+    <a href="https://github.com//UW-ACL/SCPToolbox.jl/actions/workflows/CI.yml/badge.svg"><img src="https://github.com//UW-ACL/SCPToolbox.jl/actions/workflows/CI.yml/badge.svg"/></a>
+        <a href="https://codecov.io/gh/UW-ACL/SCPToolbox.jl" > 
+ <img src="https://codecov.io/gh/UW-ACL/SCPToolbox.jl/branch/master/graph/badge.svg?token=UI74DSQCLL"/> </a>
 </p>
 
 The <b>SCP Toolbox</b> provides the tools necessary to define and solve
