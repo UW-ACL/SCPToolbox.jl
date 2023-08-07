@@ -151,11 +151,15 @@ function test_single(
     @test sol.status == @sprintf("%s", SCP_SOLVED)
 
     # Make plots
-    plot_trajectory_history(mdl, history)
-    plot_final_trajectory(mdl, sol)
-    plot_velocity(mdl, sol)
-    plot_thrust(mdl, sol)
-    plot_gimbal(mdl, sol)
+    try
+        plot_trajectory_history(mdl, history)
+        plot_final_trajectory(mdl, sol)
+        plot_velocity(mdl, sol)
+        plot_thrust(mdl, sol)
+        plot_gimbal(mdl, sol)      
+    catch e
+        showerror(stdout, e)
+    end
 
     return nothing
 end

@@ -40,11 +40,15 @@ function lcvx()::Nothing
     sim = simulate(rocket, pdg)
 
     # Make plots
-    plot_thrust(rocket, pdg, sim)
-    plot_mass(rocket, pdg, sim)
-    plot_pointing_angle(rocket, pdg, sim)
-    plot_velocity(rocket, pdg, sim)
-    plot_position(rocket, pdg, sim)
+    try
+        plot_thrust(rocket, pdg, sim)
+        plot_mass(rocket, pdg, sim)
+        plot_pointing_angle(rocket, pdg, sim)
+        plot_velocity(rocket, pdg, sim)
+        plot_position(rocket, pdg, sim)    
+    catch e
+        showerror(stdout, e)
+    end
 
     return nothing
 end

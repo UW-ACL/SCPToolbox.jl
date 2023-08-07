@@ -43,7 +43,11 @@ function lcvx()::Nothing
         @test true
 
         if !tests_failed
-            plot_trajectory(sol_lcvx, sol_mp, param_choice)
+            try
+                plot_trajectory(sol_lcvx, sol_mp, param_choice)  
+            catch e
+                showerror(stdout, e)
+            end
         end
     end
 

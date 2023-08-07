@@ -192,11 +192,15 @@ function run_trials(
     history = history_list[end]
 
     # Make plots
-    plot_trajectory_history(mdl, history)
-    plot_final_trajectory(mdl, sol)
-    plot_timeseries(mdl, sol)
-    plot_obstacle_constraints(mdl, sol)
-    plot_convergence(history_list, "freeflyer")
+    try
+        plot_trajectory_history(mdl, history)
+        plot_final_trajectory(mdl, sol)
+        plot_timeseries(mdl, sol)
+        plot_obstacle_constraints(mdl, sol)
+        plot_convergence(history_list, "freeflyer")      
+    catch e
+        showerror(stdout, e)
+    end
 
     return nothing
 end

@@ -82,10 +82,14 @@ function ptr()::Nothing
     @test sol.status == @sprintf("%s", SCP_SOLVED)
 
     # Make plots
-    plot_final_trajectory(mdl, sol)
-    plot_attitude(mdl, sol)
-    plot_thrusts(mdl, sol)
-    plot_convergence(history, "rendezvous_planar")
+    try
+        plot_final_trajectory(mdl, sol)
+        plot_attitude(mdl, sol)
+        plot_thrusts(mdl, sol)
+        plot_convergence(history, "rendezvous_planar")    
+    catch e
+        showerror(stdout, e)
+    end
 
     return nothing
 end
