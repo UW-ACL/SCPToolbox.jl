@@ -877,13 +877,23 @@ function save_figure(
         tight_layout_applied = false # reset
     else
         filename = split(filename, "/")[end] # Get just the name
-        plt.savefig(
-            @sprintf("/tmp/%s", filename),
-            bbox_inches = "tight",
-            pad_inches = 0.01,
-            facecolor = facecolor,
-            dpi = dpi,
-        )
+        if Sys.iswindows()
+             plt.savefig(
+                "C:\\Users\\" * ENV["USERNAME"] * "\\AppData\\Local\\Temp\\" * filename,
+                bbox_inches = "tight",
+                pad_inches = 0.01,
+                facecolor = facecolor,
+                dpi = dpi,
+            )
+        else
+            plt.savefig(
+                @sprintf("/tmp/%s", filename),
+                bbox_inches = "tight",
+                pad_inches = 0.01,
+                facecolor = facecolor,
+                dpi = dpi,
+            )
+        end
     end
 
     return nothing
